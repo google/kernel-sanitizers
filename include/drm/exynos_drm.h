@@ -64,6 +64,7 @@ struct drm_exynos_gem_map_off {
  * A structure for mapping buffer.
  *
  * @handle: a handle to gem object created.
+ * @pad: just padding to be 64-bit aligned.
  * @size: memory size to be mapped.
  * @mapped: having user virtual address mmaped.
  *	- this variable would be filled by exynos gem module
@@ -72,7 +73,8 @@ struct drm_exynos_gem_map_off {
  */
 struct drm_exynos_gem_mmap {
 	unsigned int handle;
-	unsigned int size;
+	unsigned int pad;
+	uint64_t size;
 	uint64_t mapped;
 };
 
@@ -103,11 +105,6 @@ struct drm_exynos_vidi_connection {
 	unsigned int connection;
 	unsigned int extensions;
 	uint64_t edid;
-};
-
-struct drm_exynos_plane_set_zpos {
-	__u32 plane_id;
-	__s32 zpos;
 };
 
 /* memory type definitions. */
@@ -162,7 +159,6 @@ struct drm_exynos_g2d_exec {
 #define DRM_EXYNOS_GEM_MMAP		0x02
 /* Reserved 0x03 ~ 0x05 for exynos specific gem ioctl */
 #define DRM_EXYNOS_GEM_GET		0x04
-#define DRM_EXYNOS_PLANE_SET_ZPOS	0x06
 #define DRM_EXYNOS_VIDI_CONNECTION	0x07
 
 /* G2D */
@@ -181,9 +177,6 @@ struct drm_exynos_g2d_exec {
 
 #define DRM_IOCTL_EXYNOS_GEM_GET	DRM_IOWR(DRM_COMMAND_BASE + \
 		DRM_EXYNOS_GEM_GET,	struct drm_exynos_gem_info)
-
-#define DRM_IOCTL_EXYNOS_PLANE_SET_ZPOS	DRM_IOWR(DRM_COMMAND_BASE + \
-		DRM_EXYNOS_PLANE_SET_ZPOS, struct drm_exynos_plane_set_zpos)
 
 #define DRM_IOCTL_EXYNOS_VIDI_CONNECTION	DRM_IOWR(DRM_COMMAND_BASE + \
 		DRM_EXYNOS_VIDI_CONNECTION, struct drm_exynos_vidi_connection)
