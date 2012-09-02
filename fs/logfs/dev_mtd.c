@@ -245,8 +245,8 @@ static int logfs_mtd_can_write_buf(struct super_block *sb, u64 ofs)
 		goto out;
 	if (memchr_inv(buf, 0xff, super->s_writesize))
 		err = -EIO;
-	kfree(buf);
 out:
+	kfree(buf);
 	return err;
 }
 
