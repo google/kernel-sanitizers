@@ -129,8 +129,8 @@ static int pwm_device_request(struct pwm_device *pwm, const char *label)
 	return 0;
 }
 
-static struct pwm_device *of_pwm_simple_xlate(struct pwm_chip *pc,
-					      const struct of_phandle_args *args)
+static struct pwm_device *
+of_pwm_simple_xlate(struct pwm_chip *pc, const struct of_phandle_args *args)
 {
 	struct pwm_device *pwm;
 
@@ -149,7 +149,7 @@ static struct pwm_device *of_pwm_simple_xlate(struct pwm_chip *pc,
 	return pwm;
 }
 
-void of_pwmchip_add(struct pwm_chip *chip)
+static void of_pwmchip_add(struct pwm_chip *chip)
 {
 	if (!chip->dev || !chip->dev->of_node)
 		return;
@@ -162,7 +162,7 @@ void of_pwmchip_add(struct pwm_chip *chip)
 	of_node_get(chip->dev->of_node);
 }
 
-void of_pwmchip_remove(struct pwm_chip *chip)
+static void of_pwmchip_remove(struct pwm_chip *chip)
 {
 	if (chip->dev && chip->dev->of_node)
 		of_node_put(chip->dev->of_node);
@@ -371,12 +371,34 @@ EXPORT_SYMBOL_GPL(pwm_free);
  */
 int pwm_config(struct pwm_device *pwm, int duty_ns, int period_ns)
 {
-	if (!pwm || period_ns == 0 || duty_ns > period_ns)
+	if (!pwm || duty_ns < 0 || period_ns <= 0 || duty_ns > period_ns)
 		return -EINVAL;
 
 	return pwm->chip->ops->config(pwm->chip, pwm, duty_ns, period_ns);
 }
 EXPORT_SYMBOL_GPL(pwm_config);
+
+/**
+ * pwm_set_polarity() - configure the polarity of a PWM signal
+ * @pwm: PWM device
+ * @polarity: new polarity of the PWM signal
+ *
+ * Note that the polarity cannot be configured while the PWM device is enabled
+ */
+int pwm_set_polarity(struct pwm_device *pwm, enum pwm_polarity polarity)
+{
+	if (!pwm || !pwm->chip->ops)
+		return -EINVAL;
+
+	if (!pwm->chip->ops->set_polarity)
+		return -ENOSYS;
+
+	if (test_bit(PWMF_ENABLED, &pwm->flags))
+		return -EBUSY;
+
+	return pwm->chip->ops->set_polarity(pwm->chip, pwm, polarity);
+}
+EXPORT_SYMBOL_GPL(pwm_set_polarity);
 
 /**
  * pwm_enable() - start a PWM output toggling
@@ -527,7 +549,7 @@ void __init pwm_add_table(struct pwm_lookup *table, size_t num)
 struct pwm_device *pwm_get(struct device *dev, const char *con_id)
 {
 	struct pwm_device *pwm = ERR_PTR(-EPROBE_DEFER);
-	const char *dev_id = dev ? dev_name(dev): NULL;
+	const char *dev_id = dev ? dev_name(dev) : NULL;
 	struct pwm_chip *chip = NULL;
 	unsigned int index = 0;
 	unsigned int best = 0;
@@ -609,7 +631,7 @@ void pwm_put(struct pwm_device *pwm)
 	mutex_lock(&pwm_lock);
 
 	if (!test_and_clear_bit(PWMF_REQUESTED, &pwm->flags)) {
-		pr_warning("PWM device already freed\n");
+		pr_warn("PWM device already freed\n");
 		goto out;
 	}
 
@@ -623,6 +645,64 @@ out:
 	mutex_unlock(&pwm_lock);
 }
 EXPORT_SYMBOL_GPL(pwm_put);
+
+static void devm_pwm_release(struct device *dev, void *res)
+{
+	pwm_put(*(struct pwm_device **)res);
+}
+
+/**
+ * devm_pwm_get() - resource managed pwm_get()
+ * @dev: device for PWM consumer
+ * @con_id: consumer name
+ *
+ * This function performs like pwm_get() but the acquired PWM device will
+ * automatically be released on driver detach.
+ */
+struct pwm_device *devm_pwm_get(struct device *dev, const char *con_id)
+{
+	struct pwm_device **ptr, *pwm;
+
+	ptr = devres_alloc(devm_pwm_release, sizeof(**ptr), GFP_KERNEL);
+	if (!ptr)
+		return ERR_PTR(-ENOMEM);
+
+	pwm = pwm_get(dev, con_id);
+	if (!IS_ERR(pwm)) {
+		*ptr = pwm;
+		devres_add(dev, ptr);
+	} else {
+		devres_free(ptr);
+	}
+
+	return pwm;
+}
+EXPORT_SYMBOL_GPL(devm_pwm_get);
+
+static int devm_pwm_match(struct device *dev, void *res, void *data)
+{
+	struct pwm_device **p = res;
+
+	if (WARN_ON(!p || !*p))
+		return 0;
+
+	return *p == data;
+}
+
+/**
+ * devm_pwm_put() - resource managed pwm_put()
+ * @dev: device for PWM consumer
+ * @pwm: PWM device
+ *
+ * Release a PWM previously allocated using devm_pwm_get(). Calling this
+ * function is usually not needed because devm-allocated resources are
+ * automatically released on driver detach.
+ */
+void devm_pwm_put(struct device *dev, struct pwm_device *pwm)
+{
+	WARN_ON(devres_release(dev, devm_pwm_release, devm_pwm_match, pwm));
+}
+EXPORT_SYMBOL_GPL(devm_pwm_put);
 
 #ifdef CONFIG_DEBUG_FS
 static void pwm_dbg_show(struct pwm_chip *chip, struct seq_file *s)

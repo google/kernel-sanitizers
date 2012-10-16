@@ -350,6 +350,9 @@ static void reg_regdb_search(struct work_struct *work)
 	struct reg_regdb_search_request *request;
 	const struct ieee80211_regdomain *curdom, *regdom;
 	int i, r;
+	bool set_reg = false;
+
+	mutex_lock(&cfg80211_mutex);
 
 	mutex_lock(&reg_regdb_search_mutex);
 	while (!list_empty(&reg_regdb_search_list)) {
@@ -365,9 +368,7 @@ static void reg_regdb_search(struct work_struct *work)
 				r = reg_copy_regd(&regdom, curdom);
 				if (r)
 					break;
-				mutex_lock(&cfg80211_mutex);
-				set_regdom(regdom);
-				mutex_unlock(&cfg80211_mutex);
+				set_reg = true;
 				break;
 			}
 		}
@@ -375,6 +376,11 @@ static void reg_regdb_search(struct work_struct *work)
 		kfree(request);
 	}
 	mutex_unlock(&reg_regdb_search_mutex);
+
+	if (set_reg)
+		set_regdom(regdom);
+
+	mutex_unlock(&cfg80211_mutex);
 }
 
 static DECLARE_WORK(reg_regdb_work, reg_regdb_search);
@@ -504,9 +510,11 @@ static bool reg_does_bw_fit(const struct ieee80211_freq_range *freq_range,
  *
  * This lets us know if a specific frequency rule is or is not relevant to
  * a specific frequency's band. Bands are device specific and artificial
- * definitions (the "2.4 GHz band" and the "5 GHz band"), however it is
- * safe for now to assume that a frequency rule should not be part of a
- * frequency's band if the start freq or end freq are off by more than 2 GHz.
+ * definitions (the "2.4 GHz band", the "5 GHz band" and the "60GHz band"),
+ * however it is safe for now to assume that a frequency rule should not be
+ * part of a frequency's band if the start freq or end freq are off by more
+ * than 2 GHz for the 2.4 and 5 GHz bands, and by more than 10 GHz for the
+ * 60 GHz band.
  * This resolution can be lowered and should be considered as we add
  * regulatory rule support for other "bands".
  **/
@@ -514,9 +522,16 @@ static bool freq_in_rule_band(const struct ieee80211_freq_range *freq_range,
 	u32 freq_khz)
 {
 #define ONE_GHZ_IN_KHZ	1000000
-	if (abs(freq_khz - freq_range->start_freq_khz) <= (2 * ONE_GHZ_IN_KHZ))
+	/*
+	 * From 802.11ad: directional multi-gigabit (DMG):
+	 * Pertaining to operation in a frequency band containing a channel
+	 * with the Channel starting frequency above 45 GHz.
+	 */
+	u32 limit = freq_khz > 45 * ONE_GHZ_IN_KHZ ?
+			10 * ONE_GHZ_IN_KHZ : 2 * ONE_GHZ_IN_KHZ;
+	if (abs(freq_khz - freq_range->start_freq_khz) <= limit)
 		return true;
-	if (abs(freq_khz - freq_range->end_freq_khz) <= (2 * ONE_GHZ_IN_KHZ))
+	if (abs(freq_khz - freq_range->end_freq_khz) <= limit)
 		return true;
 	return false;
 #undef ONE_GHZ_IN_KHZ
@@ -680,6 +695,8 @@ static u32 map_regdom_flags(u32 rd_flags)
 		channel_flags |= IEEE80211_CHAN_NO_IBSS;
 	if (rd_flags & NL80211_RRF_DFS)
 		channel_flags |= IEEE80211_CHAN_RADAR;
+	if (rd_flags & NL80211_RRF_NO_OFDM)
+		channel_flags |= IEEE80211_CHAN_NO_OFDM;
 	return channel_flags;
 }
 
@@ -901,7 +918,21 @@ static void handle_channel(struct wiphy *wiphy,
 	chan->max_antenna_gain = min(chan->orig_mag,
 		(int) MBI_TO_DBI(power_rule->max_antenna_gain));
 	chan->max_reg_power = (int) MBM_TO_DBM(power_rule->max_eirp);
-	chan->max_power = min(chan->max_power, chan->max_reg_power);
+	if (chan->orig_mpwr) {
+		/*
+		 * Devices that have their own custom regulatory domain
+		 * but also use WIPHY_FLAG_STRICT_REGULATORY will follow the
+		 * passed country IE power settings.
+		 */
+		if (initiator == NL80211_REGDOM_SET_BY_COUNTRY_IE &&
+		    wiphy->flags & WIPHY_FLAG_CUSTOM_REGULATORY &&
+		    wiphy->flags & WIPHY_FLAG_STRICT_REGULATORY)
+			chan->max_power = chan->max_reg_power;
+		else
+			chan->max_power = min(chan->orig_mpwr,
+					      chan->max_reg_power);
+	} else
+		chan->max_power = chan->max_reg_power;
 }
 
 static void handle_band(struct wiphy *wiphy,
@@ -1885,6 +1916,7 @@ static void restore_custom_reg_settings(struct wiphy *wiphy)
 			chan->flags = chan->orig_flags;
 			chan->max_antenna_gain = chan->orig_mag;
 			chan->max_power = chan->orig_mpwr;
+			chan->beacon_found = false;
 		}
 	}
 }
@@ -1932,8 +1964,7 @@ static void restore_regulatory_settings(bool reset_user)
 			if (reg_request->initiator !=
 			    NL80211_REGDOM_SET_BY_USER)
 				continue;
-			list_del(&reg_request->list);
-			list_add_tail(&reg_request->list, &tmp_reg_req_list);
+			list_move_tail(&reg_request->list, &tmp_reg_req_list);
 		}
 	}
 	spin_unlock(&reg_requests_lock);
@@ -1992,8 +2023,7 @@ static void restore_regulatory_settings(bool reset_user)
 			      "into the queue\n",
 			      reg_request->alpha2[0],
 			      reg_request->alpha2[1]);
-		list_del(&reg_request->list);
-		list_add_tail(&reg_request->list, &reg_requests_list);
+		list_move_tail(&reg_request->list, &reg_requests_list);
 	}
 	spin_unlock(&reg_requests_lock);
 
@@ -2178,7 +2208,6 @@ static void print_regdomain_info(const struct ieee80211_regdomain *rd)
 static int __set_regdom(const struct ieee80211_regdomain *rd)
 {
 	const struct ieee80211_regdomain *intersected_rd = NULL;
-	struct cfg80211_registered_device *rdev = NULL;
 	struct wiphy *request_wiphy;
 	/* Some basic sanity checks first */
 
@@ -2290,24 +2319,7 @@ static int __set_regdom(const struct ieee80211_regdomain *rd)
 		return 0;
 	}
 
-	if (!intersected_rd)
-		return -EINVAL;
-
-	rdev = wiphy_to_dev(request_wiphy);
-
-	rdev->country_ie_alpha2[0] = rd->alpha2[0];
-	rdev->country_ie_alpha2[1] = rd->alpha2[1];
-	rdev->env = last_request->country_ie_env;
-
-	BUG_ON(intersected_rd == rd);
-
-	kfree(rd);
-	rd = NULL;
-
-	reset_regdomains(false);
-	cfg80211_regdomain = intersected_rd;
-
-	return 0;
+	return -EINVAL;
 }
 
 

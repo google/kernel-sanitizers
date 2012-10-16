@@ -1469,7 +1469,7 @@ static void srpt_handle_send_comp(struct srpt_rdma_ch *ch,
  *
  * XXX: what is now target_execute_cmd used to be asynchronous, and unmapping
  * the data that has been transferred via IB RDMA had to be postponed until the
- * check_stop_free() callback.  None of this is nessecary anymore and needs to
+ * check_stop_free() callback.  None of this is necessary anymore and needs to
  * be cleaned up.
  */
 static void srpt_handle_rdma_comp(struct srpt_rdma_ch *ch,
@@ -3564,16 +3564,6 @@ static int srpt_get_tcm_cmd_state(struct se_cmd *se_cmd)
 	return srpt_get_cmd_state(ioctx);
 }
 
-static u16 srpt_set_fabric_sense_len(struct se_cmd *cmd, u32 sense_length)
-{
-	return 0;
-}
-
-static u16 srpt_get_fabric_sense_len(void)
-{
-	return 0;
-}
-
 /**
  * srpt_parse_i_port_id() - Parse an initiator port ID.
  * @name: ASCII representation of a 128-bit initiator port ID.
@@ -3953,8 +3943,6 @@ static struct target_core_fabric_ops srpt_template = {
 	.queue_data_in			= srpt_queue_response,
 	.queue_status			= srpt_queue_status,
 	.queue_tm_rsp			= srpt_queue_response,
-	.get_fabric_sense_len		= srpt_get_fabric_sense_len,
-	.set_fabric_sense_len		= srpt_set_fabric_sense_len,
 	/*
 	 * Setup function pointers for generic logic in
 	 * target_core_fabric_configfs.c

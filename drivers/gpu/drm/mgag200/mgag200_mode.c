@@ -13,9 +13,8 @@
 
 #include <linux/delay.h>
 
-#include "drmP.h"
-#include "drm.h"
-#include "drm_crtc_helper.h"
+#include <drm/drmP.h>
+#include <drm/drm_crtc_helper.h>
 
 #include "mgag200_drv.h"
 
@@ -468,10 +467,11 @@ static int mga_g200er_set_plls(struct mga_device *mdev, long clock)
 {
 	unsigned int vcomax, vcomin, pllreffreq;
 	unsigned int delta, tmpdelta;
-	unsigned int testr, testn, testm, testo;
+	int testr, testn, testm, testo;
 	unsigned int p, m, n;
-	unsigned int computed;
+	unsigned int computed, vco;
 	int tmp;
+	const unsigned int m_div_val[] = { 1, 2, 4, 8 };
 
 	m = n = p = 0;
 	vcomax = 1488000;
@@ -490,12 +490,13 @@ static int mga_g200er_set_plls(struct mga_device *mdev, long clock)
 				if (delta == 0)
 					break;
 				for (testo = 5; testo < 33; testo++) {
-					computed = pllreffreq * (testn + 1) /
+					vco = pllreffreq * (testn + 1) /
 						(testr + 1);
-					if (computed < vcomin)
+					if (vco < vcomin)
 						continue;
-					if (computed > vcomax)
+					if (vco > vcomax)
 						continue;
+					computed = vco / (m_div_val[testm] * (testo + 1));
 					if (computed > clock)
 						tmpdelta = computed - clock;
 					else
@@ -1397,7 +1398,6 @@ static int mga_vga_get_modes(struct drm_connector *connector)
 	if (edid) {
 		drm_mode_connector_update_edid_property(connector, edid);
 		ret = drm_add_edid_modes(connector, edid);
-		connector->display_info.raw_edid = NULL;
 		kfree(edid);
 	}
 	return ret;

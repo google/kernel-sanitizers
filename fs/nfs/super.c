@@ -88,6 +88,7 @@ enum {
 	Opt_sharecache, Opt_nosharecache,
 	Opt_resvport, Opt_noresvport,
 	Opt_fscache, Opt_nofscache,
+	Opt_migration, Opt_nomigration,
 
 	/* Mount options that take integer arguments */
 	Opt_port,
@@ -147,6 +148,8 @@ static const match_table_t nfs_mount_option_tokens = {
 	{ Opt_noresvport, "noresvport" },
 	{ Opt_fscache, "fsc" },
 	{ Opt_nofscache, "nofsc" },
+	{ Opt_migration, "migration" },
+	{ Opt_nomigration, "nomigration" },
 
 	{ Opt_port, "port=%s" },
 	{ Opt_rsize, "rsize=%s" },
@@ -319,6 +322,34 @@ EXPORT_SYMBOL_GPL(nfs_sops);
 static void nfs4_validate_mount_flags(struct nfs_parsed_mount_data *);
 static int nfs4_validate_mount_data(void *options,
 	struct nfs_parsed_mount_data *args, const char *dev_name);
+
+struct file_system_type nfs4_fs_type = {
+	.owner		= THIS_MODULE,
+	.name		= "nfs4",
+	.mount		= nfs_fs_mount,
+	.kill_sb	= nfs_kill_super,
+	.fs_flags	= FS_RENAME_DOES_D_MOVE|FS_REVAL_DOT|FS_BINARY_MOUNTDATA,
+};
+EXPORT_SYMBOL_GPL(nfs4_fs_type);
+
+static int __init register_nfs4_fs(void)
+{
+	return register_filesystem(&nfs4_fs_type);
+}
+
+static void unregister_nfs4_fs(void)
+{
+	unregister_filesystem(&nfs4_fs_type);
+}
+#else
+static int __init register_nfs4_fs(void)
+{
+	return 0;
+}
+
+static void unregister_nfs4_fs(void)
+{
+}
 #endif
 
 static struct shrinker acl_shrinker = {
@@ -337,12 +368,18 @@ int __init register_nfs_fs(void)
 	if (ret < 0)
 		goto error_0;
 
-	ret = nfs_register_sysctl();
+	ret = register_nfs4_fs();
 	if (ret < 0)
 		goto error_1;
+
+	ret = nfs_register_sysctl();
+	if (ret < 0)
+		goto error_2;
 	register_shrinker(&acl_shrinker);
 	return 0;
 
+error_2:
+	unregister_nfs4_fs();
 error_1:
 	unregister_filesystem(&nfs_fs_type);
 error_0:
@@ -356,6 +393,7 @@ void __exit unregister_nfs_fs(void)
 {
 	unregister_shrinker(&acl_shrinker);
 	nfs_unregister_sysctl();
+	unregister_nfs4_fs();
 	unregister_filesystem(&nfs_fs_type);
 }
 
@@ -640,6 +678,9 @@ static void nfs_show_mount_options(struct seq_file *m, struct nfs_server *nfss,
 
 	if (nfss->options & NFS_OPTION_FSCACHE)
 		seq_printf(m, ",fsc");
+
+	if (nfss->options & NFS_OPTION_MIGRATION)
+		seq_printf(m, ",migration");
 
 	if (nfss->flags & NFS_MOUNT_LOOKUP_CACHE_NONEG) {
 		if (nfss->flags & NFS_MOUNT_LOOKUP_CACHE_NONE)
@@ -1071,7 +1112,7 @@ static int nfs_get_option_ul(substring_t args[], unsigned long *option)
 	string = match_strdup(args);
 	if (string == NULL)
 		return -ENOMEM;
-	rc = strict_strtoul(string, 10, option);
+	rc = kstrtoul(string, 10, option);
 	kfree(string);
 
 	return rc;
@@ -1207,6 +1248,12 @@ static int nfs_parse_mount_options(char *raw,
 			mnt->options &= ~NFS_OPTION_FSCACHE;
 			kfree(mnt->fscache_uniq);
 			mnt->fscache_uniq = NULL;
+			break;
+		case Opt_migration:
+			mnt->options |= NFS_OPTION_MIGRATION;
+			break;
+		case Opt_nomigration:
+			mnt->options &= NFS_OPTION_MIGRATION;
 			break;
 
 		/*
@@ -1500,9 +1547,13 @@ static int nfs_parse_mount_options(char *raw,
 	if (mnt->minorversion && mnt->version != 4)
 		goto out_minorversion_mismatch;
 
+	if (mnt->options & NFS_OPTION_MIGRATION &&
+	    mnt->version != 4 && mnt->minorversion != 0)
+		goto out_migration_misuse;
+
 	/*
 	 * verify that any proto=/mountproto= options match the address
-	 * familiies in the addr=/mountaddr= options.
+	 * families in the addr=/mountaddr= options.
 	 */
 	if (protofamily != AF_UNSPEC &&
 	    protofamily != mnt->nfs_server.address.ss_family)
@@ -1536,6 +1587,10 @@ out_invalid_value:
 out_minorversion_mismatch:
 	printk(KERN_INFO "NFS: mount option vers=%u does not support "
 			 "minorversion=%u\n", mnt->version, mnt->minorversion);
+	return 0;
+out_migration_misuse:
+	printk(KERN_INFO
+		"NFS: 'migration' not supported for this NFS version\n");
 	return 0;
 out_nomem:
 	printk(KERN_INFO "NFS: not enough memory to parse option\n");
@@ -1832,6 +1887,7 @@ static int nfs23_validate_mount_data(void *options,
 
 		memcpy(sap, &data->addr, sizeof(data->addr));
 		args->nfs_server.addrlen = sizeof(data->addr);
+		args->nfs_server.port = ntohs(data->addr.sin_port);
 		if (!nfs_verify_server_address(sap))
 			goto out_no_address;
 
@@ -2458,7 +2514,7 @@ EXPORT_SYMBOL_GPL(nfs_kill_super);
 /*
  * Clone an NFS2/3/4 server record on xdev traversal (FSID-change)
  */
-struct dentry *
+static struct dentry *
 nfs_xdev_mount(struct file_system_type *fs_type, int flags,
 		const char *dev_name, void *raw_data)
 {
@@ -2529,6 +2585,7 @@ static int nfs4_validate_mount_data(void *options,
 			return -EFAULT;
 		if (!nfs_verify_server_address(sap))
 			goto out_no_address;
+		args->nfs_server.port = ntohs(((struct sockaddr_in *)sap)->sin_port);
 
 		if (data->auth_flavourlen) {
 			if (data->auth_flavourlen > 1)
@@ -2605,6 +2662,7 @@ unsigned int nfs_idmap_cache_timeout = 600;
 bool nfs4_disable_idmapping = true;
 unsigned short max_session_slots = NFS4_DEF_SLOT_TABLE_SIZE;
 unsigned short send_implementation_id = 1;
+char nfs4_client_id_uniquifier[NFS4_CLIENT_ID_UNIQ_LEN] = "";
 
 EXPORT_SYMBOL_GPL(nfs_callback_set_tcpport);
 EXPORT_SYMBOL_GPL(nfs_callback_tcpport);
@@ -2612,6 +2670,7 @@ EXPORT_SYMBOL_GPL(nfs_idmap_cache_timeout);
 EXPORT_SYMBOL_GPL(nfs4_disable_idmapping);
 EXPORT_SYMBOL_GPL(max_session_slots);
 EXPORT_SYMBOL_GPL(send_implementation_id);
+EXPORT_SYMBOL_GPL(nfs4_client_id_uniquifier);
 
 #define NFS_CALLBACK_MAXPORTNR (65535U)
 
@@ -2622,7 +2681,7 @@ static int param_set_portnr(const char *val, const struct kernel_param *kp)
 
 	if (!val)
 		return -EINVAL;
-	ret = strict_strtoul(val, 0, &num);
+	ret = kstrtoul(val, 0, &num);
 	if (ret == -EINVAL || num > NFS_CALLBACK_MAXPORTNR)
 		return -EINVAL;
 	*((unsigned int *)kp->arg) = num;
@@ -2637,6 +2696,8 @@ static struct kernel_param_ops param_ops_portnr = {
 module_param_named(callback_tcpport, nfs_callback_set_tcpport, portnr, 0644);
 module_param(nfs_idmap_cache_timeout, int, 0644);
 module_param(nfs4_disable_idmapping, bool, 0644);
+module_param_string(nfs4_unique_id, nfs4_client_id_uniquifier,
+			NFS4_CLIENT_ID_UNIQ_LEN, 0600);
 MODULE_PARM_DESC(nfs4_disable_idmapping,
 		"Turn off NFSv4 idmapping when using 'sec=sys'");
 module_param(max_session_slots, ushort, 0644);
@@ -2645,4 +2706,7 @@ MODULE_PARM_DESC(max_session_slots, "Maximum number of outstanding NFSv4.1 "
 module_param(send_implementation_id, ushort, 0644);
 MODULE_PARM_DESC(send_implementation_id,
 		"Send implementation ID with NFSv4.1 exchange_id");
+MODULE_PARM_DESC(nfs4_unique_id, "nfs_client_id4 uniquifier string");
+MODULE_ALIAS("nfs4");
+
 #endif /* CONFIG_NFS_V4 */

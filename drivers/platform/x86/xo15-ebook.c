@@ -77,10 +77,12 @@ static void ebook_switch_notify(struct acpi_device *device, u32 event)
 	}
 }
 
+#ifdef CONFIG_PM_SLEEP
 static int ebook_switch_resume(struct device *dev)
 {
 	return ebook_send_state(to_acpi_device(dev));
 }
+#endif
 
 static SIMPLE_DEV_PM_OPS(ebook_switch_pm, NULL, ebook_switch_resume);
 
@@ -168,16 +170,4 @@ static struct acpi_driver xo15_ebook_driver = {
 	},
 	.drv.pm = &ebook_switch_pm,
 };
-
-static int __init xo15_ebook_init(void)
-{
-	return acpi_bus_register_driver(&xo15_ebook_driver);
-}
-
-static void __exit xo15_ebook_exit(void)
-{
-	acpi_bus_unregister_driver(&xo15_ebook_driver);
-}
-
-module_init(xo15_ebook_init);
-module_exit(xo15_ebook_exit);
+module_acpi_driver(xo15_ebook_driver);

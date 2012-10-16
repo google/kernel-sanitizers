@@ -63,7 +63,7 @@ static int lp8788_led_init_device(struct lp8788_led *led,
 	/* scale configuration */
 	addr = LP8788_ISINK_CTRL;
 	mask = 1 << (cfg->num + LP8788_ISINK_SCALE_OFFSET);
-	val = cfg->scale << cfg->num;
+	val = cfg->scale << (cfg->num + LP8788_ISINK_SCALE_OFFSET);
 	ret = lp8788_update_bits(led->lp, addr, mask, val);
 	if (ret)
 		return ret;
@@ -172,7 +172,7 @@ static int __devexit lp8788_led_remove(struct platform_device *pdev)
 	struct lp8788_led *led = platform_get_drvdata(pdev);
 
 	led_classdev_unregister(&led->led_dev);
-	flush_work_sync(&led->work);
+	flush_work(&led->work);
 
 	return 0;
 }

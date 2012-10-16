@@ -705,6 +705,7 @@ out_err:
 	return rc;
 }
 
+#if defined(CONFIG_PNP) || defined(CONFIG_PM_SLEEP)
 static void tpm_tis_reenable_interrupts(struct tpm_chip *chip)
 {
 	u32 intmask;
@@ -725,7 +726,7 @@ static void tpm_tis_reenable_interrupts(struct tpm_chip *chip)
 	iowrite32(intmask,
 		  chip->vendor.iobase + TPM_INT_ENABLE(chip->vendor.locality));
 }
-
+#endif
 
 #ifdef CONFIG_PNP
 static int __devinit tpm_tis_pnp_init(struct pnp_dev *pnp_dev,
@@ -807,6 +808,7 @@ module_param_string(hid, tpm_pnp_tbl[TIS_HID_USR_IDX].id,
 MODULE_PARM_DESC(hid, "Set additional specific HID for this driver to probe");
 #endif
 
+#ifdef CONFIG_PM_SLEEP
 static int tpm_tis_resume(struct device *dev)
 {
 	struct tpm_chip *chip = dev_get_drvdata(dev);
@@ -816,6 +818,7 @@ static int tpm_tis_resume(struct device *dev)
 
 	return tpm_pm_resume(dev);
 }
+#endif
 
 static SIMPLE_DEV_PM_OPS(tpm_tis_pm, tpm_pm_suspend, tpm_tis_resume);
 

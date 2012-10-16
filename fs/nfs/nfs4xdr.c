@@ -447,12 +447,14 @@ static int nfs4_stat_to_errno(int);
 				encode_sequence_maxsz + \
 				encode_putfh_maxsz + \
 				encode_open_maxsz + \
+				encode_access_maxsz + \
 				encode_getfh_maxsz + \
 				encode_getattr_maxsz)
 #define NFS4_dec_open_sz        (compound_decode_hdr_maxsz + \
 				decode_sequence_maxsz + \
 				decode_putfh_maxsz + \
 				decode_open_maxsz + \
+				decode_access_maxsz + \
 				decode_getfh_maxsz + \
 				decode_getattr_maxsz)
 #define NFS4_enc_open_confirm_sz \
@@ -467,11 +469,13 @@ static int nfs4_stat_to_errno(int);
 					encode_sequence_maxsz + \
 					encode_putfh_maxsz + \
 					encode_open_maxsz + \
+					encode_access_maxsz + \
 					encode_getattr_maxsz)
 #define NFS4_dec_open_noattr_sz	(compound_decode_hdr_maxsz + \
 					decode_sequence_maxsz + \
 					decode_putfh_maxsz + \
 					decode_open_maxsz + \
+					decode_access_maxsz + \
 					decode_getattr_maxsz)
 #define NFS4_enc_open_downgrade_sz \
 				(compound_encode_hdr_maxsz + \
@@ -1509,8 +1513,12 @@ static void encode_open_stateid(struct xdr_stream *xdr,
 	nfs4_stateid stateid;
 
 	if (ctx->state != NULL) {
+		const struct nfs_lockowner *lockowner = NULL;
+
+		if (l_ctx != NULL)
+			lockowner = &l_ctx->lockowner;
 		nfs4_select_rw_stateid(&stateid, ctx->state,
-				fmode, l_ctx->lockowner, l_ctx->pid);
+				fmode, lockowner);
 		if (zero_seqid)
 			stateid.seqid = 0;
 		encode_nfs4_stateid(xdr, &stateid);
@@ -2216,6 +2224,8 @@ static void nfs4_xdr_enc_open(struct rpc_rqst *req, struct xdr_stream *xdr,
 	encode_putfh(xdr, args->fh, &hdr);
 	encode_open(xdr, args, &hdr);
 	encode_getfh(xdr, &hdr);
+	if (args->access)
+		encode_access(xdr, args->access, &hdr);
 	encode_getfattr_open(xdr, args->bitmask, args->open_bitmap, &hdr);
 	encode_nops(&hdr);
 }
@@ -2252,7 +2262,9 @@ static void nfs4_xdr_enc_open_noattr(struct rpc_rqst *req,
 	encode_sequence(xdr, &args->seq_args, &hdr);
 	encode_putfh(xdr, args->fh, &hdr);
 	encode_open(xdr, args, &hdr);
-	encode_getfattr(xdr, args->bitmask, &hdr);
+	if (args->access)
+		encode_access(xdr, args->access, &hdr);
+	encode_getfattr_open(xdr, args->bitmask, args->open_bitmap, &hdr);
 	encode_nops(&hdr);
 }
 
@@ -4095,7 +4107,7 @@ out_overflow:
 	return -EIO;
 }
 
-static int decode_access(struct xdr_stream *xdr, struct nfs4_accessres *access)
+static int decode_access(struct xdr_stream *xdr, u32 *supported, u32 *access)
 {
 	__be32 *p;
 	uint32_t supp, acc;
@@ -4109,8 +4121,8 @@ static int decode_access(struct xdr_stream *xdr, struct nfs4_accessres *access)
 		goto out_overflow;
 	supp = be32_to_cpup(p++);
 	acc = be32_to_cpup(p);
-	access->supported = supp;
-	access->access = acc;
+	*supported = supp;
+	*access = acc;
 	return 0;
 out_overflow:
 	print_overflow_msg(__func__, xdr);
@@ -5045,22 +5057,19 @@ static int decode_getacl(struct xdr_stream *xdr, struct rpc_rqst *req,
 			 struct nfs_getaclres *res)
 {
 	unsigned int savep;
-	__be32 *bm_p;
 	uint32_t attrlen,
 		 bitmap[3] = {0};
 	int status;
-	size_t page_len = xdr->buf->page_len;
+	unsigned int pg_offset;
 
 	res->acl_len = 0;
 	if ((status = decode_op_hdr(xdr, OP_GETATTR)) != 0)
 		goto out;
 
-	bm_p = xdr->p;
-	res->acl_data_offset = be32_to_cpup(bm_p) + 2;
-	res->acl_data_offset <<= 2;
-	/* Check if the acl data starts beyond the allocated buffer */
-	if (res->acl_data_offset > page_len)
-		return -ERANGE;
+	xdr_enter_page(xdr, xdr->buf->page_len);
+
+	/* Calculate the offset of the page data */
+	pg_offset = xdr->buf->head[0].iov_len;
 
 	if ((status = decode_attr_bitmap(xdr, bitmap)) != 0)
 		goto out;
@@ -5074,23 +5083,16 @@ static int decode_getacl(struct xdr_stream *xdr, struct rpc_rqst *req,
 		/* The bitmap (xdr len + bitmaps) and the attr xdr len words
 		 * are stored with the acl data to handle the problem of
 		 * variable length bitmaps.*/
-		xdr->p = bm_p;
-
-		/* We ignore &savep and don't do consistency checks on
-		 * the attr length.  Let userspace figure it out.... */
-		attrlen += res->acl_data_offset;
-		if (attrlen > page_len) {
-			if (res->acl_flags & NFS4_ACL_LEN_REQUEST) {
-				/* getxattr interface called with a NULL buf */
-				res->acl_len = attrlen;
-				goto out;
-			}
-			dprintk("NFS: acl reply: attrlen %u > page_len %zu\n",
-					attrlen, page_len);
-			return -EINVAL;
-		}
-		xdr_read_pages(xdr, attrlen);
+		res->acl_data_offset = xdr_stream_pos(xdr) - pg_offset;
 		res->acl_len = attrlen;
+
+		/* Check for receive buffer overflow */
+		if (res->acl_len > (xdr->nwords << 2) ||
+		    res->acl_len + res->acl_data_offset > xdr->buf->page_len) {
+			res->acl_flags |= NFS4_ACL_TRUNC;
+			dprintk("NFS: acl reply: attrlen %u > page_len %u\n",
+					attrlen, xdr->nwords << 2);
+		}
 	} else
 		status = -EOPNOTSUPP;
 
@@ -5652,7 +5654,8 @@ static int decode_getdeviceinfo(struct xdr_stream *xdr,
 	 * and places the remaining xdr data in xdr_buf->tail
 	 */
 	pdev->mincount = be32_to_cpup(p);
-	xdr_read_pages(xdr, pdev->mincount); /* include space for the length */
+	if (xdr_read_pages(xdr, pdev->mincount) != pdev->mincount)
+		goto out_overflow;
 
 	/* Parse notification bitmap, verifying that it is zero. */
 	p = xdr_inline_decode(xdr, 4);
@@ -5897,7 +5900,7 @@ static int nfs4_xdr_dec_access(struct rpc_rqst *rqstp, struct xdr_stream *xdr,
 	status = decode_putfh(xdr);
 	if (status != 0)
 		goto out;
-	status = decode_access(xdr, res);
+	status = decode_access(xdr, &res->supported, &res->access);
 	if (status != 0)
 		goto out;
 	decode_getfattr(xdr, res->fattr, res->server);
@@ -6235,8 +6238,11 @@ static int nfs4_xdr_dec_open(struct rpc_rqst *rqstp, struct xdr_stream *xdr,
 	status = decode_open(xdr, res);
 	if (status)
 		goto out;
-	if (decode_getfh(xdr, &res->fh) != 0)
+	status = decode_getfh(xdr, &res->fh);
+	if (status)
 		goto out;
+	if (res->access_request)
+		decode_access(xdr, &res->access_supported, &res->access_result);
 	decode_getfattr(xdr, res->f_attr, res->server);
 out:
 	return status;
@@ -6285,6 +6291,8 @@ static int nfs4_xdr_dec_open_noattr(struct rpc_rqst *rqstp,
 	status = decode_open(xdr, res);
 	if (status)
 		goto out;
+	if (res->access_request)
+		decode_access(xdr, &res->access_supported, &res->access_result);
 	decode_getfattr(xdr, res->f_attr, res->server);
 out:
 	return status;

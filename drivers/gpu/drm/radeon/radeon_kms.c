@@ -25,10 +25,10 @@
  *          Alex Deucher
  *          Jerome Glisse
  */
-#include "drmP.h"
-#include "drm_sarea.h"
+#include <drm/drmP.h>
 #include "radeon.h"
-#include "radeon_drm.h"
+#include <drm/radeon_drm.h>
+#include "radeon_asic.h"
 
 #include <linux/vga_switcheroo.h>
 #include <linux/slab.h>
@@ -50,6 +50,7 @@ int radeon_driver_unload_kms(struct drm_device *dev)
 
 	if (rdev == NULL)
 		return 0;
+	radeon_acpi_fini(rdev);
 	radeon_modeset_fini(rdev);
 	radeon_device_fini(rdev);
 	kfree(rdev);
@@ -102,11 +103,6 @@ int radeon_driver_load_kms(struct drm_device *dev, unsigned long flags)
 		goto out;
 	}
 
-	/* Call ACPI methods */
-	acpi_status = radeon_acpi_init(rdev);
-	if (acpi_status)
-		dev_dbg(&dev->pdev->dev, "Error during ACPI methods call\n");
-
 	/* Again modeset_init should fail only on fatal error
 	 * otherwise it should provide enough functionalities
 	 * for shadowfb to run
@@ -114,6 +110,17 @@ int radeon_driver_load_kms(struct drm_device *dev, unsigned long flags)
 	r = radeon_modeset_init(rdev);
 	if (r)
 		dev_err(&dev->pdev->dev, "Fatal error during modeset init\n");
+
+	/* Call ACPI methods: require modeset init
+	 * but failure is not fatal
+	 */
+	if (!r) {
+		acpi_status = radeon_acpi_init(rdev);
+		if (acpi_status)
+		dev_dbg(&dev->pdev->dev,
+				"Error during ACPI methods call\n");
+	}
+
 out:
 	if (r)
 		radeon_driver_unload_kms(dev);
@@ -167,17 +174,39 @@ static void radeon_set_filp_rights(struct drm_device *dev,
 int radeon_info_ioctl(struct drm_device *dev, void *data, struct drm_file *filp)
 {
 	struct radeon_device *rdev = dev->dev_private;
-	struct drm_radeon_info *info;
+	struct drm_radeon_info *info = data;
 	struct radeon_mode_info *minfo = &rdev->mode_info;
-	uint32_t *value_ptr;
-	uint32_t value;
+	uint32_t value, *value_ptr;
+	uint64_t value64, *value_ptr64;
 	struct drm_crtc *crtc;
 	int i, found;
 
-	info = data;
+	/* TIMESTAMP is a 64-bit value, needs special handling. */
+	if (info->request == RADEON_INFO_TIMESTAMP) {
+		if (rdev->family >= CHIP_R600) {
+			value_ptr64 = (uint64_t*)((unsigned long)info->value);
+			if (rdev->family >= CHIP_TAHITI) {
+				value64 = si_get_gpu_clock(rdev);
+			} else {
+				value64 = r600_get_gpu_clock(rdev);
+			}
+
+			if (DRM_COPY_TO_USER(value_ptr64, &value64, sizeof(value64))) {
+				DRM_ERROR("copy_to_user %s:%u\n", __func__, __LINE__);
+				return -EFAULT;
+			}
+			return 0;
+		} else {
+			DRM_DEBUG_KMS("timestamp is r6xx+ only!\n");
+			return -EINVAL;
+		}
+	}
+
 	value_ptr = (uint32_t *)((unsigned long)info->value);
-	if (DRM_COPY_FROM_USER(&value, value_ptr, sizeof(value)))
+	if (DRM_COPY_FROM_USER(&value, value_ptr, sizeof(value))) {
+		DRM_ERROR("copy_from_user %s:%u\n", __func__, __LINE__);
 		return -EFAULT;
+	}
 
 	switch (info->request) {
 	case RADEON_INFO_DEVICE_ID:
@@ -337,7 +366,7 @@ int radeon_info_ioctl(struct drm_device *dev, void *data, struct drm_file *filp)
 		return -EINVAL;
 	}
 	if (DRM_COPY_TO_USER(value_ptr, &value, sizeof(uint32_t))) {
-		DRM_ERROR("copy_to_user\n");
+		DRM_ERROR("copy_to_user %s:%u\n", __func__, __LINE__);
 		return -EFAULT;
 	}
 	return 0;

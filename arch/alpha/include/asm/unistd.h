@@ -465,10 +465,12 @@
 #define __NR_setns			501
 #define __NR_accept4			502
 #define __NR_sendmmsg			503
+#define __NR_process_vm_readv		504
+#define __NR_process_vm_writev		505
 
 #ifdef __KERNEL__
 
-#define NR_SYSCALLS			504
+#define NR_SYSCALLS			506
 
 #define __ARCH_WANT_OLD_READDIR
 #define __ARCH_WANT_STAT64
@@ -479,6 +481,7 @@
 #define __ARCH_WANT_SYS_OLDUMOUNT
 #define __ARCH_WANT_SYS_SIGPENDING
 #define __ARCH_WANT_SYS_RT_SIGSUSPEND
+#define __ARCH_WANT_SYS_EXECVE
 
 /* "Conditional" syscalls.  What we want is
 

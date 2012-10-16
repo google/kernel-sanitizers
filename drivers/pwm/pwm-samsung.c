@@ -126,9 +126,6 @@ static int s3c_pwm_config(struct pwm_chip *chip, struct pwm_device *pwm,
 	if (period_ns > NS_IN_HZ || duty_ns > NS_IN_HZ)
 		return -ERANGE;
 
-	if (duty_ns > period_ns)
-		return -EINVAL;
-
 	if (period_ns == s3c->period_ns &&
 	    duty_ns == s3c->duty_ns)
 		return 0;
@@ -225,6 +222,7 @@ static int s3c_pwm_probe(struct platform_device *pdev)
 
 	/* calculate base of control bits in TCON */
 	s3c->tcon_base = id == 0 ? 0 : (id * 4) + 4;
+	s3c->chip.dev = &pdev->dev;
 	s3c->chip.ops = &s3c_pwm_ops;
 	s3c->chip.base = -1;
 	s3c->chip.npwm = 1;

@@ -703,13 +703,16 @@ static ssize_t fuse_file_aio_read(struct kiocb *iocb, const struct iovec *iov,
 				  unsigned long nr_segs, loff_t pos)
 {
 	struct inode *inode = iocb->ki_filp->f_mapping->host;
+	struct fuse_conn *fc = get_fuse_conn(inode);
 
-	if (pos + iov_length(iov, nr_segs) > i_size_read(inode)) {
+	/*
+	 * In auto invalidate mode, always update attributes on read.
+	 * Otherwise, only update if we attempt to read past EOF (to ensure
+	 * i_size is up to date).
+	 */
+	if (fc->auto_inval_data ||
+	    (pos + iov_length(iov, nr_segs) > i_size_read(inode))) {
 		int err;
-		/*
-		 * If trying to read past EOF, make sure the i_size
-		 * attribute is up-to-date.
-		 */
 		err = fuse_update_attributes(inode, NULL, iocb->ki_filp, NULL);
 		if (err)
 			return err;
@@ -1376,6 +1379,7 @@ static const struct vm_operations_struct fuse_file_vm_ops = {
 	.close		= fuse_vma_close,
 	.fault		= filemap_fault,
 	.page_mkwrite	= fuse_page_mkwrite,
+	.remap_pages	= generic_file_remap_pages,
 };
 
 static int fuse_file_mmap(struct file *file, struct vm_area_struct *vma)
@@ -1700,7 +1704,7 @@ static int fuse_verify_ioctl_iov(struct iovec *iov, size_t count)
 	size_t n;
 	u32 max = FUSE_MAX_PAGES_PER_REQ << PAGE_SHIFT;
 
-	for (n = 0; n < count; n++) {
+	for (n = 0; n < count; n++, iov++) {
 		if (iov->iov_len > (size_t) max)
 			return -ENOMEM;
 		max -= iov->iov_len;

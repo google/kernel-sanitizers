@@ -47,11 +47,12 @@
 
 /* Current ACPICA subsystem version in YYYYMMDD format */
 
-#define ACPI_CA_VERSION                 0x20120711
+#define ACPI_CA_VERSION                 0x20120913
 
-#include "acconfig.h"
-#include "actypes.h"
-#include "actbl.h"
+#include <acpi/acconfig.h>
+#include <acpi/actypes.h>
+#include <acpi/actbl.h>
+#include <acpi/acbuffer.h>
 
 extern u8 acpi_gbl_permanent_mmap;
 
@@ -143,6 +144,10 @@ u32
 acpi_check_address_range(acpi_adr_space_type space_id,
 			 acpi_physical_address address,
 			 acpi_size length, u8 warn);
+
+acpi_status
+acpi_decode_pld_buffer(u8 *in_buffer,
+		       acpi_size length, struct acpi_pld_info **return_buffer);
 
 /*
  * ACPI Memory management
@@ -491,11 +496,11 @@ acpi_get_sleep_type_data(u8 sleep_state, u8 * slp_typ_a, u8 * slp_typ_b);
 
 acpi_status acpi_enter_sleep_state_prep(u8 sleep_state);
 
-acpi_status asmlinkage acpi_enter_sleep_state(u8 sleep_state, u8 flags);
+acpi_status asmlinkage acpi_enter_sleep_state(u8 sleep_state);
 
 ACPI_HW_DEPENDENT_RETURN_STATUS(acpi_status asmlinkage acpi_enter_sleep_state_s4bios(void))
 
-acpi_status acpi_leave_sleep_state_prep(u8 sleep_state, u8 flags);
+acpi_status acpi_leave_sleep_state_prep(u8 sleep_state);
 
 acpi_status acpi_leave_sleep_state(u8 sleep_state);
 

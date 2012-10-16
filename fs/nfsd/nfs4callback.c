@@ -651,12 +651,12 @@ static int setup_callback_client(struct nfs4_client *clp, struct nfs4_cb_conn *c
 
 	if (clp->cl_minorversion == 0) {
 		if (!clp->cl_cred.cr_principal &&
-				(clp->cl_flavor >= RPC_AUTH_GSS_KRB5))
+				(clp->cl_cred.cr_flavor >= RPC_AUTH_GSS_KRB5))
 			return -EINVAL;
 		args.client_name = clp->cl_cred.cr_principal;
 		args.prognumber	= conn->cb_prog,
 		args.protocol = XPRT_TRANSPORT_TCP;
-		args.authflavor = clp->cl_flavor;
+		args.authflavor = clp->cl_cred.cr_flavor;
 		clp->cl_cb_ident = conn->cb_ident;
 	} else {
 		if (!conn->cb_xprt)
@@ -1028,7 +1028,6 @@ void nfsd4_cb_recall(struct nfs4_delegation *dp)
 	cb->cb_msg.rpc_cred = callback_cred;
 
 	cb->cb_ops = &nfsd4_cb_recall_ops;
-	dp->dl_retries = 1;
 
 	INIT_LIST_HEAD(&cb->cb_per_client);
 	cb->cb_done = true;

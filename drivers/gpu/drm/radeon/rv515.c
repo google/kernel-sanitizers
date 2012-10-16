@@ -27,7 +27,7 @@
  */
 #include <linux/seq_file.h>
 #include <linux/slab.h>
-#include "drmP.h"
+#include <drm/drmP.h>
 #include "rv515d.h"
 #include "radeon.h"
 #include "radeon_asic.h"
@@ -35,9 +35,9 @@
 #include "rv515_reg_safe.h"
 
 /* This files gather functions specifics to: rv515 */
-int rv515_debugfs_pipes_info_init(struct radeon_device *rdev);
-int rv515_debugfs_ga_info_init(struct radeon_device *rdev);
-void rv515_gpu_init(struct radeon_device *rdev);
+static int rv515_debugfs_pipes_info_init(struct radeon_device *rdev);
+static int rv515_debugfs_ga_info_init(struct radeon_device *rdev);
+static void rv515_gpu_init(struct radeon_device *rdev);
 int rv515_mc_wait_for_idle(struct radeon_device *rdev);
 
 void rv515_debugfs(struct radeon_device *rdev)
@@ -143,7 +143,7 @@ void rv515_vga_render_disable(struct radeon_device *rdev)
 		RREG32(R_000300_VGA_RENDER_CONTROL) & C_000300_VGA_VSTATUS_CNTL);
 }
 
-void rv515_gpu_init(struct radeon_device *rdev)
+static void rv515_gpu_init(struct radeon_device *rdev)
 {
 	unsigned pipe_select_current, gb_pipe_select, tmp;
 
@@ -189,7 +189,7 @@ static void rv515_vram_get_type(struct radeon_device *rdev)
 	}
 }
 
-void rv515_mc_init(struct radeon_device *rdev)
+static void rv515_mc_init(struct radeon_device *rdev)
 {
 
 	rv515_vram_get_type(rdev);
@@ -261,7 +261,7 @@ static struct drm_info_list rv515_ga_info_list[] = {
 };
 #endif
 
-int rv515_debugfs_pipes_info_init(struct radeon_device *rdev)
+static int rv515_debugfs_pipes_info_init(struct radeon_device *rdev)
 {
 #if defined(CONFIG_DEBUG_FS)
 	return radeon_debugfs_add_files(rdev, rv515_pipes_info_list, 1);
@@ -270,7 +270,7 @@ int rv515_debugfs_pipes_info_init(struct radeon_device *rdev)
 #endif
 }
 
-int rv515_debugfs_ga_info_init(struct radeon_device *rdev)
+static int rv515_debugfs_ga_info_init(struct radeon_device *rdev)
 {
 #if defined(CONFIG_DEBUG_FS)
 	return radeon_debugfs_add_files(rdev, rv515_ga_info_list, 1);
@@ -281,12 +281,8 @@ int rv515_debugfs_ga_info_init(struct radeon_device *rdev)
 
 void rv515_mc_stop(struct radeon_device *rdev, struct rv515_mc_save *save)
 {
-	save->d1vga_control = RREG32(R_000330_D1VGA_CONTROL);
-	save->d2vga_control = RREG32(R_000338_D2VGA_CONTROL);
 	save->vga_render_control = RREG32(R_000300_VGA_RENDER_CONTROL);
 	save->vga_hdp_control = RREG32(R_000328_VGA_HDP_CONTROL);
-	save->d1crtc_control = RREG32(R_006080_D1CRTC_CONTROL);
-	save->d2crtc_control = RREG32(R_006880_D2CRTC_CONTROL);
 
 	/* Stop all video */
 	WREG32(R_0068E8_D2CRTC_UPDATE_LOCK, 0);
@@ -311,19 +307,10 @@ void rv515_mc_resume(struct radeon_device *rdev, struct rv515_mc_save *save)
 	/* Unlock host access */
 	WREG32(R_000328_VGA_HDP_CONTROL, save->vga_hdp_control);
 	mdelay(1);
-	/* Restore video state */
-	WREG32(R_000330_D1VGA_CONTROL, save->d1vga_control);
-	WREG32(R_000338_D2VGA_CONTROL, save->d2vga_control);
-	WREG32(R_0060E8_D1CRTC_UPDATE_LOCK, 1);
-	WREG32(R_0068E8_D2CRTC_UPDATE_LOCK, 1);
-	WREG32(R_006080_D1CRTC_CONTROL, save->d1crtc_control);
-	WREG32(R_006880_D2CRTC_CONTROL, save->d2crtc_control);
-	WREG32(R_0060E8_D1CRTC_UPDATE_LOCK, 0);
-	WREG32(R_0068E8_D2CRTC_UPDATE_LOCK, 0);
 	WREG32(R_000300_VGA_RENDER_CONTROL, save->vga_render_control);
 }
 
-void rv515_mc_program(struct radeon_device *rdev)
+static void rv515_mc_program(struct radeon_device *rdev)
 {
 	struct rv515_mc_save save;
 
@@ -800,7 +787,7 @@ struct rv515_watermark {
 	fixed20_12 sclk;
 };
 
-void rv515_crtc_bandwidth_compute(struct radeon_device *rdev,
+static void rv515_crtc_bandwidth_compute(struct radeon_device *rdev,
 				  struct radeon_crtc *crtc,
 				  struct rv515_watermark *wm)
 {

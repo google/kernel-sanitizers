@@ -22,9 +22,10 @@
 #include <linux/err.h>
 #include <linux/clk.h>
 #include <linux/io.h>
-#include <linux/regulator/consumer.h>
 #include <linux/pm_runtime.h>
 #include <linux/platform_data/i2c-nomadik.h>
+#include <linux/of.h>
+#include <linux/of_i2c.h>
 
 #define DRIVER_NAME "nmk-i2c"
 
@@ -146,7 +147,6 @@ struct i2c_nmk_client {
  * @stop: stop condition.
  * @xfer_complete: acknowledge completion for a I2C message.
  * @result: controller propogated result.
- * @regulator: pointer to i2c regulator.
  * @busy: Busy doing transfer.
  */
 struct nmk_i2c_dev {
@@ -160,7 +160,6 @@ struct nmk_i2c_dev {
 	int				stop;
 	struct completion		xfer_complete;
 	int				result;
-	struct regulator		*regulator;
 	bool				busy;
 };
 
@@ -349,10 +348,6 @@ static void setup_i2c_controller(struct nmk_i2c_dev *dev)
 	writel(dev->cfg.slsu << 16, dev->virtbase + I2C_SCR);
 
 	i2c_clk = clk_get_rate(dev->clk);
-
-	/* fallback to std. mode if machine has not provided it */
-	if (dev->cfg.clk_freq == 0)
-		dev->cfg.clk_freq = 100000;
 
 	/*
 	 * The spec says, in case of std. mode the divider is
@@ -647,8 +642,6 @@ static int nmk_i2c_xfer(struct i2c_adapter *i2c_adap,
 
 	dev->busy = true;
 
-	if (dev->regulator)
-		regulator_enable(dev->regulator);
 	pm_runtime_get_sync(&dev->adev->dev);
 
 	clk_enable(dev->clk);
@@ -680,8 +673,6 @@ static int nmk_i2c_xfer(struct i2c_adapter *i2c_adap,
 out:
 	clk_disable(dev->clk);
 	pm_runtime_put_sync(&dev->adev->dev);
-	if (dev->regulator)
-		regulator_disable(dev->regulator);
 
 	dev->busy = false;
 
@@ -911,20 +902,56 @@ static const struct i2c_algorithm nmk_i2c_algo = {
 	.functionality	= nmk_i2c_functionality
 };
 
+static struct nmk_i2c_controller u8500_i2c = {
+	/*
+	 * Slave data setup time; 250ns, 100ns, and 10ns, which
+	 * is 14, 6 and 2 respectively for a 48Mhz i2c clock.
+	 */
+	.slsu           = 0xe,
+	.tft            = 1,      /* Tx FIFO threshold */
+	.rft            = 8,      /* Rx FIFO threshold */
+	.clk_freq       = 400000, /* fast mode operation */
+	.timeout        = 200,    /* Slave response timeout(ms) */
+	.sm             = I2C_FREQ_MODE_FAST,
+};
+
+static void nmk_i2c_of_probe(struct device_node *np,
+			struct nmk_i2c_controller *pdata)
+{
+	of_property_read_u32(np, "clock-frequency", &pdata->clk_freq);
+
+	/* This driver only supports 'standard' and 'fast' modes of operation. */
+	if (pdata->clk_freq <= 100000)
+		pdata->sm = I2C_FREQ_MODE_STANDARD;
+	else
+		pdata->sm = I2C_FREQ_MODE_FAST;
+}
+
 static atomic_t adapter_id = ATOMIC_INIT(0);
 
 static int nmk_i2c_probe(struct amba_device *adev, const struct amba_id *id)
 {
 	int ret = 0;
-	struct nmk_i2c_controller *pdata =
-			adev->dev.platform_data;
+	struct nmk_i2c_controller *pdata = adev->dev.platform_data;
+	struct device_node *np = adev->dev.of_node;
 	struct nmk_i2c_dev	*dev;
 	struct i2c_adapter *adap;
 
 	if (!pdata) {
-		dev_warn(&adev->dev, "no platform data\n");
-		return -ENODEV;
+		if (np) {
+			pdata = devm_kzalloc(&adev->dev, sizeof(*pdata), GFP_KERNEL);
+			if (!pdata) {
+				ret = -ENOMEM;
+				goto err_no_mem;
+			}
+			/* Provide the default configuration as a base. */
+			memcpy(pdata, &u8500_i2c, sizeof(struct nmk_i2c_controller));
+			nmk_i2c_of_probe(np, pdata);
+		} else
+			/* No i2c configuration found, using the default. */
+			pdata = &u8500_i2c;
 	}
+
 	dev = kzalloc(sizeof(struct nmk_i2c_dev), GFP_KERNEL);
 	if (!dev) {
 		dev_err(&adev->dev, "cannot allocate memory\n");
@@ -949,12 +976,6 @@ static int nmk_i2c_probe(struct amba_device *adev, const struct amba_id *id)
 		goto err_irq;
 	}
 
-	dev->regulator = regulator_get(&adev->dev, "v-i2c");
-	if (IS_ERR(dev->regulator)) {
-		dev_warn(&adev->dev, "could not get i2c regulator\n");
-		dev->regulator = NULL;
-	}
-
 	pm_suspend_ignore_children(&adev->dev, true);
 
 	dev->clk = clk_get(&adev->dev, NULL);
@@ -965,6 +986,7 @@ static int nmk_i2c_probe(struct amba_device *adev, const struct amba_id *id)
 	}
 
 	adap = &dev->adap;
+	adap->dev.of_node = np;
 	adap->dev.parent = &adev->dev;
 	adap->owner	= THIS_MODULE;
 	adap->class	= I2C_CLASS_HWMON | I2C_CLASS_SPD;
@@ -994,6 +1016,8 @@ static int nmk_i2c_probe(struct amba_device *adev, const struct amba_id *id)
 		goto err_add_adap;
 	}
 
+	of_i2c_register_devices(adap);
+
 	pm_runtime_put(&adev->dev);
 
 	return 0;
@@ -1001,8 +1025,6 @@ static int nmk_i2c_probe(struct amba_device *adev, const struct amba_id *id)
  err_add_adap:
 	clk_put(dev->clk);
  err_no_clk:
-	if (dev->regulator)
-		regulator_put(dev->regulator);
 	free_irq(dev->irq, dev);
  err_irq:
 	iounmap(dev->virtbase);
@@ -1030,8 +1052,6 @@ static int nmk_i2c_remove(struct amba_device *adev)
 	if (res)
 		release_mem_region(res->start, resource_size(res));
 	clk_put(dev->clk);
-	if (dev->regulator)
-		regulator_put(dev->regulator);
 	pm_runtime_disable(&adev->dev);
 	amba_set_drvdata(adev, NULL);
 	kfree(dev);

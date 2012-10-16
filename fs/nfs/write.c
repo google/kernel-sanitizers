@@ -846,6 +846,7 @@ static int nfs_writepage_setup(struct nfs_open_context *ctx, struct page *page,
 int nfs_flush_incompatible(struct file *file, struct page *page)
 {
 	struct nfs_open_context *ctx = nfs_file_open_context(file);
+	struct nfs_lock_context *l_ctx;
 	struct nfs_page	*req;
 	int do_flush, status;
 	/*
@@ -860,9 +861,12 @@ int nfs_flush_incompatible(struct file *file, struct page *page)
 		req = nfs_page_find_request(page);
 		if (req == NULL)
 			return 0;
-		do_flush = req->wb_page != page || req->wb_context != ctx ||
-			req->wb_lock_context->lockowner != current->files ||
-			req->wb_lock_context->pid != current->tgid;
+		l_ctx = req->wb_lock_context;
+		do_flush = req->wb_page != page || req->wb_context != ctx;
+		if (l_ctx) {
+			do_flush |= l_ctx->lockowner.l_owner != current->files
+				|| l_ctx->lockowner.l_pid != current->tgid;
+		}
 		nfs_release_request(req);
 		if (!do_flush)
 			return 0;
@@ -1576,6 +1580,7 @@ static void nfs_commit_release_pages(struct nfs_commit_data *data)
 		/* We have a mismatch. Write the page again */
 		dprintk(" mismatch\n");
 		nfs_mark_request_dirty(req);
+		set_bit(NFS_CONTEXT_RESEND_WRITES, &req->wb_context->flags);
 	next:
 		nfs_unlock_and_release_request(req);
 	}
@@ -1814,19 +1819,19 @@ int __init nfs_init_writepagecache(void)
 	nfs_wdata_mempool = mempool_create_slab_pool(MIN_POOL_WRITE,
 						     nfs_wdata_cachep);
 	if (nfs_wdata_mempool == NULL)
-		return -ENOMEM;
+		goto out_destroy_write_cache;
 
 	nfs_cdata_cachep = kmem_cache_create("nfs_commit_data",
 					     sizeof(struct nfs_commit_data),
 					     0, SLAB_HWCACHE_ALIGN,
 					     NULL);
 	if (nfs_cdata_cachep == NULL)
-		return -ENOMEM;
+		goto out_destroy_write_mempool;
 
 	nfs_commit_mempool = mempool_create_slab_pool(MIN_POOL_COMMIT,
 						      nfs_wdata_cachep);
 	if (nfs_commit_mempool == NULL)
-		return -ENOMEM;
+		goto out_destroy_commit_cache;
 
 	/*
 	 * NFS congestion size, scale with available memory.
@@ -1849,11 +1854,20 @@ int __init nfs_init_writepagecache(void)
 		nfs_congestion_kb = 256*1024;
 
 	return 0;
+
+out_destroy_commit_cache:
+	kmem_cache_destroy(nfs_cdata_cachep);
+out_destroy_write_mempool:
+	mempool_destroy(nfs_wdata_mempool);
+out_destroy_write_cache:
+	kmem_cache_destroy(nfs_wdata_cachep);
+	return -ENOMEM;
 }
 
 void nfs_destroy_writepagecache(void)
 {
 	mempool_destroy(nfs_commit_mempool);
+	kmem_cache_destroy(nfs_cdata_cachep);
 	mempool_destroy(nfs_wdata_mempool);
 	kmem_cache_destroy(nfs_wdata_cachep);
 }

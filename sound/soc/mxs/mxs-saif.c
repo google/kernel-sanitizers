@@ -394,8 +394,13 @@ static int mxs_saif_hw_params(struct snd_pcm_substream *substream,
 			     struct snd_soc_dai *cpu_dai)
 {
 	struct mxs_saif *saif = snd_soc_dai_get_drvdata(cpu_dai);
+	struct mxs_saif *master_saif;
 	u32 scr, stat;
 	int ret;
+
+	master_saif = mxs_saif_get_master(saif);
+	if (!master_saif)
+		return -EINVAL;
 
 	/* mclk should already be set */
 	if (!saif->mclk && saif->mclk_in_use) {
@@ -418,6 +423,25 @@ static int mxs_saif_hw_params(struct snd_pcm_substream *substream,
 	if (ret) {
 		dev_err(cpu_dai->dev, "unable to get proper clk\n");
 		return ret;
+	}
+
+	/* prepare clk in hw_param, enable in trigger */
+	clk_prepare(saif->clk);
+	if (saif != master_saif) {
+		/*
+		* Set an initial clock rate for the saif internal logic to work
+		* properly. This is important when working in EXTMASTER mode
+		* that uses the other saif's BITCLK&LRCLK but it still needs a
+		* basic clock which should be fast enough for the internal
+		* logic.
+		*/
+		clk_enable(saif->clk);
+		ret = clk_set_rate(saif->clk, 24000000);
+		clk_disable(saif->clk);
+		if (ret)
+			return ret;
+
+		clk_prepare(master_saif->clk);
 	}
 
 	scr = __raw_readl(saif->base + SAIF_CTRL);
@@ -680,7 +704,7 @@ static int __devinit mxs_saif_probe(struct platform_device *pdev)
 		return ret;
 	}
 
-	saif->clk = clk_get(&pdev->dev, NULL);
+	saif->clk = devm_clk_get(&pdev->dev, NULL);
 	if (IS_ERR(saif->clk)) {
 		ret = PTR_ERR(saif->clk);
 		dev_err(&pdev->dev, "Cannot get the clock: %d\n",
@@ -693,8 +717,7 @@ static int __devinit mxs_saif_probe(struct platform_device *pdev)
 	saif->base = devm_request_and_ioremap(&pdev->dev, iores);
 	if (!saif->base) {
 		dev_err(&pdev->dev, "ioremap failed\n");
-		ret = -ENODEV;
-		goto failed_get_resource;
+		return -ENODEV;
 	}
 
 	dmares = platform_get_resource(pdev, IORESOURCE_DMA, 0);
@@ -707,7 +730,7 @@ static int __devinit mxs_saif_probe(struct platform_device *pdev)
 					   &saif->dma_param.chan_num);
 		if (ret) {
 			dev_err(&pdev->dev, "failed to get dma channel\n");
-			goto failed_get_resource;
+			return ret;
 		}
 	} else {
 		saif->dma_param.chan_num = dmares->start;
@@ -718,7 +741,7 @@ static int __devinit mxs_saif_probe(struct platform_device *pdev)
 		ret = saif->irq;
 		dev_err(&pdev->dev, "failed to get irq resource: %d\n",
 			ret);
-		goto failed_get_resource;
+		return ret;
 	}
 
 	saif->dev = &pdev->dev;
@@ -726,7 +749,7 @@ static int __devinit mxs_saif_probe(struct platform_device *pdev)
 			       "mxs-saif", saif);
 	if (ret) {
 		dev_err(&pdev->dev, "failed to request irq\n");
-		goto failed_get_resource;
+		return ret;
 	}
 
 	saif->dma_param.chan_irq = platform_get_irq(pdev, 1);
@@ -734,7 +757,7 @@ static int __devinit mxs_saif_probe(struct platform_device *pdev)
 		ret = saif->dma_param.chan_irq;
 		dev_err(&pdev->dev, "failed to get dma irq resource: %d\n",
 			ret);
-		goto failed_get_resource;
+		return ret;
 	}
 
 	platform_set_drvdata(pdev, saif);
@@ -742,7 +765,7 @@ static int __devinit mxs_saif_probe(struct platform_device *pdev)
 	ret = snd_soc_register_dai(&pdev->dev, &mxs_saif_dai);
 	if (ret) {
 		dev_err(&pdev->dev, "register DAI failed\n");
-		goto failed_get_resource;
+		return ret;
 	}
 
 	ret = mxs_pcm_platform_register(&pdev->dev);
@@ -755,19 +778,14 @@ static int __devinit mxs_saif_probe(struct platform_device *pdev)
 
 failed_pdev_alloc:
 	snd_soc_unregister_dai(&pdev->dev);
-failed_get_resource:
-	clk_put(saif->clk);
 
 	return ret;
 }
 
 static int __devexit mxs_saif_remove(struct platform_device *pdev)
 {
-	struct mxs_saif *saif = platform_get_drvdata(pdev);
-
 	mxs_pcm_platform_unregister(&pdev->dev);
 	snd_soc_unregister_dai(&pdev->dev);
-	clk_put(saif->clk);
 
 	return 0;
 }

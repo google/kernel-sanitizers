@@ -206,6 +206,11 @@ static int init_inodecache(void)
  */
 static void destroy_inodecache(void)
 {
+	/*
+	 * Make sure all delayed rcu free inodes are flushed before we
+	 * destroy cache.
+	 */
+	rcu_barrier();
 	kmem_cache_destroy(exofs_inode_cachep);
 }
 
@@ -384,8 +389,6 @@ static int exofs_sync_fs(struct super_block *sb, int wait)
 	if (unlikely(ret))
 		goto out;
 
-	lock_super(sb);
-
 	ios->length = offsetof(struct exofs_fscb, s_dev_table_oid);
 	memset(fscb, 0, ios->length);
 	fscb->s_nextid = cpu_to_le64(sbi->s_nextid);
@@ -400,24 +403,12 @@ static int exofs_sync_fs(struct super_block *sb, int wait)
 	ret = ore_write(ios);
 	if (unlikely(ret))
 		EXOFS_ERR("%s: ore_write failed.\n", __func__);
-	else
-		sb->s_dirt = 0;
 
-
-	unlock_super(sb);
 out:
 	EXOFS_DBGMSG("s_nextid=0x%llx ret=%d\n", _LLU(sbi->s_nextid), ret);
 	ore_put_io_state(ios);
 	kfree(fscb);
 	return ret;
-}
-
-static void exofs_write_super(struct super_block *sb)
-{
-	if (!(sb->s_flags & MS_RDONLY))
-		exofs_sync_fs(sb, 1);
-	else
-		sb->s_dirt = 0;
 }
 
 static void _exofs_print_device(const char *msg, const char *dev_path,
@@ -952,7 +943,6 @@ static const struct super_operations exofs_sops = {
 	.write_inode    = exofs_write_inode,
 	.evict_inode    = exofs_evict_inode,
 	.put_super      = exofs_put_super,
-	.write_super    = exofs_write_super,
 	.sync_fs	= exofs_sync_fs,
 	.statfs         = exofs_statfs,
 };

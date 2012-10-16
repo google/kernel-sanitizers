@@ -24,8 +24,8 @@
  * Authors: Dave Airlie
  *          Alex Deucher
  */
-#include "drmP.h"
-#include "radeon_drm.h"
+#include <drm/drmP.h>
+#include <drm/radeon_drm.h>
 #include "radeon.h"
 #include "atom.h"
 
@@ -719,6 +719,34 @@ static struct radeon_i2c_bus_rec combios_setup_i2c_bus(struct radeon_device *rde
 	return i2c;
 }
 
+static struct radeon_i2c_bus_rec radeon_combios_get_i2c_info_from_table(struct radeon_device *rdev)
+{
+	struct drm_device *dev = rdev->ddev;
+	struct radeon_i2c_bus_rec i2c;
+	u16 offset;
+	u8 id, blocks, clk, data;
+	int i;
+
+	i2c.valid = false;
+
+	offset = combios_get_table_offset(dev, COMBIOS_I2C_INFO_TABLE);
+	if (offset) {
+		blocks = RBIOS8(offset + 2);
+		for (i = 0; i < blocks; i++) {
+			id = RBIOS8(offset + 3 + (i * 5) + 0);
+			if (id == 136) {
+				clk = RBIOS8(offset + 3 + (i * 5) + 3);
+				data = RBIOS8(offset + 3 + (i * 5) + 4);
+				/* gpiopad */
+				i2c = combios_setup_i2c_bus(rdev, DDC_MONID,
+							    (1 << clk), (1 << data));
+				break;
+			}
+		}
+	}
+	return i2c;
+}
+
 void radeon_combios_i2c_init(struct radeon_device *rdev)
 {
 	struct drm_device *dev = rdev->ddev;
@@ -755,30 +783,14 @@ void radeon_combios_i2c_init(struct radeon_device *rdev)
 	} else if (rdev->family == CHIP_RS300 ||
 		   rdev->family == CHIP_RS400 ||
 		   rdev->family == CHIP_RS480) {
-		u16 offset;
-		u8 id, blocks, clk, data;
-		int i;
-
 		/* 0x68 */
 		i2c = combios_setup_i2c_bus(rdev, DDC_CRT2, 0, 0);
 		rdev->i2c_bus[3] = radeon_i2c_create(dev, &i2c, "MONID");
 
-		offset = combios_get_table_offset(dev, COMBIOS_I2C_INFO_TABLE);
-		if (offset) {
-			blocks = RBIOS8(offset + 2);
-			for (i = 0; i < blocks; i++) {
-				id = RBIOS8(offset + 3 + (i * 5) + 0);
-				if (id == 136) {
-					clk = RBIOS8(offset + 3 + (i * 5) + 3);
-					data = RBIOS8(offset + 3 + (i * 5) + 4);
-					/* gpiopad */
-					i2c = combios_setup_i2c_bus(rdev, DDC_MONID,
-								    (1 << clk), (1 << data));
-					rdev->i2c_bus[4] = radeon_i2c_create(dev, &i2c, "GPIOPAD_MASK");
-					break;
-				}
-			}
-		}
+		/* gpiopad */
+		i2c = radeon_combios_get_i2c_info_from_table(rdev);
+		if (i2c.valid)
+			rdev->i2c_bus[4] = radeon_i2c_create(dev, &i2c, "GPIOPAD_MASK");
 	} else if ((rdev->family == CHIP_R200) ||
 		   (rdev->family >= CHIP_R300)) {
 		/* 0x68 */
@@ -2321,7 +2333,10 @@ bool radeon_get_legacy_connector_info_from_bios(struct drm_device *dev)
 			connector = (tmp >> 12) & 0xf;
 
 			ddc_type = (tmp >> 8) & 0xf;
-			ddc_i2c = combios_setup_i2c_bus(rdev, ddc_type, 0, 0);
+			if (ddc_type == 5)
+				ddc_i2c = radeon_combios_get_i2c_info_from_table(rdev);
+			else
+				ddc_i2c = combios_setup_i2c_bus(rdev, ddc_type, 0, 0);
 
 			switch (connector) {
 			case CONNECTOR_PROPRIETARY_LEGACY:
@@ -3302,15 +3317,6 @@ static void combios_write_ram_size(struct drm_device *dev)
 
 	mem_size *= (1024 * 1024);	/* convert to bytes */
 	WREG32(RADEON_CONFIG_MEMSIZE, mem_size);
-}
-
-void radeon_combios_dyn_clk_setup(struct drm_device *dev, int enable)
-{
-	uint16_t dyn_clk_info =
-	    combios_get_table_offset(dev, COMBIOS_DYN_CLK_1_TABLE);
-
-	if (dyn_clk_info)
-		combios_parse_pll_table(dev, dyn_clk_info);
 }
 
 void radeon_combios_asic_init(struct drm_device *dev)

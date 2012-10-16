@@ -96,7 +96,7 @@ void acpi_table_print_madt_entry (struct acpi_subtable_header *madt);
 void acpi_numa_slit_init (struct acpi_table_slit *slit);
 void acpi_numa_processor_affinity_init (struct acpi_srat_cpu_affinity *pa);
 void acpi_numa_x2apic_affinity_init(struct acpi_srat_x2apic_cpu_affinity *pa);
-void acpi_numa_memory_affinity_init (struct acpi_srat_mem_affinity *ma);
+int acpi_numa_memory_affinity_init (struct acpi_srat_mem_affinity *ma);
 void acpi_numa_arch_fixup(void);
 
 #ifdef CONFIG_ACPI_HOTPLUG_CPU
@@ -138,9 +138,9 @@ void acpi_penalize_isa_irq(int irq, int active);
 void acpi_pci_irq_disable (struct pci_dev *dev);
 
 struct acpi_pci_driver {
-	struct acpi_pci_driver *next;
-	int (*add)(acpi_handle handle);
-	void (*remove)(acpi_handle handle);
+	struct list_head node;
+	int (*add)(struct acpi_pci_root *root);
+	void (*remove)(struct acpi_pci_root *root);
 };
 
 int acpi_pci_register_driver(struct acpi_pci_driver *driver);

@@ -23,8 +23,8 @@
  * Authors: Dave Airlie
  *          Alex Deucher
  */
-#include "drmP.h"
-#include "radeon_drm.h"
+#include <drm/drmP.h>
+#include <drm/radeon_drm.h>
 #include "radeon.h"
 
 #include "atom.h"
@@ -452,7 +452,7 @@ static bool radeon_atom_apply_quirks(struct drm_device *dev,
 	}
 
 	/* Fujitsu D3003-S2 board lists DVI-I as DVI-D and VGA */
-	if ((dev->pdev->device == 0x9802) &&
+	if (((dev->pdev->device == 0x9802) || (dev->pdev->device == 0x9806)) &&
 	    (dev->pdev->subsystem_vendor == 0x1734) &&
 	    (dev->pdev->subsystem_device == 0x11bd)) {
 		if (*connector_type == DRM_MODE_CONNECTOR_VGA) {
@@ -1254,6 +1254,10 @@ bool radeon_atom_get_clock_info(struct drm_device *dev)
 		if (rdev->clock.max_pixel_clock == 0)
 			rdev->clock.max_pixel_clock = 40000;
 
+		/* not technically a clock, but... */
+		rdev->mode_info.firmware_flags =
+			le16_to_cpu(firmware_info->info.usFirmwareCapability.susAccess);
+
 		return true;
 	}
 
@@ -1263,6 +1267,8 @@ bool radeon_atom_get_clock_info(struct drm_device *dev)
 union igp_info {
 	struct _ATOM_INTEGRATED_SYSTEM_INFO info;
 	struct _ATOM_INTEGRATED_SYSTEM_INFO_V2 info_2;
+	struct _ATOM_INTEGRATED_SYSTEM_INFO_V6 info_6;
+	struct _ATOM_INTEGRATED_SYSTEM_INFO_V1_7 info_7;
 };
 
 bool radeon_atombios_sideport_present(struct radeon_device *rdev)
@@ -1390,27 +1396,50 @@ static void radeon_atombios_get_igp_ss_overrides(struct radeon_device *rdev,
 	struct radeon_mode_info *mode_info = &rdev->mode_info;
 	int index = GetIndexIntoMasterTable(DATA, IntegratedSystemInfo);
 	u16 data_offset, size;
-	struct _ATOM_INTEGRATED_SYSTEM_INFO_V6 *igp_info;
+	union igp_info *igp_info;
 	u8 frev, crev;
 	u16 percentage = 0, rate = 0;
 
 	/* get any igp specific overrides */
 	if (atom_parse_data_header(mode_info->atom_context, index, &size,
 				   &frev, &crev, &data_offset)) {
-		igp_info = (struct _ATOM_INTEGRATED_SYSTEM_INFO_V6 *)
+		igp_info = (union igp_info *)
 			(mode_info->atom_context->bios + data_offset);
-		switch (id) {
-		case ASIC_INTERNAL_SS_ON_TMDS:
-			percentage = le16_to_cpu(igp_info->usDVISSPercentage);
-			rate = le16_to_cpu(igp_info->usDVISSpreadRateIn10Hz);
+		switch (crev) {
+		case 6:
+			switch (id) {
+			case ASIC_INTERNAL_SS_ON_TMDS:
+				percentage = le16_to_cpu(igp_info->info_6.usDVISSPercentage);
+				rate = le16_to_cpu(igp_info->info_6.usDVISSpreadRateIn10Hz);
+				break;
+			case ASIC_INTERNAL_SS_ON_HDMI:
+				percentage = le16_to_cpu(igp_info->info_6.usHDMISSPercentage);
+				rate = le16_to_cpu(igp_info->info_6.usHDMISSpreadRateIn10Hz);
+				break;
+			case ASIC_INTERNAL_SS_ON_LVDS:
+				percentage = le16_to_cpu(igp_info->info_6.usLvdsSSPercentage);
+				rate = le16_to_cpu(igp_info->info_6.usLvdsSSpreadRateIn10Hz);
+				break;
+			}
 			break;
-		case ASIC_INTERNAL_SS_ON_HDMI:
-			percentage = le16_to_cpu(igp_info->usHDMISSPercentage);
-			rate = le16_to_cpu(igp_info->usHDMISSpreadRateIn10Hz);
+		case 7:
+			switch (id) {
+			case ASIC_INTERNAL_SS_ON_TMDS:
+				percentage = le16_to_cpu(igp_info->info_7.usDVISSPercentage);
+				rate = le16_to_cpu(igp_info->info_7.usDVISSpreadRateIn10Hz);
+				break;
+			case ASIC_INTERNAL_SS_ON_HDMI:
+				percentage = le16_to_cpu(igp_info->info_7.usHDMISSPercentage);
+				rate = le16_to_cpu(igp_info->info_7.usHDMISSpreadRateIn10Hz);
+				break;
+			case ASIC_INTERNAL_SS_ON_LVDS:
+				percentage = le16_to_cpu(igp_info->info_7.usLvdsSSPercentage);
+				rate = le16_to_cpu(igp_info->info_7.usLvdsSSpreadRateIn10Hz);
+				break;
+			}
 			break;
-		case ASIC_INTERNAL_SS_ON_LVDS:
-			percentage = le16_to_cpu(igp_info->usLvdsSSPercentage);
-			rate = le16_to_cpu(igp_info->usLvdsSSpreadRateIn10Hz);
+		default:
+			DRM_ERROR("Unsupported IGP table: %d %d\n", frev, crev);
 			break;
 		}
 		if (percentage)
@@ -1980,7 +2009,8 @@ static int radeon_atombios_parse_power_table_1_3(struct radeon_device *rdev)
 	power_info = (union power_info *)(mode_info->atom_context->bios + data_offset);
 
 	/* add the i2c bus for thermal/fan chip */
-	if (power_info->info.ucOverdriveThermalController > 0) {
+	if ((power_info->info.ucOverdriveThermalController > 0) &&
+	    (power_info->info.ucOverdriveThermalController < ARRAY_SIZE(thermal_controller_names))) {
 		DRM_INFO("Possible %s thermal controller at 0x%02x\n",
 			 thermal_controller_names[power_info->info.ucOverdriveThermalController],
 			 power_info->info.ucOverdriveControllerAddress >> 1);
@@ -2184,7 +2214,7 @@ static void radeon_atombios_add_pplib_thermal_controller(struct radeon_device *r
 			   (controller->ucType ==
 			    ATOM_PP_THERMALCONTROLLER_EMC2103_WITH_INTERNAL)) {
 			DRM_INFO("Special thermal controller config\n");
-		} else {
+		} else if (controller->ucType < ARRAY_SIZE(pp_lib_thermal_controller_names)) {
 			DRM_INFO("Possible %s thermal controller at 0x%02x %s fan control\n",
 				 pp_lib_thermal_controller_names[controller->ucType],
 				 controller->ucI2cAddress >> 1,
@@ -2199,6 +2229,12 @@ static void radeon_atombios_add_pplib_thermal_controller(struct radeon_device *r
 				strlcpy(info.type, name, sizeof(info.type));
 				i2c_new_device(&rdev->pm.i2c_bus->adapter, &info);
 			}
+		} else {
+			DRM_INFO("Unknown thermal controller type %d at 0x%02x %s fan control\n",
+				 controller->ucType,
+				 controller->ucI2cAddress >> 1,
+				 (controller->ucFanParameters &
+				  ATOM_PP_FANPARAMETERS_NOFAN) ? "without" : "with");
 		}
 	}
 }
