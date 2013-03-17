@@ -46,8 +46,6 @@
 #define FULLPWRBIT          0x00000080
 #define NEXT_BOARD_POWER_BIT        0x00000004
 
-/* Version Information */
-#define DRIVER_VERSION "v0.1"
 #define DRIVER_DESC "Quatech SSU-100 USB to Serial Driver"
 
 #define	USB_VENDOR_ID_QUATECH	0x061d	/* Quatech VID */
@@ -66,13 +64,6 @@ struct ssu100_port_private {
 	wait_queue_head_t delta_msr_wait; /* Used for TIOCMIWAIT */
 	struct async_icount icount;
 };
-
-static void ssu100_release(struct usb_serial *serial)
-{
-	struct ssu100_port_private *priv = usb_get_serial_port_data(*serial->port);
-
-	kfree(priv);
-}
 
 static inline int ssu100_control_msg(struct usb_device *dev,
 				     u8 request, u16 data, u16 index)
@@ -442,21 +433,33 @@ static int ssu100_ioctl(struct tty_struct *tty,
 
 static int ssu100_attach(struct usb_serial *serial)
 {
+	return ssu100_initdevice(serial->dev);
+}
+
+static int ssu100_port_probe(struct usb_serial_port *port)
+{
 	struct ssu100_port_private *priv;
-	struct usb_serial_port *port = *serial->port;
 
 	priv = kzalloc(sizeof(*priv), GFP_KERNEL);
-	if (!priv) {
-		dev_err(&port->dev, "%s- kmalloc(%Zd) failed.\n", __func__,
-			sizeof(*priv));
+	if (!priv)
 		return -ENOMEM;
-	}
 
 	spin_lock_init(&priv->status_lock);
 	init_waitqueue_head(&priv->delta_msr_wait);
+
 	usb_set_serial_port_data(port, priv);
 
-	return ssu100_initdevice(serial->dev);
+	return 0;
+}
+
+static int ssu100_port_remove(struct usb_serial_port *port)
+{
+	struct ssu100_port_private *priv;
+
+	priv = usb_get_serial_port_data(port);
+	kfree(priv);
+
+	return 0;
 }
 
 static int ssu100_tiocmget(struct tty_struct *tty)
@@ -503,19 +506,16 @@ static void ssu100_dtr_rts(struct usb_serial_port *port, int on)
 {
 	struct usb_device *dev = port->serial->dev;
 
-	mutex_lock(&port->serial->disc_mutex);
-	if (!port->serial->disconnected) {
-		/* Disable flow control */
-		if (!on &&
-		    ssu100_setregister(dev, 0, UART_MCR, 0) < 0)
+	/* Disable flow control */
+	if (!on) {
+		if (ssu100_setregister(dev, 0, UART_MCR, 0) < 0)
 			dev_err(&port->dev, "error from flowcontrol urb\n");
-		/* drop RTS and DTR */
-		if (on)
-			set_mctrl(dev, TIOCM_DTR | TIOCM_RTS);
-		else
-			clear_mctrl(dev, TIOCM_DTR | TIOCM_RTS);
 	}
-	mutex_unlock(&port->serial->disc_mutex);
+	/* drop RTS and DTR */
+	if (on)
+		set_mctrl(dev, TIOCM_DTR | TIOCM_RTS);
+	else
+		clear_mctrl(dev, TIOCM_DTR | TIOCM_RTS);
 }
 
 static void ssu100_update_msr(struct usb_serial_port *port, u8 msr)
@@ -579,8 +579,7 @@ static void ssu100_update_lsr(struct usb_serial_port *port, u8 lsr,
 
 }
 
-static int ssu100_process_packet(struct urb *urb,
-				 struct tty_struct *tty)
+static void ssu100_process_read_urb(struct urb *urb)
 {
 	struct usb_serial_port *port = urb->context;
 	char *packet = (char *)urb->transfer_buffer;
@@ -595,7 +594,8 @@ static int ssu100_process_packet(struct urb *urb,
 		if (packet[2] == 0x00) {
 			ssu100_update_lsr(port, packet[3], &flag);
 			if (flag == TTY_OVERRUN)
-				tty_insert_flip_char(tty, 0, TTY_OVERRUN);
+				tty_insert_flip_char(&port->port, 0,
+						TTY_OVERRUN);
 		}
 		if (packet[2] == 0x01)
 			ssu100_update_msr(port, packet[3]);
@@ -606,34 +606,17 @@ static int ssu100_process_packet(struct urb *urb,
 		ch = packet;
 
 	if (!len)
-		return 0;	/* status only */
+		return;	/* status only */
 
 	if (port->port.console && port->sysrq) {
 		for (i = 0; i < len; i++, ch++) {
 			if (!usb_serial_handle_sysrq_char(port, *ch))
-				tty_insert_flip_char(tty, *ch, flag);
+				tty_insert_flip_char(&port->port, *ch, flag);
 		}
 	} else
-		tty_insert_flip_string_fixed_flag(tty, ch, flag, len);
+		tty_insert_flip_string_fixed_flag(&port->port, ch, flag, len);
 
-	return len;
-}
-
-static void ssu100_process_read_urb(struct urb *urb)
-{
-	struct usb_serial_port *port = urb->context;
-	struct tty_struct *tty;
-	int count;
-
-	tty = tty_port_tty_get(&port->port);
-	if (!tty)
-		return;
-
-	count = ssu100_process_packet(urb, tty);
-
-	if (count)
-		tty_flip_buffer_push(tty);
-	tty_kref_put(tty);
+	tty_flip_buffer_push(&port->port);
 }
 
 static struct usb_serial_driver ssu100_device = {
@@ -647,7 +630,8 @@ static struct usb_serial_driver ssu100_device = {
 	.open		     = ssu100_open,
 	.close		     = ssu100_close,
 	.attach              = ssu100_attach,
-	.release             = ssu100_release,
+	.port_probe          = ssu100_port_probe,
+	.port_remove         = ssu100_port_remove,
 	.dtr_rts             = ssu100_dtr_rts,
 	.process_read_urb    = ssu100_process_read_urb,
 	.tiocmget            = ssu100_tiocmget,

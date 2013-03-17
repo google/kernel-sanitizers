@@ -35,6 +35,16 @@ static inline unsigned int tcp_hdrlen(const struct sk_buff *skb)
 	return tcp_hdr(skb)->doff * 4;
 }
 
+static inline struct tcphdr *inner_tcp_hdr(const struct sk_buff *skb)
+{
+	return (struct tcphdr *)skb_inner_transport_header(skb);
+}
+
+static inline unsigned int inner_tcp_hdrlen(const struct sk_buff *skb)
+{
+	return inner_tcp_hdr(skb)->doff * 4;
+}
+
 static inline unsigned int tcp_optlen(const struct sk_buff *skb)
 {
 	return (tcp_hdr(skb)->doff - 5) * 4;
@@ -152,6 +162,8 @@ struct tcp_sock {
 	u32	rcv_tstamp;	/* timestamp of last received ACK (for keepalives) */
 	u32	lsndtime;	/* timestamp of last sent data packet (for restart window) */
 
+	u32	tsoffset;	/* timestamp offset */
+
 	struct list_head tsq_node; /* anchor in tsq_tasklet.head list */
 	unsigned long	tsq_flags;
 
@@ -191,7 +203,8 @@ struct tcp_sock {
 	u8	do_early_retrans:1,/* Enable RFC5827 early-retransmit  */
 		early_retrans_delayed:1, /* Delayed ER timer installed */
 		syn_data:1,	/* SYN includes data */
-		syn_fastopen:1;	/* SYN includes Fast Open option */
+		syn_fastopen:1,	/* SYN includes Fast Open option */
+		syn_data_acked:1;/* data in SYN is acked by SYN-ACK */
 
 /* RTT measurement */
 	u32	srtt;		/* smoothed round trip time << 3	*/
@@ -235,7 +248,6 @@ struct tcp_sock {
 	u32	sacked_out;	/* SACK'd packets			*/
 	u32	fackets_out;	/* FACK'd packets			*/
 	u32	tso_deferred;
-	u32	bytes_acked;	/* Appropriate Byte Counting - RFC3465 */
 
 	/* from STCP, retrans queue hinting */
 	struct sk_buff* lost_skb_hint;
@@ -343,6 +355,7 @@ struct tcp_timewait_sock {
 	u32			  tw_rcv_nxt;
 	u32			  tw_snd_nxt;
 	u32			  tw_rcv_wnd;
+	u32			  tw_ts_offset;
 	u32			  tw_ts_recent;
 	long			  tw_ts_recent_stamp;
 #ifdef CONFIG_TCP_MD5SIG

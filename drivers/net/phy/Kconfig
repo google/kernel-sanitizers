@@ -4,7 +4,6 @@
 
 menuconfig PHYLIB
 	tristate "PHY Device support and infrastructure"
-	depends on !S390
 	depends on NETDEVICES
 	help
 	  Ethernet controllers are usually attached to PHY
@@ -14,6 +13,11 @@ menuconfig PHYLIB
 if PHYLIB
 
 comment "MII PHY device drivers"
+
+config AT803X_PHY
+	tristate "Drivers for Atheros AT803X PHYs"
+	---help---
+	  Currently supports the AT8030 and AT8035 model
 
 config AMD_PHY
 	tristate "Drivers for the AMD PHYs"

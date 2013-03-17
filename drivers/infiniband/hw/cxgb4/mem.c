@@ -468,7 +468,7 @@ struct ib_mr *c4iw_register_phys_mem(struct ib_pd *pd,
 	ret = alloc_pbl(mhp, npages);
 	if (ret) {
 		kfree(page_list);
-		goto err_pbl;
+		goto err;
 	}
 
 	ret = write_pbl(&mhp->rhp->rdev, page_list, mhp->attr.pbl_addr,
@@ -650,7 +650,7 @@ err:
 	return ERR_PTR(err);
 }
 
-struct ib_mw *c4iw_alloc_mw(struct ib_pd *pd)
+struct ib_mw *c4iw_alloc_mw(struct ib_pd *pd, enum ib_mw_type type)
 {
 	struct c4iw_dev *rhp;
 	struct c4iw_pd *php;
@@ -658,6 +658,9 @@ struct ib_mw *c4iw_alloc_mw(struct ib_pd *pd)
 	u32 mmid;
 	u32 stag = 0;
 	int ret;
+
+	if (type != IB_MW_TYPE_1)
+		return ERR_PTR(-EINVAL);
 
 	php = to_c4iw_pd(pd);
 	rhp = php->rhp;

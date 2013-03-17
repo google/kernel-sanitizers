@@ -104,9 +104,10 @@ ieee80211_rx_h_michael_mic_verify(struct ieee80211_rx_data *rx)
 	 */
 	if (status->flag & (RX_FLAG_MMIC_STRIPPED | RX_FLAG_IV_STRIPPED)) {
 		if (status->flag & RX_FLAG_MMIC_ERROR)
-			goto mic_fail;
+			goto mic_fail_no_key;
 
-		if (!(status->flag & RX_FLAG_IV_STRIPPED) && rx->key)
+		if (!(status->flag & RX_FLAG_IV_STRIPPED) && rx->key &&
+		    rx->key->conf.cipher == WLAN_CIPHER_SUITE_TKIP)
 			goto update_iv;
 
 		return RX_CONTINUE;
@@ -160,6 +161,9 @@ update_iv:
 	return RX_CONTINUE;
 
 mic_fail:
+	rx->key->u.tkip.mic_failures++;
+
+mic_fail_no_key:
 	/*
 	 * In some cases the key can be unset - e.g. a multicast packet, in
 	 * a driver that supports HW encryption. Send up the key idx only if
@@ -177,7 +181,6 @@ static int tkip_encrypt_skb(struct ieee80211_tx_data *tx, struct sk_buff *skb)
 	struct ieee80211_hdr *hdr = (struct ieee80211_hdr *) skb->data;
 	struct ieee80211_key *key = tx->key;
 	struct ieee80211_tx_info *info = IEEE80211_SKB_CB(skb);
-	unsigned long flags;
 	unsigned int hdrlen;
 	int len, tail;
 	u8 *pos;
@@ -212,12 +215,12 @@ static int tkip_encrypt_skb(struct ieee80211_tx_data *tx, struct sk_buff *skb)
 		return 0;
 
 	/* Increase IV for the frame */
-	spin_lock_irqsave(&key->u.tkip.txlock, flags);
+	spin_lock(&key->u.tkip.txlock);
 	key->u.tkip.tx.iv16++;
 	if (key->u.tkip.tx.iv16 == 0)
 		key->u.tkip.tx.iv32++;
 	pos = ieee80211_tkip_add_iv(pos, key);
-	spin_unlock_irqrestore(&key->u.tkip.txlock, flags);
+	spin_unlock(&key->u.tkip.txlock);
 
 	/* hwaccel - with software IV */
 	if (info->control.hw_key)
@@ -545,14 +548,19 @@ ieee80211_crypto_ccmp_decrypt(struct ieee80211_rx_data *rx)
 
 static void bip_aad(struct sk_buff *skb, u8 *aad)
 {
+	__le16 mask_fc;
+	struct ieee80211_hdr *hdr = (struct ieee80211_hdr *) skb->data;
+
 	/* BIP AAD: FC(masked) || A1 || A2 || A3 */
 
 	/* FC type/subtype */
-	aad[0] = skb->data[0];
 	/* Mask FC Retry, PwrMgt, MoreData flags to zero */
-	aad[1] = skb->data[1] & ~(BIT(4) | BIT(5) | BIT(6));
+	mask_fc = hdr->frame_control;
+	mask_fc &= ~cpu_to_le16(IEEE80211_FCTL_RETRY | IEEE80211_FCTL_PM |
+				IEEE80211_FCTL_MOREDATA);
+	put_unaligned(mask_fc, (__le16 *) &aad[0]);
 	/* A1 || A2 || A3 */
-	memcpy(aad + 2, skb->data + 4, 3 * ETH_ALEN);
+	memcpy(aad + 2, &hdr->addr1, 3 * ETH_ALEN);
 }
 
 

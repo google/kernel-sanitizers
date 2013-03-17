@@ -183,6 +183,7 @@ static void __exit __ircomm_tty_cleanup(struct ircomm_tty_cb *self)
 	ircomm_tty_shutdown(self);
 
 	self->magic = 0;
+	tty_port_destroy(&self->port);
 	kfree(self);
 }
 
@@ -421,6 +422,8 @@ static int ircomm_tty_install(struct tty_driver *driver, struct tty_struct *tty)
 		hashbin_insert(ircomm_tty, (irda_queue_t *) self, line, NULL);
 	}
 
+	tty->driver_data = self;
+
 	return tty_port_install(&self->port, driver, tty);
 }
 
@@ -449,7 +452,7 @@ static int ircomm_tty_open(struct tty_struct *tty, struct file *filp)
 		   self->line, self->port.count);
 
 	/* Not really used by us, but lets do it anyway */
-	tty->low_latency = (self->port.flags & ASYNC_LOW_LATENCY) ? 1 : 0;
+	self->port.low_latency = (self->port.flags & ASYNC_LOW_LATENCY) ? 1 : 0;
 
 	/*
 	 * If the port is the middle of closing, bail out now
@@ -1133,14 +1136,14 @@ static int ircomm_tty_data_indication(void *instance, void *sap,
 		ircomm_tty_send_initial_parameters(self);
 		ircomm_tty_link_established(self);
 	}
+	tty_kref_put(tty);
 
 	/*
 	 * Use flip buffer functions since the code may be called from interrupt
 	 * context
 	 */
-	tty_insert_flip_string(tty, skb->data, skb->len);
-	tty_flip_buffer_push(tty);
-	tty_kref_put(tty);
+	tty_insert_flip_string(&self->port, skb->data, skb->len);
+	tty_flip_buffer_push(&self->port);
 
 	/* No need to kfree_skb - see ircomm_ttp_data_indication() */
 

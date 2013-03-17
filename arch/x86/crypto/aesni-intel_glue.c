@@ -40,10 +40,6 @@
 #include <linux/workqueue.h>
 #include <linux/spinlock.h>
 
-#if defined(CONFIG_CRYPTO_CTR) || defined(CONFIG_CRYPTO_CTR_MODULE)
-#define HAS_CTR
-#endif
-
 #if defined(CONFIG_CRYPTO_PCBC) || defined(CONFIG_CRYPTO_PCBC_MODULE)
 #define HAS_PCBC
 #endif
@@ -395,12 +391,6 @@ static int ablk_ctr_init(struct crypto_tfm *tfm)
 	return ablk_init_common(tfm, "__driver-ctr-aes-aesni");
 }
 
-#ifdef HAS_CTR
-static int ablk_rfc3686_ctr_init(struct crypto_tfm *tfm)
-{
-	return ablk_init_common(tfm, "rfc3686(__driver-ctr-aes-aesni)");
-}
-#endif
 #endif
 
 #ifdef HAS_PCBC
@@ -515,6 +505,11 @@ static int xts_aesni_setkey(struct crypto_tfm *tfm, const u8 *key,
 }
 
 
+static void aesni_xts_tweak(void *ctx, u8 *out, const u8 *in)
+{
+	aesni_enc(ctx, out, in);
+}
+
 static int xts_encrypt(struct blkcipher_desc *desc, struct scatterlist *dst,
 		       struct scatterlist *src, unsigned int nbytes)
 {
@@ -525,7 +520,7 @@ static int xts_encrypt(struct blkcipher_desc *desc, struct scatterlist *dst,
 		.tbuflen = sizeof(buf),
 
 		.tweak_ctx = aes_ctx(ctx->raw_tweak_ctx),
-		.tweak_fn = XTS_TWEAK_CAST(aesni_enc),
+		.tweak_fn = aesni_xts_tweak,
 		.crypt_ctx = aes_ctx(ctx->raw_crypt_ctx),
 		.crypt_fn = lrw_xts_encrypt_callback,
 	};
@@ -550,7 +545,7 @@ static int xts_decrypt(struct blkcipher_desc *desc, struct scatterlist *dst,
 		.tbuflen = sizeof(buf),
 
 		.tweak_ctx = aes_ctx(ctx->raw_tweak_ctx),
-		.tweak_fn = XTS_TWEAK_CAST(aesni_enc),
+		.tweak_fn = aesni_xts_tweak,
 		.crypt_ctx = aes_ctx(ctx->raw_crypt_ctx),
 		.crypt_fn = lrw_xts_decrypt_callback,
 	};
@@ -1153,33 +1148,6 @@ static struct crypto_alg aesni_algs[] = { {
 			.maxauthsize	= 16,
 		},
 	},
-#ifdef HAS_CTR
-}, {
-	.cra_name		= "rfc3686(ctr(aes))",
-	.cra_driver_name	= "rfc3686-ctr-aes-aesni",
-	.cra_priority		= 400,
-	.cra_flags		= CRYPTO_ALG_TYPE_ABLKCIPHER | CRYPTO_ALG_ASYNC,
-	.cra_blocksize		= 1,
-	.cra_ctxsize		= sizeof(struct async_helper_ctx),
-	.cra_alignmask		= 0,
-	.cra_type		= &crypto_ablkcipher_type,
-	.cra_module		= THIS_MODULE,
-	.cra_init		= ablk_rfc3686_ctr_init,
-	.cra_exit		= ablk_exit,
-	.cra_u = {
-		.ablkcipher = {
-			.min_keysize = AES_MIN_KEY_SIZE +
-				       CTR_RFC3686_NONCE_SIZE,
-			.max_keysize = AES_MAX_KEY_SIZE +
-				       CTR_RFC3686_NONCE_SIZE,
-			.ivsize	     = CTR_RFC3686_IV_SIZE,
-			.setkey	     = ablk_set_key,
-			.encrypt     = ablk_encrypt,
-			.decrypt     = ablk_decrypt,
-			.geniv	     = "seqiv",
-		},
-	},
-#endif
 #endif
 #ifdef HAS_PCBC
 }, {

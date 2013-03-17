@@ -39,6 +39,7 @@
 #include <linux/proc_fs.h>
 #include <linux/memblock.h>
 #include <linux/of_fdt.h>
+#include <linux/of_platform.h>
 
 #include <asm/cputype.h>
 #include <asm/elf.h>
@@ -49,6 +50,7 @@
 #include <asm/tlbflush.h>
 #include <asm/traps.h>
 #include <asm/memblock.h>
+#include <asm/psci.h>
 
 unsigned int processor_id;
 EXPORT_SYMBOL(processor_id);
@@ -170,7 +172,19 @@ static void __init setup_machine_fdt(phys_addr_t dt_phys)
 
 void __init early_init_dt_add_memory_arch(u64 base, u64 size)
 {
+	base &= PAGE_MASK;
 	size &= PAGE_MASK;
+	if (base + size < PHYS_OFFSET) {
+		pr_warning("Ignoring memory block 0x%llx - 0x%llx\n",
+			   base, base + size);
+		return;
+	}
+	if (base < PHYS_OFFSET) {
+		pr_warning("Ignoring memory range 0x%llx - 0x%llx\n",
+			   base, PHYS_OFFSET);
+		size -= PHYS_OFFSET - base;
+		base = PHYS_OFFSET;
+	}
 	memblock_add(base, size);
 }
 
@@ -248,6 +262,8 @@ void __init setup_arch(char **cmdline_p)
 
 	unflatten_device_tree();
 
+	psci_init();
+
 #ifdef CONFIG_SMP
 	smp_init_cpus();
 #endif
@@ -276,6 +292,13 @@ static int __init topology_init(void)
 	return 0;
 }
 subsys_initcall(topology_init);
+
+static int __init arm64_device_probe(void)
+{
+	of_platform_populate(NULL, of_default_bus_match_table, NULL, NULL);
+	return 0;
+}
+device_initcall(arm64_device_probe);
 
 static const char *hwcap_str[] = {
 	"fp",

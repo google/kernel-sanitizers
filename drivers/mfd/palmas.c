@@ -39,6 +39,14 @@ enum palmas_ids {
 	PALMAS_USB_ID,
 };
 
+static struct resource palmas_rtc_resources[] = {
+	{
+		.start  = PALMAS_RTC_ALARM_IRQ,
+		.end    = PALMAS_RTC_ALARM_IRQ,
+		.flags  = IORESOURCE_IRQ,
+	},
+};
+
 static const struct mfd_cell palmas_children[] = {
 	{
 		.name = "palmas-pmic",
@@ -59,6 +67,8 @@ static const struct mfd_cell palmas_children[] = {
 	{
 		.name = "palmas-rtc",
 		.id = PALMAS_RTC_ID,
+		.resources = &palmas_rtc_resources[0],
+		.num_resources = ARRAY_SIZE(palmas_rtc_resources),
 	},
 	{
 		.name = "palmas-pwrbutton",
@@ -247,7 +257,7 @@ static struct regmap_irq_chip palmas_irq_chip = {
 			PALMAS_INT1_MASK),
 };
 
-static void __devinit palmas_dt_to_pdata(struct device_node *node,
+static void palmas_dt_to_pdata(struct device_node *node,
 		struct palmas_platform_data *pdata)
 {
 	int ret;
@@ -275,7 +285,7 @@ static void __devinit palmas_dt_to_pdata(struct device_node *node,
 					PALMAS_POWER_CTRL_ENABLE2_MASK;
 }
 
-static int __devinit palmas_i2c_probe(struct i2c_client *i2c,
+static int palmas_i2c_probe(struct i2c_client *i2c,
 			    const struct i2c_device_id *id)
 {
 	struct palmas *palmas;
@@ -456,8 +466,8 @@ static int __devinit palmas_i2c_probe(struct i2c_client *i2c,
 
 	ret = mfd_add_devices(palmas->dev, -1,
 			      children, ARRAY_SIZE(palmas_children),
-			      NULL, regmap_irq_chip_get_base(palmas->irq_data),
-			      NULL);
+			      NULL, 0,
+			      regmap_irq_get_domain(palmas->irq_data));
 	kfree(children);
 
 	if (ret < 0)
@@ -492,7 +502,7 @@ static const struct i2c_device_id palmas_i2c_id[] = {
 };
 MODULE_DEVICE_TABLE(i2c, palmas_i2c_id);
 
-static struct of_device_id __devinitdata of_palmas_match_tbl[] = {
+static struct of_device_id of_palmas_match_tbl[] = {
 	{ .compatible = "ti,palmas", },
 	{ /* end */ }
 };

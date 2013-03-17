@@ -43,6 +43,12 @@ struct atpx_verify_interface {
 	u32 function_bits;	/* supported functions bit vector */
 } __packed;
 
+struct atpx_px_params {
+	u16 size;		/* structure size in bytes (includes size field) */
+	u32 valid_flags;	/* which flags are valid */
+	u32 flags;		/* flags */
+} __packed;
+
 struct atpx_power_control {
 	u16 size;
 	u8 dgpu_state;
@@ -87,7 +93,7 @@ static union acpi_object *radeon_atpx_call(acpi_handle handle, int function,
 		atpx_arg_elements[1].integer.value = 0;
 	}
 
-	status = acpi_evaluate_object(handle, "ATPX", &atpx_arg, &buffer);
+	status = acpi_evaluate_object(handle, NULL, &atpx_arg, &buffer);
 
 	/* Fail only if calling the method fails and ATPX is supported */
 	if (ACPI_FAILURE(status) && status != AE_NOT_FOUND) {
@@ -123,9 +129,61 @@ static void radeon_atpx_parse_functions(struct radeon_atpx_functions *f, u32 mas
 }
 
 /**
+ * radeon_atpx_validate_functions - validate ATPX functions
+ *
+ * @atpx: radeon atpx struct
+ *
+ * Validate that required functions are enabled (all asics).
+ * returns 0 on success, error on failure.
+ */
+static int radeon_atpx_validate(struct radeon_atpx *atpx)
+{
+	/* make sure required functions are enabled */
+	/* dGPU power control is required */
+	atpx->functions.power_cntl = true;
+
+	if (atpx->functions.px_params) {
+		union acpi_object *info;
+		struct atpx_px_params output;
+		size_t size;
+		u32 valid_bits;
+
+		info = radeon_atpx_call(atpx->handle, ATPX_FUNCTION_GET_PX_PARAMETERS, NULL);
+		if (!info)
+			return -EIO;
+
+		memset(&output, 0, sizeof(output));
+
+		size = *(u16 *) info->buffer.pointer;
+		if (size < 10) {
+			printk("ATPX buffer is too small: %zu\n", size);
+			kfree(info);
+			return -EINVAL;
+		}
+		size = min(sizeof(output), size);
+
+		memcpy(&output, info->buffer.pointer, size);
+
+		valid_bits = output.flags & output.valid_flags;
+		/* if separate mux flag is set, mux controls are required */
+		if (valid_bits & ATPX_SEPARATE_MUX_FOR_I2C) {
+			atpx->functions.i2c_mux_cntl = true;
+			atpx->functions.disp_mux_cntl = true;
+		}
+		/* if any outputs are muxed, mux controls are required */
+		if (valid_bits & (ATPX_CRT1_RGB_SIGNAL_MUXED |
+				  ATPX_TV_SIGNAL_MUXED |
+				  ATPX_DFP_SIGNAL_MUXED))
+			atpx->functions.disp_mux_cntl = true;
+
+		kfree(info);
+	}
+	return 0;
+}
+
+/**
  * radeon_atpx_verify_interface - verify ATPX
  *
- * @handle: acpi handle
  * @atpx: radeon atpx struct
  *
  * Execute the ATPX_FUNCTION_VERIFY_INTERFACE ATPX function
@@ -148,7 +206,7 @@ static int radeon_atpx_verify_interface(struct radeon_atpx *atpx)
 
 	size = *(u16 *) info->buffer.pointer;
 	if (size < 8) {
-		printk("ATPX buffer is too small: %lu\n", size);
+		printk("ATPX buffer is too small: %zu\n", size);
 		err = -EINVAL;
 		goto out;
 	}
@@ -352,9 +410,9 @@ static int radeon_atpx_switchto(enum vga_switcheroo_client_id id)
 }
 
 /**
- * radeon_atpx_switchto - switch to the requested GPU
+ * radeon_atpx_power_state - power down/up the requested GPU
  *
- * @id: GPU to switch to
+ * @id: GPU to power down/up
  * @state: requested power state (0 = off, 1 = on)
  *
  * Execute the necessary ATPX function to power down/up the discrete GPU
@@ -373,11 +431,11 @@ static int radeon_atpx_power_state(enum vga_switcheroo_client_id id,
 }
 
 /**
- * radeon_atpx_pci_probe_handle - look up the ATRM and ATPX handles
+ * radeon_atpx_pci_probe_handle - look up the ATPX handle
  *
  * @pdev: pci device
  *
- * Look up the ATPX and ATRM handles (all asics).
+ * Look up the ATPX handles (all asics).
  * Returns true if the handles are found, false if not.
  */
 static bool radeon_atpx_pci_probe_handle(struct pci_dev *pdev)
@@ -406,8 +464,19 @@ static bool radeon_atpx_pci_probe_handle(struct pci_dev *pdev)
  */
 static int radeon_atpx_init(void)
 {
+	int r;
+
 	/* set up the ATPX handle */
-	return radeon_atpx_verify_interface(&radeon_atpx_priv.atpx);
+	r = radeon_atpx_verify_interface(&radeon_atpx_priv.atpx);
+	if (r)
+		return r;
+
+	/* validate the atpx setup */
+	r = radeon_atpx_validate(&radeon_atpx_priv.atpx);
+	if (r)
+		return r;
+
+	return 0;
 }
 
 /**

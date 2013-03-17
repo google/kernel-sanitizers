@@ -17,6 +17,10 @@ obj-$(CONFIG_PARISC)		+= parisc/
 obj-$(CONFIG_RAPIDIO)		+= rapidio/
 obj-y				+= video/
 obj-y				+= idle/
+
+# IPMI must come before ACPI in order to provide IPMI opregion support
+obj-$(CONFIG_IPMI_HANDLER)	+= char/ipmi/
+
 obj-$(CONFIG_ACPI)		+= acpi/
 obj-$(CONFIG_SFI)		+= sfi/
 # PnP must come after ACPI since it will eventually need to check if acpi
@@ -25,7 +29,7 @@ obj-$(CONFIG_PNP)		+= pnp/
 obj-y				+= amba/
 # Many drivers will want to use DMA so this has to be made available
 # really early.
-obj-$(CONFIG_DMA_ENGINE)	+= dma/
+obj-$(CONFIG_DMADEVICES)	+= dma/
 
 obj-$(CONFIG_VIRTIO)		+= virtio/
 obj-$(CONFIG_XEN)		+= xen/
@@ -126,6 +130,7 @@ obj-y				+= platform/
 #common clk code
 obj-y				+= clk/
 
+obj-$(CONFIG_MAILBOX)		+= mailbox/
 obj-$(CONFIG_HWSPINLOCK)	+= hwspinlock/
 obj-$(CONFIG_NFC)		+= nfc/
 obj-$(CONFIG_IOMMU_SUPPORT)	+= iommu/
@@ -141,3 +146,5 @@ obj-$(CONFIG_EXTCON)		+= extcon/
 obj-$(CONFIG_MEMORY)		+= memory/
 obj-$(CONFIG_IIO)		+= iio/
 obj-$(CONFIG_VME_BUS)		+= vme/
+obj-$(CONFIG_IPACK_BUS)		+= ipack/
+obj-$(CONFIG_NTB)		+= ntb/

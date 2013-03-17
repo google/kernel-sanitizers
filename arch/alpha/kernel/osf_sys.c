@@ -445,7 +445,7 @@ struct procfs_args {
  * unhappy with OSF UFS. [CHECKME]
  */
 static int
-osf_ufs_mount(char *dirname, struct ufs_args __user *args, int flags)
+osf_ufs_mount(const char *dirname, struct ufs_args __user *args, int flags)
 {
 	int retval;
 	struct cdfs_args tmp;
@@ -465,7 +465,7 @@ osf_ufs_mount(char *dirname, struct ufs_args __user *args, int flags)
 }
 
 static int
-osf_cdfs_mount(char *dirname, struct cdfs_args __user *args, int flags)
+osf_cdfs_mount(const char *dirname, struct cdfs_args __user *args, int flags)
 {
 	int retval;
 	struct cdfs_args tmp;
@@ -485,7 +485,7 @@ osf_cdfs_mount(char *dirname, struct cdfs_args __user *args, int flags)
 }
 
 static int
-osf_procfs_mount(char *dirname, struct procfs_args __user *args, int flags)
+osf_procfs_mount(const char *dirname, struct procfs_args __user *args, int flags)
 {
 	struct procfs_args tmp;
 
@@ -793,8 +793,7 @@ SYSCALL_DEFINE5(osf_getsysinfo, unsigned long, op, void __user *, buffer,
  	case GSI_UACPROC:
 		if (nbytes < sizeof(unsigned int))
 			return -EINVAL;
-		w = (current_thread_info()->flags >> ALPHA_UAC_SHIFT) &
-			UAC_BITMASK;
+		w = current_thread_info()->status & UAC_BITMASK;
 		if (put_user(w, (unsigned int __user *)buffer))
 			return -EFAULT;
  		return 1;
@@ -904,24 +903,20 @@ SYSCALL_DEFINE5(osf_setsysinfo, unsigned long, op, void __user *, buffer,
 		break;
 
  	case SSI_NVPAIRS: {
-		unsigned long v, w, i;
-		unsigned int old, new;
+		unsigned __user *p = buffer;
+		unsigned i;
 		
- 		for (i = 0; i < nbytes; ++i) {
+		for (i = 0, p = buffer; i < nbytes; ++i, p += 2) {
+			unsigned v, w, status;
 
- 			if (get_user(v, 2*i + (unsigned int __user *)buffer))
- 				return -EFAULT;
- 			if (get_user(w, 2*i + 1 + (unsigned int __user *)buffer))
+			if (get_user(v, p) || get_user(w, p + 1))
  				return -EFAULT;
  			switch (v) {
  			case SSIN_UACPROC:
-			again:
-				old = current_thread_info()->flags;
-				new = old & ~(UAC_BITMASK << ALPHA_UAC_SHIFT);
-				new = new | (w & UAC_BITMASK) << ALPHA_UAC_SHIFT;
-				if (cmpxchg(&current_thread_info()->flags,
-					    old, new) != old)
-					goto again;
+				w &= UAC_BITMASK;
+				status = current_thread_info()->status;
+				status = (status & ~UAC_BITMASK) | w;
+				current_thread_info()->status = status;
  				break;
  
  			default:
@@ -1144,6 +1139,7 @@ struct rusage32 {
 SYSCALL_DEFINE2(osf_getrusage, int, who, struct rusage32 __user *, ru)
 {
 	struct rusage32 r;
+	cputime_t utime, stime;
 
 	if (who != RUSAGE_SELF && who != RUSAGE_CHILDREN)
 		return -EINVAL;
@@ -1151,8 +1147,9 @@ SYSCALL_DEFINE2(osf_getrusage, int, who, struct rusage32 __user *, ru)
 	memset(&r, 0, sizeof(r));
 	switch (who) {
 	case RUSAGE_SELF:
-		jiffies_to_timeval32(current->utime, &r.ru_utime);
-		jiffies_to_timeval32(current->stime, &r.ru_stime);
+		task_cputime(current, &utime, &stime);
+		jiffies_to_timeval32(utime, &r.ru_utime);
+		jiffies_to_timeval32(stime, &r.ru_stime);
 		r.ru_minflt = current->min_flt;
 		r.ru_majflt = current->maj_flt;
 		break;
@@ -1303,17 +1300,15 @@ static unsigned long
 arch_get_unmapped_area_1(unsigned long addr, unsigned long len,
 		         unsigned long limit)
 {
-	struct vm_area_struct *vma = find_vma(current->mm, addr);
+	struct vm_unmapped_area_info info;
 
-	while (1) {
-		/* At this point:  (!vma || addr < vma->vm_end). */
-		if (limit - len < addr)
-			return -ENOMEM;
-		if (!vma || addr + len <= vma->vm_start)
-			return addr;
-		addr = vma->vm_end;
-		vma = vma->vm_next;
-	}
+	info.flags = 0;
+	info.length = len;
+	info.low_limit = addr;
+	info.high_limit = limit;
+	info.align_mask = 0;
+	info.align_offset = 0;
+	return vm_unmapped_area(&info);
 }
 
 unsigned long

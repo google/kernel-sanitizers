@@ -61,6 +61,9 @@
 #include <plat/nand-core.h>
 #include <plat/adc-core.h>
 #include <plat/rtc-core.h>
+#include <plat/spi-core.h>
+
+#include "common.h"
 
 static struct map_desc s3c2416_iodesc[] __initdata = {
 	IODESC_ENT(WATCHDOG),
@@ -104,9 +107,9 @@ int __init s3c2416_init(void)
 
 #ifdef CONFIG_PM
 	register_syscore_ops(&s3c2416_pm_syscore_ops);
-#endif
 	register_syscore_ops(&s3c24xx_irq_syscore_ops);
 	register_syscore_ops(&s3c2416_irq_syscore_ops);
+#endif
 
 	return device_register(&s3c2416_dev);
 }
@@ -132,6 +135,7 @@ void __init s3c2416_map_io(void)
 	/* initialize device information early */
 	s3c2416_default_sdhci0();
 	s3c2416_default_sdhci1();
+	s3c64xx_spi_setname("s3c2443-spi");
 
 	iotable_init(s3c2416_iodesc, ARRAY_SIZE(s3c2416_iodesc));
 }

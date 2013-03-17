@@ -132,6 +132,7 @@ struct snd_card {
 	int shutdown;			/* this card is going down */
 	int free_on_last_close;		/* free in context of file_release */
 	wait_queue_head_t shutdown_sleep;
+	atomic_t refcount;		/* refcount for disconnection */
 	struct device *dev;		/* device assigned to this card */
 	struct device *card_dev;	/* cardX object for sysfs */
 
@@ -189,6 +190,7 @@ struct snd_minor {
 	const struct file_operations *f_ops;	/* file operations */
 	void *private_data;		/* private data for f_ops->open */
 	struct device *dev;		/* device for sysfs */
+	struct snd_card *card_ptr;	/* assigned card instance */
 };
 
 /* return a device pointer linked to each sound device as a parent */
@@ -295,6 +297,7 @@ int snd_card_info_done(void);
 int snd_component_add(struct snd_card *card, const char *component);
 int snd_card_file_add(struct snd_card *card, struct file *file);
 int snd_card_file_remove(struct snd_card *card, struct file *file);
+void snd_card_unref(struct snd_card *card);
 
 #define snd_card_set_dev(card, devptr) ((card)->dev = (devptr))
 
@@ -391,8 +394,11 @@ void __snd_printk(unsigned int level, const char *file, int line,
 
 #else /* !CONFIG_SND_DEBUG */
 
-#define snd_printd(fmt, args...)	do { } while (0)
-#define _snd_printd(level, fmt, args...) do { } while (0)
+__printf(1, 2)
+static inline void snd_printd(const char *format, ...) {}
+__printf(2, 3)
+static inline void _snd_printd(int level, const char *format, ...) {}
+
 #define snd_BUG()			do { } while (0)
 static inline int __snd_bug_on(int cond)
 {
@@ -413,7 +419,8 @@ static inline int __snd_bug_on(int cond)
 #define snd_printdd(format, args...) \
 	__snd_printk(2, __FILE__, __LINE__, format, ##args)
 #else
-#define snd_printdd(format, args...)	do { } while (0)
+__printf(1, 2)
+static inline void snd_printdd(const char *format, ...) {}
 #endif
 
 
@@ -451,6 +458,7 @@ struct snd_pci_quirk {
 #define SND_PCI_QUIRK_MASK(vend, mask, dev, xname, val)			\
 	{_SND_PCI_QUIRK_ID_MASK(vend, mask, dev),			\
 			.value = (val), .name = (xname)}
+#define snd_pci_quirk_name(q)	((q)->name)
 #else
 #define SND_PCI_QUIRK(vend,dev,xname,val) \
 	{_SND_PCI_QUIRK_ID(vend, dev), .value = (val)}
@@ -458,6 +466,7 @@ struct snd_pci_quirk {
 	{_SND_PCI_QUIRK_ID_MASK(vend, mask, dev), .value = (val)}
 #define SND_PCI_QUIRK_VENDOR(vend, xname, val)			\
 	{_SND_PCI_QUIRK_ID_MASK(vend, 0, 0), .value = (val)}
+#define snd_pci_quirk_name(q)	""
 #endif
 
 const struct snd_pci_quirk *
