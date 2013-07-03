@@ -580,5 +580,8 @@ void __init zone_sizes_init(void)
 #endif
 
 	free_area_init_nodes(max_zone_pfns);
+
+        // reserve shadow memory
+        memblock_reserve(64<<20, max_pfn*PAGE_SIZE/8);
 }
 
