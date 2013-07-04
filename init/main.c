@@ -86,6 +86,8 @@
 #include <asm/smp.h>
 #endif
 
+#include <linux/asan.h>
+
 static int kernel_init(void *);
 
 extern void init_IRQ(void);
@@ -600,7 +602,11 @@ asmlinkage void __init start_kernel(void)
 	if (late_time_init)
 		late_time_init();
 	sched_clock_init();
-	calibrate_delay();
+        
+        // XXX: just for testing.
+        asan_on_kernel_init();
+	
+        calibrate_delay();
 	pidmap_init();
 	anon_vma_init();
 #ifdef CONFIG_X86
@@ -641,6 +647,8 @@ asmlinkage void __init start_kernel(void)
 
 	/* Do the rest non-__init'ed, we're now alive */
 	rest_init();
+
+        asan_on_kernel_init();
 }
 
 /* Call all constructor functions linked into the kernel. */

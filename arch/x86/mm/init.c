@@ -562,6 +562,8 @@ void __init free_initrd_mem(unsigned long start, unsigned long end)
 }
 #endif
 
+#include <linux/asan.h>
+
 void __init zone_sizes_init(void)
 {
 	unsigned long max_zone_pfns[MAX_NR_ZONES];
@@ -581,7 +583,7 @@ void __init zone_sizes_init(void)
 
 	free_area_init_nodes(max_zone_pfns);
 
-        // reserve shadow memory
-        memblock_reserve(64<<20, max_pfn*PAGE_SIZE/8);
+        /* Reserve shadow memory. */
+        asan_init_shadow();
 }
 
