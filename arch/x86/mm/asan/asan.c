@@ -6,19 +6,15 @@
 
 #include <linux/asan.h>
 
-extern unsigned long max_pfn;
+#include "utils.h"
 
-#define CHECK(x) BUG_ON(!(x));
-// TODO: ensure that msg is printed.
-#define UNREACHABLE(msg) CHECK(0 && msg)
+extern unsigned long max_pfn;
 
 #define SHADOW_SCALE (3)
 #define SHADOW_OFFSET (64 << 20)
 #define SHADOW_GRANULARITY (1 << SHADOW_SCALE)
 
 #define ASAN_POISONED_MEMORY 0xF7
-
-typedef unsigned long uptr;
 
 static uptr mem_to_shadow(uptr addr)
 {
@@ -104,42 +100,6 @@ static int asan_is_poisoned(uptr addr)
                 return (last_accessed_byte >= shadow_value) ? 1 : 0;
         }
         return 0;
-}
-
-static int is_power_of_two(uptr x)
-{
-        return (x & (x - 1)) == 0 ? 1 : 0;
-}
-
-static uptr round_up_to(uptr size, uptr boundary)
-{
-        CHECK(is_power_of_two(boundary) == 1);
-        return (size + boundary - 1) & ~(boundary - 1);
-}
-
-static uptr round_down_to(uptr size, uptr boundary)
-{
-        CHECK(is_power_of_two(boundary) == 1);  // not in sanitizer_common.h?
-        return size & ~(boundary - 1);
-
-}
-
-static int mem_is_zero(const u8 *beg, uptr size)
-{
-        // XXX: check size?
-        const u8 *end = beg + size;
-        uptr *aligned_beg = (uptr*)round_up_to((uptr)beg, sizeof(uptr));
-        uptr *aligned_end = (uptr*)round_down_to((uptr)end, sizeof(uptr));
-        uptr all = 0;
-        const u8 *mem;
-        for (mem = beg; mem < (u8*)aligned_beg && mem < end; mem++)
-                all |= *mem;
-        for (; aligned_beg < aligned_end; aligned_beg++)
-                all |= *aligned_beg;
-        if ((u8*)aligned_end >= beg)
-                for (mem = (u8*)aligned_end; mem < end; mem++)
-                        all |= *mem;
-        return all == 0 ? 1 : 0; 
 }
 
 void *asan_region_is_poisoned(void *addr, uptr size)
