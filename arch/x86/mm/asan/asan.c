@@ -8,8 +8,8 @@
 
 extern unsigned long max_pfn;
 
-// TODO.
 #define CHECK(x) BUG_ON(!(x));
+// TODO: ensure that msg is printed.
 #define UNREACHABLE(msg) CHECK(0 && msg)
 
 #define SHADOW_SCALE (3)
@@ -20,13 +20,11 @@ extern unsigned long max_pfn;
 
 typedef unsigned long uptr;
 
-static void *mem_to_shadow(void *addr)
+static uptr mem_to_shadow(uptr addr)
 {
-        if(addr < __va(0) || addr >= __va(max_pfn << PAGE_SHIFT))
-                return NULL;
-        return (void*)(((uptr)(addr - PAGE_OFFSET) >> SHADOW_SCALE)
-                + PAGE_OFFSET + SHADOW_OFFSET);
-
+        if (addr < (uptr)(__va(0)) || addr >= (uptr)(__va(max_pfn << PAGE_SHIFT)))
+                return 0;
+        return ((addr - PAGE_OFFSET) >> SHADOW_SCALE) + PAGE_OFFSET + SHADOW_OFFSET;
 }
 
 struct shadow_segment_endpoint {
@@ -36,10 +34,10 @@ struct shadow_segment_endpoint {
 };
 
 static void init_shadow_segment_endpoint(struct shadow_segment_endpoint *endp,
-                                  uptr addr)
+                                         uptr addr)
 {
         CHECK(endp != NULL);
-        endp->chunk = (u8*)mem_to_shadow((void*)addr);
+        endp->chunk = (u8*)mem_to_shadow(addr);
         CHECK(endp->chunk != NULL);
         endp->offset = addr & (SHADOW_GRANULARITY - 1);
         endp->value = *endp->chunk;
@@ -47,17 +45,17 @@ static void init_shadow_segment_endpoint(struct shadow_segment_endpoint *endp,
 
 void asan_init_shadow(void)
 {
-        memblock_reserve(SHADOW_OFFSET, (max_pfn * PAGE_SIZE) >> SHADOW_SCALE);
-        printk(KERN_ERR "Shadow memory size: %lu\n",
-               (max_pfn * PAGE_SIZE) >> SHADOW_SCALE);
+        uptr shadow_size = (max_pfn * PAGE_SIZE) >> SHADOW_SCALE;
+        memblock_reserve(SHADOW_OFFSET, shadow_size);
+        printk(KERN_ERR "Shadow memory size: %lu\n", shadow_size);
 }
 
 void asan_poison(void *addr, uptr size)
 {
-        if (size == 0) return;
-
         struct shadow_segment_endpoint beg, end;
         s8 value;
+
+        if (size == 0) return;
 
         init_shadow_segment_endpoint(&beg, (uptr)addr);
         init_shadow_segment_endpoint(&end, (uptr)addr + size);
@@ -98,7 +96,7 @@ void asan_unpoison(void *addr, uptr size)
 static int asan_is_poisoned(uptr addr)
 {
         const uptr ACCESS_SIZE = 1;
-        u8* shadow_addr = (u8*)mem_to_shadow((void*)addr);
+        u8* shadow_addr = (u8*)mem_to_shadow(addr);
         s8 shadow_value = *shadow_addr;
         if (shadow_value != 0) {
                 u8 last_accessed_byte = (addr & (SHADOW_GRANULARITY - 1))
@@ -150,8 +148,8 @@ void *asan_region_is_poisoned(void *addr, uptr size)
         uptr end = beg + size;
         uptr aligned_beg = round_up_to(beg, SHADOW_GRANULARITY);
         uptr aligned_end = round_down_to(end, SHADOW_GRANULARITY);
-        uptr shadow_beg = (uptr)mem_to_shadow((void*)aligned_beg);
-        uptr shadow_end = (uptr)mem_to_shadow((void*)aligned_end);
+        uptr shadow_beg = mem_to_shadow(aligned_beg);
+        uptr shadow_end = mem_to_shadow(aligned_end);
         if (asan_is_poisoned(shadow_beg) == 0 &&
             asan_is_poisoned(shadow_end) == 0 &&
             (shadow_end <= shadow_beg ||
@@ -164,13 +162,6 @@ void *asan_region_is_poisoned(void *addr, uptr size)
         return NULL;
 }
 
-void asan_ensure_region_is_poisoned(void *addr, uptr size)
-{
-        if (asan_region_is_poisoned(addr, size) == 0) {
-                printk(KERN_ERR "Addr %lx is not poisoned!\n", (uptr)addr);
-        }
-}
-
 void asan_on_kernel_init(void)
 {
         uptr curr;
@@ -180,5 +171,5 @@ void asan_on_kernel_init(void)
         asan_poison((void*)(PAGE_OFFSET + 5), 15);
         for(curr = PAGE_OFFSET; curr < PAGE_OFFSET + 24; curr++)
                 printk(KERN_ERR "%lx %c\n", curr,
-                       asan_is_poisoned(curr) == 0 ? '0' : 'p');  
+                       asan_is_poisoned(curr) == 0 ? 'u' : 'p');  
 }
