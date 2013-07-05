@@ -87,6 +87,33 @@ void asan_poison(void *addr, uptr size)
 
 void asan_unpoison(void *addr, uptr size)
 {
+        struct shadow_segment_endpoint beg, end;
+        s8 value;
+
+        if (size == 0) return;
+
+        init_shadow_segment_endpoint(&beg, (uptr)addr);
+        init_shadow_segment_endpoint(&end, (uptr)addr + size);
+
+        if (beg.chunk == end.chunk) {
+                CHECK(beg.offset < end.offset);
+                CHECK(beg.value == end.value);
+                value = beg.value;
+                if (value != 0) {
+                        *beg.chunk = max(value, end.offset);
+                }
+                return;
+        }
+        
+        CHECK(beg.chunk < end.chunk);
+        if (beg.offset > 0) {
+                *beg.chunk = 0;
+                beg.chunk++;
+        }
+        memset(beg.chunk, 0, end.chunk - beg.chunk);
+        if (end.offset > 0 && end.value != 0) {
+                *end.chunk = max(end.value, end.offset);
+        }
 }
 
 static int asan_is_poisoned(uptr addr)
@@ -122,14 +149,46 @@ void *asan_region_is_poisoned(void *addr, uptr size)
         return NULL;
 }
 
+static void run_tests(void)
+{
+        uptr i;
+
+        printk(KERN_ERR "Running tests...\n");
+
+        CHECK(asan_region_is_poisoned((void*)PAGE_OFFSET, 50) == NULL);
+
+        asan_poison((void*)(PAGE_OFFSET + 5), 27);
+        for (i = PAGE_OFFSET; i < PAGE_OFFSET + 5; i++) {
+                CHECK(asan_is_poisoned(i) == 0);
+        }
+        for (i = PAGE_OFFSET + 5;
+             i < round_down_to(PAGE_OFFSET + 5 + 27, SHADOW_GRANULARITY);
+             i++) {
+                CHECK(asan_is_poisoned(i) == 1);
+                //printk(KERN_ERR "%lx %c\n", i,
+                //       asan_is_poisoned(i) == 0 ? 'u' : 'p');
+        }
+        for (i = PAGE_OFFSET + 5 + 27; i < PAGE_OFFSET + 50; i++) {
+                CHECK(asan_is_poisoned(i) == 0);
+        }
+
+
+        CHECK(asan_region_is_poisoned((void*)PAGE_OFFSET, 50)
+              == (void*)(PAGE_OFFSET + 5)); 
+        CHECK(asan_region_is_poisoned((void*)(PAGE_OFFSET + 10), 50)
+              == (void*)(PAGE_OFFSET + 10));
+
+        asan_unpoison((void*)(PAGE_OFFSET + 5), 27);
+        for (i = PAGE_OFFSET; i < PAGE_OFFSET + 50; i++) {
+                CHECK(asan_is_poisoned(i) == 0);
+        }
+
+        CHECK(asan_region_is_poisoned((void*)PAGE_OFFSET, 50) == NULL);
+
+        printk(KERN_ERR "Passed all the tests.\n");
+}
+
 void asan_on_kernel_init(void)
 {
-        uptr curr;
-
-        printk(KERN_ERR "Kernel initialized!\n");
-
-        asan_poison((void*)(PAGE_OFFSET + 5), 15);
-        for(curr = PAGE_OFFSET; curr < PAGE_OFFSET + 24; curr++)
-                printk(KERN_ERR "%lx %c\n", curr,
-                       asan_is_poisoned(curr) == 0 ? 'u' : 'p');  
+        run_tests();
 }
