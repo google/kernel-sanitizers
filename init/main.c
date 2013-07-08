@@ -6,7 +6,7 @@
  *  GK 2/5/95  -  Changed to support mounting root fs via NFS
  *  Added initrd & change_root: Werner Almesberger & Hans Lermen, Feb '96
  *  Moan early if gcc is old, avoiding bogus kernels - Paul Gortmaker, May '96
- *  Simplified starting of init:  Michael A. Griffith <grif@acm.org> 
+ *  Simplified starting of init:  Michael A. Griffith <grif@acm.org>
  */
 
 #define DEBUG		/* Enable initcall_debug */
@@ -602,11 +602,11 @@ asmlinkage void __init start_kernel(void)
 	if (late_time_init)
 		late_time_init();
 	sched_clock_init();
-        
-        // XXX: just for testing.
-        asan_on_kernel_init();
-	
-        calibrate_delay();
+
+	/* XXX: just for testing. */
+	asan_on_kernel_init();
+
+	calibrate_delay();
 	pidmap_init();
 	anon_vma_init();
 #ifdef CONFIG_X86

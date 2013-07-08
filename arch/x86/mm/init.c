@@ -583,7 +583,7 @@ void __init zone_sizes_init(void)
 
 	free_area_init_nodes(max_zone_pfns);
 
-        /* Reserve shadow memory. */
-        asan_init_shadow();
+	/* Reserve shadow memory.*/
+	asan_init_shadow();
 }
 
