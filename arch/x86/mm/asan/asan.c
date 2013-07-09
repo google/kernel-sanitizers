@@ -14,11 +14,6 @@ extern unsigned long max_pfn;
 #define SHADOW_OFFSET (64 << 20)
 #define SHADOW_GRANULARITY (1 << SHADOW_SCALE)
 
-#define ASAN_USER_POISONED_MEMORY 0xF7
-#define ASAN_HEAP_LEFT_REDZONE 0xFA
-#define ASAN_HEAP_RIGHT_REDZONE 0xFB
-#define ASAN_HEAP_FREE 0xFD
-
 static inline int addr_is_in_mem(uptr addr)
 {
 	return (addr >= (uptr)(__va(0)) &&
@@ -185,12 +180,34 @@ void *asan_region_is_poisoned(void *addr, uptr size)
 	return NULL;
 }
 
+static void asan_check_region(void *addr, uptr size)
+{
+	void *rv = asan_region_is_poisoned(addr, size);
+	uptr poisoned_addr = (uptr)rv;
+	uptr rounded_poisoned_addr = poisoned_addr - (poisoned_addr & 0xF);
+	u8 *shadow = (u8 *)mem_to_shadow(rounded_poisoned_addr);
+	u8 buffer[64], i;
+
+	printk(KERN_ERR "Checking region [%lx, %lx)...",
+	       (uptr)addr, (uptr)addr + size);
+
+	if (rv == NULL)
+		return;
+
+	printk(KERN_ERR "Error: address %lx is poisoned!\n", poisoned_addr);
+	printk(KERN_ERR "Shadow bytes around the buggy address:\n");
+	for (i = 0; i < 0x10; i++)
+		sprintf(buffer + i * 3, "%02x ", *(shadow + i));
+	printk(KERN_ERR "  %lx: %s\n", rounded_poisoned_addr, buffer);
+}
+
 static void run_tests(void)
 {
 	uptr i;
 
 	printk(KERN_ERR "Running tests...\n");
 
+	asan_check_region((void *)PAGE_OFFSET, 50);
 	CHECK(asan_region_is_poisoned((void *)PAGE_OFFSET, 50) == NULL);
 
 	asan_poison_memory((void *)(PAGE_OFFSET + 5), 27);
@@ -230,6 +247,11 @@ static void run_tests(void)
 	    i < PAGE_OFFSET + SHADOW_GRANULARITY * 10; i++) {
 		CHECK(asan_memory_is_poisoned(i) == 0);
 	}
+
+	asan_poison_shadow((void *)(PAGE_OFFSET + SHADOW_GRANULARITY),
+		   SHADOW_GRANULARITY * 5, 0);
+	for (i = PAGE_OFFSET; i < PAGE_OFFSET + SHADOW_GRANULARITY * 10; i++)
+		CHECK(asan_memory_is_poisoned(i) == 0);
 
 	printk(KERN_ERR "Passed all the tests.\n");
 }

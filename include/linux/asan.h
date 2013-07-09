@@ -1,6 +1,10 @@
 #ifndef LINUX_ASAN_H
 #define LINUX_ASAN_H
 
+#define ASAN_USER_POISONED_MEMORY 0xF7
+#define ASAN_HEAP_REDZONE 0xFA
+#define ASAN_HEAP_FREE 0xFD
+
 void asan_init_shadow(void);
 
 /*
