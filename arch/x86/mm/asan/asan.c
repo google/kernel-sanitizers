@@ -162,8 +162,8 @@ void *asan_region_is_poisoned(void *addr, uptr size)
 	uptr aligned_end = round_down_to(end, SHADOW_GRANULARITY);
 	uptr shadow_beg = mem_to_shadow(aligned_beg);
 	uptr shadow_end = mem_to_shadow(aligned_end);
-	if (asan_memory_is_poisoned(shadow_beg) == 0 &&
-	    asan_memory_is_poisoned(shadow_end) == 0 &&
+	if (asan_memory_is_poisoned(aligned_beg) == 0 &&
+	    asan_memory_is_poisoned(aligned_end) == 0 &&
 	    (shadow_end <= shadow_beg ||
 	     mem_is_zero((const u8 *)shadow_beg, shadow_end - shadow_beg) == 1))
 		return NULL;
@@ -193,7 +193,6 @@ static void run_tests(void)
 	for (i = PAGE_OFFSET + 5 + 27; i < PAGE_OFFSET + 50; i++)
 		CHECK(asan_memory_is_poisoned(i) == 0);
 
-
 	CHECK(asan_region_is_poisoned((void *)PAGE_OFFSET, 50)
 	      == (void *)(PAGE_OFFSET + 5));
 	CHECK(asan_region_is_poisoned((void *)(PAGE_OFFSET + 10), 50)
@@ -204,6 +203,22 @@ static void run_tests(void)
 		CHECK(asan_memory_is_poisoned(i) == 0);
 
 	CHECK(asan_region_is_poisoned((void *)PAGE_OFFSET, 50) == NULL);
+
+	asan_poison_shadow((void *)(PAGE_OFFSET + SHADOW_GRANULARITY),
+			   SHADOW_GRANULARITY * 5, ASAN_HEAP_FREE);
+	CHECK(asan_region_is_poisoned((void *)PAGE_OFFSET,
+				      SHADOW_GRANULARITY * 3) ==
+	      (void *)(PAGE_OFFSET + SHADOW_GRANULARITY));
+	for (i = PAGE_OFFSET; i < PAGE_OFFSET + SHADOW_GRANULARITY; i++)
+		CHECK(asan_memory_is_poisoned(i) == 0);
+	for (i = PAGE_OFFSET + SHADOW_GRANULARITY;
+	     i < PAGE_OFFSET + SHADOW_GRANULARITY * 6; i++) {
+		CHECK(asan_memory_is_poisoned(i) == 1);
+	}
+	for (i = PAGE_OFFSET + SHADOW_GRANULARITY * 6;
+	    i < PAGE_OFFSET + SHADOW_GRANULARITY * 10; i++) {
+		CHECK(asan_memory_is_poisoned(i) == 0);
+	}
 
 	printk(KERN_ERR "Passed all the tests.\n");
 }
