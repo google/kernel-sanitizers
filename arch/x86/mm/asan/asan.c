@@ -156,20 +156,31 @@ static int asan_memory_is_poisoned(uptr addr)
 
 void *asan_region_is_poisoned(void *addr, uptr size)
 {
-	uptr beg = (uptr)addr;
-	uptr end = beg + size;
-	uptr aligned_beg = round_up_to(beg, SHADOW_GRANULARITY);
-	uptr aligned_end = round_down_to(end, SHADOW_GRANULARITY);
-	uptr shadow_beg = mem_to_shadow(aligned_beg);
-	uptr shadow_end = mem_to_shadow(aligned_end);
-	if (asan_memory_is_poisoned(aligned_beg) == 0 &&
-	    asan_memory_is_poisoned(aligned_end) == 0 &&
+	uptr beg, end;
+	uptr aligned_beg, aligned_end;
+	uptr shadow_beg, shadow_end;
+
+	if (size == 0)
+		return NULL;
+
+	beg = (uptr)addr;
+	end = beg + size;
+	CHECK(addr_is_in_mem(beg));
+	CHECK(addr_is_in_mem(end));
+
+	aligned_beg = round_up_to(beg, SHADOW_GRANULARITY);
+	aligned_end = round_down_to(end, SHADOW_GRANULARITY);
+	shadow_beg = mem_to_shadow(aligned_beg);
+	shadow_end = mem_to_shadow(aligned_end);
+	if (!asan_memory_is_poisoned(beg) &&
+	    !asan_memory_is_poisoned(end - 1) &&
 	    (shadow_end <= shadow_beg ||
-	     mem_is_zero((const u8 *)shadow_beg, shadow_end - shadow_beg) == 1))
+	     mem_is_zero((const u8 *)shadow_beg, shadow_end - shadow_beg)))
 		return NULL;
 	for (; beg < end; beg++)
-		if (asan_memory_is_poisoned(beg) == 1)
+		if (asan_memory_is_poisoned(beg))
 			return (void *)beg;
+
 	UNREACHABLE("mem_is_zero returned 0, but poisoned byte was not found");
 	return NULL;
 }
