@@ -14,12 +14,20 @@ extern unsigned long max_pfn;
 #define SHADOW_OFFSET (64 << 20)
 #define SHADOW_GRANULARITY (1 << SHADOW_SCALE)
 
-#define ASAN_POISONED_MEMORY 0xF7
+#define ASAN_USER_POISONED_MEMORY 0xF7
+#define ASAN_HEAP_LEFT_REDZONE 0xFA
+#define ASAN_HEAP_RIGHT_REDZONE 0xFB
+#define ASAN_HEAP_FREE 0xFD
+
+static inline int addr_is_in_mem(uptr addr)
+{
+	return (addr >= (uptr)(__va(0)) &&
+		addr < (uptr)(__va(max_pfn << PAGE_SHIFT))) ? 1 : 0;
+}
 
 static uptr mem_to_shadow(uptr addr)
 {
-	if (addr < (uptr)(__va(0)) ||
-	    addr >= (uptr)(__va(max_pfn << PAGE_SHIFT)))
+	if (addr_is_in_mem(addr) == 0)
 		return 0;
 	return ((addr - PAGE_OFFSET) >> SHADOW_SCALE)
 		+ PAGE_OFFSET + SHADOW_OFFSET;
@@ -52,7 +60,21 @@ void asan_init_shadow(void)
 	printk(KERN_ERR "Shadow memory size: %lu\n", shadow_size);
 }
 
-void asan_poison(void *addr, uptr size)
+void asan_poison_shadow(void *addr, uptr size, u8 value)
+{
+	uptr shadow_beg, shadow_end;
+
+	CHECK(addr_is_aligned((uptr)addr, SHADOW_GRANULARITY) == 1);
+	CHECK(addr_is_aligned((uptr)addr + size, SHADOW_GRANULARITY) == 1);
+	CHECK(addr_is_in_mem((uptr)addr) == 1);
+	CHECK(addr_is_in_mem((uptr)addr + size - SHADOW_GRANULARITY) == 1);
+
+	shadow_beg = mem_to_shadow((uptr)addr);
+	shadow_end = mem_to_shadow((uptr)addr + size - SHADOW_GRANULARITY) + 1;
+	memset((void *)shadow_beg, value, shadow_end - shadow_beg);
+}
+
+void asan_poison_memory(void *addr, uptr size)
 {
 	struct shadow_segment_endpoint beg, end;
 	s8 value;
@@ -71,7 +93,7 @@ void asan_poison(void *addr, uptr size)
 			if (beg.offset > 0)
 				*beg.chunk = min(value, beg.offset);
 			else
-				*beg.chunk = ASAN_POISONED_MEMORY;
+				*beg.chunk = ASAN_USER_POISONED_MEMORY;
 		}
 		return;
 	}
@@ -84,12 +106,12 @@ void asan_poison(void *addr, uptr size)
 			*beg.chunk = min(beg.value, beg.offset);
 		beg.chunk++;
 	}
-	memset(beg.chunk, ASAN_POISONED_MEMORY, end.chunk - beg.chunk);
+	memset(beg.chunk, ASAN_USER_POISONED_MEMORY, end.chunk - beg.chunk);
 	if (end.value > 0 && end.value <= end.offset)
-		*end.chunk = ASAN_POISONED_MEMORY;
+		*end.chunk = ASAN_USER_POISONED_MEMORY;
 }
 
-void asan_unpoison(void *addr, uptr size)
+void asan_unpoison_memory(void *addr, uptr size)
 {
 	struct shadow_segment_endpoint beg, end;
 	s8 value;
@@ -119,7 +141,7 @@ void asan_unpoison(void *addr, uptr size)
 		*end.chunk = max(end.value, end.offset);
 }
 
-static int asan_is_poisoned(uptr addr)
+static int asan_memory_is_poisoned(uptr addr)
 {
 	const uptr ACCESS_SIZE = 1;
 	u8 *shadow_addr = (u8 *)mem_to_shadow(addr);
@@ -140,13 +162,13 @@ void *asan_region_is_poisoned(void *addr, uptr size)
 	uptr aligned_end = round_down_to(end, SHADOW_GRANULARITY);
 	uptr shadow_beg = mem_to_shadow(aligned_beg);
 	uptr shadow_end = mem_to_shadow(aligned_end);
-	if (asan_is_poisoned(shadow_beg) == 0 &&
-	    asan_is_poisoned(shadow_end) == 0 &&
+	if (asan_memory_is_poisoned(shadow_beg) == 0 &&
+	    asan_memory_is_poisoned(shadow_end) == 0 &&
 	    (shadow_end <= shadow_beg ||
 	     mem_is_zero((const u8 *)shadow_beg, shadow_end - shadow_beg) == 1))
 		return NULL;
 	for (; beg < end; beg++)
-		if (asan_is_poisoned(beg) == 1)
+		if (asan_memory_is_poisoned(beg) == 1)
 			return (void *)beg;
 	UNREACHABLE("mem_is_zero returned 0, but poisoned byte was not found");
 	return NULL;
@@ -160,16 +182,16 @@ static void run_tests(void)
 
 	CHECK(asan_region_is_poisoned((void *)PAGE_OFFSET, 50) == NULL);
 
-	asan_poison((void *)(PAGE_OFFSET + 5), 27);
+	asan_poison_memory((void *)(PAGE_OFFSET + 5), 27);
 	for (i = PAGE_OFFSET; i < PAGE_OFFSET + 5; i++)
-		CHECK(asan_is_poisoned(i) == 0);
+		CHECK(asan_memory_is_poisoned(i) == 0);
 	for (i = PAGE_OFFSET + 5;
 	     i < round_down_to(PAGE_OFFSET + 5 + 27, SHADOW_GRANULARITY);
 	     i++) {
-		CHECK(asan_is_poisoned(i) == 1);
+		CHECK(asan_memory_is_poisoned(i) == 1);
 	}
 	for (i = PAGE_OFFSET + 5 + 27; i < PAGE_OFFSET + 50; i++)
-		CHECK(asan_is_poisoned(i) == 0);
+		CHECK(asan_memory_is_poisoned(i) == 0);
 
 
 	CHECK(asan_region_is_poisoned((void *)PAGE_OFFSET, 50)
@@ -177,9 +199,9 @@ static void run_tests(void)
 	CHECK(asan_region_is_poisoned((void *)(PAGE_OFFSET + 10), 50)
 	      == (void *)(PAGE_OFFSET + 10));
 
-	asan_unpoison((void *)(PAGE_OFFSET + 5), 27);
+	asan_unpoison_memory((void *)(PAGE_OFFSET + 5), 27);
 	for (i = PAGE_OFFSET; i < PAGE_OFFSET + 50; i++)
-		CHECK(asan_is_poisoned(i) == 0);
+		CHECK(asan_memory_is_poisoned(i) == 0);
 
 	CHECK(asan_region_is_poisoned((void *)PAGE_OFFSET, 50) == NULL);
 
