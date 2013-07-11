@@ -55,12 +55,12 @@ void asan_init_shadow(void)
 	printk(KERN_ERR "Shadow memory size: %lu\n", shadow_size);
 }
 
-void asan_poison_shadow(void *addr, uptr size, u8 value)
+void asan_poison_shadow(const void *addr, uptr size, u8 value)
 {
 	uptr shadow_beg, shadow_end;
 
-	CHECK(addr_is_aligned((uptr)addr, SHADOW_GRANULARITY) == 1);
-	CHECK(addr_is_aligned((uptr)addr + size, SHADOW_GRANULARITY) == 1);
+	// CHECK(addr_is_aligned((uptr)addr, SHADOW_GRANULARITY) == 1);
+	// CHECK(addr_is_aligned((uptr)addr + size, SHADOW_GRANULARITY) == 1);
 	CHECK(addr_is_in_mem((uptr)addr) == 1);
 	CHECK(addr_is_in_mem((uptr)addr + size - SHADOW_GRANULARITY) == 1);
 
@@ -69,7 +69,7 @@ void asan_poison_shadow(void *addr, uptr size, u8 value)
 	memset((void *)shadow_beg, value, shadow_end - shadow_beg);
 }
 
-void asan_poison_memory(void *addr, uptr size)
+void asan_poison_memory(const void *addr, uptr size)
 {
 	struct shadow_segment_endpoint beg, end;
 	s8 value;
@@ -106,7 +106,7 @@ void asan_poison_memory(void *addr, uptr size)
 		*end.chunk = ASAN_USER_POISONED_MEMORY;
 }
 
-void asan_unpoison_memory(void *addr, uptr size)
+void asan_unpoison_memory(const void *addr, uptr size)
 {
 	struct shadow_segment_endpoint beg, end;
 	s8 value;
@@ -149,7 +149,9 @@ static int asan_memory_is_poisoned(uptr addr)
 	return 0;
 }
 
-void *asan_region_is_poisoned(void *addr, uptr size)
+static uptr b = 0, e = 0;
+
+const void *asan_region_is_poisoned(const void *addr, uptr size)
 {
 	uptr beg, end;
 	uptr aligned_beg, aligned_end;
@@ -160,8 +162,13 @@ void *asan_region_is_poisoned(void *addr, uptr size)
 
 	beg = (uptr)addr;
 	end = beg + size;
-	CHECK(addr_is_in_mem(beg));
-	CHECK(addr_is_in_mem(end));
+	//CHECK(addr_is_in_mem(beg));
+	//CHECK(addr_is_in_mem(end));
+	if (!addr_is_in_mem(beg) || !addr_is_in_mem(end)) {
+		b = beg;
+		e = end;
+		return NULL;
+	}
 
 	aligned_beg = round_up_to(beg, SHADOW_GRANULARITY);
 	aligned_end = round_down_to(end, SHADOW_GRANULARITY);
@@ -174,31 +181,43 @@ void *asan_region_is_poisoned(void *addr, uptr size)
 		return NULL;
 	for (; beg < end; beg++)
 		if (asan_memory_is_poisoned(beg))
-			return (void *)beg;
+			return (const void *)beg;
 
 	UNREACHABLE("mem_is_zero returned 0, but poisoned byte was not found");
 	return NULL;
 }
 
-static void asan_check_region(void *addr, uptr size)
-{
-	void *rv = asan_region_is_poisoned(addr, size);
-	uptr poisoned_addr = (uptr)rv;
-	uptr rounded_poisoned_addr = poisoned_addr - (poisoned_addr & 0xF);
-	u8 *shadow = (u8 *)mem_to_shadow(rounded_poisoned_addr);
-	u8 buffer[64], i;
+static int asan_enabled = 1;
+static uptr accessed_poisoned_addr = 0;
 
-	printk(KERN_ERR "Checking region [%lx, %lx)...",
-	       (uptr)addr, (uptr)addr + size);
+void asan_check_region(const void *addr, uptr size)
+{
+	const void *rv = asan_region_is_poisoned(addr, size);
+	uptr poisoned_addr = (uptr)rv;
 
 	if (rv == NULL)
 		return;
 
-	printk(KERN_ERR "Error: address %lx is poisoned!\n", poisoned_addr);
+	accessed_poisoned_addr = poisoned_addr;
+}
+
+static void asan_print_errors(void)
+{
+	u8 *aligned_shadow;
+	u8 buffer[64], i;
+
+	if (accessed_poisoned_addr == 0) {
+		printk(KERN_ERR "No errors occured.\n");
+		return;
+	}
+
+	aligned_shadow = (u8 *)mem_to_shadow(accessed_poisoned_addr);
+	printk(KERN_ERR "Error: address %lx is poisoned!\n",
+		accessed_poisoned_addr);
 	printk(KERN_ERR "Shadow bytes around the buggy address:\n");
 	for (i = 0; i < 0x10; i++)
-		sprintf(buffer + i * 3, "%02x ", *(shadow + i));
-	printk(KERN_ERR "  %lx: %s\n", rounded_poisoned_addr, buffer);
+		sprintf(buffer + i * 3, "%02x ", *(aligned_shadow + i));
+	printk(KERN_ERR "  %lx: %s\n", (uptr)aligned_shadow, buffer);
 }
 
 static void run_tests(void)
@@ -207,7 +226,7 @@ static void run_tests(void)
 
 	printk(KERN_ERR "Running tests...\n");
 
-	asan_check_region((void *)PAGE_OFFSET, 50);
+	//asan_check_region((void *)PAGE_OFFSET, 50);
 	CHECK(asan_region_is_poisoned((void *)PAGE_OFFSET, 50) == NULL);
 
 	asan_poison_memory((void *)(PAGE_OFFSET + 5), 27);
@@ -259,4 +278,17 @@ static void run_tests(void)
 void asan_on_kernel_init(void)
 {
 	run_tests();
+
+	asan_enabled = 0;
+	asan_print_errors();
+	printk(KERN_ERR "Not in mem: %lx %lx\n", b, e);
 }
+
+void asan_on_memcpy(const void *to, const void *from, uptr n)
+{
+	if (asan_enabled) {
+		asan_check_region(to, n);
+		asan_check_region(from, n);
+	}
+}
+EXPORT_SYMBOL_GPL(asan_on_memcpy);

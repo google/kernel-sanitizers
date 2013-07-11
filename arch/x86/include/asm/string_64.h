@@ -3,12 +3,17 @@
 
 #ifdef __KERNEL__
 
+#include <linux/asan.h>
+
 /* Written 2002 by Andi Kleen */
 
 /* Only used for special circumstances. Stolen from i386/string.h */
 static __always_inline void *__inline_memcpy(void *to, const void *from, size_t n)
 {
 	unsigned long d0, d1, d2;
+
+	asan_on_memcpy(to, from, n);
+
 	asm volatile("rep ; movsl\n\t"
 		     "testb $2,%b4\n\t"
 		     "je 1f\n\t"
@@ -27,7 +32,7 @@ static __always_inline void *__inline_memcpy(void *to, const void *from, size_t 
    function. */
 
 #define __HAVE_ARCH_MEMCPY 1
-#ifndef CONFIG_KMEMCHECK
+#if 0 /* #ifndef CONFIG_KMEMCHECK */
 #if (__GNUC__ == 4 && __GNUC_MINOR__ >= 3) || __GNUC__ > 4
 extern void *memcpy(void *to, const void *from, size_t len);
 #else

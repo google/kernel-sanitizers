@@ -117,6 +117,8 @@
 #include	<linux/memory.h>
 #include	<linux/prefetch.h>
 
+#include	<linux/asan.h>
+
 #include	<net/sock.h>
 
 #include	<asm/cacheflush.h>
@@ -3401,6 +3403,9 @@ slab_alloc_node(struct kmem_cache *cachep, gfp_t flags, int nodeid,
 	if (likely(ptr))
 		kmemcheck_slab_alloc(cachep, flags, ptr, cachep->object_size);
 
+	if (likely(ptr))
+		asan_poison_shadow(ptr, cachep->object_size, 0);
+
 	if (unlikely((flags & __GFP_ZERO) && ptr))
 		memset(ptr, 0, cachep->object_size);
 
@@ -3465,6 +3470,9 @@ slab_alloc(struct kmem_cache *cachep, gfp_t flags, unsigned long caller)
 
 	if (likely(objp))
 		kmemcheck_slab_alloc(cachep, flags, objp, cachep->object_size);
+
+	if (likely(objp))
+		asan_poison_shadow(objp, cachep->object_size, 0);
 
 	if (unlikely((flags & __GFP_ZERO) && objp))
 		memset(objp, 0, cachep->object_size);
@@ -3587,6 +3595,8 @@ static inline void __cache_free(struct kmem_cache *cachep, void *objp,
 	objp = cache_free_debugcheck(cachep, objp, caller);
 
 	kmemcheck_slab_free(cachep, objp, cachep->object_size);
+
+	asan_poison_shadow(objp, cachep->object_size, ASAN_HEAP_FREE);
 
 	/*
 	 * Skip calling cache_free_alien() when the platform is not numa.

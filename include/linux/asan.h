@@ -4,6 +4,7 @@
 #define ASAN_USER_POISONED_MEMORY 0xF7
 #define ASAN_HEAP_REDZONE 0xFA
 #define ASAN_HEAP_FREE 0xFD
+/* TODO: ASAN_HEAP_ALLOCATED? */
 
 void asan_init_shadow(void);
 
@@ -11,7 +12,7 @@ void asan_init_shadow(void);
  * Poisons the shadow memory for 'size' bytes starting from 'addr'.
  * Memory addresses should be properly aligned.
  */
-void asan_poison_shadow(void *addr, unsigned long size, u8 value);
+void asan_poison_shadow(const void *addr, unsigned long size, u8 value);
 
 /*
  * If user asks to poison region [left, right), the program poisons
@@ -19,15 +20,19 @@ void asan_poison_shadow(void *addr, unsigned long size, u8 value);
  * If user asks to unpoison region [left, right), the program unpoisons
  * at most [AlignDown(left), right).
  */
-void asan_poison_memory(void *addr, unsigned long size);
-void asan_unpoison_memory(void *addr, unsigned long size);
+void asan_poison_memory(const void *addr, unsigned long size);
+void asan_unpoison_memory(const void *addr, unsigned long size);
 
 /*
  * Returns pointer to the first poisoned byte if the region is poisoned,
  * returns NULL otherwise.
  */
-void *asan_region_is_poisoned(void *addr, unsigned long size);
+const void *asan_region_is_poisoned(const void *addr, unsigned long size);
+
+void asan_check_region(const void *addr, unsigned long size);
 
 void asan_on_kernel_init(void);
+
+void asan_on_memcpy(const void *to, const void *from, unsigned long n);
 
 #endif
