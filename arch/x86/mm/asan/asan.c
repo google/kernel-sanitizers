@@ -1,6 +1,7 @@
 #include <asm/page.h>
 #include <linux/memblock.h>
 #include <linux/printk.h>
+#include <linux/slab.h>
 #include <linux/string.h>
 #include <linux/types.h>
 
@@ -150,8 +151,6 @@ static int asan_memory_is_poisoned(uptr addr)
 	return 0;
 }
 
-static uptr b = 0, e = 0;
-
 const void *asan_region_is_poisoned(const void *addr, uptr size)
 {
 	uptr beg, end;
@@ -163,11 +162,7 @@ const void *asan_region_is_poisoned(const void *addr, uptr size)
 
 	beg = (uptr)addr;
 	end = beg + size;
-	//CHECK(addr_is_in_mem(beg));
-	//CHECK(addr_is_in_mem(end));
 	if (!addr_is_in_mem(beg) || !addr_is_in_mem(end)) {
-		b = beg;
-		e = end;
 		return NULL;
 	}
 
@@ -189,7 +184,20 @@ const void *asan_region_is_poisoned(const void *addr, uptr size)
 }
 
 static int asan_enabled = 1;
-static uptr accessed_poisoned_addr = 0;
+
+static void asan_print_error(uptr poisoned_addr)
+{
+	u8 *aligned_shadow;
+	u8 buffer[64], i;
+
+	aligned_shadow = (u8 *)mem_to_shadow(poisoned_addr);
+	printk(KERN_ERR "Error: address %lx is poisoned!\n",
+		poisoned_addr);
+	printk(KERN_ERR "Shadow bytes around the buggy address:\n");
+	for (i = 0; i < 0x10; i++)
+		sprintf(buffer + i * 3, "%02x ", *(aligned_shadow + i));
+	printk(KERN_ERR "  %lx: %s\n", (uptr)aligned_shadow, buffer);
+}
 
 void asan_check_region(const void *addr, uptr size)
 {
@@ -199,26 +207,8 @@ void asan_check_region(const void *addr, uptr size)
 	if (rv == NULL)
 		return;
 
-	accessed_poisoned_addr = poisoned_addr;
-}
-
-static void asan_print_errors(void)
-{
-	u8 *aligned_shadow;
-	u8 buffer[64], i;
-
-	if (accessed_poisoned_addr == 0) {
-		printk(KERN_ERR "No errors occured.\n");
-		return;
-	}
-
-	aligned_shadow = (u8 *)mem_to_shadow(accessed_poisoned_addr);
-	printk(KERN_ERR "Error: address %lx is poisoned!\n",
-		accessed_poisoned_addr);
-	printk(KERN_ERR "Shadow bytes around the buggy address:\n");
-	for (i = 0; i < 0x10; i++)
-		sprintf(buffer + i * 3, "%02x ", *(aligned_shadow + i));
-	printk(KERN_ERR "  %lx: %s\n", (uptr)aligned_shadow, buffer);
+	//accessed_poisoned_addr = poisoned_addr;
+	asan_print_error(poisoned_addr);
 }
 
 static void run_tests(void)
@@ -280,9 +270,13 @@ void asan_on_kernel_init(void)
 {
 	run_tests();
 
+	void* ptr = kmalloc(10, GFP_KERNEL);
+	printk(KERN_ERR "kmalloc: %lx\n", (uptr)ptr);
+	kfree(ptr);
+	char tmp;
+	memcpy(ptr, &tmp, 1);
+
 	asan_enabled = 0;
-	asan_print_errors();
-	printk(KERN_ERR "Not in mem: %lx %lx\n", b, e);
 }
 
 void asan_on_memcpy(const void *to, const void *from, uptr n)
