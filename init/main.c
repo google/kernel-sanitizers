@@ -603,9 +603,6 @@ asmlinkage void __init start_kernel(void)
 		late_time_init();
 	sched_clock_init();
 
-	/* XXX: just for testing. */
-	asan_on_kernel_init();
-
 	calibrate_delay();
 	pidmap_init();
 	anon_vma_init();
@@ -645,10 +642,10 @@ asmlinkage void __init start_kernel(void)
 
 	ftrace_init();
 
+	asan_on_kernel_init();
+
 	/* Do the rest non-__init'ed, we're now alive */
 	rest_init();
-
-        asan_on_kernel_init();
 }
 
 /* Call all constructor functions linked into the kernel. */

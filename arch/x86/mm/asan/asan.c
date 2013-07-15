@@ -11,18 +11,18 @@
 extern unsigned long max_pfn;
 
 #define SHADOW_SCALE (3)
-#define SHADOW_OFFSET (64 << 20)
+#define SHADOW_OFFSET 0x36600000
 #define SHADOW_GRANULARITY (1 << SHADOW_SCALE)
 
 static inline int addr_is_in_mem(uptr addr)
 {
 	return (addr >= (uptr)(__va(0)) &&
-		addr < (uptr)(__va(max_pfn << PAGE_SHIFT))) ? 1 : 0;
+		addr < (uptr)(__va(max_pfn << PAGE_SHIFT)));
 }
 
 static uptr mem_to_shadow(uptr addr)
 {
-	if (addr_is_in_mem(addr) == 0)
+	if (!addr_is_in_mem(addr))
 		return 0;
 	return ((addr - PAGE_OFFSET) >> SHADOW_SCALE)
 		+ PAGE_OFFSET + SHADOW_OFFSET;
@@ -30,12 +30,8 @@ static uptr mem_to_shadow(uptr addr)
 
 struct shadow_segment_endpoint {
 	u8 *chunk;
-
-	/* In [0, SHADOW_GRANULARITY). */
-	s8 offset;
-
-	/* = *chunk. */
-	s8 value;
+	s8 offset; /* In [0, SHADOW_GRANULARITY). */
+	s8 value; /* = *chunk. */
 };
 
 static void init_shadow_segment_endpoint(struct shadow_segment_endpoint *endp,
@@ -50,19 +46,24 @@ static void init_shadow_segment_endpoint(struct shadow_segment_endpoint *endp,
 
 void asan_init_shadow(void)
 {
-	uptr shadow_size = (max_pfn * PAGE_SIZE) >> SHADOW_SCALE;
+	uptr shadow_size = (max_pfn << PAGE_SHIFT) >> SHADOW_SCALE;
+	printk(KERN_ERR "Shadow size: %lx\n", shadow_size);
+
+	//uptr rv = memblock_find_in_range(0, max_pfn * PAGE_SIZE,
+	//	shadow_size, PAGE_SIZE);
+	//printk(KERN_ERR "Found free memblock: %lx\n", rv);
+	printk(KERN_ERR "Shadow offset: %u\n", SHADOW_OFFSET);
 	memblock_reserve(SHADOW_OFFSET, shadow_size);
-	printk(KERN_ERR "Shadow memory size: %lu\n", shadow_size);
 }
 
 void asan_poison_shadow(const void *addr, uptr size, u8 value)
 {
 	uptr shadow_beg, shadow_end;
 
-	// CHECK(addr_is_aligned((uptr)addr, SHADOW_GRANULARITY) == 1);
-	// CHECK(addr_is_aligned((uptr)addr + size, SHADOW_GRANULARITY) == 1);
-	CHECK(addr_is_in_mem((uptr)addr) == 1);
-	CHECK(addr_is_in_mem((uptr)addr + size - SHADOW_GRANULARITY) == 1);
+	// CHECK(addr_is_aligned((uptr)addr, SHADOW_GRANULARITY));
+	// CHECK(addr_is_aligned((uptr)addr + size, SHADOW_GRANULARITY));
+	CHECK(addr_is_in_mem((uptr)addr));
+	CHECK(addr_is_in_mem((uptr)addr + size - SHADOW_GRANULARITY));
 
 	shadow_beg = mem_to_shadow((uptr)addr);
 	shadow_end = mem_to_shadow((uptr)addr + size - SHADOW_GRANULARITY) + 1;
@@ -231,14 +232,14 @@ static void run_tests(void)
 
 	asan_poison_memory((void *)(PAGE_OFFSET + 5), 27);
 	for (i = PAGE_OFFSET; i < PAGE_OFFSET + 5; i++)
-		CHECK(asan_memory_is_poisoned(i) == 0);
+		CHECK(!asan_memory_is_poisoned(i));
 	for (i = PAGE_OFFSET + 5;
 	     i < round_down_to(PAGE_OFFSET + 5 + 27, SHADOW_GRANULARITY);
 	     i++) {
-		CHECK(asan_memory_is_poisoned(i) == 1);
+		CHECK(asan_memory_is_poisoned(i));
 	}
 	for (i = PAGE_OFFSET + 5 + 27; i < PAGE_OFFSET + 50; i++)
-		CHECK(asan_memory_is_poisoned(i) == 0);
+		CHECK(!asan_memory_is_poisoned(i));
 
 	CHECK(asan_region_is_poisoned((void *)PAGE_OFFSET, 50)
 	      == (void *)(PAGE_OFFSET + 5));
@@ -247,7 +248,7 @@ static void run_tests(void)
 
 	asan_unpoison_memory((void *)(PAGE_OFFSET + 5), 27);
 	for (i = PAGE_OFFSET; i < PAGE_OFFSET + 50; i++)
-		CHECK(asan_memory_is_poisoned(i) == 0);
+		CHECK(!asan_memory_is_poisoned(i));
 
 	CHECK(asan_region_is_poisoned((void *)PAGE_OFFSET, 50) == NULL);
 
@@ -257,20 +258,20 @@ static void run_tests(void)
 				      SHADOW_GRANULARITY * 3) ==
 	      (void *)(PAGE_OFFSET + SHADOW_GRANULARITY));
 	for (i = PAGE_OFFSET; i < PAGE_OFFSET + SHADOW_GRANULARITY; i++)
-		CHECK(asan_memory_is_poisoned(i) == 0);
+		CHECK(!asan_memory_is_poisoned(i));
 	for (i = PAGE_OFFSET + SHADOW_GRANULARITY;
 	     i < PAGE_OFFSET + SHADOW_GRANULARITY * 6; i++) {
-		CHECK(asan_memory_is_poisoned(i) == 1);
+		CHECK(asan_memory_is_poisoned(i));
 	}
 	for (i = PAGE_OFFSET + SHADOW_GRANULARITY * 6;
 	    i < PAGE_OFFSET + SHADOW_GRANULARITY * 10; i++) {
-		CHECK(asan_memory_is_poisoned(i) == 0);
+		CHECK(!asan_memory_is_poisoned(i));
 	}
 
 	asan_poison_shadow((void *)(PAGE_OFFSET + SHADOW_GRANULARITY),
 		   SHADOW_GRANULARITY * 5, 0);
 	for (i = PAGE_OFFSET; i < PAGE_OFFSET + SHADOW_GRANULARITY * 10; i++)
-		CHECK(asan_memory_is_poisoned(i) == 0);
+		CHECK(!asan_memory_is_poisoned(i));
 
 	printk(KERN_ERR "Passed all the tests.\n");
 }
