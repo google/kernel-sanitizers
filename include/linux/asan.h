@@ -29,6 +29,10 @@ void asan_unpoison_memory(const void *addr, unsigned long size);
  */
 const void *asan_region_is_poisoned(const void *addr, unsigned long size);
 
+/*
+ * Checks region for poisoned bytes.
+ * Prints decription for every found poisoned byte.
+ */
 void asan_check_region(const void *addr, unsigned long size);
 
 void asan_on_kernel_init(void);

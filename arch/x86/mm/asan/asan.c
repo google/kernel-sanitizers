@@ -50,9 +50,8 @@ static void init_shadow_segment_endpoint(struct shadow_segment_endpoint *endp,
 void asan_init_shadow(void)
 {
 	uptr shadow_size = (max_pfn << PAGE_SHIFT) >> SHADOW_SCALE;
-	printk(KERN_ERR "Shadow size: %lx\n", shadow_size);
-
 	printk(KERN_ERR "Shadow offset: %u\n", SHADOW_OFFSET);
+	printk(KERN_ERR "Shadow size: %lx\n", shadow_size);
 	if (memblock_reserve(SHADOW_OFFSET, shadow_size) != 0) {
 		printk(KERN_ERR "Error: unable to reserve shadow!\n");
 		asan_enabled = 0;
