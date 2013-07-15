@@ -1,21 +1,17 @@
 #include <linux/log2.h>
 #include <linux/types.h>
 
-#define CHECK(x) BUG_ON(!(x))
-/* FIXME:msg is not printed. */
-#define UNREACHABLE(msg) CHECK(0 && msg)
-
 typedef unsigned long uptr;
 
 static uptr round_up_to(uptr size, uptr granularity)
 {
-	CHECK(is_power_of_2(granularity));
+	BUG_ON(!is_power_of_2(granularity));
 	return (size + granularity - 1) & ~(granularity - 1);
 }
 
 static uptr round_down_to(uptr size, uptr granularity)
 {
-	CHECK(is_power_of_2(granularity));
+	BUG_ON(!is_power_of_2(granularity));
 	return size & ~(granularity - 1);
 }
 
