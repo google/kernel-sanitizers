@@ -15,6 +15,8 @@ extern unsigned long max_pfn;
 #define SHADOW_OFFSET 0x36600000
 #define SHADOW_GRANULARITY (1 << SHADOW_SCALE)
 
+static int asan_enabled = 1;
+
 static inline int addr_is_in_mem(uptr addr)
 {
 	return (addr >= (uptr)(__va(0)) &&
@@ -50,11 +52,11 @@ void asan_init_shadow(void)
 	uptr shadow_size = (max_pfn << PAGE_SHIFT) >> SHADOW_SCALE;
 	printk(KERN_ERR "Shadow size: %lx\n", shadow_size);
 
-	//uptr rv = memblock_find_in_range(0, max_pfn * PAGE_SIZE,
-	//	shadow_size, PAGE_SIZE);
-	//printk(KERN_ERR "Found free memblock: %lx\n", rv);
 	printk(KERN_ERR "Shadow offset: %u\n", SHADOW_OFFSET);
-	memblock_reserve(SHADOW_OFFSET, shadow_size);
+	if (!memblock_reserve(SHADOW_OFFSET, shadow_size)) {
+		printk(KERN_ERR "Error: unable to reserve shadow!\n");
+		asan_enabled = 0;
+	}
 }
 
 void asan_poison_shadow(const void *addr, uptr size, u8 value)
@@ -162,9 +164,8 @@ const void *asan_region_is_poisoned(const void *addr, uptr size)
 
 	beg = (uptr)addr;
 	end = beg + size;
-	if (!addr_is_in_mem(beg) || !addr_is_in_mem(end)) {
+	if (!addr_is_in_mem(beg) || !addr_is_in_mem(end))
 		return NULL;
-	}
 
 	aligned_beg = round_up_to(beg, SHADOW_GRANULARITY);
 	aligned_end = round_down_to(end, SHADOW_GRANULARITY);
@@ -182,8 +183,6 @@ const void *asan_region_is_poisoned(const void *addr, uptr size)
 	UNREACHABLE("mem_is_zero returned 0, but poisoned byte was not found");
 	return NULL;
 }
-
-static int asan_enabled = 1;
 
 static void asan_print_error(uptr poisoned_addr)
 {
@@ -207,7 +206,6 @@ void asan_check_region(const void *addr, uptr size)
 	if (rv == NULL)
 		return;
 
-	//accessed_poisoned_addr = poisoned_addr;
 	asan_print_error(poisoned_addr);
 }
 
@@ -217,7 +215,6 @@ static void run_tests(void)
 
 	printk(KERN_ERR "Running tests...\n");
 
-	//asan_check_region((void *)PAGE_OFFSET, 50);
 	CHECK(asan_region_is_poisoned((void *)PAGE_OFFSET, 50) == NULL);
 
 	asan_poison_memory((void *)(PAGE_OFFSET + 5), 27);
@@ -270,7 +267,7 @@ void asan_on_kernel_init(void)
 {
 	run_tests();
 
-	void* ptr = kmalloc(10, GFP_KERNEL);
+	void *ptr = kmalloc(10, GFP_KERNEL);
 	printk(KERN_ERR "kmalloc: %lx\n", (uptr)ptr);
 	kfree(ptr);
 	char tmp;
