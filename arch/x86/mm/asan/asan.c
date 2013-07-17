@@ -7,6 +7,7 @@
 
 #include <linux/asan.h>
 
+#include "error.h"
 #include "utils.h"
 
 extern unsigned long max_pfn;
@@ -15,7 +16,7 @@ extern unsigned long max_pfn;
 #define SHADOW_OFFSET 0x36600000
 #define SHADOW_GRANULARITY (1 << SHADOW_SCALE)
 
-static int asan_enabled = 1;
+static int asan_enabled = 0;
 
 static inline int addr_is_in_mem(uptr addr)
 {
@@ -50,7 +51,7 @@ static void init_shadow_segment_endpoint(struct shadow_segment_endpoint *endp,
 void asan_init_shadow(void)
 {
 	uptr shadow_size = (max_pfn << PAGE_SHIFT) >> SHADOW_SCALE;
-	printk(KERN_ERR "Shadow offset: %u\n", SHADOW_OFFSET);
+	printk(KERN_ERR "Shadow offset: %x\n", SHADOW_OFFSET);
 	printk(KERN_ERR "Shadow size: %lx\n", shadow_size);
 	if (memblock_reserve(SHADOW_OFFSET, shadow_size) != 0) {
 		printk(KERN_ERR "Error: unable to reserve shadow!\n");
@@ -186,15 +187,21 @@ const void *asan_region_is_poisoned(const void *addr, uptr size)
 static void asan_print_error(uptr poisoned_addr)
 {
 	u8 *aligned_shadow;
-	u8 buffer[64], i;
+	u8 buffer[64];
+	u8 i, j;
 
 	aligned_shadow = (u8 *)mem_to_shadow(poisoned_addr);
 	printk(KERN_ERR "Error: address %lx is poisoned!\n",
 		poisoned_addr);
 	printk(KERN_ERR "Shadow bytes around the buggy address:\n");
-	for (i = 0; i < 0x10; i++)
-		sprintf(buffer + i * 3, "%02x ", *(aligned_shadow + i));
-	printk(KERN_ERR "  %lx: %s\n", (uptr)aligned_shadow, buffer);
+
+        for (j = -5; j <= 5; j++) {
+		for (i = 0; i < 0x10; i++)
+			sprintf(buffer + i * 3, "%02x ",
+				*(aligned_shadow + j * 0x10 + i));
+		printk(KERN_ERR "  %lx: %s\n",
+			(uptr)(aligned_shadow + j * 0x10), buffer);
+	}
 }
 
 void asan_check_region(const void *addr, uptr size)
@@ -266,11 +273,12 @@ void asan_on_kernel_init(void)
 {
 	run_tests();
 
-	void *ptr = kmalloc(10, GFP_KERNEL);
+	/*void *ptr = kmalloc(10, GFP_KERNEL);
 	printk(KERN_ERR "kmalloc: %lx\n", (uptr)ptr);
 	kfree(ptr);
 	char tmp;
-	memcpy(ptr, &tmp, 1);
+	memcpy(ptr, &tmp, 1);*/
+	do_use_after_free();
 
 	asan_enabled = 0;
 }
