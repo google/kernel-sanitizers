@@ -2,35 +2,16 @@
 #include <linux/memblock.h>
 #include <linux/printk.h>
 #include <linux/slab.h>
-#include <linux/string.h>
 #include <linux/types.h>
 
 #include <linux/asan.h>
 
 #include "error.h"
+#include "mapping.h"
+#include "report.h"
 #include "utils.h"
 
-extern unsigned long max_pfn;
-
-#define SHADOW_SCALE (3)
-#define SHADOW_OFFSET 0x36600000
-#define SHADOW_GRANULARITY (1 << SHADOW_SCALE)
-
 static int asan_enabled = 0;
-
-static inline int addr_is_in_mem(uptr addr)
-{
-	return (addr >= (uptr)(__va(0)) &&
-		addr < (uptr)(__va(max_pfn << PAGE_SHIFT)));
-}
-
-static uptr mem_to_shadow(uptr addr)
-{
-	if (!addr_is_in_mem(addr))
-		return 0;
-	return ((addr - PAGE_OFFSET) >> SHADOW_SCALE)
-		+ PAGE_OFFSET + SHADOW_OFFSET;
-}
 
 struct shadow_segment_endpoint {
 	u8 *chunk;
@@ -184,26 +165,6 @@ const void *asan_region_is_poisoned(const void *addr, uptr size)
 	return NULL;
 }
 
-static void asan_print_error(uptr poisoned_addr)
-{
-	u8 *aligned_shadow;
-	u8 buffer[64];
-	u8 i, j;
-
-	aligned_shadow = (u8 *)mem_to_shadow(poisoned_addr);
-	printk(KERN_ERR "Error: address %lx is poisoned!\n",
-		poisoned_addr);
-	printk(KERN_ERR "Shadow bytes around the buggy address:\n");
-
-        for (j = -5; j <= 5; j++) {
-		for (i = 0; i < 0x10; i++)
-			sprintf(buffer + i * 3, "%02x ",
-				*(aligned_shadow + j * 0x10 + i));
-		printk(KERN_ERR "  %lx: %s\n",
-			(uptr)(aligned_shadow + j * 0x10), buffer);
-	}
-}
-
 void asan_check_region(const void *addr, uptr size)
 {
 	const void *rv = asan_region_is_poisoned(addr, size);
@@ -212,7 +173,7 @@ void asan_check_region(const void *addr, uptr size)
 	if (rv == NULL)
 		return;
 
-	asan_print_error(poisoned_addr);
+	asan_report_error(poisoned_addr);
 }
 
 static void run_tests(void)

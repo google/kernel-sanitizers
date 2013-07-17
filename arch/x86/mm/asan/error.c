@@ -2,8 +2,8 @@
 
 void do_use_after_free(void)
 {
-	char *ptr = (char *)kmalloc(10, GFP_KERNEL);
+	char *ptr = (char *)kmalloc(128, GFP_KERNEL);
 	printk(KERN_ERR "kmalloc: %lx", (unsigned long)ptr);
 	kfree(ptr);
-	*ptr = 'x';
+	*(ptr + 126) = 'x';
 }

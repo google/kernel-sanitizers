@@ -150,8 +150,10 @@ static int print_trace_stack(void *data, char *name)
 static void print_trace_address(void *data, unsigned long addr, int reliable)
 {
 	touch_nmi_watchdog();
-	printk(data);
-	printk_address(addr, reliable);
+	/*printk(data);
+	printk_address(addr, reliable);*/
+	printk("%s [<%p>] %s%pB\n", (char *)data,
+		(void *)addr, reliable ? "" : "? ", (void *)addr);
 }
 
 static const struct stacktrace_ops print_trace_ops = {
