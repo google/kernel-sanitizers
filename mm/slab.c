@@ -1798,6 +1798,7 @@ static void kmem_freepages(struct kmem_cache *cachep, void *addr)
 	const unsigned long nr_freed = i;
 
 	kmemcheck_free_shadow(page, cachep->gfporder);
+	asan_unpoison_shadow(addr, (1 << cachep->gfporder) << PAGE_SHIFT);
 
 	if (cachep->flags & SLAB_RECLAIM_ACCOUNT)
 		sub_zone_page_state(page_zone(page),
@@ -2806,6 +2807,7 @@ static int cache_grow(struct kmem_cache *cachep,
 	if (!objp)
 		goto failed;
 
+
 	/* Get slab management. */
 	slabp = alloc_slabmgmt(cachep, objp, offset,
 			local_flags & ~GFP_CONSTRAINT_MASK, nodeid);
@@ -2815,6 +2817,9 @@ static int cache_grow(struct kmem_cache *cachep,
 	slab_map_pages(cachep, slabp, objp);
 
 	cache_init_objs(cachep, slabp);
+
+	if (!(cachep->flags & SLAB_DESTROY_BY_RCU))
+		asan_poison_shadow(objp, (1 << cachep->gfporder) << PAGE_SHIFT, ASAN_HEAP_FREE);
 
 	if (local_flags & __GFP_WAIT)
 		local_irq_disable();
@@ -3400,11 +3405,10 @@ slab_alloc_node(struct kmem_cache *cachep, gfp_t flags, int nodeid,
 	kmemleak_alloc_recursive(ptr, cachep->object_size, 1, cachep->flags,
 				 flags);
 
-	if (likely(ptr))
+	if (likely(ptr)) {
 		kmemcheck_slab_alloc(cachep, flags, ptr, cachep->object_size);
-
-	if (likely(ptr))
-		asan_poison_shadow(ptr, cachep->object_size, 0);
+		asan_unpoison_shadow(ptr, cachep->object_size);
+	}
 
 	if (unlikely((flags & __GFP_ZERO) && ptr))
 		memset(ptr, 0, cachep->object_size);
@@ -3468,11 +3472,10 @@ slab_alloc(struct kmem_cache *cachep, gfp_t flags, unsigned long caller)
 				 flags);
 	prefetchw(objp);
 
-	if (likely(objp))
+	if (likely(objp)) {
 		kmemcheck_slab_alloc(cachep, flags, objp, cachep->object_size);
-
-	if (likely(objp))
-		asan_poison_shadow(objp, cachep->object_size, 0);
+		asan_unpoison_shadow(objp, cachep->object_size);
+	}
 
 	if (unlikely((flags & __GFP_ZERO) && objp))
 		memset(objp, 0, cachep->object_size);
@@ -3595,8 +3598,8 @@ static inline void __cache_free(struct kmem_cache *cachep, void *objp,
 	objp = cache_free_debugcheck(cachep, objp, caller);
 
 	kmemcheck_slab_free(cachep, objp, cachep->object_size);
-
-	asan_poison_shadow(objp, cachep->object_size, ASAN_HEAP_FREE);
+	if (!(cachep->flags & SLAB_DESTROY_BY_RCU))
+		asan_poison_shadow(objp, cachep->object_size, ASAN_HEAP_FREE);
 
 	/*
 	 * Skip calling cache_free_alien() when the platform is not numa.

@@ -9,7 +9,7 @@ gcc = '../gcc/install/bin/gcc'
 def should_exclude(filename):
   if filename.startswith('arch/x86/mm/asan/error'):
     return False
-  return True
+#  return True
 
   if filename.startswith('arch'):
     return True
@@ -23,7 +23,7 @@ def should_exclude(filename):
   if filename.startswith('security'):
     return True
 
-  if filename.startswith('mm'):
+  if filename.startswith('mm/slab'):
     return True
   return False
 

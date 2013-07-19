@@ -23,7 +23,7 @@ static void print_shadow_legend(void)
 	printk(KERN_ERR "  Partially addressable: %s\n", buffer);
 	printk(KERN_ERR "  Heap redzone:          %02x\n", ASAN_HEAP_REDZONE);
 	printk(KERN_ERR "  Freed heap region:     %02x\n", ASAN_HEAP_FREE);
-	printk(KERN_ERR "  Poisoned by user:      %02x\n", ASAN_USER_POISONED_MEMORY);
+	//printk(KERN_ERR "  Poisoned by user:      %02x\n", ASAN_USER_POISONED_MEMORY);
 }
 
 static int print_shadow_byte(const char *before, u8 shadow,
@@ -74,10 +74,18 @@ static void print_stack_trace(void)
 	show_stack_log_lvl(NULL, NULL, NULL, 0, KERN_ERR);
 }
 
+static int counter = 0;
+
 void asan_report_error(unsigned long poisoned_addr)
 {
+	counter++;
+	if (counter > 100)
+		return;
+
+	printk(KERN_ERR "====================================================================\n");
 	printk(KERN_ERR "Error: address %lx is poisoned!\n", poisoned_addr);
 	print_stack_trace();
 	print_shadow_for_address(poisoned_addr);
 	print_shadow_legend();
+	printk(KERN_ERR "====================================================================\n");
 }

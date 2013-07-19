@@ -11,6 +11,10 @@
 #define SHADOW_OFFSET 0x36600000
 #define SHADOW_GRANULARITY (1 << SHADOW_SCALE)
 
+#define ASAN_RED_ZONE_SIZE 32
+
+extern int asan_enabled;
+
 /*
  * Reserves shadow memory.
  */
@@ -21,6 +25,7 @@ void asan_init_shadow(void);
  * Memory addresses should be properly aligned.
  */
 void asan_poison_shadow(const void *addr, unsigned long size, u8 value);
+void asan_unpoison_shadow(const void *addr, unsigned long size);
 
 /*
  * If user asks to poison region [left, right), the program poisons

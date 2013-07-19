@@ -11,7 +11,7 @@
 #include "report.h"
 #include "utils.h"
 
-static int asan_enabled = 0;
+int asan_enabled = 0;
 
 struct shadow_segment_endpoint {
 	u8 *chunk;
@@ -36,8 +36,10 @@ void asan_init_shadow(void)
 	printk(KERN_ERR "Shadow size: %lx\n", shadow_size);
 	if (memblock_reserve(SHADOW_OFFSET, shadow_size) != 0) {
 		printk(KERN_ERR "Error: unable to reserve shadow!\n");
-		asan_enabled = 0;
+		return;
 	}
+	memset((void*)(PAGE_OFFSET + SHADOW_OFFSET), 0, shadow_size);
+	asan_enabled = 1;
 }
 
 void asan_poison_shadow(const void *addr, uptr size, u8 value)
@@ -52,6 +54,11 @@ void asan_poison_shadow(const void *addr, uptr size, u8 value)
 	shadow_beg = mem_to_shadow((uptr)addr);
 	shadow_end = mem_to_shadow((uptr)addr + size - SHADOW_GRANULARITY) + 1;
 	memset((void *)shadow_beg, value, shadow_end - shadow_beg);
+}
+
+void asan_unpoison_shadow(const void *addr, unsigned long size)
+{
+	asan_poison_shadow(addr, size, 0);
 }
 
 void asan_poison_memory(const void *addr, uptr size)
@@ -165,10 +172,16 @@ const void *asan_region_is_poisoned(const void *addr, uptr size)
 	return NULL;
 }
 
-void asan_check_region(const void *addr, uptr size)
+void asan_check_region(const void *addr, unsigned long size)
 {
-	const void *rv = asan_region_is_poisoned(addr, size);
-	uptr poisoned_addr = (uptr)rv;
+	const void *rv;
+	uptr poisoned_addr;
+
+	if (!asan_enabled)
+		return;
+
+	rv = asan_region_is_poisoned(addr, size);
+	poisoned_addr = (unsigned long)rv;
 
 	if (rv == NULL)
 		return;
@@ -241,14 +254,15 @@ void asan_on_kernel_init(void)
 	memcpy(ptr, &tmp, 1);*/
 	do_use_after_free();
 
-	asan_enabled = 0;
+	//asan_enabled = 0;
 }
 
 void asan_on_memcpy(const void *to, const void *from, uptr n)
 {
-	if (asan_enabled) {
-		asan_check_region(to, n);
-		asan_check_region(from, n);
-	}
+	if (!asan_enabled)
+		return;
+
+	//asan_check_region(to, n);
+	//asan_check_region(from, n);
 }
 EXPORT_SYMBOL_GPL(asan_on_memcpy);
