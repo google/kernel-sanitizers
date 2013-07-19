@@ -47,8 +47,7 @@
 #include <asm/mach/map.h>
 
 #include <video/omapdss.h>
-#include <video/omap-panel-generic-dpi.h>
-#include <video/omap-panel-tfp410.h>
+#include <video/omap-panel-data.h>
 
 #include "common.h"
 #include "mux.h"
@@ -69,6 +68,7 @@
 
 #define OVERO_SMSC911X_CS      5
 #define OVERO_SMSC911X_GPIO    176
+#define OVERO_SMSC911X_NRESET  64
 #define OVERO_SMSC911X2_CS     4
 #define OVERO_SMSC911X2_GPIO   65
 
@@ -123,7 +123,7 @@ static struct omap_smsc911x_platform_data smsc911x_cfg = {
 	.id		= 0,
 	.cs             = OVERO_SMSC911X_CS,
 	.gpio_irq       = OVERO_SMSC911X_GPIO,
-	.gpio_reset     = -EINVAL,
+	.gpio_reset     = OVERO_SMSC911X_NRESET,
 	.flags		= SMSC911X_USE_32BIT,
 };
 
@@ -146,27 +146,8 @@ static inline void __init overo_init_smsc911x(void) { return; }
 #endif
 
 /* DSS */
-static int lcd_enabled;
-static int dvi_enabled;
-
 #define OVERO_GPIO_LCD_EN 144
 #define OVERO_GPIO_LCD_BL 145
-
-static struct gpio overo_dss_gpios[] __initdata = {
-	{ OVERO_GPIO_LCD_EN, GPIOF_OUT_INIT_HIGH, "OVERO_GPIO_LCD_EN" },
-	{ OVERO_GPIO_LCD_BL, GPIOF_OUT_INIT_HIGH, "OVERO_GPIO_LCD_BL" },
-};
-
-static void __init overo_display_init(void)
-{
-	if (gpio_request_array(overo_dss_gpios, ARRAY_SIZE(overo_dss_gpios))) {
-		printk(KERN_ERR "could not obtain DSS control GPIOs\n");
-		return;
-	}
-
-	gpio_export(OVERO_GPIO_LCD_EN, 0);
-	gpio_export(OVERO_GPIO_LCD_BL, 0);
-}
 
 static struct tfp410_platform_data dvi_panel = {
 	.i2c_bus_num		= 3,
@@ -188,30 +169,13 @@ static struct omap_dss_device overo_tv_device = {
 	.phy.venc.type = OMAP_DSS_VENC_TYPE_SVIDEO,
 };
 
-static int overo_panel_enable_lcd(struct omap_dss_device *dssdev)
-{
-	if (dvi_enabled) {
-		printk(KERN_ERR "cannot enable LCD, DVI is enabled\n");
-		return -EINVAL;
-	}
-
-	gpio_set_value(OVERO_GPIO_LCD_EN, 1);
-	gpio_set_value(OVERO_GPIO_LCD_BL, 1);
-	lcd_enabled = 1;
-	return 0;
-}
-
-static void overo_panel_disable_lcd(struct omap_dss_device *dssdev)
-{
-	gpio_set_value(OVERO_GPIO_LCD_EN, 0);
-	gpio_set_value(OVERO_GPIO_LCD_BL, 0);
-	lcd_enabled = 0;
-}
-
 static struct panel_generic_dpi_data lcd43_panel = {
 	.name			= "samsung_lte430wq_f0c",
-	.platform_enable	= overo_panel_enable_lcd,
-	.platform_disable	= overo_panel_disable_lcd,
+	.num_gpios		= 2,
+	.gpios			= {
+		OVERO_GPIO_LCD_EN,
+		OVERO_GPIO_LCD_BL
+	},
 };
 
 static struct omap_dss_device overo_lcd43_device = {
@@ -224,13 +188,20 @@ static struct omap_dss_device overo_lcd43_device = {
 
 #if defined(CONFIG_PANEL_LGPHILIPS_LB035Q02) || \
 	defined(CONFIG_PANEL_LGPHILIPS_LB035Q02_MODULE)
+static struct panel_generic_dpi_data lcd35_panel = {
+	.num_gpios		= 2,
+	.gpios			= {
+		OVERO_GPIO_LCD_EN,
+		OVERO_GPIO_LCD_BL
+	},
+};
+
 static struct omap_dss_device overo_lcd35_device = {
 	.type			= OMAP_DISPLAY_TYPE_DPI,
 	.name			= "lcd35",
 	.driver_name		= "lgphilips_lb035q02_panel",
 	.phy.dpi.data_lines	= 24,
-	.platform_enable	= overo_panel_enable_lcd,
-	.platform_disable	= overo_panel_disable_lcd,
+	.data			= &lcd35_panel,
 };
 #endif
 
@@ -458,14 +429,16 @@ static int __init overo_spi_init(void)
 	return 0;
 }
 
+static struct usbhs_phy_data phy_data[] __initdata = {
+	{
+		.port = 2,
+		.reset_gpio = OVERO_GPIO_USBH_NRESET,
+		.vcc_gpio = -EINVAL,
+	},
+};
+
 static struct usbhs_omap_platform_data usbhs_bdata __initdata = {
-	.port_mode[0] = OMAP_USBHS_PORT_MODE_UNUSED,
 	.port_mode[1] = OMAP_EHCI_PORT_MODE_PHY,
-	.port_mode[2] = OMAP_USBHS_PORT_MODE_UNUSED,
-	.phy_reset  = true,
-	.reset_gpio_port[0]  = -EINVAL,
-	.reset_gpio_port[1]  = OVERO_GPIO_USBH_NRESET,
-	.reset_gpio_port[2]  = -EINVAL
 };
 
 #ifdef CONFIG_OMAP_MUX
@@ -502,10 +475,11 @@ static void __init overo_init(void)
 			ARRAY_SIZE(overo_nand_partitions), NAND_CS, 0, NULL);
 	usb_bind_phy("musb-hdrc.0.auto", 0, "twl4030_usb");
 	usb_musb_init(NULL);
+
+	usbhs_init_phys(phy_data, ARRAY_SIZE(phy_data));
 	usbhs_init(&usbhs_bdata);
 	overo_spi_init();
 	overo_init_smsc911x();
-	overo_display_init();
 	overo_init_led();
 	overo_init_keys();
 	omap_twl4030_audio_init("overo", NULL);

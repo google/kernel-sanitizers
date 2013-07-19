@@ -64,6 +64,7 @@ static int xfrm_output_one(struct sk_buff *skb, int err)
 
 		if (unlikely(x->km.state != XFRM_STATE_VALID)) {
 			XFRM_INC_STATS(net, LINUX_MIB_XFRMOUTSTATEINVALID);
+			err = -EINVAL;
 			goto error;
 		}
 
@@ -88,7 +89,7 @@ static int xfrm_output_one(struct sk_buff *skb, int err)
 
 		err = x->type->output(x, skb);
 		if (err == -EINPROGRESS)
-			goto out_exit;
+			goto out;
 
 resume:
 		if (err) {
@@ -106,15 +107,14 @@ resume:
 		x = dst->xfrm;
 	} while (x && !(x->outer_mode->flags & XFRM_MODE_FLAG_TUNNEL));
 
-	err = 0;
+	return 0;
 
-out_exit:
-	return err;
 error:
 	spin_unlock_bh(&x->lock);
 error_nolock:
 	kfree_skb(skb);
-	goto out_exit;
+out:
+	return err;
 }
 
 int xfrm_output_resume(struct sk_buff *skb, int err)

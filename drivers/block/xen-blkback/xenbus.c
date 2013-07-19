@@ -93,7 +93,7 @@ static void xen_update_blkif_status(struct xen_blkif *blkif)
 	}
 	invalidate_inode_pages2(blkif->vbd.bdev->bd_inode->i_mapping);
 
-	blkif->xenblkd = kthread_run(xen_blkif_schedule, blkif, name);
+	blkif->xenblkd = kthread_run(xen_blkif_schedule, blkif, "%s", name);
 	if (IS_ERR(blkif->xenblkd)) {
 		err = PTR_ERR(blkif->xenblkd);
 		blkif->xenblkd = NULL;
@@ -230,13 +230,13 @@ int __init xen_blkif_interface_init(void)
 	}								\
 	static DEVICE_ATTR(name, S_IRUGO, show_##name, NULL)
 
-VBD_SHOW(oo_req,  "%d\n", be->blkif->st_oo_req);
-VBD_SHOW(rd_req,  "%d\n", be->blkif->st_rd_req);
-VBD_SHOW(wr_req,  "%d\n", be->blkif->st_wr_req);
-VBD_SHOW(f_req,  "%d\n", be->blkif->st_f_req);
-VBD_SHOW(ds_req,  "%d\n", be->blkif->st_ds_req);
-VBD_SHOW(rd_sect, "%d\n", be->blkif->st_rd_sect);
-VBD_SHOW(wr_sect, "%d\n", be->blkif->st_wr_sect);
+VBD_SHOW(oo_req,  "%llu\n", be->blkif->st_oo_req);
+VBD_SHOW(rd_req,  "%llu\n", be->blkif->st_rd_req);
+VBD_SHOW(wr_req,  "%llu\n", be->blkif->st_wr_req);
+VBD_SHOW(f_req,  "%llu\n", be->blkif->st_f_req);
+VBD_SHOW(ds_req,  "%llu\n", be->blkif->st_ds_req);
+VBD_SHOW(rd_sect, "%llu\n", be->blkif->st_rd_sect);
+VBD_SHOW(wr_sect, "%llu\n", be->blkif->st_wr_sect);
 
 static struct attribute *xen_vbdstat_attrs[] = {
 	&dev_attr_oo_req.attr,

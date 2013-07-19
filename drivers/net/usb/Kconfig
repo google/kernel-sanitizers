@@ -67,7 +67,6 @@ config USB_KAWETH
 
 config USB_PEGASUS
 	tristate "USB Pegasus/Pegasus-II based ethernet device support"
-	select NET_CORE
 	select MII
 	---help---
 	  Say Y here if you know you have Pegasus or Pegasus-II based adapter.
@@ -83,7 +82,6 @@ config USB_PEGASUS
 
 config USB_RTL8150
 	tristate "USB RTL8150 based ethernet device support"
-	select NET_CORE
 	select MII
 	help
 	  Say Y here if you have RTL8150 based usb-ethernet adapter.
@@ -93,9 +91,18 @@ config USB_RTL8150
 	  To compile this driver as a module, choose M here: the
 	  module will be called rtl8150.
 
+config USB_RTL8152
+	tristate "Realtek RTL8152 Based USB 2.0 Ethernet Adapters"
+	select MII
+	help
+	  This option adds support for Realtek RTL8152 based USB 2.0
+	  10/100 Ethernet adapters.
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called r8152.
+
 config USB_USBNET
 	tristate "Multi-purpose USB Networking Framework"
-	select NET_CORE
 	select MII
 	---help---
 	  This driver supports several kinds of network links over USB,
@@ -152,6 +159,24 @@ config USB_NET_AX8817X
 	    * Intellinet USB 2.0 Ethernet
 	    * ST Lab USB 2.0 Ethernet
 	    * TrendNet TU2-ET100
+
+	  This driver creates an interface named "ethX", where X depends on
+	  what other networking devices you have in use.
+
+config USB_NET_AX88179_178A
+	tristate "ASIX AX88179/178A USB 3.0/2.0 to Gigabit Ethernet"
+	depends on USB_USBNET
+	select CRC32
+	select PHYLIB
+	default y
+	help
+	  This option adds support for ASIX AX88179 based USB 3.0/2.0
+	  to Gigabit Ethernet adapters.
+
+	  This driver should work with at least the following devices:
+	    * ASIX AX88179
+	    * ASIX AX88178A
+	    * Sitcomm LN-032
 
 	  This driver creates an interface named "ethX", where X depends on
 	  what other networking devices you have in use.
@@ -250,7 +275,7 @@ config USB_NET_SMSC75XX
 	select CRC16
 	select CRC32
 	help
-	  This option adds support for SMSC LAN95XX based USB 2.0
+	  This option adds support for SMSC LAN75XX based USB 2.0
 	  Gigabit Ethernet adapters.
 
 config USB_NET_SMSC95XX

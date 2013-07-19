@@ -5,11 +5,10 @@
 #include <linux/slab.h>
 #include <linux/gpio.h>
 #include <linux/spi/spi.h>
-#include <linux/backlight.h>
 #include <linux/fb.h>
 
 #include <video/omapdss.h>
-#include <video/omap-panel-n8x0.h>
+#include <video/omap-panel-data.h>
 
 #define BLIZZARD_REV_CODE                      0x00
 #define BLIZZARD_CONFIG                        0x02
@@ -69,7 +68,6 @@ static struct panel_drv_data {
 
 	struct omap_dss_device *dssdev;
 	struct spi_device *spidev;
-	struct backlight_device *bldev;
 
 	int blizzard_ver;
 } s_drv_data;
@@ -297,12 +295,6 @@ static int n8x0_panel_power_on(struct omap_dss_device *dssdev)
 
 	gpio_direction_output(bdata->ctrl_pwrdown, 1);
 
-	if (bdata->platform_enable) {
-		r = bdata->platform_enable(dssdev);
-		if (r)
-			goto err_plat_en;
-	}
-
 	omapdss_rfbi_set_size(dssdev, dssdev->panel.timings.x_res,
 		dssdev->panel.timings.y_res);
 	omapdss_rfbi_set_pixel_size(dssdev, dssdev->ctrl.pixel_size);
@@ -319,16 +311,16 @@ static int n8x0_panel_power_on(struct omap_dss_device *dssdev)
 	switch (rev & 0xfc) {
 	case 0x9c:
 		ddata->blizzard_ver = BLIZZARD_VERSION_S1D13744;
-		dev_info(&dssdev->dev, "s1d13744 LCD controller rev %d "
+		dev_info(dssdev->dev, "s1d13744 LCD controller rev %d "
 			"initialized (CNF pins %x)\n", rev & 0x03, conf & 0x07);
 		break;
 	case 0xa4:
 		ddata->blizzard_ver = BLIZZARD_VERSION_S1D13745;
-		dev_info(&dssdev->dev, "s1d13745 LCD controller rev %d "
+		dev_info(dssdev->dev, "s1d13745 LCD controller rev %d "
 			"initialized (CNF pins %x)\n", rev & 0x03, conf & 0x07);
 		break;
 	default:
-		dev_err(&dssdev->dev, "invalid s1d1374x revision %02x\n", rev);
+		dev_err(dssdev->dev, "invalid s1d1374x revision %02x\n", rev);
 		r = -ENODEV;
 		goto err_inv_chip;
 	}
@@ -349,13 +341,13 @@ static int n8x0_panel_power_on(struct omap_dss_device *dssdev)
 		panel_name = "ls041y3";
 		break;
 	default:
-		dev_err(&dssdev->dev, "invalid display ID 0x%x\n",
+		dev_err(dssdev->dev, "invalid display ID 0x%x\n",
 				display_id[0]);
 		r = -ENODEV;
 		goto err_inv_panel;
 	}
 
-	dev_info(&dssdev->dev, "%s rev %02x LCD detected\n",
+	dev_info(dssdev->dev, "%s rev %02x LCD detected\n",
 			panel_name, display_id[1]);
 
 	send_sleep_out(spi);
@@ -375,9 +367,6 @@ err_inv_panel:
 err_inv_chip:
 	omapdss_rfbi_display_disable(dssdev);
 err_rfbi_en:
-	if (bdata->platform_disable)
-		bdata->platform_disable(dssdev);
-err_plat_en:
 	gpio_direction_output(bdata->ctrl_pwrdown, 0);
 	return r;
 }
@@ -393,9 +382,6 @@ static void n8x0_panel_power_off(struct omap_dss_device *dssdev)
 
 	send_display_off(spi);
 	send_sleep_in(spi);
-
-	if (bdata->platform_disable)
-		bdata->platform_disable(dssdev);
 
 	/*
 	 * HACK: we should turn off the panel here, but there is some problem
@@ -424,57 +410,13 @@ static const struct rfbi_timings n8x0_panel_timings = {
 	.cs_pulse_width = 0,
 };
 
-static int n8x0_bl_update_status(struct backlight_device *dev)
-{
-	struct omap_dss_device *dssdev = dev_get_drvdata(&dev->dev);
-	struct panel_n8x0_data *bdata = get_board_data(dssdev);
-	struct panel_drv_data *ddata = get_drv_data(dssdev);
-	int r;
-	int level;
-
-	mutex_lock(&ddata->lock);
-
-	if (dev->props.fb_blank == FB_BLANK_UNBLANK &&
-			dev->props.power == FB_BLANK_UNBLANK)
-		level = dev->props.brightness;
-	else
-		level = 0;
-
-	dev_dbg(&dssdev->dev, "update brightness to %d\n", level);
-
-	if (!bdata->set_backlight)
-		r = -EINVAL;
-	else
-		r = bdata->set_backlight(dssdev, level);
-
-	mutex_unlock(&ddata->lock);
-
-	return r;
-}
-
-static int n8x0_bl_get_intensity(struct backlight_device *dev)
-{
-	if (dev->props.fb_blank == FB_BLANK_UNBLANK &&
-			dev->props.power == FB_BLANK_UNBLANK)
-		return dev->props.brightness;
-
-	return 0;
-}
-
-static const struct backlight_ops n8x0_bl_ops = {
-	.get_brightness = n8x0_bl_get_intensity,
-	.update_status  = n8x0_bl_update_status,
-};
-
 static int n8x0_panel_probe(struct omap_dss_device *dssdev)
 {
 	struct panel_n8x0_data *bdata = get_board_data(dssdev);
 	struct panel_drv_data *ddata;
-	struct backlight_device *bldev;
-	struct backlight_properties props;
 	int r;
 
-	dev_dbg(&dssdev->dev, "probe\n");
+	dev_dbg(dssdev->dev, "probe\n");
 
 	if (!bdata)
 		return -EINVAL;
@@ -491,41 +433,28 @@ static int n8x0_panel_probe(struct omap_dss_device *dssdev)
 	dssdev->ctrl.rfbi_timings = n8x0_panel_timings;
 	dssdev->caps = OMAP_DSS_DISPLAY_CAP_MANUAL_UPDATE;
 
-	memset(&props, 0, sizeof(props));
-	props.max_brightness = 127;
-	props.type = BACKLIGHT_PLATFORM;
-	bldev = backlight_device_register(dev_name(&dssdev->dev), &dssdev->dev,
-			dssdev, &n8x0_bl_ops, &props);
-	if (IS_ERR(bldev)) {
-		r = PTR_ERR(bldev);
-		dev_err(&dssdev->dev, "register backlight failed\n");
-		return r;
+	if (gpio_is_valid(bdata->panel_reset)) {
+		r = devm_gpio_request_one(dssdev->dev, bdata->panel_reset,
+				GPIOF_OUT_INIT_LOW, "PANEL RESET");
+		if (r)
+			return r;
 	}
 
-	ddata->bldev = bldev;
-
-	bldev->props.fb_blank = FB_BLANK_UNBLANK;
-	bldev->props.power = FB_BLANK_UNBLANK;
-	bldev->props.brightness = 127;
-
-	n8x0_bl_update_status(bldev);
+	if (gpio_is_valid(bdata->ctrl_pwrdown)) {
+		r = devm_gpio_request_one(dssdev->dev, bdata->ctrl_pwrdown,
+				GPIOF_OUT_INIT_LOW, "PANEL PWRDOWN");
+		if (r)
+			return r;
+	}
 
 	return 0;
 }
 
 static void n8x0_panel_remove(struct omap_dss_device *dssdev)
 {
-	struct panel_drv_data *ddata = get_drv_data(dssdev);
-	struct backlight_device *bldev;
+	dev_dbg(dssdev->dev, "remove\n");
 
-	dev_dbg(&dssdev->dev, "remove\n");
-
-	bldev = ddata->bldev;
-	bldev->props.power = FB_BLANK_POWERDOWN;
-	n8x0_bl_update_status(bldev);
-	backlight_device_unregister(bldev);
-
-	dev_set_drvdata(&dssdev->dev, NULL);
+	dev_set_drvdata(dssdev->dev, NULL);
 }
 
 static int n8x0_panel_enable(struct omap_dss_device *dssdev)
@@ -533,7 +462,7 @@ static int n8x0_panel_enable(struct omap_dss_device *dssdev)
 	struct panel_drv_data *ddata = get_drv_data(dssdev);
 	int r;
 
-	dev_dbg(&dssdev->dev, "enable\n");
+	dev_dbg(dssdev->dev, "enable\n");
 
 	mutex_lock(&ddata->lock);
 
@@ -559,7 +488,7 @@ static void n8x0_panel_disable(struct omap_dss_device *dssdev)
 {
 	struct panel_drv_data *ddata = get_drv_data(dssdev);
 
-	dev_dbg(&dssdev->dev, "disable\n");
+	dev_dbg(dssdev->dev, "disable\n");
 
 	mutex_lock(&ddata->lock);
 
@@ -592,13 +521,13 @@ static int n8x0_panel_update(struct omap_dss_device *dssdev,
 	struct panel_drv_data *ddata = get_drv_data(dssdev);
 	u16 dw, dh;
 
-	dev_dbg(&dssdev->dev, "update\n");
+	dev_dbg(dssdev->dev, "update\n");
 
 	dw = dssdev->panel.timings.x_res;
 	dh = dssdev->panel.timings.y_res;
 
 	if (x != 0 || y != 0 || w != dw || h != dh) {
-		dev_err(&dssdev->dev, "invaid update region %d, %d, %d, %d\n",
+		dev_err(dssdev->dev, "invalid update region %d, %d, %d, %d\n",
 			x, y, w, h);
 		return -EINVAL;
 	}
@@ -619,7 +548,7 @@ static int n8x0_panel_sync(struct omap_dss_device *dssdev)
 {
 	struct panel_drv_data *ddata = get_drv_data(dssdev);
 
-	dev_dbg(&dssdev->dev, "sync\n");
+	dev_dbg(dssdev->dev, "sync\n");
 
 	mutex_lock(&ddata->lock);
 	rfbi_bus_lock();

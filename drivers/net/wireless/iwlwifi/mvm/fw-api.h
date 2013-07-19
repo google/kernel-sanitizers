@@ -22,7 +22,7 @@
  * USA
  *
  * The full GNU General Public License is included in this distribution
- * in the file called LICENSE.GPL.
+ * in the file called COPYING.
  *
  * Contact Information:
  *  Intel Linux Wireless <ilw@linux.intel.com>
@@ -70,6 +70,7 @@
 #include "fw-api-mac.h"
 #include "fw-api-power.h"
 #include "fw-api-d3.h"
+#include "fw-api-bt-coex.h"
 
 /* queue and FIFO numbers by usage */
 enum {
@@ -138,6 +139,9 @@ enum {
 	/* Power */
 	POWER_TABLE_CMD = 0x77,
 
+	/* Thermal Throttling*/
+	REPLY_THERMAL_MNG_BACKOFF = 0x7e,
+
 	/* Scanning */
 	SCAN_REQUEST_CMD = 0x80,
 	SCAN_ABORT_CMD = 0x81,
@@ -150,20 +154,33 @@ enum {
 
 	SET_CALIB_DEFAULT_CMD = 0x8e,
 
+	BEACON_NOTIFICATION = 0x90,
 	BEACON_TEMPLATE_CMD = 0x91,
 	TX_ANT_CONFIGURATION_CMD = 0x98,
+	BT_CONFIG = 0x9b,
 	STATISTICS_NOTIFICATION = 0x9d,
 
 	/* RF-KILL commands and notifications */
 	CARD_STATE_CMD = 0xa0,
 	CARD_STATE_NOTIFICATION = 0xa1,
 
+	MISSED_BEACONS_NOTIFICATION = 0xa2,
+
 	REPLY_RX_PHY_CMD = 0xc0,
 	REPLY_RX_MPDU_CMD = 0xc1,
 	BA_NOTIF = 0xc5,
 
+	/* BT Coex */
+	BT_COEX_PRIO_TABLE = 0xcc,
+	BT_COEX_PROT_ENV = 0xcd,
+	BT_PROFILE_NOTIFICATION = 0xce,
+
+	REPLY_BEACON_FILTERING_CMD = 0xd2,
+
 	REPLY_DEBUG_CMD = 0xf0,
 	DEBUG_LOG_MSG = 0xf7,
+
+	MCAST_FILTER_CMD = 0xd0,
 
 	/* D3 commands/notifications */
 	D3_CONFIG_CMD = 0xd3,
@@ -271,38 +288,7 @@ enum {
 	NVM_ACCESS_TARGET_EEPROM = 2,
 };
 
-/**
- * struct iwl_nvm_access_cmd_ver1 - Request the device to send the NVM.
- * @op_code: 0 - read, 1 - write.
- * @target: NVM_ACCESS_TARGET_*. should be 0 for read.
- * @cache_refresh: 0 - None, 1- NVM.
- * @offset: offset in the nvm data.
- * @length: of the chunk.
- * @data: empty on read, the NVM chunk on write
- */
-struct iwl_nvm_access_cmd_ver1 {
-	u8 op_code;
-	u8 target;
-	u8 cache_refresh;
-	u8 reserved;
-	__le16 offset;
-	__le16 length;
-	u8 data[];
-} __packed; /* NVM_ACCESS_CMD_API_S_VER_1 */
-
-/**
- * struct iwl_nvm_access_resp_ver1 - response to NVM_ACCESS_CMD
- * @offset: the offset in the nvm data
- * @length: of the chunk
- * @data: the nvm chunk on when NVM_ACCESS_CMD was read, nothing on write
- */
-struct iwl_nvm_access_resp_ver1 {
-	__le16 offset;
-	__le16 length;
-	u8 data[];
-} __packed; /* NVM_ACCESS_CMD_RESP_API_S_VER_1 */
-
-/* Section types for NVM_ACCESS_CMD version 2 */
+/* Section types for NVM_ACCESS_CMD */
 enum {
 	NVM_SECTION_TYPE_HW = 0,
 	NVM_SECTION_TYPE_SW,
@@ -323,7 +309,7 @@ enum {
  * @length: in bytes, to read/write
  * @data: if write operation, the data to write. On read its empty
  */
-struct iwl_nvm_access_cmd_ver2 {
+struct iwl_nvm_access_cmd {
 	u8 op_code;
 	u8 target;
 	__le16 type;
@@ -340,7 +326,7 @@ struct iwl_nvm_access_cmd_ver2 {
  * @status: 0 for success, fail otherwise
  * @data: if read operation, the data returned. Empty on write.
  */
-struct iwl_nvm_access_resp_ver2 {
+struct iwl_nvm_access_resp {
 	__le16 offset;
 	__le16 length;
 	__le16 type;
@@ -503,15 +489,34 @@ enum {
 	TE_DEP_TSF		= 2,
 	TE_EVENT_SOCIOPATHIC	= 4,
 }; /* MAC_EVENT_DEPENDENCY_POLICY_API_E_VER_2 */
-
-/* When to send Time Event notifications and to whom (internal = FW) */
+/*
+ * Supported Time event notifications configuration.
+ * A notification (both event and fragment) includes a status indicating weather
+ * the FW was able to schedule the event or not. For fragment start/end
+ * notification the status is always success. There is no start/end fragment
+ * notification for monolithic events.
+ *
+ * @TE_NOTIF_NONE: no notifications
+ * @TE_NOTIF_HOST_EVENT_START: request/receive notification on event start
+ * @TE_NOTIF_HOST_EVENT_END:request/receive notification on event end
+ * @TE_NOTIF_INTERNAL_EVENT_START: internal FW use
+ * @TE_NOTIF_INTERNAL_EVENT_END: internal FW use.
+ * @TE_NOTIF_HOST_FRAG_START: request/receive notification on frag start
+ * @TE_NOTIF_HOST_FRAG_END:request/receive notification on frag end
+ * @TE_NOTIF_INTERNAL_FRAG_START: internal FW use.
+ * @TE_NOTIF_INTERNAL_FRAG_END: internal FW use.
+ */
 enum {
 	TE_NOTIF_NONE = 0,
-	TE_NOTIF_HOST_START = 0x1,
-	TE_NOTIF_HOST_END = 0x2,
-	TE_NOTIF_INTERNAL_START = 0x4,
-	TE_NOTIF_INTERNAL_END = 0x8
-}; /* MAC_EVENT_ACTION_API_E_VER_1 */
+	TE_NOTIF_HOST_EVENT_START = 0x1,
+	TE_NOTIF_HOST_EVENT_END = 0x2,
+	TE_NOTIF_INTERNAL_EVENT_START = 0x4,
+	TE_NOTIF_INTERNAL_EVENT_END = 0x8,
+	TE_NOTIF_HOST_FRAG_START = 0x10,
+	TE_NOTIF_HOST_FRAG_END = 0x20,
+	TE_NOTIF_INTERNAL_FRAG_START = 0x40,
+	TE_NOTIF_INTERNAL_FRAG_END = 0x80
+}; /* MAC_EVENT_ACTION_API_E_VER_2 */
 
 /*
  * @TE_FRAG_NONE: fragmentation of the time event is NOT allowed.
@@ -762,18 +767,20 @@ struct iwl_phy_context_cmd {
 #define IWL_RX_INFO_PHY_CNT 8
 #define IWL_RX_INFO_AGC_IDX 1
 #define IWL_RX_INFO_RSSI_AB_IDX 2
-#define IWL_RX_INFO_RSSI_C_IDX 3
-#define IWL_OFDM_AGC_DB_MSK 0xfe00
-#define IWL_OFDM_AGC_DB_POS 9
+#define IWL_OFDM_AGC_A_MSK 0x0000007f
+#define IWL_OFDM_AGC_A_POS 0
+#define IWL_OFDM_AGC_B_MSK 0x00003f80
+#define IWL_OFDM_AGC_B_POS 7
+#define IWL_OFDM_AGC_CODE_MSK 0x3fe00000
+#define IWL_OFDM_AGC_CODE_POS 20
 #define IWL_OFDM_RSSI_INBAND_A_MSK 0x00ff
-#define IWL_OFDM_RSSI_ALLBAND_A_MSK 0xff00
 #define IWL_OFDM_RSSI_A_POS 0
+#define IWL_OFDM_RSSI_ALLBAND_A_MSK 0xff00
+#define IWL_OFDM_RSSI_ALLBAND_A_POS 8
 #define IWL_OFDM_RSSI_INBAND_B_MSK 0xff0000
-#define IWL_OFDM_RSSI_ALLBAND_B_MSK 0xff000000
 #define IWL_OFDM_RSSI_B_POS 16
-#define IWL_OFDM_RSSI_INBAND_C_MSK 0x00ff
-#define IWL_OFDM_RSSI_ALLBAND_C_MSK 0xff00
-#define IWL_OFDM_RSSI_C_POS 0
+#define IWL_OFDM_RSSI_ALLBAND_B_MSK 0xff000000
+#define IWL_OFDM_RSSI_ALLBAND_B_POS 24
 
 /**
  * struct iwl_rx_phy_info - phy info
@@ -792,6 +799,7 @@ struct iwl_phy_context_cmd {
  * @byte_count: frame's byte-count
  * @frame_time: frame's time on the air, based on byte count and frame rate
  *	calculation
+ * @mac_active_msk: what MACs were active when the frame was received
  *
  * Before each Rx, the device sends this data. It contains PHY information
  * about the reception of the packet.
@@ -809,7 +817,7 @@ struct iwl_rx_phy_info {
 	__le32 non_cfg_phy[IWL_RX_INFO_PHY_CNT];
 	__le32 rate_n_flags;
 	__le32 byte_count;
-	__le16 reserved2;
+	__le16 mac_active_msk;
 	__le16 frame_time;
 } __packed;
 
@@ -937,6 +945,24 @@ struct iwl_card_state_notif {
 } __packed; /* CARD_STATE_NTFY_API_S_VER_1 */
 
 /**
+ * struct iwl_missed_beacons_notif - information on missed beacons
+ * ( MISSED_BEACONS_NOTIFICATION = 0xa2 )
+ * @mac_id: interface ID
+ * @consec_missed_beacons_since_last_rx: number of consecutive missed
+ *	beacons since last RX.
+ * @consec_missed_beacons: number of consecutive missed beacons
+ * @num_expected_beacons:
+ * @num_recvd_beacons:
+ */
+struct iwl_missed_beacons_notif {
+	__le32 mac_id;
+	__le32 consec_missed_beacons_since_last_rx;
+	__le32 consec_missed_beacons;
+	__le32 num_expected_beacons;
+	__le32 num_recvd_beacons;
+} __packed; /* MISSED_BEACON_NTFY_API_S_VER_3 */
+
+/**
  * struct iwl_set_calib_default_cmd - set default value for calibration.
  * ( SET_CALIB_DEFAULT_CMD = 0x8e )
  * @calib_index: the calibration to set value for
@@ -948,5 +974,238 @@ struct iwl_set_calib_default_cmd {
 	__le16 length;
 	u8 data[0];
 } __packed; /* PHY_CALIB_OVERRIDE_VALUES_S */
+
+#define MAX_PORT_ID_NUM	2
+
+/**
+ * struct iwl_mcast_filter_cmd - configure multicast filter.
+ * @filter_own: Set 1 to filter out multicast packets sent by station itself
+ * @port_id:	Multicast MAC addresses array specifier. This is a strange way
+ *		to identify network interface adopted in host-device IF.
+ *		It is used by FW as index in array of addresses. This array has
+ *		MAX_PORT_ID_NUM members.
+ * @count:	Number of MAC addresses in the array
+ * @pass_all:	Set 1 to pass all multicast packets.
+ * @bssid:	current association BSSID.
+ * @addr_list:	Place holder for array of MAC addresses.
+ *		IMPORTANT: add padding if necessary to ensure DWORD alignment.
+ */
+struct iwl_mcast_filter_cmd {
+	u8 filter_own;
+	u8 port_id;
+	u8 count;
+	u8 pass_all;
+	u8 bssid[6];
+	u8 reserved[2];
+	u8 addr_list[0];
+} __packed; /* MCAST_FILTERING_CMD_API_S_VER_1 */
+
+struct mvm_statistics_dbg {
+	__le32 burst_check;
+	__le32 burst_count;
+	__le32 wait_for_silence_timeout_cnt;
+	__le32 reserved[3];
+} __packed; /* STATISTICS_DEBUG_API_S_VER_2 */
+
+struct mvm_statistics_div {
+	__le32 tx_on_a;
+	__le32 tx_on_b;
+	__le32 exec_time;
+	__le32 probe_time;
+	__le32 rssi_ant;
+	__le32 reserved2;
+} __packed; /* STATISTICS_SLOW_DIV_API_S_VER_2 */
+
+struct mvm_statistics_general_common {
+	__le32 temperature;   /* radio temperature */
+	__le32 temperature_m; /* radio voltage */
+	struct mvm_statistics_dbg dbg;
+	__le32 sleep_time;
+	__le32 slots_out;
+	__le32 slots_idle;
+	__le32 ttl_timestamp;
+	struct mvm_statistics_div div;
+	__le32 rx_enable_counter;
+	/*
+	 * num_of_sos_states:
+	 *  count the number of times we have to re-tune
+	 *  in order to get out of bad PHY status
+	 */
+	__le32 num_of_sos_states;
+} __packed; /* STATISTICS_GENERAL_API_S_VER_5 */
+
+struct mvm_statistics_rx_non_phy {
+	__le32 bogus_cts;	/* CTS received when not expecting CTS */
+	__le32 bogus_ack;	/* ACK received when not expecting ACK */
+	__le32 non_bssid_frames;	/* number of frames with BSSID that
+					 * doesn't belong to the STA BSSID */
+	__le32 filtered_frames;	/* count frames that were dumped in the
+				 * filtering process */
+	__le32 non_channel_beacons;	/* beacons with our bss id but not on
+					 * our serving channel */
+	__le32 channel_beacons;	/* beacons with our bss id and in our
+				 * serving channel */
+	__le32 num_missed_bcon;	/* number of missed beacons */
+	__le32 adc_rx_saturation_time;	/* count in 0.8us units the time the
+					 * ADC was in saturation */
+	__le32 ina_detection_search_time;/* total time (in 0.8us) searched
+					  * for INA */
+	__le32 beacon_silence_rssi_a;	/* RSSI silence after beacon frame */
+	__le32 beacon_silence_rssi_b;	/* RSSI silence after beacon frame */
+	__le32 beacon_silence_rssi_c;	/* RSSI silence after beacon frame */
+	__le32 interference_data_flag;	/* flag for interference data
+					 * availability. 1 when data is
+					 * available. */
+	__le32 channel_load;		/* counts RX Enable time in uSec */
+	__le32 dsp_false_alarms;	/* DSP false alarm (both OFDM
+					 * and CCK) counter */
+	__le32 beacon_rssi_a;
+	__le32 beacon_rssi_b;
+	__le32 beacon_rssi_c;
+	__le32 beacon_energy_a;
+	__le32 beacon_energy_b;
+	__le32 beacon_energy_c;
+	__le32 num_bt_kills;
+	__le32 mac_id;
+	__le32 directed_data_mpdu;
+} __packed; /* STATISTICS_RX_NON_PHY_API_S_VER_3 */
+
+struct mvm_statistics_rx_phy {
+	__le32 ina_cnt;
+	__le32 fina_cnt;
+	__le32 plcp_err;
+	__le32 crc32_err;
+	__le32 overrun_err;
+	__le32 early_overrun_err;
+	__le32 crc32_good;
+	__le32 false_alarm_cnt;
+	__le32 fina_sync_err_cnt;
+	__le32 sfd_timeout;
+	__le32 fina_timeout;
+	__le32 unresponded_rts;
+	__le32 rxe_frame_limit_overrun;
+	__le32 sent_ack_cnt;
+	__le32 sent_cts_cnt;
+	__le32 sent_ba_rsp_cnt;
+	__le32 dsp_self_kill;
+	__le32 mh_format_err;
+	__le32 re_acq_main_rssi_sum;
+	__le32 reserved;
+} __packed; /* STATISTICS_RX_PHY_API_S_VER_2 */
+
+struct mvm_statistics_rx_ht_phy {
+	__le32 plcp_err;
+	__le32 overrun_err;
+	__le32 early_overrun_err;
+	__le32 crc32_good;
+	__le32 crc32_err;
+	__le32 mh_format_err;
+	__le32 agg_crc32_good;
+	__le32 agg_mpdu_cnt;
+	__le32 agg_cnt;
+	__le32 unsupport_mcs;
+} __packed;  /* STATISTICS_HT_RX_PHY_API_S_VER_1 */
+
+#define MAX_CHAINS 3
+
+struct mvm_statistics_tx_non_phy_agg {
+	__le32 ba_timeout;
+	__le32 ba_reschedule_frames;
+	__le32 scd_query_agg_frame_cnt;
+	__le32 scd_query_no_agg;
+	__le32 scd_query_agg;
+	__le32 scd_query_mismatch;
+	__le32 frame_not_ready;
+	__le32 underrun;
+	__le32 bt_prio_kill;
+	__le32 rx_ba_rsp_cnt;
+	__s8 txpower[MAX_CHAINS];
+	__s8 reserved;
+	__le32 reserved2;
+} __packed; /* STATISTICS_TX_NON_PHY_AGG_API_S_VER_1 */
+
+struct mvm_statistics_tx_channel_width {
+	__le32 ext_cca_narrow_ch20[1];
+	__le32 ext_cca_narrow_ch40[2];
+	__le32 ext_cca_narrow_ch80[3];
+	__le32 ext_cca_narrow_ch160[4];
+	__le32 last_tx_ch_width_indx;
+	__le32 rx_detected_per_ch_width[4];
+	__le32 success_per_ch_width[4];
+	__le32 fail_per_ch_width[4];
+}; /* STATISTICS_TX_CHANNEL_WIDTH_API_S_VER_1 */
+
+struct mvm_statistics_tx {
+	__le32 preamble_cnt;
+	__le32 rx_detected_cnt;
+	__le32 bt_prio_defer_cnt;
+	__le32 bt_prio_kill_cnt;
+	__le32 few_bytes_cnt;
+	__le32 cts_timeout;
+	__le32 ack_timeout;
+	__le32 expected_ack_cnt;
+	__le32 actual_ack_cnt;
+	__le32 dump_msdu_cnt;
+	__le32 burst_abort_next_frame_mismatch_cnt;
+	__le32 burst_abort_missing_next_frame_cnt;
+	__le32 cts_timeout_collision;
+	__le32 ack_or_ba_timeout_collision;
+	struct mvm_statistics_tx_non_phy_agg agg;
+	struct mvm_statistics_tx_channel_width channel_width;
+} __packed; /* STATISTICS_TX_API_S_VER_4 */
+
+
+struct mvm_statistics_bt_activity {
+	__le32 hi_priority_tx_req_cnt;
+	__le32 hi_priority_tx_denied_cnt;
+	__le32 lo_priority_tx_req_cnt;
+	__le32 lo_priority_tx_denied_cnt;
+	__le32 hi_priority_rx_req_cnt;
+	__le32 hi_priority_rx_denied_cnt;
+	__le32 lo_priority_rx_req_cnt;
+	__le32 lo_priority_rx_denied_cnt;
+} __packed;  /* STATISTICS_BT_ACTIVITY_API_S_VER_1 */
+
+struct mvm_statistics_general {
+	struct mvm_statistics_general_common common;
+	__le32 beacon_filtered;
+	__le32 missed_beacons;
+	__s8 beacon_filter_everage_energy;
+	__s8 beacon_filter_reason;
+	__s8 beacon_filter_current_energy;
+	__s8 beacon_filter_reserved;
+	__le32 beacon_filter_delta_time;
+	struct mvm_statistics_bt_activity bt_activity;
+} __packed; /* STATISTICS_GENERAL_API_S_VER_5 */
+
+struct mvm_statistics_rx {
+	struct mvm_statistics_rx_phy ofdm;
+	struct mvm_statistics_rx_phy cck;
+	struct mvm_statistics_rx_non_phy general;
+	struct mvm_statistics_rx_ht_phy ofdm_ht;
+} __packed; /* STATISTICS_RX_API_S_VER_3 */
+
+/*
+ * STATISTICS_NOTIFICATION = 0x9d (notification only, not a command)
+ *
+ * By default, uCode issues this notification after receiving a beacon
+ * while associated.  To disable this behavior, set DISABLE_NOTIF flag in the
+ * REPLY_STATISTICS_CMD 0x9c, above.
+ *
+ * Statistics counters continue to increment beacon after beacon, but are
+ * cleared when changing channels or when driver issues REPLY_STATISTICS_CMD
+ * 0x9c with CLEAR_STATS bit set (see above).
+ *
+ * uCode also issues this notification during scans.  uCode clears statistics
+ * appropriately so that each notification contains statistics for only the
+ * one channel that has just been scanned.
+ */
+
+struct iwl_notif_statistics { /* STATISTICS_NTFY_API_S_VER_8 */
+	__le32 flag;
+	struct mvm_statistics_rx rx;
+	struct mvm_statistics_tx tx;
+	struct mvm_statistics_general general;
+} __packed;
 
 #endif /* __fw_api_h__ */

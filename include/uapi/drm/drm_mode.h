@@ -367,13 +367,13 @@ struct drm_mode_mode_cmd {
  * depending on the value in flags different members are used.
  *
  * CURSOR_BO uses
- *    crtc
+ *    crtc_id
  *    width
  *    height
- *    handle - if 0 turns the cursor of
+ *    handle - if 0 turns the cursor off
  *
  * CURSOR_MOVE uses
- *    crtc
+ *    crtc_id
  *    x
  *    y
  */
@@ -386,6 +386,19 @@ struct drm_mode_cursor {
 	__u32 height;
 	/* driver specific handle */
 	__u32 handle;
+};
+
+struct drm_mode_cursor2 {
+	__u32 flags;
+	__u32 crtc_id;
+	__s32 x;
+	__s32 y;
+	__u32 width;
+	__u32 height;
+	/* driver specific handle */
+	__u32 handle;
+	__s32 hot_x;
+	__s32 hot_y;
 };
 
 struct drm_mode_crtc_lut {

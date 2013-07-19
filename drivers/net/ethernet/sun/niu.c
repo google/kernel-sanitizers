@@ -6618,7 +6618,7 @@ static u64 niu_compute_tx_flags(struct sk_buff *skb, struct ethhdr *ehdr,
 	       (len << TXHDR_LEN_SHIFT) |
 	       ((l3off / 2) << TXHDR_L3START_SHIFT) |
 	       (ihl << TXHDR_IHL_SHIFT) |
-	       ((eth_proto_inner < 1536) ? TXHDR_LLC : 0) |
+	       ((eth_proto_inner < ETH_P_802_3_MIN) ? TXHDR_LLC : 0) |
 	       ((eth_proto == ETH_P_8021Q) ? TXHDR_VLAN : 0) |
 	       (ipv6 ? TXHDR_IP_VER : 0) |
 	       csum_bits);
@@ -10108,7 +10108,7 @@ static int niu_of_probe(struct platform_device *op)
 		goto err_out_iounmap;
 	}
 
-	dev_set_drvdata(&op->dev, dev);
+	platform_set_drvdata(op, dev);
 
 	niu_device_announce(np);
 
@@ -10145,7 +10145,7 @@ err_out:
 
 static int niu_of_remove(struct platform_device *op)
 {
-	struct net_device *dev = dev_get_drvdata(&op->dev);
+	struct net_device *dev = platform_get_drvdata(op);
 
 	if (dev) {
 		struct niu *np = netdev_priv(dev);
@@ -10175,7 +10175,6 @@ static int niu_of_remove(struct platform_device *op)
 		niu_put_parent(np);
 
 		free_netdev(dev);
-		dev_set_drvdata(&op->dev, NULL);
 	}
 	return 0;
 }

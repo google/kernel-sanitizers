@@ -7,6 +7,8 @@
  *                              Turned xenfs into a loadable module.
  */
 
+#define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
+
 #include <linux/kernel.h>
 #include <linux/errno.h>
 #include <linux/module.h>
@@ -75,13 +77,14 @@ static struct file_system_type xenfs_type = {
 	.mount =	xenfs_mount,
 	.kill_sb =	kill_litter_super,
 };
+MODULE_ALIAS_FS("xenfs");
 
 static int __init xenfs_init(void)
 {
 	if (xen_domain())
 		return register_filesystem(&xenfs_type);
 
-	printk(KERN_INFO "XENFS: not registering filesystem on non-xen platform\n");
+	pr_info("not registering filesystem on non-xen platform\n");
 	return 0;
 }
 

@@ -119,3 +119,12 @@ EXPORT_SYMBOL(outsl);
 EXPORT_SYMBOL(insb);
 EXPORT_SYMBOL(insw);
 EXPORT_SYMBOL(insl);
+
+extern long common_exception_return;
+extern long _spill_registers;
+EXPORT_SYMBOL(common_exception_return);
+EXPORT_SYMBOL(_spill_registers);
+
+#ifdef CONFIG_FUNCTION_TRACER
+EXPORT_SYMBOL(_mcount);
+#endif

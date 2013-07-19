@@ -71,8 +71,6 @@ static struct sg_table *
 	unsigned int i;
 	int nents, ret;
 
-	DRM_DEBUG_PRIME("%s\n", __FILE__);
-
 	/* just return current sgt if already requested. */
 	if (exynos_attach->dir == dir && exynos_attach->is_mapped)
 		return &exynos_attach->sgt;
@@ -132,8 +130,6 @@ static void exynos_gem_unmap_dma_buf(struct dma_buf_attachment *attach,
 static void exynos_dmabuf_release(struct dma_buf *dmabuf)
 {
 	struct exynos_drm_gem_obj *exynos_gem_obj = dmabuf->priv;
-
-	DRM_DEBUG_PRIME("%s\n", __FILE__);
 
 	/*
 	 * exynos_dmabuf_release() call means that file object's
@@ -219,8 +215,6 @@ struct drm_gem_object *exynos_dmabuf_prime_import(struct drm_device *drm_dev,
 	struct exynos_drm_gem_buf *buffer;
 	int ret;
 
-	DRM_DEBUG_PRIME("%s\n", __FILE__);
-
 	/* is this one of own objects? */
 	if (dma_buf->ops == &exynos_dmabuf_ops) {
 		struct drm_gem_object *obj;
@@ -235,7 +229,6 @@ struct drm_gem_object *exynos_dmabuf_prime_import(struct drm_device *drm_dev,
 			 * refcount on gem itself instead of f_count of dmabuf.
 			 */
 			drm_gem_object_reference(obj);
-			dma_buf_put(dma_buf);
 			return obj;
 		}
 	}
@@ -244,6 +237,7 @@ struct drm_gem_object *exynos_dmabuf_prime_import(struct drm_device *drm_dev,
 	if (IS_ERR(attach))
 		return ERR_PTR(-EINVAL);
 
+	get_dma_buf(dma_buf);
 
 	sgt = dma_buf_map_attachment(attach, DMA_BIDIRECTIONAL);
 	if (IS_ERR_OR_NULL(sgt)) {
@@ -298,6 +292,8 @@ err_unmap_attach:
 	dma_buf_unmap_attachment(attach, sgt, DMA_BIDIRECTIONAL);
 err_buf_detach:
 	dma_buf_detach(dma_buf, attach);
+	dma_buf_put(dma_buf);
+
 	return ERR_PTR(ret);
 }
 

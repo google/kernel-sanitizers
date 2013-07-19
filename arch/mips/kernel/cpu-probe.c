@@ -27,105 +27,6 @@
 #include <asm/spram.h>
 #include <asm/uaccess.h>
 
-/*
- * Not all of the MIPS CPUs have the "wait" instruction available. Moreover,
- * the implementation of the "wait" feature differs between CPU families. This
- * points to the function that implements CPU specific wait.
- * The wait instruction stops the pipeline and reduces the power consumption of
- * the CPU very much.
- */
-void (*cpu_wait)(void);
-EXPORT_SYMBOL(cpu_wait);
-
-static void r3081_wait(void)
-{
-	unsigned long cfg = read_c0_conf();
-	write_c0_conf(cfg | R30XX_CONF_HALT);
-}
-
-static void r39xx_wait(void)
-{
-	local_irq_disable();
-	if (!need_resched())
-		write_c0_conf(read_c0_conf() | TX39_CONF_HALT);
-	local_irq_enable();
-}
-
-extern void r4k_wait(void);
-
-/*
- * This variant is preferable as it allows testing need_resched and going to
- * sleep depending on the outcome atomically.  Unfortunately the "It is
- * implementation-dependent whether the pipeline restarts when a non-enabled
- * interrupt is requested" restriction in the MIPS32/MIPS64 architecture makes
- * using this version a gamble.
- */
-void r4k_wait_irqoff(void)
-{
-	local_irq_disable();
-	if (!need_resched())
-		__asm__("	.set	push		\n"
-			"	.set	mips3		\n"
-			"	wait			\n"
-			"	.set	pop		\n");
-	local_irq_enable();
-	__asm__("	.globl __pastwait	\n"
-		"__pastwait:			\n");
-}
-
-/*
- * The RM7000 variant has to handle erratum 38.	 The workaround is to not
- * have any pending stores when the WAIT instruction is executed.
- */
-static void rm7k_wait_irqoff(void)
-{
-	local_irq_disable();
-	if (!need_resched())
-		__asm__(
-		"	.set	push					\n"
-		"	.set	mips3					\n"
-		"	.set	noat					\n"
-		"	mfc0	$1, $12					\n"
-		"	sync						\n"
-		"	mtc0	$1, $12		# stalls until W stage	\n"
-		"	wait						\n"
-		"	mtc0	$1, $12		# stalls until W stage	\n"
-		"	.set	pop					\n");
-	local_irq_enable();
-}
-
-/*
- * The Au1xxx wait is available only if using 32khz counter or
- * external timer source, but specifically not CP0 Counter.
- * alchemy/common/time.c may override cpu_wait!
- */
-static void au1k_wait(void)
-{
-	__asm__("	.set	mips3			\n"
-		"	cache	0x14, 0(%0)		\n"
-		"	cache	0x14, 32(%0)		\n"
-		"	sync				\n"
-		"	nop				\n"
-		"	wait				\n"
-		"	nop				\n"
-		"	nop				\n"
-		"	nop				\n"
-		"	nop				\n"
-		"	.set	mips0			\n"
-		: : "r" (au1k_wait));
-}
-
-static int __initdata nowait;
-
-static int __init wait_disable(char *s)
-{
-	nowait = 1;
-
-	return 1;
-}
-
-__setup("nowait", wait_disable);
-
 static int __cpuinitdata mips_fpu_disabled;
 
 static int __init fpu_disable(char *s)
@@ -149,105 +50,6 @@ static int __init dsp_disable(char *s)
 }
 
 __setup("nodsp", dsp_disable);
-
-void __init check_wait(void)
-{
-	struct cpuinfo_mips *c = &current_cpu_data;
-
-	if (nowait) {
-		printk("Wait instruction disabled.\n");
-		return;
-	}
-
-	switch (c->cputype) {
-	case CPU_R3081:
-	case CPU_R3081E:
-		cpu_wait = r3081_wait;
-		break;
-	case CPU_TX3927:
-		cpu_wait = r39xx_wait;
-		break;
-	case CPU_R4200:
-/*	case CPU_R4300: */
-	case CPU_R4600:
-	case CPU_R4640:
-	case CPU_R4650:
-	case CPU_R4700:
-	case CPU_R5000:
-	case CPU_R5500:
-	case CPU_NEVADA:
-	case CPU_4KC:
-	case CPU_4KEC:
-	case CPU_4KSC:
-	case CPU_5KC:
-	case CPU_25KF:
-	case CPU_PR4450:
-	case CPU_BMIPS3300:
-	case CPU_BMIPS4350:
-	case CPU_BMIPS4380:
-	case CPU_BMIPS5000:
-	case CPU_CAVIUM_OCTEON:
-	case CPU_CAVIUM_OCTEON_PLUS:
-	case CPU_CAVIUM_OCTEON2:
-	case CPU_JZRISC:
-	case CPU_LOONGSON1:
-	case CPU_XLR:
-	case CPU_XLP:
-		cpu_wait = r4k_wait;
-		break;
-
-	case CPU_RM7000:
-		cpu_wait = rm7k_wait_irqoff;
-		break;
-
-	case CPU_M14KC:
-	case CPU_M14KEC:
-	case CPU_24K:
-	case CPU_34K:
-	case CPU_1004K:
-		cpu_wait = r4k_wait;
-		if (read_c0_config7() & MIPS_CONF7_WII)
-			cpu_wait = r4k_wait_irqoff;
-		break;
-
-	case CPU_74K:
-		cpu_wait = r4k_wait;
-		if ((c->processor_id & 0xff) >= PRID_REV_ENCODE_332(2, 1, 0))
-			cpu_wait = r4k_wait_irqoff;
-		break;
-
-	case CPU_TX49XX:
-		cpu_wait = r4k_wait_irqoff;
-		break;
-	case CPU_ALCHEMY:
-		cpu_wait = au1k_wait;
-		break;
-	case CPU_20KC:
-		/*
-		 * WAIT on Rev1.0 has E1, E2, E3 and E16.
-		 * WAIT on Rev2.0 and Rev3.0 has E16.
-		 * Rev3.1 WAIT is nop, why bother
-		 */
-		if ((c->processor_id & 0xff) <= 0x64)
-			break;
-
-		/*
-		 * Another rev is incremeting c0_count at a reduced clock
-		 * rate while in WAIT mode.  So we basically have the choice
-		 * between using the cp0 timer as clocksource or avoiding
-		 * the WAIT instruction.  Until more details are known,
-		 * disable the use of WAIT for 20Kc entirely.
-		   cpu_wait = r4k_wait;
-		 */
-		break;
-	case CPU_RM9000:
-		if ((c->processor_id & 0x00ff) >= 0x40)
-			cpu_wait = r4k_wait;
-		break;
-	default:
-		break;
-	}
-}
 
 static inline void check_errata(void)
 {
@@ -344,8 +146,7 @@ static void __cpuinit set_isa(struct cpuinfo_mips *c, unsigned int isa)
 	case MIPS_CPU_ISA_IV:
 		c->isa_level |= MIPS_CPU_ISA_IV;
 	case MIPS_CPU_ISA_III:
-		c->isa_level |= MIPS_CPU_ISA_I | MIPS_CPU_ISA_II |
-				MIPS_CPU_ISA_III;
+		c->isa_level |= MIPS_CPU_ISA_II | MIPS_CPU_ISA_III;
 		break;
 
 	case MIPS_CPU_ISA_M32R2:
@@ -354,8 +155,6 @@ static void __cpuinit set_isa(struct cpuinfo_mips *c, unsigned int isa)
 		c->isa_level |= MIPS_CPU_ISA_M32R1;
 	case MIPS_CPU_ISA_II:
 		c->isa_level |= MIPS_CPU_ISA_II;
-	case MIPS_CPU_ISA_I:
-		c->isa_level |= MIPS_CPU_ISA_I;
 		break;
 	}
 }
@@ -527,7 +326,6 @@ static inline void cpu_probe_legacy(struct cpuinfo_mips *c, unsigned int cpu)
 	case PRID_IMP_R2000:
 		c->cputype = CPU_R2000;
 		__cpu_name[cpu] = "R2000";
-		set_isa(c, MIPS_CPU_ISA_I);
 		c->options = MIPS_CPU_TLB | MIPS_CPU_3K_CACHE |
 			     MIPS_CPU_NOFPUEX;
 		if (__cpu_has_fpu())
@@ -547,7 +345,6 @@ static inline void cpu_probe_legacy(struct cpuinfo_mips *c, unsigned int cpu)
 			c->cputype = CPU_R3000;
 			__cpu_name[cpu] = "R3000";
 		}
-		set_isa(c, MIPS_CPU_ISA_I);
 		c->options = MIPS_CPU_TLB | MIPS_CPU_3K_CACHE |
 			     MIPS_CPU_NOFPUEX;
 		if (__cpu_has_fpu())
@@ -580,6 +377,9 @@ static inline void cpu_probe_legacy(struct cpuinfo_mips *c, unsigned int cpu)
 		c->tlbsize = 48;
 		break;
 	case PRID_IMP_VR41XX:
+		set_isa(c, MIPS_CPU_ISA_III);
+		c->options = R4K_OPTS;
+		c->tlbsize = 32;
 		switch (c->processor_id & 0xf0) {
 		case PRID_REV_VR4111:
 			c->cputype = CPU_VR4111;
@@ -604,6 +404,7 @@ static inline void cpu_probe_legacy(struct cpuinfo_mips *c, unsigned int cpu)
 				__cpu_name[cpu] = "NEC VR4131";
 			} else {
 				c->cputype = CPU_VR4133;
+				c->options |= MIPS_CPU_LLSC;
 				__cpu_name[cpu] = "NEC VR4133";
 			}
 			break;
@@ -613,9 +414,6 @@ static inline void cpu_probe_legacy(struct cpuinfo_mips *c, unsigned int cpu)
 			__cpu_name[cpu] = "NEC Vr41xx";
 			break;
 		}
-		set_isa(c, MIPS_CPU_ISA_III);
-		c->options = R4K_OPTS;
-		c->tlbsize = 32;
 		break;
 	case PRID_IMP_R4300:
 		c->cputype = CPU_R4300;
@@ -649,7 +447,6 @@ static inline void cpu_probe_legacy(struct cpuinfo_mips *c, unsigned int cpu)
 		break;
 	#endif
 	case PRID_IMP_TX39:
-		set_isa(c, MIPS_CPU_ISA_I);
 		c->options = MIPS_CPU_TLB | MIPS_CPU_TX39_CACHE;
 
 		if ((c->processor_id & 0xf0) == (PRID_REV_TX3927 & 0xf0)) {
@@ -1153,6 +950,7 @@ static inline void cpu_probe_netlogic(struct cpuinfo_mips *c, int cpu)
 		set_isa(c, MIPS_CPU_ISA_M64R1);
 		c->tlbsize = ((read_c0_config1() >> 25) & 0x3f) + 1;
 	}
+	c->kscratch_mask = 0xf;
 }
 
 #ifdef CONFIG_64BIT
@@ -1226,10 +1024,8 @@ __cpuinit void cpu_probe(void)
 	if (c->options & MIPS_CPU_FPU) {
 		c->fpu_id = cpu_get_fpu_id();
 
-		if (c->isa_level == MIPS_CPU_ISA_M32R1 ||
-		    c->isa_level == MIPS_CPU_ISA_M32R2 ||
-		    c->isa_level == MIPS_CPU_ISA_M64R1 ||
-		    c->isa_level == MIPS_CPU_ISA_M64R2) {
+		if (c->isa_level & (MIPS_CPU_ISA_M32R1 | MIPS_CPU_ISA_M32R2 |
+				    MIPS_CPU_ISA_M64R1 | MIPS_CPU_ISA_M64R2)) {
 			if (c->fpu_id & MIPS_FPIR_3D)
 				c->ases |= MIPS_ASE_MIPS3D;
 		}

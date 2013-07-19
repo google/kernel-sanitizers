@@ -507,7 +507,6 @@ static void iscsi_free_task(struct iscsi_task *task)
 	kfifo_in(&session->cmdpool.queue, (void*)&task, sizeof(void*));
 
 	if (sc) {
-		task->sc = NULL;
 		/* SCSI eh reuses commands to verify us */
 		sc->SCp.ptr = NULL;
 		/*
@@ -2809,6 +2808,9 @@ void iscsi_session_teardown(struct iscsi_cls_session *cls_session)
 	kfree(session->targetname);
 	kfree(session->targetalias);
 	kfree(session->initiatorname);
+	kfree(session->boot_root);
+	kfree(session->boot_nic);
+	kfree(session->boot_target);
 	kfree(session->ifacename);
 
 	iscsi_destroy_session(cls_session);
@@ -3142,7 +3144,7 @@ int iscsi_conn_bind(struct iscsi_cls_session *cls_session,
 }
 EXPORT_SYMBOL_GPL(iscsi_conn_bind);
 
-static int iscsi_switch_str_param(char **param, char *new_val_buf)
+int iscsi_switch_str_param(char **param, char *new_val_buf)
 {
 	char *new_val;
 
@@ -3159,6 +3161,7 @@ static int iscsi_switch_str_param(char **param, char *new_val_buf)
 	*param = new_val;
 	return 0;
 }
+EXPORT_SYMBOL_GPL(iscsi_switch_str_param);
 
 int iscsi_set_param(struct iscsi_cls_conn *cls_conn,
 		    enum iscsi_param param, char *buf, int buflen)
@@ -3248,6 +3251,12 @@ int iscsi_set_param(struct iscsi_cls_conn *cls_conn,
 		return iscsi_switch_str_param(&session->ifacename, buf);
 	case ISCSI_PARAM_INITIATOR_NAME:
 		return iscsi_switch_str_param(&session->initiatorname, buf);
+	case ISCSI_PARAM_BOOT_ROOT:
+		return iscsi_switch_str_param(&session->boot_root, buf);
+	case ISCSI_PARAM_BOOT_NIC:
+		return iscsi_switch_str_param(&session->boot_nic, buf);
+	case ISCSI_PARAM_BOOT_TARGET:
+		return iscsi_switch_str_param(&session->boot_target, buf);
 	default:
 		return -ENOSYS;
 	}
@@ -3325,6 +3334,15 @@ int iscsi_session_get_param(struct iscsi_cls_session *cls_session,
 		break;
 	case ISCSI_PARAM_INITIATOR_NAME:
 		len = sprintf(buf, "%s\n", session->initiatorname);
+		break;
+	case ISCSI_PARAM_BOOT_ROOT:
+		len = sprintf(buf, "%s\n", session->boot_root);
+		break;
+	case ISCSI_PARAM_BOOT_NIC:
+		len = sprintf(buf, "%s\n", session->boot_nic);
+		break;
+	case ISCSI_PARAM_BOOT_TARGET:
+		len = sprintf(buf, "%s\n", session->boot_target);
 		break;
 	default:
 		return -ENOSYS;

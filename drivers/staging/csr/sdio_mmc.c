@@ -1031,8 +1031,7 @@ uf_glue_sdio_probe(struct sdio_func *func,
            sdio_func_id(func), instance);
 
     /* Allocate context */
-    sdio_ctx = (CsrSdioFunction *)kmalloc(sizeof(CsrSdioFunction),
-                                          GFP_KERNEL);
+    sdio_ctx = kmalloc(sizeof(CsrSdioFunction), GFP_KERNEL);
     if (sdio_ctx == NULL) {
         sdio_release_host(func);
         return -ENOMEM;
@@ -1136,8 +1135,8 @@ uf_glue_sdio_remove(struct sdio_func *func)
  * them from the list passed in csr_sdio_register_driver().
  */
 static const struct sdio_device_id unifi_ids[] = {
-    { SDIO_DEVICE(SDIO_MANF_ID_CSR,SDIO_CARD_ID_UNIFI_3) },
-    { SDIO_DEVICE(SDIO_MANF_ID_CSR,SDIO_CARD_ID_UNIFI_4) },
+    { SDIO_DEVICE(SDIO_MANF_ID_CSR, SDIO_CARD_ID_UNIFI_3) },
+    { SDIO_DEVICE(SDIO_MANF_ID_CSR, SDIO_CARD_ID_UNIFI_4) },
     { /* end: all zeroes */				},
 };
 

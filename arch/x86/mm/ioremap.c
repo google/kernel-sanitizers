@@ -282,12 +282,7 @@ void iounmap(volatile void __iomem *addr)
 	   in parallel. Reuse of the virtual address is prevented by
 	   leaving it in the global lists until we're done with it.
 	   cpa takes care of the direct mappings. */
-	read_lock(&vmlist_lock);
-	for (p = vmlist; p; p = p->next) {
-		if (p->addr == (void __force *)addr)
-			break;
-	}
-	read_unlock(&vmlist_lock);
+	p = find_vm_area((void __force *)addr);
 
 	if (!p) {
 		printk(KERN_ERR "iounmap: bad address %p\n", addr);
@@ -506,15 +501,15 @@ __early_ioremap(resource_size_t phys_addr, unsigned long size, pgprot_t prot)
 	}
 
 	if (slot < 0) {
-		printk(KERN_INFO "early_iomap(%08llx, %08lx) not found slot\n",
-			 (u64)phys_addr, size);
+		printk(KERN_INFO "%s(%08llx, %08lx) not found slot\n",
+		       __func__, (u64)phys_addr, size);
 		WARN_ON(1);
 		return NULL;
 	}
 
 	if (early_ioremap_debug) {
-		printk(KERN_INFO "early_ioremap(%08llx, %08lx) [%d] => ",
-		       (u64)phys_addr, size, slot);
+		printk(KERN_INFO "%s(%08llx, %08lx) [%d] => ",
+		       __func__, (u64)phys_addr, size, slot);
 		dump_stack();
 	}
 

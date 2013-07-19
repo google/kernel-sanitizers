@@ -83,6 +83,7 @@ struct lp55xx_device_config {
  */
 struct lp55xx_chip {
 	struct i2c_client *cl;
+	struct clk *clk;
 	struct lp55xx_platform_data *pdata;
 	struct mutex lock;	/* lock for user-space interface */
 	int num_leds;
@@ -117,6 +118,9 @@ extern int lp55xx_read(struct lp55xx_chip *chip, u8 reg, u8 *val);
 extern int lp55xx_update_bits(struct lp55xx_chip *chip, u8 reg,
 			u8 mask, u8 val);
 
+/* external clock detection */
+extern bool lp55xx_is_extclk_used(struct lp55xx_chip *chip);
+
 /* common device init/deinit functions */
 extern int lp55xx_init_device(struct lp55xx_chip *chip);
 extern void lp55xx_deinit_device(struct lp55xx_chip *chip);
@@ -130,5 +134,9 @@ extern void lp55xx_unregister_leds(struct lp55xx_led *led,
 /* common device attributes functions */
 extern int lp55xx_register_sysfs(struct lp55xx_chip *chip);
 extern void lp55xx_unregister_sysfs(struct lp55xx_chip *chip);
+
+/* common device tree population function */
+extern int lp55xx_of_populate_pdata(struct device *dev,
+				    struct device_node *np);
 
 #endif /* _LEDS_LP55XX_COMMON_H */

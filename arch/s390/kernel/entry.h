@@ -7,6 +7,7 @@
 #include <asm/cputime.h>
 
 extern void *restart_stack;
+extern unsigned long suspend_zero_pages;
 
 void system_call(void);
 void pgm_check_handler(void);
@@ -53,7 +54,7 @@ void handle_signal32(unsigned long sig, struct k_sigaction *ka,
 void do_notify_resume(struct pt_regs *regs);
 
 struct ext_code;
-void do_extint(struct pt_regs *regs, struct ext_code, unsigned int, unsigned long);
+void do_extint(struct pt_regs *regs);
 void do_restart(void);
 void __init startup_init(void);
 void die(struct pt_regs *regs, const char *str);

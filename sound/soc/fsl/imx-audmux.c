@@ -26,7 +26,6 @@
 #include <linux/of_device.h>
 #include <linux/platform_device.h>
 #include <linux/slab.h>
-#include <linux/pinctrl/consumer.h>
 
 #include "imx-audmux.h"
 
@@ -247,7 +246,6 @@ EXPORT_SYMBOL_GPL(imx_audmux_v2_configure_port);
 static int imx_audmux_probe(struct platform_device *pdev)
 {
 	struct resource *res;
-	struct pinctrl *pinctrl;
 	const struct of_device_id *of_id =
 			of_match_device(imx_audmux_dt_ids, &pdev->dev);
 
@@ -256,13 +254,7 @@ static int imx_audmux_probe(struct platform_device *pdev)
 	if (IS_ERR(audmux_base))
 		return PTR_ERR(audmux_base);
 
-	pinctrl = devm_pinctrl_get_select_default(&pdev->dev);
-	if (IS_ERR(pinctrl)) {
-		dev_err(&pdev->dev, "setup pinctrl failed!");
-		return PTR_ERR(pinctrl);
-	}
-
-	audmux_clk = clk_get(&pdev->dev, "audmux");
+	audmux_clk = devm_clk_get(&pdev->dev, "audmux");
 	if (IS_ERR(audmux_clk)) {
 		dev_dbg(&pdev->dev, "cannot get clock: %ld\n",
 				PTR_ERR(audmux_clk));
@@ -282,7 +274,6 @@ static int imx_audmux_remove(struct platform_device *pdev)
 {
 	if (audmux_type == IMX31_AUDMUX)
 		audmux_debugfs_remove();
-	clk_put(audmux_clk);
 
 	return 0;
 }

@@ -27,7 +27,7 @@ static spinlock_t cpufreq_stats_lock;
 struct cpufreq_stats {
 	unsigned int cpu;
 	unsigned int total_trans;
-	unsigned long long  last_time;
+	unsigned long long last_time;
 	unsigned int max_state;
 	unsigned int state_num;
 	unsigned int last_index;
@@ -116,7 +116,7 @@ static ssize_t show_trans_table(struct cpufreq_policy *policy, char *buf)
 		len += snprintf(buf + len, PAGE_SIZE - len, "%9u: ",
 				stat->freq_table[i]);
 
-		for (j = 0; j < stat->state_num; j++)   {
+		for (j = 0; j < stat->state_num; j++) {
 			if (len >= PAGE_SIZE)
 				break;
 			len += snprintf(buf + len, PAGE_SIZE - len, "%9u ",
@@ -180,15 +180,19 @@ static void cpufreq_stats_free_sysfs(unsigned int cpu)
 {
 	struct cpufreq_policy *policy = cpufreq_cpu_get(cpu);
 
-	if (!cpufreq_frequency_get_table(cpu))
+	if (!policy)
 		return;
 
-	if (policy && !policy_is_shared(policy)) {
+	if (!cpufreq_frequency_get_table(cpu))
+		goto put_ref;
+
+	if (!policy_is_shared(policy)) {
 		pr_debug("%s: Free sysfs stat\n", __func__);
 		sysfs_remove_group(&policy->kobj, &stats_attr_group);
 	}
-	if (policy)
-		cpufreq_cpu_put(policy);
+
+put_ref:
+	cpufreq_cpu_put(policy);
 }
 
 static int cpufreq_stats_create_table(struct cpufreq_policy *policy,
@@ -349,11 +353,13 @@ static int __cpuinit cpufreq_stat_cpu_callback(struct notifier_block *nfb,
 		cpufreq_update_policy(cpu);
 		break;
 	case CPU_DOWN_PREPARE:
-	case CPU_DOWN_PREPARE_FROZEN:
 		cpufreq_stats_free_sysfs(cpu);
 		break;
 	case CPU_DEAD:
-	case CPU_DEAD_FROZEN:
+		cpufreq_stats_free_table(cpu);
+		break;
+	case CPU_UP_CANCELED_FROZEN:
+		cpufreq_stats_free_sysfs(cpu);
 		cpufreq_stats_free_table(cpu);
 		break;
 	}

@@ -368,11 +368,6 @@ struct pl022 {
 	resource_size_t			phybase;
 	void __iomem			*virtbase;
 	struct clk			*clk;
-	/* Two optional pin states - default & sleep */
-	struct pinctrl			*pinctrl;
-	struct pinctrl_state		*pins_default;
-	struct pinctrl_state		*pins_idle;
-	struct pinctrl_state		*pins_sleep;
 	struct spi_master		*master;
 	struct pl022_ssp_controller	*master_info;
 	/* Message per-transfer pump */
@@ -1139,6 +1134,35 @@ err_no_rxchan:
 	return -ENODEV;
 }
 
+static int pl022_dma_autoprobe(struct pl022 *pl022)
+{
+	struct device *dev = &pl022->adev->dev;
+
+	/* automatically configure DMA channels from platform, normally using DT */
+	pl022->dma_rx_channel = dma_request_slave_channel(dev, "rx");
+	if (!pl022->dma_rx_channel)
+		goto err_no_rxchan;
+
+	pl022->dma_tx_channel = dma_request_slave_channel(dev, "tx");
+	if (!pl022->dma_tx_channel)
+		goto err_no_txchan;
+
+	pl022->dummypage = kmalloc(PAGE_SIZE, GFP_KERNEL);
+	if (!pl022->dummypage)
+		goto err_no_dummypage;
+
+	return 0;
+
+err_no_dummypage:
+	dma_release_channel(pl022->dma_tx_channel);
+	pl022->dma_tx_channel = NULL;
+err_no_txchan:
+	dma_release_channel(pl022->dma_rx_channel);
+	pl022->dma_rx_channel = NULL;
+err_no_rxchan:
+	return -ENODEV;
+}
+		
 static void terminate_dma(struct pl022 *pl022)
 {
 	struct dma_chan *rxchan = pl022->dma_rx_channel;
@@ -1165,6 +1189,11 @@ static void pl022_dma_remove(struct pl022 *pl022)
 static inline int configure_dma(struct pl022 *pl022)
 {
 	return -ENODEV;
+}
+
+static inline int pl022_dma_autoprobe(struct pl022 *pl022)
+{
+	return 0;
 }
 
 static inline int pl022_dma_probe(struct pl022 *pl022)
@@ -2049,6 +2078,7 @@ pl022_platform_data_dt_get(struct device *dev)
 	}
 
 	pd->bus_id = -1;
+	pd->enable_dma = 1;
 	of_property_read_u32(np, "num-cs", &tmp);
 	pd->num_chipselect = tmp;
 	of_property_read_u32(np, "pl022,autosuspend-delay",
@@ -2099,32 +2129,7 @@ static int pl022_probe(struct amba_device *adev, const struct amba_id *id)
 	pl022->chipselects = devm_kzalloc(dev, num_cs * sizeof(int),
 					  GFP_KERNEL);
 
-	pl022->pinctrl = devm_pinctrl_get(dev);
-	if (IS_ERR(pl022->pinctrl)) {
-		status = PTR_ERR(pl022->pinctrl);
-		goto err_no_pinctrl;
-	}
-
-	pl022->pins_default = pinctrl_lookup_state(pl022->pinctrl,
-						 PINCTRL_STATE_DEFAULT);
-	/* enable pins to be muxed in and configured */
-	if (!IS_ERR(pl022->pins_default)) {
-		status = pinctrl_select_state(pl022->pinctrl,
-				pl022->pins_default);
-		if (status)
-			dev_err(dev, "could not set default pins\n");
-	} else
-		dev_err(dev, "could not get default pinstate\n");
-
-	pl022->pins_idle = pinctrl_lookup_state(pl022->pinctrl,
-					      PINCTRL_STATE_IDLE);
-	if (IS_ERR(pl022->pins_idle))
-		dev_dbg(dev, "could not get idle pinstate\n");
-
-	pl022->pins_sleep = pinctrl_lookup_state(pl022->pinctrl,
-					       PINCTRL_STATE_SLEEP);
-	if (IS_ERR(pl022->pins_sleep))
-		dev_dbg(dev, "could not get sleep pinstate\n");
+	pinctrl_pm_select_default_state(dev);
 
 	/*
 	 * Bus Number Which has been Assigned to this SSP controller
@@ -2226,8 +2231,13 @@ static int pl022_probe(struct amba_device *adev, const struct amba_id *id)
 		goto err_no_irq;
 	}
 
-	/* Get DMA channels */
-	if (platform_info->enable_dma) {
+	/* Get DMA channels, try autoconfiguration first */
+	status = pl022_dma_autoprobe(pl022);
+
+	/* If that failed, use channels from platform_info */
+	if (status == 0)
+		platform_info->enable_dma = 1;
+	else if (platform_info->enable_dma) {
 		status = pl022_dma_probe(pl022);
 		if (status != 0)
 			platform_info->enable_dma = 0;
@@ -2269,7 +2279,6 @@ static int pl022_probe(struct amba_device *adev, const struct amba_id *id)
 	amba_release_regions(adev);
  err_no_ioregion:
  err_no_gpio:
- err_no_pinctrl:
 	spi_master_put(master);
 	return status;
 }
@@ -2309,44 +2318,21 @@ pl022_remove(struct amba_device *adev)
  */
 static void pl022_suspend_resources(struct pl022 *pl022, bool runtime)
 {
-	int ret;
-	struct pinctrl_state *pins_state;
-
 	clk_disable(pl022->clk);
 
-	pins_state = runtime ? pl022->pins_idle : pl022->pins_sleep;
-	/* Optionally let pins go into sleep states */
-	if (!IS_ERR(pins_state)) {
-		ret = pinctrl_select_state(pl022->pinctrl, pins_state);
-		if (ret)
-			dev_err(&pl022->adev->dev, "could not set %s pins\n",
-				runtime ? "idle" : "sleep");
-	}
+	if (runtime)
+		pinctrl_pm_select_idle_state(&pl022->adev->dev);
+	else
+		pinctrl_pm_select_sleep_state(&pl022->adev->dev);
 }
 
 static void pl022_resume_resources(struct pl022 *pl022, bool runtime)
 {
-	int ret;
-
-	/* Optionaly enable pins to be muxed in and configured */
 	/* First go to the default state */
-	if (!IS_ERR(pl022->pins_default)) {
-		ret = pinctrl_select_state(pl022->pinctrl, pl022->pins_default);
-		if (ret)
-			dev_err(&pl022->adev->dev,
-				"could not set default pins\n");
-	}
-
-	if (!runtime) {
+	pinctrl_pm_select_default_state(&pl022->adev->dev);
+	if (!runtime)
 		/* Then let's idle the pins until the next transfer happens */
-		if (!IS_ERR(pl022->pins_idle)) {
-			ret = pinctrl_select_state(pl022->pinctrl,
-					pl022->pins_idle);
-		if (ret)
-			dev_err(&pl022->adev->dev,
-				"could not set idle pins\n");
-		}
-	}
+		pinctrl_pm_select_idle_state(&pl022->adev->dev);
 
 	clk_enable(pl022->clk);
 }

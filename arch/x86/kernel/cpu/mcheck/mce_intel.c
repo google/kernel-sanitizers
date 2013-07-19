@@ -24,6 +24,18 @@
  * Also supports reliable discovery of shared banks.
  */
 
+/*
+ * CMCI can be delivered to multiple cpus that share a machine check bank
+ * so we need to designate a single cpu to process errors logged in each bank
+ * in the interrupt handler (otherwise we would have many races and potential
+ * double reporting of the same error).
+ * Note that this can change when a cpu is offlined or brought online since
+ * some MCA banks are shared across cpus. When a cpu is offlined, cmci_clear()
+ * disables CMCI on all banks owned by the cpu and clears this bitfield. At
+ * this point, cmci_rediscover() kicks in and a different cpu may end up
+ * taking ownership of some of the shared MCA banks that were previously
+ * owned by the offlined cpu.
+ */
 static DEFINE_PER_CPU(mce_banks_t, mce_banks_owned);
 
 /*
@@ -285,39 +297,24 @@ void cmci_clear(void)
 	raw_spin_unlock_irqrestore(&cmci_discover_lock, flags);
 }
 
-static long cmci_rediscover_work_func(void *arg)
+static void cmci_rediscover_work_func(void *arg)
 {
 	int banks;
 
 	/* Recheck banks in case CPUs don't all have the same */
 	if (cmci_supported(&banks))
 		cmci_discover(banks);
-
-	return 0;
 }
 
-/*
- * After a CPU went down cycle through all the others and rediscover
- * Must run in process context.
- */
-void cmci_rediscover(int dying)
+/* After a CPU went down cycle through all the others and rediscover */
+void cmci_rediscover(void)
 {
-	int cpu, banks;
+	int banks;
 
 	if (!cmci_supported(&banks))
 		return;
 
-	for_each_online_cpu(cpu) {
-		if (cpu == dying)
-			continue;
-
-		if (cpu == smp_processor_id()) {
-			cmci_rediscover_work_func(NULL);
-			continue;
-		}
-
-		work_on_cpu(cpu, cmci_rediscover_work_func, NULL);
-	}
+	on_each_cpu(cmci_rediscover_work_func, NULL, 1);
 }
 
 /*

@@ -112,7 +112,7 @@ Default is to monitor all CPUS.
 
 -s::
 --sort::
-	Sort by key(s): pid, comm, dso, symbol, parent, srcline.
+	Sort by key(s): pid, comm, dso, symbol, parent, srcline, weight, local_weight.
 
 -n::
 --show-nr-samples::
@@ -154,6 +154,10 @@ Default is to monitor all CPUS.
 	- caller: inverted caller based call graph.
 
 	Default: fractal,0.5,callee.
+
+--percent-limit::
+	Do not show entries which have an overhead under that percent.
+	(Default: 0).
 
 INTERACTIVE PROMPTING KEYS
 --------------------------

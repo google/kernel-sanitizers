@@ -31,6 +31,7 @@
 #include <linux/mutex.h>
 #include <linux/platform_data/leds-lp55xx.h>
 #include <linux/slab.h>
+#include <linux/of.h>
 
 #include "leds-lp55xx-common.h"
 
@@ -67,6 +68,18 @@
 	(LP5521_MASTER_ENABLE | LP5521_LOGARITHMIC_PWM)
 #define LP5521_ENABLE_RUN_PROGRAM	\
 	(LP5521_ENABLE_DEFAULT | LP5521_EXEC_RUN)
+
+/* CONFIG register */
+#define LP5521_PWM_HF			0x40	/* PWM: 0 = 256Hz, 1 = 558Hz */
+#define LP5521_PWRSAVE_EN		0x20	/* 1 = Power save mode */
+#define LP5521_CP_MODE_OFF		0	/* Charge pump (CP) off */
+#define LP5521_CP_MODE_BYPASS		8	/* CP forced to bypass mode */
+#define LP5521_CP_MODE_1X5		0x10	/* CP forced to 1.5x mode */
+#define LP5521_CP_MODE_AUTO		0x18	/* Automatic mode selection */
+#define LP5521_R_TO_BATT		0x04	/* R out: 0 = CP, 1 = Vbat */
+#define LP5521_CLK_INT			0x01	/* Internal clock */
+#define LP5521_DEFAULT_CFG		\
+	(LP5521_PWM_HF | LP5521_PWRSAVE_EN | LP5521_CP_MODE_AUTO)
 
 /* Status */
 #define LP5521_EXT_CLK_USED		0x08
@@ -296,8 +309,11 @@ static int lp5521_post_init_device(struct lp55xx_chip *chip)
 	/* Set all PWMs to direct control mode */
 	ret = lp55xx_write(chip, LP5521_REG_OP_MODE, LP5521_CMD_DIRECT);
 
-	val = chip->pdata->update_config ?
-		: (LP5521_PWRSAVE_EN | LP5521_CP_MODE_AUTO | LP5521_R_TO_BATT);
+	/* Update configuration for the clock setting */
+	val = LP5521_DEFAULT_CFG;
+	if (!lp55xx_is_extclk_used(chip))
+		val |= LP5521_CLK_INT;
+
 	ret = lp55xx_write(chip, LP5521_REG_CONFIG, val);
 	if (ret)
 		return ret;
@@ -360,7 +376,8 @@ static ssize_t lp5521_selftest(struct device *dev,
 	mutex_lock(&chip->lock);
 	ret = lp5521_run_selftest(chip, buf);
 	mutex_unlock(&chip->lock);
-	return sprintf(buf, "%s\n", ret ? "FAIL" : "OK");
+
+	return scnprintf(buf, PAGE_SIZE, "%s\n", ret ? "FAIL" : "OK");
 }
 
 /* device attributes */
@@ -400,12 +417,20 @@ static int lp5521_probe(struct i2c_client *client,
 	int ret;
 	struct lp55xx_chip *chip;
 	struct lp55xx_led *led;
-	struct lp55xx_platform_data *pdata = client->dev.platform_data;
+	struct lp55xx_platform_data *pdata;
+	struct device_node *np = client->dev.of_node;
 
-	if (!pdata) {
-		dev_err(&client->dev, "no platform data\n");
-		return -EINVAL;
+	if (!client->dev.platform_data) {
+		if (np) {
+			ret = lp55xx_of_populate_pdata(&client->dev, np);
+			if (ret < 0)
+				return ret;
+		} else {
+			dev_err(&client->dev, "no platform data\n");
+			return -EINVAL;
+		}
 	}
+	pdata = client->dev.platform_data;
 
 	chip = devm_kzalloc(&client->dev, sizeof(*chip), GFP_KERNEL);
 	if (!chip)
@@ -469,9 +494,18 @@ static const struct i2c_device_id lp5521_id[] = {
 };
 MODULE_DEVICE_TABLE(i2c, lp5521_id);
 
+#ifdef CONFIG_OF
+static const struct of_device_id of_lp5521_leds_match[] = {
+	{ .compatible = "national,lp5521", },
+	{},
+};
+
+MODULE_DEVICE_TABLE(of, of_lp5521_leds_match);
+#endif
 static struct i2c_driver lp5521_driver = {
 	.driver = {
 		.name	= "lp5521",
+		.of_match_table = of_match_ptr(of_lp5521_leds_match),
 	},
 	.probe		= lp5521_probe,
 	.remove		= lp5521_remove,

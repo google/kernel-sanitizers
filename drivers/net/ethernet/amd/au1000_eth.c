@@ -727,7 +727,6 @@ static int au1000_rx(struct net_device *dev)
 			frmlen -= 4; /* Remove FCS */
 			skb = netdev_alloc_skb(dev, frmlen + 2);
 			if (skb == NULL) {
-				netdev_err(dev, "Memory squeeze, dropping packet.\n");
 				dev->stats.rx_dropped++;
 				continue;
 			}
@@ -1301,8 +1300,6 @@ static int au1000_remove(struct platform_device *pdev)
 	struct au1000_private *aup = netdev_priv(dev);
 	int i;
 	struct resource *base, *macen;
-
-	platform_set_drvdata(pdev, NULL);
 
 	unregister_netdev(dev);
 	mdiobus_unregister(aup->mii_bus);

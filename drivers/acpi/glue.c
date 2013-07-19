@@ -36,12 +36,11 @@ int register_acpi_bus_type(struct acpi_bus_type *type)
 {
 	if (acpi_disabled)
 		return -ENODEV;
-	if (type && type->bus && type->find_device) {
+	if (type && type->match && type->find_device) {
 		down_write(&bus_type_sem);
 		list_add_tail(&type->list, &bus_type_list);
 		up_write(&bus_type_sem);
-		printk(KERN_INFO PREFIX "bus type %s registered\n",
-		       type->bus->name);
+		printk(KERN_INFO PREFIX "bus type %s registered\n", type->name);
 		return 0;
 	}
 	return -ENODEV;
@@ -56,41 +55,22 @@ int unregister_acpi_bus_type(struct acpi_bus_type *type)
 		down_write(&bus_type_sem);
 		list_del_init(&type->list);
 		up_write(&bus_type_sem);
-		printk(KERN_INFO PREFIX "ACPI bus type %s unregistered\n",
-		       type->bus->name);
+		printk(KERN_INFO PREFIX "bus type %s unregistered\n",
+		       type->name);
 		return 0;
 	}
 	return -ENODEV;
 }
 EXPORT_SYMBOL_GPL(unregister_acpi_bus_type);
 
-static struct acpi_bus_type *acpi_get_bus_type(struct bus_type *type)
+static struct acpi_bus_type *acpi_get_bus_type(struct device *dev)
 {
 	struct acpi_bus_type *tmp, *ret = NULL;
 
-	if (!type)
-		return NULL;
-
 	down_read(&bus_type_sem);
 	list_for_each_entry(tmp, &bus_type_list, list) {
-		if (tmp->bus == type) {
+		if (tmp->match(dev)) {
 			ret = tmp;
-			break;
-		}
-	}
-	up_read(&bus_type_sem);
-	return ret;
-}
-
-static int acpi_find_bridge_device(struct device *dev, acpi_handle * handle)
-{
-	struct acpi_bus_type *tmp;
-	int ret = -ENODEV;
-
-	down_read(&bus_type_sem);
-	list_for_each_entry(tmp, &bus_type_list, list) {
-		if (tmp->find_bridge && !tmp->find_bridge(dev, handle)) {
-			ret = 0;
 			break;
 		}
 	}
@@ -101,13 +81,15 @@ static int acpi_find_bridge_device(struct device *dev, acpi_handle * handle)
 static acpi_status do_acpi_find_child(acpi_handle handle, u32 lvl_not_used,
 				      void *addr_p, void **ret_p)
 {
-	unsigned long long addr;
+	unsigned long long addr, sta;
 	acpi_status status;
 
 	status = acpi_evaluate_integer(handle, METHOD_NAME__ADR, NULL, &addr);
 	if (ACPI_SUCCESS(status) && addr == *((u64 *)addr_p)) {
 		*ret_p = handle;
-		return AE_CTRL_TERMINATE;
+		status = acpi_bus_get_status_handle(handle, &sta);
+		if (ACPI_SUCCESS(status) && (sta & ACPI_STA_DEVICE_ENABLED))
+			return AE_CTRL_TERMINATE;
 	}
 	return AE_OK;
 }
@@ -125,7 +107,7 @@ acpi_handle acpi_get_child(acpi_handle parent, u64 address)
 }
 EXPORT_SYMBOL(acpi_get_child);
 
-static int acpi_bind_one(struct device *dev, acpi_handle handle)
+int acpi_bind_one(struct device *dev, acpi_handle handle)
 {
 	struct acpi_device *acpi_dev;
 	acpi_status status;
@@ -208,8 +190,9 @@ static int acpi_bind_one(struct device *dev, acpi_handle handle)
 	kfree(physical_node);
 	goto err;
 }
+EXPORT_SYMBOL_GPL(acpi_bind_one);
 
-static int acpi_unbind_one(struct device *dev)
+int acpi_unbind_one(struct device *dev)
 {
 	struct acpi_device_physical_node *entry;
 	struct acpi_device *acpi_dev;
@@ -258,32 +241,16 @@ err:
 	dev_err(dev, "Oops, 'acpi_handle' corrupt\n");
 	return -EINVAL;
 }
+EXPORT_SYMBOL_GPL(acpi_unbind_one);
 
 static int acpi_platform_notify(struct device *dev)
 {
-	struct acpi_bus_type *type;
+	struct acpi_bus_type *type = acpi_get_bus_type(dev);
 	acpi_handle handle;
 	int ret;
 
 	ret = acpi_bind_one(dev, NULL);
-	if (ret && (!dev->bus || !dev->parent)) {
-		/* bridge devices genernally haven't bus or parent */
-		ret = acpi_find_bridge_device(dev, &handle);
-		if (!ret) {
-			ret = acpi_bind_one(dev, handle);
-			if (ret)
-				goto out;
-		}
-	}
-
-	type = acpi_get_bus_type(dev->bus);
-	if (ret) {
-		if (!type || !type->find_device) {
-			DBG("No ACPI bus support for %s\n", dev_name(dev));
-			ret = -EINVAL;
-			goto out;
-		}
-
+	if (ret && type) {
 		ret = type->find_device(dev, &handle);
 		if (ret) {
 			DBG("Unable to get handle for %s\n", dev_name(dev));
@@ -316,7 +283,7 @@ static int acpi_platform_notify_remove(struct device *dev)
 {
 	struct acpi_bus_type *type;
 
-	type = acpi_get_bus_type(dev->bus);
+	type = acpi_get_bus_type(dev);
 	if (type && type->cleanup)
 		type->cleanup(dev);
 

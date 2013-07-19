@@ -249,7 +249,7 @@ static void __cpuinit init_cyrix(struct cpuinfo_x86 *c)
 		/* Emulate MTRRs using Cyrix's ARRs. */
 		set_cpu_cap(c, X86_FEATURE_CYRIX_ARR);
 		/* 6x86's contain this bug */
-		c->coma_bug = 1;
+		set_cpu_bug(c, X86_BUG_COMA);
 		break;
 
 	case 4: /* MediaGX/GXm or Geode GXM/GXLV/GX1 */
@@ -317,7 +317,8 @@ static void __cpuinit init_cyrix(struct cpuinfo_x86 *c)
 			/* Enable MMX extensions (App note 108) */
 			setCx86_old(CX86_CCR7, getCx86_old(CX86_CCR7)|1);
 		} else {
-			c->coma_bug = 1;      /* 6x86MX, it has the bug. */
+			/* A 6x86MX - it has the bug. */
+			set_cpu_bug(c, X86_BUG_COMA);
 		}
 		tmp = (!(dir0_lsn & 7) || dir0_lsn & 1) ? 2 : 0;
 		Cx86_cb[tmp] = cyrix_model_mult2[dir0_lsn & 7];
@@ -332,7 +333,7 @@ static void __cpuinit init_cyrix(struct cpuinfo_x86 *c)
 		switch (dir0_lsn) {
 		case 0xd:  /* either a 486SLC or DLC w/o DEVID */
 			dir0_msn = 0;
-			p = Cx486_name[(c->hard_math) ? 1 : 0];
+			p = Cx486_name[(cpu_has_fpu ? 1 : 0)];
 			break;
 
 		case 0xe:  /* a 486S A step */

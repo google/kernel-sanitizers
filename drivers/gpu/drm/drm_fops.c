@@ -123,6 +123,7 @@ int drm_open(struct inode *inode, struct file *filp)
 	int retcode = 0;
 	int need_setup = 0;
 	struct address_space *old_mapping;
+	struct address_space *old_imapping;
 
 	minor = idr_find(&drm_minors_idr, minor_id);
 	if (!minor)
@@ -137,6 +138,7 @@ int drm_open(struct inode *inode, struct file *filp)
 	if (!dev->open_count++)
 		need_setup = 1;
 	mutex_lock(&dev->struct_mutex);
+	old_imapping = inode->i_mapping;
 	old_mapping = dev->dev_mapping;
 	if (old_mapping == NULL)
 		dev->dev_mapping = &inode->i_data;
@@ -159,8 +161,8 @@ int drm_open(struct inode *inode, struct file *filp)
 
 err_undo:
 	mutex_lock(&dev->struct_mutex);
-	filp->f_mapping = old_mapping;
-	inode->i_mapping = old_mapping;
+	filp->f_mapping = old_imapping;
+	inode->i_mapping = old_imapping;
 	iput(container_of(dev->dev_mapping, struct inode, i_data));
 	dev->dev_mapping = old_mapping;
 	mutex_unlock(&dev->struct_mutex);
@@ -269,6 +271,11 @@ static int drm_open_helper(struct inode *inode, struct file *filp,
 	priv->uid = current_euid();
 	priv->pid = get_pid(task_pid(current));
 	priv->minor = idr_find(&drm_minors_idr, minor_id);
+	if (!priv->minor) {
+		ret = -ENODEV;
+		goto out_put_pid;
+	}
+
 	priv->ioctl_count = 0;
 	/* for compatibility root is always authenticated */
 	priv->authenticated = capable(CAP_SYS_ADMIN);
@@ -290,7 +297,7 @@ static int drm_open_helper(struct inode *inode, struct file *filp,
 	if (dev->driver->open) {
 		ret = dev->driver->open(dev, priv);
 		if (ret < 0)
-			goto out_free;
+			goto out_prime_destroy;
 	}
 
 
@@ -302,7 +309,7 @@ static int drm_open_helper(struct inode *inode, struct file *filp,
 		if (!priv->minor->master) {
 			mutex_unlock(&dev->struct_mutex);
 			ret = -ENOMEM;
-			goto out_free;
+			goto out_close;
 		}
 
 		priv->is_master = 1;
@@ -320,7 +327,7 @@ static int drm_open_helper(struct inode *inode, struct file *filp,
 				drm_master_put(&priv->minor->master);
 				drm_master_put(&priv->master);
 				mutex_unlock(&dev->struct_mutex);
-				goto out_free;
+				goto out_close;
 			}
 		}
 		mutex_lock(&dev->struct_mutex);
@@ -331,7 +338,7 @@ static int drm_open_helper(struct inode *inode, struct file *filp,
 				drm_master_put(&priv->minor->master);
 				drm_master_put(&priv->master);
 				mutex_unlock(&dev->struct_mutex);
-				goto out_free;
+				goto out_close;
 			}
 		}
 		mutex_unlock(&dev->struct_mutex);
@@ -365,7 +372,17 @@ static int drm_open_helper(struct inode *inode, struct file *filp,
 #endif
 
 	return 0;
-      out_free:
+
+out_close:
+	if (dev->driver->postclose)
+		dev->driver->postclose(dev, priv);
+out_prime_destroy:
+	if (drm_core_check_feature(dev, DRIVER_PRIME))
+		drm_prime_destroy_file_private(&priv->prime);
+	if (dev->driver->driver_features & DRIVER_GEM)
+		drm_gem_release(dev, priv);
+out_put_pid:
+	put_pid(priv->pid);
 	kfree(priv);
 	filp->private_data = NULL;
 	return ret;

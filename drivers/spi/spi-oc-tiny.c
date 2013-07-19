@@ -368,7 +368,6 @@ exit_gpio:
 exit_busy:
 	err = -EBUSY;
 exit:
-	platform_set_drvdata(pdev, NULL);
 	spi_master_put(master);
 	return err;
 }
@@ -382,7 +381,6 @@ static int tiny_spi_remove(struct platform_device *pdev)
 	spi_bitbang_stop(&hw->bitbang);
 	for (i = 0; i < hw->gpio_cs_count; i++)
 		gpio_free(hw->gpio_cs[i]);
-	platform_set_drvdata(pdev, NULL);
 	spi_master_put(master);
 	return 0;
 }
@@ -393,8 +391,6 @@ static const struct of_device_id tiny_spi_match[] = {
 	{},
 };
 MODULE_DEVICE_TABLE(of, tiny_spi_match);
-#else /* CONFIG_OF */
-#define tiny_spi_match NULL
 #endif /* CONFIG_OF */
 
 static struct platform_driver tiny_spi_driver = {
@@ -404,7 +400,7 @@ static struct platform_driver tiny_spi_driver = {
 		.name = DRV_NAME,
 		.owner = THIS_MODULE,
 		.pm = NULL,
-		.of_match_table = tiny_spi_match,
+		.of_match_table = of_match_ptr(tiny_spi_match),
 	},
 };
 module_platform_driver(tiny_spi_driver);

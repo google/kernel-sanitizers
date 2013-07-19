@@ -34,7 +34,7 @@ static noinline int gup_pte_range(pmd_t pmd, unsigned long addr,
 
 	ptep = pte_offset_kernel(&pmd, addr);
 	do {
-		pte_t pte = *ptep;
+		pte_t pte = ACCESS_ONCE(*ptep);
 		struct page *page;
 
 		if ((pte_val(pte) & mask) != result)
@@ -63,12 +63,22 @@ static int gup_pmd_range(pud_t pud, unsigned long addr, unsigned long end,
 
 	pmdp = pmd_offset(&pud, addr);
 	do {
-		pmd_t pmd = *pmdp;
+		pmd_t pmd = ACCESS_ONCE(*pmdp);
 
 		next = pmd_addr_end(addr, end);
-		if (pmd_none(pmd))
+		/*
+		 * If we find a splitting transparent hugepage we
+		 * return zero. That will result in taking the slow
+		 * path which will call wait_split_huge_page()
+		 * if the pmd is still in splitting state
+		 */
+		if (pmd_none(pmd) || pmd_trans_splitting(pmd))
 			return 0;
-		if (is_hugepd(pmdp)) {
+		if (pmd_huge(pmd) || pmd_large(pmd)) {
+			if (!gup_hugepte((pte_t *)pmdp, PMD_SIZE, addr, next,
+					 write, pages, nr))
+				return 0;
+		} else if (is_hugepd(pmdp)) {
 			if (!gup_hugepd((hugepd_t *)pmdp, PMD_SHIFT,
 					addr, next, write, pages, nr))
 				return 0;
@@ -87,12 +97,16 @@ static int gup_pud_range(pgd_t pgd, unsigned long addr, unsigned long end,
 
 	pudp = pud_offset(&pgd, addr);
 	do {
-		pud_t pud = *pudp;
+		pud_t pud = ACCESS_ONCE(*pudp);
 
 		next = pud_addr_end(addr, end);
 		if (pud_none(pud))
 			return 0;
-		if (is_hugepd(pudp)) {
+		if (pud_huge(pud)) {
+			if (!gup_hugepte((pte_t *)pudp, PUD_SIZE, addr, next,
+					 write, pages, nr))
+				return 0;
+		} else if (is_hugepd(pudp)) {
 			if (!gup_hugepd((hugepd_t *)pudp, PUD_SHIFT,
 					addr, next, write, pages, nr))
 				return 0;
@@ -146,14 +160,18 @@ int get_user_pages_fast(unsigned long start, int nr_pages, int write,
 
 	pgdp = pgd_offset(mm, addr);
 	do {
-		pgd_t pgd = *pgdp;
+		pgd_t pgd = ACCESS_ONCE(*pgdp);
 
 		pr_devel("  %016lx: normal pgd %p\n", addr,
 			 (void *)pgd_val(pgd));
 		next = pgd_addr_end(addr, end);
 		if (pgd_none(pgd))
 			goto slow;
-		if (is_hugepd(pgdp)) {
+		if (pgd_huge(pgd)) {
+			if (!gup_hugepte((pte_t *)pgdp, PGDIR_SIZE, addr, next,
+					 write, pages, &nr))
+				goto slow;
+		} else if (is_hugepd(pgdp)) {
 			if (!gup_hugepd((hugepd_t *)pgdp, PGDIR_SHIFT,
 					addr, next, write, pages, &nr))
 				goto slow;

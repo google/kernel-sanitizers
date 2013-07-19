@@ -32,20 +32,17 @@ static int __hpp__color_fmt(struct perf_hpp *hpp, struct hist_entry *he,
 	int ret;
 	double percent = 0.0;
 	struct hists *hists = he->hists;
+	struct perf_evsel *evsel = hists_to_evsel(hists);
 
 	if (hists->stats.total_period)
 		percent = 100.0 * get_field(he) / hists->stats.total_period;
 
 	ret = __percent_color_snprintf(hpp->buf, hpp->size, percent);
 
-	if (symbol_conf.event_group) {
+	if (perf_evsel__is_group_event(evsel)) {
 		int prev_idx, idx_delta;
-		struct perf_evsel *evsel = hists_to_evsel(hists);
 		struct hist_entry *pair;
 		int nr_members = evsel->nr_members;
-
-		if (nr_members <= 1)
-			return ret;
 
 		prev_idx = perf_evsel__group_idx(evsel);
 
@@ -127,7 +124,8 @@ void perf_gtk__init_hpp(void)
 				perf_gtk__hpp_color_overhead_guest_us;
 }
 
-static void perf_gtk__show_hists(GtkWidget *window, struct hists *hists)
+static void perf_gtk__show_hists(GtkWidget *window, struct hists *hists,
+				 float min_pcnt)
 {
 	struct perf_hpp_fmt *fmt;
 	GType col_types[MAX_COLUMNS];
@@ -192,8 +190,13 @@ static void perf_gtk__show_hists(GtkWidget *window, struct hists *hists)
 	for (nd = rb_first(&hists->entries); nd; nd = rb_next(nd)) {
 		struct hist_entry *h = rb_entry(nd, struct hist_entry, rb_node);
 		GtkTreeIter iter;
+		float percent = h->stat.period * 100.0 /
+					hists->stats.total_period;
 
 		if (h->filtered)
+			continue;
+
+		if (percent < min_pcnt)
 			continue;
 
 		gtk_list_store_append(store, &iter);
@@ -225,7 +228,8 @@ static void perf_gtk__show_hists(GtkWidget *window, struct hists *hists)
 
 int perf_evlist__gtk_browse_hists(struct perf_evlist *evlist,
 				  const char *help,
-				  struct hist_browser_timer *hbt __maybe_unused)
+				  struct hist_browser_timer *hbt __maybe_unused,
+				  float min_pcnt)
 {
 	struct perf_evsel *pos;
 	GtkWidget *vbox;
@@ -289,7 +293,7 @@ int perf_evlist__gtk_browse_hists(struct perf_evlist *evlist,
 							GTK_POLICY_AUTOMATIC,
 							GTK_POLICY_AUTOMATIC);
 
-		perf_gtk__show_hists(scrolled_window, hists);
+		perf_gtk__show_hists(scrolled_window, hists, min_pcnt);
 
 		tab_label = gtk_label_new(evname);
 

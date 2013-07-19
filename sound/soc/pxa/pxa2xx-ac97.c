@@ -41,7 +41,7 @@ static void pxa2xx_ac97_cold_reset(struct snd_ac97 *ac97)
 	pxa2xx_ac97_finish_reset(ac97);
 }
 
-struct snd_ac97_bus_ops soc_ac97_ops = {
+static struct snd_ac97_bus_ops pxa2xx_ac97_ops = {
 	.read	= pxa2xx_ac97_read,
 	.write	= pxa2xx_ac97_write,
 	.warm_reset	= pxa2xx_ac97_warm_reset,
@@ -232,26 +232,35 @@ static struct snd_soc_dai_driver pxa_ac97_dai_driver[] = {
 },
 };
 
-EXPORT_SYMBOL_GPL(soc_ac97_ops);
+static const struct snd_soc_component_driver pxa_ac97_component = {
+	.name		= "pxa-ac97",
+};
 
 static int pxa2xx_ac97_dev_probe(struct platform_device *pdev)
 {
+	int ret;
+
 	if (pdev->id != -1) {
 		dev_err(&pdev->dev, "PXA2xx has only one AC97 port.\n");
 		return -ENXIO;
 	}
 
+	ret = snd_soc_set_ac97_ops(&pxa2xx_ac97_ops);
+	if (ret != 0)
+		return ret;
+
 	/* Punt most of the init to the SoC probe; we may need the machine
 	 * driver to do interesting things with the clocking to get us up
 	 * and running.
 	 */
-	return snd_soc_register_dais(&pdev->dev, pxa_ac97_dai_driver,
-			ARRAY_SIZE(pxa_ac97_dai_driver));
+	return snd_soc_register_component(&pdev->dev, &pxa_ac97_component,
+					  pxa_ac97_dai_driver, ARRAY_SIZE(pxa_ac97_dai_driver));
 }
 
 static int pxa2xx_ac97_dev_remove(struct platform_device *pdev)
 {
-	snd_soc_unregister_dais(&pdev->dev, ARRAY_SIZE(pxa_ac97_dai_driver));
+	snd_soc_unregister_component(&pdev->dev);
+	snd_soc_set_ac97_ops(NULL);
 	return 0;
 }
 

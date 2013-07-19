@@ -167,8 +167,7 @@ static int timbgpio_irq_type(struct irq_data *d, unsigned trigger)
 		if (ver < 3) {
 			ret = -EINVAL;
 			goto out;
-		}
-		else {
+		} else {
 			flr |= 1 << offset;
 			bflr |= 1 << offset;
 		}
@@ -342,8 +341,6 @@ static int timbgpio_remove(struct platform_device *pdev)
 	iounmap(tgpio->membase);
 	release_mem_region(iomem->start, resource_size(iomem));
 	kfree(tgpio);
-
-	platform_set_drvdata(pdev, NULL);
 
 	return 0;
 }

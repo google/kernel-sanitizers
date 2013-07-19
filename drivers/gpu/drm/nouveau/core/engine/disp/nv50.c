@@ -34,9 +34,9 @@
 #include <subdev/bios/disp.h>
 #include <subdev/bios/init.h>
 #include <subdev/bios/pll.h>
+#include <subdev/devinit.h>
 #include <subdev/timer.h>
 #include <subdev/fb.h>
-#include <subdev/clock.h>
 
 #include "nv50.h"
 
@@ -544,13 +544,13 @@ nv50_disp_curs_ofuncs = {
 static void
 nv50_disp_base_vblank_enable(struct nouveau_event *event, int head)
 {
-	nv_mask(event->priv, 0x61002c, (1 << head), (1 << head));
+	nv_mask(event->priv, 0x61002c, (4 << head), (4 << head));
 }
 
 static void
 nv50_disp_base_vblank_disable(struct nouveau_event *event, int head)
 {
-	nv_mask(event->priv, 0x61002c, (1 << head), (0 << head));
+	nv_mask(event->priv, 0x61002c, (4 << head), 0);
 }
 
 static int
@@ -572,7 +572,8 @@ nv50_disp_base_ctor(struct nouveau_object *parent,
 	priv->base.vblank->priv = priv;
 	priv->base.vblank->enable = nv50_disp_base_vblank_enable;
 	priv->base.vblank->disable = nv50_disp_base_vblank_disable;
-	return nouveau_ramht_new(parent, parent, 0x1000, 0, &base->ramht);
+	return nouveau_ramht_new(nv_object(base), nv_object(base), 0x1000, 0,
+				&base->ramht);
 }
 
 static void
@@ -719,7 +720,7 @@ nv50_disp_data_ctor(struct nouveau_object *parent,
 	if (nv_mclass(parent) != NV_DEVICE_CLASS) {
 		atomic_inc(&parent->refcount);
 		*pobject = parent;
-		return 0;
+		return 1;
 	}
 
 	/* allocate display hardware to client */
@@ -986,10 +987,10 @@ nv50_disp_intr_unk20_0(struct nv50_disp_priv *priv, int head)
 static void
 nv50_disp_intr_unk20_1(struct nv50_disp_priv *priv, int head)
 {
-	struct nouveau_clock *clk = nouveau_clock(priv);
+	struct nouveau_devinit *devinit = nouveau_devinit(priv);
 	u32 pclk = nv_rd32(priv, 0x610ad0 + (head * 0x540)) & 0x3fffff;
 	if (pclk)
-		clk->pll_set(clk, PLL_VPLL0 + head, pclk);
+		devinit->pll_set(devinit, PLL_VPLL0 + head, pclk);
 }
 
 static void
@@ -1106,6 +1107,7 @@ nv50_disp_intr_unk20_2(struct nv50_disp_priv *priv, int head)
 	u32 pclk = nv_rd32(priv, 0x610ad0 + (head * 0x540)) & 0x3fffff;
 	u32 hval, hreg = 0x614200 + (head * 0x800);
 	u32 oval, oreg;
+	u32 mask;
 	u32 conf = exec_clkcmp(priv, head, 0xff, pclk, &outp);
 	if (conf != ~0) {
 		if (outp.location == 0 && outp.type == DCB_OUTPUT_DP) {
@@ -1132,6 +1134,7 @@ nv50_disp_intr_unk20_2(struct nv50_disp_priv *priv, int head)
 			oreg = 0x614280 + (ffs(outp.or) - 1) * 0x800;
 			oval = 0x00000000;
 			hval = 0x00000000;
+			mask = 0xffffffff;
 		} else
 		if (!outp.location) {
 			if (outp.type == DCB_OUTPUT_DP)
@@ -1139,14 +1142,16 @@ nv50_disp_intr_unk20_2(struct nv50_disp_priv *priv, int head)
 			oreg = 0x614300 + (ffs(outp.or) - 1) * 0x800;
 			oval = (conf & 0x0100) ? 0x00000101 : 0x00000000;
 			hval = 0x00000000;
+			mask = 0x00000707;
 		} else {
 			oreg = 0x614380 + (ffs(outp.or) - 1) * 0x800;
 			oval = 0x00000001;
 			hval = 0x00000001;
+			mask = 0x00000707;
 		}
 
 		nv_mask(priv, hreg, 0x0000000f, hval);
-		nv_mask(priv, oreg, 0x00000707, oval);
+		nv_mask(priv, oreg, mask, oval);
 	}
 }
 

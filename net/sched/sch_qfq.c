@@ -138,7 +138,7 @@ struct qfq_class {
 
 	struct gnet_stats_basic_packed bstats;
 	struct gnet_stats_queue qstats;
-	struct gnet_stats_rate_est rate_est;
+	struct gnet_stats_rate_est64 rate_est;
 	struct Qdisc *qdisc;
 	struct list_head alist;		/* Link for active-classes list. */
 	struct qfq_aggregate *agg;	/* Parent aggregate. */
@@ -298,6 +298,10 @@ static void qfq_update_agg(struct qfq_sched *q, struct qfq_aggregate *agg,
 	    new_num_classes == q->max_agg_classes - 1) /* agg no more full */
 		hlist_add_head(&agg->nonfull_next, &q->nonfull_aggs);
 
+	/* The next assignment may let
+	 * agg->initial_budget > agg->budgetmax
+	 * hold, we will take it into account in charge_actual_service().
+	 */
 	agg->budgetmax = new_num_classes * agg->lmax;
 	new_agg_weight = agg->class_weight * new_num_classes;
 	agg->inv_w = ONE_FP/new_agg_weight;
@@ -817,7 +821,14 @@ static void qfq_make_eligible(struct qfq_sched *q)
 	unsigned long old_vslot = q->oldV >> q->min_slot_shift;
 
 	if (vslot != old_vslot) {
-		unsigned long mask = (1UL << fls(vslot ^ old_vslot)) - 1;
+		unsigned long mask;
+		int last_flip_pos = fls(vslot ^ old_vslot);
+
+		if (last_flip_pos > 31) /* higher than the number of groups */
+			mask = ~0UL;    /* make all groups eligible */
+		else
+			mask = (1UL << last_flip_pos) - 1;
+
 		qfq_move_groups(q, mask, IR, ER);
 		qfq_move_groups(q, mask, IB, EB);
 	}
@@ -988,11 +999,74 @@ static inline struct sk_buff *qfq_peek_skb(struct qfq_aggregate *agg,
 /* Update F according to the actual service received by the aggregate. */
 static inline void charge_actual_service(struct qfq_aggregate *agg)
 {
-	/* compute the service received by the aggregate */
-	u32 service_received = agg->initial_budget - agg->budget;
+	/* Compute the service received by the aggregate, taking into
+	 * account that, after decreasing the number of classes in
+	 * agg, it may happen that
+	 * agg->initial_budget - agg->budget > agg->bugdetmax
+	 */
+	u32 service_received = min(agg->budgetmax,
+				   agg->initial_budget - agg->budget);
 
 	agg->F = agg->S + (u64)service_received * agg->inv_w;
 }
+
+/* Assign a reasonable start time for a new aggregate in group i.
+ * Admissible values for \hat(F) are multiples of \sigma_i
+ * no greater than V+\sigma_i . Larger values mean that
+ * we had a wraparound so we consider the timestamp to be stale.
+ *
+ * If F is not stale and F >= V then we set S = F.
+ * Otherwise we should assign S = V, but this may violate
+ * the ordering in EB (see [2]). So, if we have groups in ER,
+ * set S to the F_j of the first group j which would be blocking us.
+ * We are guaranteed not to move S backward because
+ * otherwise our group i would still be blocked.
+ */
+static void qfq_update_start(struct qfq_sched *q, struct qfq_aggregate *agg)
+{
+	unsigned long mask;
+	u64 limit, roundedF;
+	int slot_shift = agg->grp->slot_shift;
+
+	roundedF = qfq_round_down(agg->F, slot_shift);
+	limit = qfq_round_down(q->V, slot_shift) + (1ULL << slot_shift);
+
+	if (!qfq_gt(agg->F, q->V) || qfq_gt(roundedF, limit)) {
+		/* timestamp was stale */
+		mask = mask_from(q->bitmaps[ER], agg->grp->index);
+		if (mask) {
+			struct qfq_group *next = qfq_ffs(q, mask);
+			if (qfq_gt(roundedF, next->F)) {
+				if (qfq_gt(limit, next->F))
+					agg->S = next->F;
+				else /* preserve timestamp correctness */
+					agg->S = limit;
+				return;
+			}
+		}
+		agg->S = q->V;
+	} else  /* timestamp is not stale */
+		agg->S = agg->F;
+}
+
+/* Update the timestamps of agg before scheduling/rescheduling it for
+ * service.  In particular, assign to agg->F its maximum possible
+ * value, i.e., the virtual finish time with which the aggregate
+ * should be labeled if it used all its budget once in service.
+ */
+static inline void
+qfq_update_agg_ts(struct qfq_sched *q,
+		    struct qfq_aggregate *agg, enum update_reason reason)
+{
+	if (reason != requeue)
+		qfq_update_start(q, agg);
+	else /* just charge agg for the service received */
+		agg->S = agg->F;
+
+	agg->F = agg->S + (u64)agg->budgetmax * agg->inv_w;
+}
+
+static void qfq_schedule_agg(struct qfq_sched *q, struct qfq_aggregate *agg);
 
 static struct sk_buff *qfq_dequeue(struct Qdisc *sch)
 {
@@ -1021,7 +1095,7 @@ static struct sk_buff *qfq_dequeue(struct Qdisc *sch)
 		in_serv_agg->initial_budget = in_serv_agg->budget =
 			in_serv_agg->budgetmax;
 
-		if (!list_empty(&in_serv_agg->active))
+		if (!list_empty(&in_serv_agg->active)) {
 			/*
 			 * Still active: reschedule for
 			 * service. Possible optimization: if no other
@@ -1032,8 +1106,9 @@ static struct sk_buff *qfq_dequeue(struct Qdisc *sch)
 			 * handle it, we would need to maintain an
 			 * extra num_active_aggs field.
 			*/
-			qfq_activate_agg(q, in_serv_agg, requeue);
-		else if (sch->q.qlen == 0) { /* no aggregate to serve */
+			qfq_update_agg_ts(q, in_serv_agg, requeue);
+			qfq_schedule_agg(q, in_serv_agg);
+		} else if (sch->q.qlen == 0) { /* no aggregate to serve */
 			q->in_serv_agg = NULL;
 			return NULL;
 		}
@@ -1052,7 +1127,15 @@ static struct sk_buff *qfq_dequeue(struct Qdisc *sch)
 	qdisc_bstats_update(sch, skb);
 
 	agg_dequeue(in_serv_agg, cl, len);
-	in_serv_agg->budget -= len;
+	/* If lmax is lowered, through qfq_change_class, for a class
+	 * owning pending packets with larger size than the new value
+	 * of lmax, then the following condition may hold.
+	 */
+	if (unlikely(in_serv_agg->budget < len))
+		in_serv_agg->budget = 0;
+	else
+		in_serv_agg->budget -= len;
+
 	q->V += (u64)len * IWSUM;
 	pr_debug("qfq dequeue: len %u F %lld now %lld\n",
 		 len, (unsigned long long) in_serv_agg->F,
@@ -1103,66 +1186,6 @@ static struct qfq_aggregate *qfq_choose_next_agg(struct qfq_sched *q)
 
 	return agg;
 }
-
-/*
- * Assign a reasonable start time for a new aggregate in group i.
- * Admissible values for \hat(F) are multiples of \sigma_i
- * no greater than V+\sigma_i . Larger values mean that
- * we had a wraparound so we consider the timestamp to be stale.
- *
- * If F is not stale and F >= V then we set S = F.
- * Otherwise we should assign S = V, but this may violate
- * the ordering in EB (see [2]). So, if we have groups in ER,
- * set S to the F_j of the first group j which would be blocking us.
- * We are guaranteed not to move S backward because
- * otherwise our group i would still be blocked.
- */
-static void qfq_update_start(struct qfq_sched *q, struct qfq_aggregate *agg)
-{
-	unsigned long mask;
-	u64 limit, roundedF;
-	int slot_shift = agg->grp->slot_shift;
-
-	roundedF = qfq_round_down(agg->F, slot_shift);
-	limit = qfq_round_down(q->V, slot_shift) + (1ULL << slot_shift);
-
-	if (!qfq_gt(agg->F, q->V) || qfq_gt(roundedF, limit)) {
-		/* timestamp was stale */
-		mask = mask_from(q->bitmaps[ER], agg->grp->index);
-		if (mask) {
-			struct qfq_group *next = qfq_ffs(q, mask);
-			if (qfq_gt(roundedF, next->F)) {
-				if (qfq_gt(limit, next->F))
-					agg->S = next->F;
-				else /* preserve timestamp correctness */
-					agg->S = limit;
-				return;
-			}
-		}
-		agg->S = q->V;
-	} else  /* timestamp is not stale */
-		agg->S = agg->F;
-}
-
-/*
- * Update the timestamps of agg before scheduling/rescheduling it for
- * service.  In particular, assign to agg->F its maximum possible
- * value, i.e., the virtual finish time with which the aggregate
- * should be labeled if it used all its budget once in service.
- */
-static inline void
-qfq_update_agg_ts(struct qfq_sched *q,
-		    struct qfq_aggregate *agg, enum update_reason reason)
-{
-	if (reason != requeue)
-		qfq_update_start(q, agg);
-	else /* just charge agg for the service received */
-		agg->S = agg->F;
-
-	agg->F = agg->S + (u64)agg->budgetmax * agg->inv_w;
-}
-
-static void qfq_schedule_agg(struct qfq_sched *, struct qfq_aggregate *);
 
 static int qfq_enqueue(struct sk_buff *skb, struct Qdisc *sch)
 {
@@ -1217,17 +1240,11 @@ static int qfq_enqueue(struct sk_buff *skb, struct Qdisc *sch)
 	cl->deficit = agg->lmax;
 	list_add_tail(&cl->alist, &agg->active);
 
-	if (list_first_entry(&agg->active, struct qfq_class, alist) != cl)
-		return err; /* aggregate was not empty, nothing else to do */
+	if (list_first_entry(&agg->active, struct qfq_class, alist) != cl ||
+	    q->in_serv_agg == agg)
+		return err; /* non-empty or in service, nothing else to do */
 
-	/* recharge budget */
-	agg->initial_budget = agg->budget = agg->budgetmax;
-
-	qfq_update_agg_ts(q, agg, enqueue);
-	if (q->in_serv_agg == NULL)
-		q->in_serv_agg = agg;
-	else if (agg != q->in_serv_agg)
-		qfq_schedule_agg(q, agg);
+	qfq_activate_agg(q, agg, enqueue);
 
 	return err;
 }
@@ -1261,7 +1278,8 @@ static void qfq_schedule_agg(struct qfq_sched *q, struct qfq_aggregate *agg)
 		/* group was surely ineligible, remove */
 		__clear_bit(grp->index, &q->bitmaps[IR]);
 		__clear_bit(grp->index, &q->bitmaps[IB]);
-	} else if (!q->bitmaps[ER] && qfq_gt(roundedS, q->V))
+	} else if (!q->bitmaps[ER] && qfq_gt(roundedS, q->V) &&
+		   q->in_serv_agg == NULL)
 		q->V = roundedS;
 
 	grp->S = roundedS;
@@ -1284,8 +1302,15 @@ skip_update:
 static void qfq_activate_agg(struct qfq_sched *q, struct qfq_aggregate *agg,
 			     enum update_reason reason)
 {
+	agg->initial_budget = agg->budget = agg->budgetmax; /* recharge budg. */
+
 	qfq_update_agg_ts(q, agg, reason);
-	qfq_schedule_agg(q, agg);
+	if (q->in_serv_agg == NULL) { /* no aggr. in service or scheduled */
+		q->in_serv_agg = agg; /* start serving this aggregate */
+		 /* update V: to be in service, agg must be eligible */
+		q->oldV = q->V = agg->S;
+	} else if (agg != q->in_serv_agg)
+		qfq_schedule_agg(q, agg);
 }
 
 static void qfq_slot_remove(struct qfq_sched *q, struct qfq_group *grp,
@@ -1357,8 +1382,6 @@ static void qfq_deactivate_agg(struct qfq_sched *q, struct qfq_aggregate *agg)
 			__set_bit(grp->index, &q->bitmaps[s]);
 		}
 	}
-
-	qfq_update_eligible(q);
 }
 
 static void qfq_qlen_notify(struct Qdisc *sch, unsigned long arg)

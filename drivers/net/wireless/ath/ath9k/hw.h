@@ -246,9 +246,7 @@ enum ath9k_hw_caps {
 	ATH9K_HW_CAP_MCI			= BIT(15),
 	ATH9K_HW_CAP_DFS			= BIT(16),
 	ATH9K_HW_WOW_DEVICE_CAPABLE		= BIT(17),
-	ATH9K_HW_WOW_PATTERN_MATCH_EXACT	= BIT(18),
-	ATH9K_HW_WOW_PATTERN_MATCH_DWORD	= BIT(19),
-	ATH9K_HW_CAP_PAPRD			= BIT(20),
+	ATH9K_HW_CAP_PAPRD			= BIT(18),
 };
 
 /*
@@ -291,7 +289,6 @@ struct ath9k_ops_config {
 	u32 ofdm_trig_high;
 	u32 cck_trig_high;
 	u32 cck_trig_low;
-	u32 enable_ani;
 	u32 enable_paprd;
 	int serialize_regmode;
 	bool rx_intr_mitigation;
@@ -310,6 +307,10 @@ struct ath9k_ops_config {
 	u16 spurchans[AR_EEPROM_MODAL_SPURS][2];
 	u8 max_txtrig_level;
 	u16 ani_poll_interval; /* ANI poll interval in ms */
+
+	/* Platform specific config */
+	u32 xlna_gpio;
+	bool xatten_margin_cfg;
 };
 
 enum ath9k_int {
@@ -363,7 +364,6 @@ enum ath9k_int {
 	ATH9K_INT_NOCARD = 0xffffffff
 };
 
-#define CHANNEL_CW_INT    0x00002
 #define CHANNEL_CCK       0x00020
 #define CHANNEL_OFDM      0x00040
 #define CHANNEL_2GHZ      0x00080
@@ -424,7 +424,6 @@ struct ath9k_hw_cal_data {
 
 struct ath9k_channel {
 	struct ieee80211_channel *chan;
-	struct ar5416AniState ani;
 	u16 channel;
 	u32 channelFlags;
 	u32 chanmode;
@@ -848,24 +847,17 @@ struct ath_hw {
 	struct ath_hw_ops ops;
 
 	/* Used to program the radio on non single-chip devices */
-	u32 *analogBank0Data;
-	u32 *analogBank1Data;
-	u32 *analogBank2Data;
-	u32 *analogBank3Data;
 	u32 *analogBank6Data;
-	u32 *analogBank6TPCData;
-	u32 *analogBank7Data;
-	u32 *bank6Temp;
 
 	int coverage_class;
 	u32 slottime;
 	u32 globaltxtimeout;
 
 	/* ANI */
-	u32 proc_phyerr;
 	u32 aniperiod;
 	enum ath9k_ani_cmd ani_function;
 	u32 ani_skip_count;
+	struct ar5416AniState ani;
 
 #ifdef CONFIG_ATH9K_BTCOEX_SUPPORT
 	struct ath_btcoex_hw btcoex_hw;
@@ -886,19 +878,10 @@ struct ath_hw {
 
 	struct ar5416IniArray iniModes;
 	struct ar5416IniArray iniCommon;
-	struct ar5416IniArray iniBank0;
 	struct ar5416IniArray iniBB_RfGain;
-	struct ar5416IniArray iniBank1;
-	struct ar5416IniArray iniBank2;
-	struct ar5416IniArray iniBank3;
 	struct ar5416IniArray iniBank6;
-	struct ar5416IniArray iniBank6TPC;
-	struct ar5416IniArray iniBank7;
 	struct ar5416IniArray iniAddac;
 	struct ar5416IniArray iniPcieSerdes;
-#ifdef CONFIG_PM_SLEEP
-	struct ar5416IniArray iniPcieSerdesWow;
-#endif
 	struct ar5416IniArray iniPcieSerdesLowPower;
 	struct ar5416IniArray iniModesFastClock;
 	struct ar5416IniArray iniAdditional;
@@ -909,6 +892,9 @@ struct ath_hw {
 	struct ar5416IniArray iniCckfirJapan2484;
 	struct ar5416IniArray iniModes_9271_ANI_reg;
 	struct ar5416IniArray ini_radio_post_sys2ant;
+	struct ar5416IniArray ini_modes_rxgain_5g_xlna;
+	struct ar5416IniArray ini_modes_rxgain_bb_core;
+	struct ar5416IniArray ini_modes_rxgain_bb_postamble;
 
 	struct ar5416IniArray iniMac[ATH_INI_NUM_SPLIT];
 	struct ar5416IniArray iniBB[ATH_INI_NUM_SPLIT];
@@ -1178,8 +1164,6 @@ static inline void ath9k_hw_wow_enable(struct ath_hw *ah, u32 pattern_enable)
 {
 }
 #endif
-
-
 
 #define ATH9K_CLOCK_RATE_CCK		22
 #define ATH9K_CLOCK_RATE_5GHZ_OFDM	40

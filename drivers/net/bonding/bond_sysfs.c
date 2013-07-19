@@ -183,6 +183,11 @@ int bond_create_slave_symlinks(struct net_device *master,
 	sprintf(linkname, "slave_%s", slave->name);
 	ret = sysfs_create_link(&(master->dev.kobj), &(slave->dev.kobj),
 				linkname);
+
+	/* free the master link created earlier in case of error */
+	if (ret)
+		sysfs_remove_link(&(slave->dev.kobj), "master");
+
 	return ret;
 
 }
@@ -226,8 +231,7 @@ static ssize_t bonding_show_slaves(struct device *d,
 }
 
 /*
- * Set the slaves in the current bond.  The bond interface must be
- * up for this to succeed.
+ * Set the slaves in the current bond.
  * This is supposed to be only thin wrapper for bond_enslave and bond_release.
  * All hard work should be done there.
  */
@@ -311,6 +315,9 @@ static ssize_t bonding_store_mode(struct device *d,
 	int new_value, ret = count;
 	struct bonding *bond = to_bond(d);
 
+	if (!rtnl_trylock())
+		return restart_syscall();
+
 	if (bond->dev->flags & IFF_UP) {
 		pr_err("unable to update mode of %s because interface is up.\n",
 		       bond->dev->name);
@@ -347,6 +354,7 @@ static ssize_t bonding_store_mode(struct device *d,
 		bond->dev->name, bond_mode_tbl[new_value].modename,
 		new_value);
 out:
+	rtnl_unlock();
 	return ret;
 }
 static DEVICE_ATTR(mode, S_IRUGO | S_IWUSR,
@@ -354,7 +362,6 @@ static DEVICE_ATTR(mode, S_IRUGO | S_IWUSR,
 
 /*
  * Show and set the bonding transmit hash method.
- * The bond interface must be down to change the xmit hash policy.
  */
 static ssize_t bonding_show_xmit_hash(struct device *d,
 				      struct device_attribute *attr,
@@ -374,20 +381,12 @@ static ssize_t bonding_store_xmit_hash(struct device *d,
 	int new_value, ret = count;
 	struct bonding *bond = to_bond(d);
 
-	if (bond->dev->flags & IFF_UP) {
-		pr_err("%s: Interface is up. Unable to update xmit policy.\n",
-		       bond->dev->name);
-		ret = -EPERM;
-		goto out;
-	}
-
 	new_value = bond_parse_parm(buf, xmit_hashtype_tbl);
 	if (new_value < 0)  {
 		pr_err("%s: Ignoring invalid xmit hash policy value %.*s.\n",
 		       bond->dev->name,
 		       (int)strlen(buf) - 1, buf);
 		ret = -EINVAL;
-		goto out;
 	} else {
 		bond->params.xmit_policy = new_value;
 		bond_set_mode_ops(bond, bond->params.mode);
@@ -395,7 +394,7 @@ static ssize_t bonding_store_xmit_hash(struct device *d,
 			bond->dev->name,
 			xmit_hashtype_tbl[new_value].modename, new_value);
 	}
-out:
+
 	return ret;
 }
 static DEVICE_ATTR(xmit_hash_policy, S_IRUGO | S_IWUSR,
@@ -444,6 +443,44 @@ static ssize_t bonding_store_arp_validate(struct device *d,
 
 static DEVICE_ATTR(arp_validate, S_IRUGO | S_IWUSR, bonding_show_arp_validate,
 		   bonding_store_arp_validate);
+/*
+ * Show and set arp_all_targets.
+ */
+static ssize_t bonding_show_arp_all_targets(struct device *d,
+					 struct device_attribute *attr,
+					 char *buf)
+{
+	struct bonding *bond = to_bond(d);
+	int value = bond->params.arp_all_targets;
+
+	return sprintf(buf, "%s %d\n", arp_all_targets_tbl[value].modename,
+		       value);
+}
+
+static ssize_t bonding_store_arp_all_targets(struct device *d,
+					  struct device_attribute *attr,
+					  const char *buf, size_t count)
+{
+	struct bonding *bond = to_bond(d);
+	int new_value;
+
+	new_value = bond_parse_parm(buf, arp_all_targets_tbl);
+	if (new_value < 0) {
+		pr_err("%s: Ignoring invalid arp_all_targets value %s\n",
+		       bond->dev->name, buf);
+		return -EINVAL;
+	}
+	pr_info("%s: setting arp_all_targets to %s (%d).\n",
+		bond->dev->name, arp_all_targets_tbl[new_value].modename,
+		new_value);
+
+	bond->params.arp_all_targets = new_value;
+
+	return count;
+}
+
+static DEVICE_ATTR(arp_all_targets, S_IRUGO | S_IWUSR,
+		   bonding_show_arp_all_targets, bonding_store_arp_all_targets);
 
 /*
  * Show and store fail_over_mac.  User only allowed to change the
@@ -522,7 +559,7 @@ static ssize_t bonding_store_arp_interval(struct device *d,
 		goto out;
 	}
 	if (new_value < 0) {
-		pr_err("%s: Invalid arp_interval value %d not in range 1-%d; rejected.\n",
+		pr_err("%s: Invalid arp_interval value %d not in range 0-%d; rejected.\n",
 		       bond->dev->name, new_value, INT_MAX);
 		ret = -EINVAL;
 		goto out;
@@ -537,14 +574,15 @@ static ssize_t bonding_store_arp_interval(struct device *d,
 	pr_info("%s: Setting ARP monitoring interval to %d.\n",
 		bond->dev->name, new_value);
 	bond->params.arp_interval = new_value;
-	if (bond->params.miimon) {
-		pr_info("%s: ARP monitoring cannot be used with MII monitoring. %s Disabling MII monitoring.\n",
-			bond->dev->name, bond->dev->name);
-		bond->params.miimon = 0;
-	}
-	if (!bond->params.arp_targets[0]) {
-		pr_info("%s: ARP monitoring has been set up, but no ARP targets have been specified.\n",
-			bond->dev->name);
+	if (new_value) {
+		if (bond->params.miimon) {
+			pr_info("%s: ARP monitoring cannot be used with MII monitoring. %s Disabling MII monitoring.\n",
+				bond->dev->name, bond->dev->name);
+			bond->params.miimon = 0;
+		}
+		if (!bond->params.arp_targets[0])
+			pr_info("%s: ARP monitoring has been set up, but no ARP targets have been specified.\n",
+				bond->dev->name);
 	}
 	if (bond->dev->flags & IFF_UP) {
 		/* If the interface is up, we may need to fire off
@@ -552,10 +590,13 @@ static ssize_t bonding_store_arp_interval(struct device *d,
 		 * timer will get fired off when the open function
 		 * is called.
 		 */
-		cancel_delayed_work_sync(&bond->mii_work);
-		queue_delayed_work(bond->wq, &bond->arp_work, 0);
+		if (!new_value) {
+			cancel_delayed_work_sync(&bond->arp_work);
+		} else {
+			cancel_delayed_work_sync(&bond->mii_work);
+			queue_delayed_work(bond->wq, &bond->arp_work, 0);
+		}
 	}
-
 out:
 	rtnl_unlock();
 	return ret;
@@ -587,10 +628,11 @@ static ssize_t bonding_store_arp_targets(struct device *d,
 					 struct device_attribute *attr,
 					 const char *buf, size_t count)
 {
-	__be32 newtarget;
-	int i = 0, done = 0, ret = count;
 	struct bonding *bond = to_bond(d);
-	__be32 *targets;
+	struct slave *slave;
+	__be32 newtarget, *targets;
+	unsigned long *targets_rx;
+	int ind, i, j, ret = -EINVAL;
 
 	targets = bond->params.arp_targets;
 	newtarget = in_aton(buf + 1);
@@ -599,57 +641,63 @@ static ssize_t bonding_store_arp_targets(struct device *d,
 		if ((newtarget == 0) || (newtarget == htonl(INADDR_BROADCAST))) {
 			pr_err("%s: invalid ARP target %pI4 specified for addition\n",
 			       bond->dev->name, &newtarget);
-			ret = -EINVAL;
-			goto out;
-		}
-		/* look for an empty slot to put the target in, and check for dupes */
-		for (i = 0; (i < BOND_MAX_ARP_TARGETS) && !done; i++) {
-			if (targets[i] == newtarget) { /* duplicate */
-				pr_err("%s: ARP target %pI4 is already present\n",
-				       bond->dev->name, &newtarget);
-				ret = -EINVAL;
-				goto out;
-			}
-			if (targets[i] == 0) {
-				pr_info("%s: adding ARP target %pI4.\n",
-					bond->dev->name, &newtarget);
-				done = 1;
-				targets[i] = newtarget;
-			}
-		}
-		if (!done) {
-			pr_err("%s: ARP target table is full!\n",
-			       bond->dev->name);
-			ret = -EINVAL;
 			goto out;
 		}
 
+		if (bond_get_targets_ip(targets, newtarget) != -1) { /* dup */
+			pr_err("%s: ARP target %pI4 is already present\n",
+			       bond->dev->name, &newtarget);
+			goto out;
+		}
+
+		ind = bond_get_targets_ip(targets, 0); /* first free slot */
+		if (ind == -1) {
+			pr_err("%s: ARP target table is full!\n",
+			       bond->dev->name);
+			goto out;
+		}
+
+		pr_info("%s: adding ARP target %pI4.\n", bond->dev->name,
+			 &newtarget);
+		/* not to race with bond_arp_rcv */
+		write_lock_bh(&bond->lock);
+		bond_for_each_slave(bond, slave, i)
+			slave->target_last_arp_rx[ind] = jiffies;
+		targets[ind] = newtarget;
+		write_unlock_bh(&bond->lock);
 	} else if (buf[0] == '-')	{
 		if ((newtarget == 0) || (newtarget == htonl(INADDR_BROADCAST))) {
 			pr_err("%s: invalid ARP target %pI4 specified for removal\n",
 			       bond->dev->name, &newtarget);
-			ret = -EINVAL;
 			goto out;
 		}
 
-		for (i = 0; (i < BOND_MAX_ARP_TARGETS) && !done; i++) {
-			if (targets[i] == newtarget) {
-				int j;
-				pr_info("%s: removing ARP target %pI4.\n",
-					bond->dev->name, &newtarget);
-				for (j = i; (j < (BOND_MAX_ARP_TARGETS-1)) && targets[j+1]; j++)
-					targets[j] = targets[j+1];
-
-				targets[j] = 0;
-				done = 1;
-			}
-		}
-		if (!done) {
-			pr_info("%s: unable to remove nonexistent ARP target %pI4.\n",
+		ind = bond_get_targets_ip(targets, newtarget);
+		if (ind == -1) {
+			pr_err("%s: unable to remove nonexistent ARP target %pI4.\n",
 				bond->dev->name, &newtarget);
-			ret = -EINVAL;
 			goto out;
 		}
+
+		if (ind == 0 && !targets[1] && bond->params.arp_interval)
+			pr_warn("%s: removing last arp target with arp_interval on\n",
+				bond->dev->name);
+
+		pr_info("%s: removing ARP target %pI4.\n", bond->dev->name,
+			&newtarget);
+
+		write_lock_bh(&bond->lock);
+		bond_for_each_slave(bond, slave, i) {
+			targets_rx = slave->target_last_arp_rx;
+			j = ind;
+			for (; (j < BOND_MAX_ARP_TARGETS-1) && targets[j+1]; j++)
+				targets_rx[j] = targets_rx[j+1];
+			targets_rx[j] = 0;
+		}
+		for (i = ind; (i < BOND_MAX_ARP_TARGETS-1) && targets[i+1]; i++)
+			targets[i] = targets[i+1];
+		targets[i] = 0;
+		write_unlock_bh(&bond->lock);
 	} else {
 		pr_err("no command found in arp_ip_targets file for bond %s. Use +<addr> or -<addr>.\n",
 		       bond->dev->name);
@@ -657,6 +705,7 @@ static ssize_t bonding_store_arp_targets(struct device *d,
 		goto out;
 	}
 
+	ret = count;
 out:
 	return ret;
 }
@@ -697,7 +746,7 @@ static ssize_t bonding_store_downdelay(struct device *d,
 	}
 	if (new_value < 0) {
 		pr_err("%s: Invalid down delay value %d not in range %d-%d; rejected.\n",
-		       bond->dev->name, new_value, 1, INT_MAX);
+		       bond->dev->name, new_value, 0, INT_MAX);
 		ret = -EINVAL;
 		goto out;
 	} else {
@@ -752,8 +801,8 @@ static ssize_t bonding_store_updelay(struct device *d,
 		goto out;
 	}
 	if (new_value < 0) {
-		pr_err("%s: Invalid down delay value %d not in range %d-%d; rejected.\n",
-		       bond->dev->name, new_value, 1, INT_MAX);
+		pr_err("%s: Invalid up delay value %d not in range %d-%d; rejected.\n",
+		       bond->dev->name, new_value, 0, INT_MAX);
 		ret = -EINVAL;
 		goto out;
 	} else {
@@ -963,37 +1012,37 @@ static ssize_t bonding_store_miimon(struct device *d,
 	}
 	if (new_value < 0) {
 		pr_err("%s: Invalid miimon value %d not in range %d-%d; rejected.\n",
-		       bond->dev->name, new_value, 1, INT_MAX);
+		       bond->dev->name, new_value, 0, INT_MAX);
 		ret = -EINVAL;
 		goto out;
-	} else {
-		pr_info("%s: Setting MII monitoring interval to %d.\n",
-			bond->dev->name, new_value);
-		bond->params.miimon = new_value;
-		if (bond->params.updelay)
-			pr_info("%s: Note: Updating updelay (to %d) since it is a multiple of the miimon value.\n",
-				bond->dev->name,
-				bond->params.updelay * bond->params.miimon);
-		if (bond->params.downdelay)
-			pr_info("%s: Note: Updating downdelay (to %d) since it is a multiple of the miimon value.\n",
-				bond->dev->name,
-				bond->params.downdelay * bond->params.miimon);
-		if (bond->params.arp_interval) {
-			pr_info("%s: MII monitoring cannot be used with ARP monitoring. Disabling ARP monitoring...\n",
-				bond->dev->name);
-			bond->params.arp_interval = 0;
-			if (bond->params.arp_validate) {
-				bond->params.arp_validate =
-					BOND_ARP_VALIDATE_NONE;
-			}
-		}
-
-		if (bond->dev->flags & IFF_UP) {
-			/* If the interface is up, we may need to fire off
-			 * the MII timer. If the interface is down, the
-			 * timer will get fired off when the open function
-			 * is called.
-			 */
+	}
+	pr_info("%s: Setting MII monitoring interval to %d.\n",
+		bond->dev->name, new_value);
+	bond->params.miimon = new_value;
+	if (bond->params.updelay)
+		pr_info("%s: Note: Updating updelay (to %d) since it is a multiple of the miimon value.\n",
+			bond->dev->name,
+			bond->params.updelay * bond->params.miimon);
+	if (bond->params.downdelay)
+		pr_info("%s: Note: Updating downdelay (to %d) since it is a multiple of the miimon value.\n",
+			bond->dev->name,
+			bond->params.downdelay * bond->params.miimon);
+	if (new_value && bond->params.arp_interval) {
+		pr_info("%s: MII monitoring cannot be used with ARP monitoring. Disabling ARP monitoring...\n",
+			bond->dev->name);
+		bond->params.arp_interval = 0;
+		if (bond->params.arp_validate)
+			bond->params.arp_validate = BOND_ARP_VALIDATE_NONE;
+	}
+	if (bond->dev->flags & IFF_UP) {
+		/* If the interface is up, we may need to fire off
+		 * the MII timer. If the interface is down, the
+		 * timer will get fired off when the open function
+		 * is called.
+		 */
+		if (!new_value) {
+			cancel_delayed_work_sync(&bond->mii_work);
+		} else {
 			cancel_delayed_work_sync(&bond->arp_work);
 			queue_delayed_work(bond->wq, &bond->mii_work, 0);
 		}
@@ -1306,7 +1355,6 @@ static ssize_t bonding_show_mii_status(struct device *d,
 }
 static DEVICE_ATTR(mii_status, S_IRUGO, bonding_show_mii_status, NULL);
 
-
 /*
  * Show current 802.3ad aggregator ID.
  */
@@ -1320,7 +1368,7 @@ static ssize_t bonding_show_ad_aggregator(struct device *d,
 	if (bond->params.mode == BOND_MODE_8023AD) {
 		struct ad_info ad_info;
 		count = sprintf(buf, "%d\n",
-				(bond_3ad_get_active_agg_info(bond, &ad_info))
+				bond_3ad_get_active_agg_info(bond, &ad_info)
 				?  0 : ad_info.aggregator_id);
 	}
 
@@ -1342,7 +1390,7 @@ static ssize_t bonding_show_ad_num_ports(struct device *d,
 	if (bond->params.mode == BOND_MODE_8023AD) {
 		struct ad_info ad_info;
 		count = sprintf(buf, "%d\n",
-				(bond_3ad_get_active_agg_info(bond, &ad_info))
+				bond_3ad_get_active_agg_info(bond, &ad_info)
 				?  0 : ad_info.ports);
 	}
 
@@ -1364,7 +1412,7 @@ static ssize_t bonding_show_ad_actor_key(struct device *d,
 	if (bond->params.mode == BOND_MODE_8023AD) {
 		struct ad_info ad_info;
 		count = sprintf(buf, "%d\n",
-				(bond_3ad_get_active_agg_info(bond, &ad_info))
+				bond_3ad_get_active_agg_info(bond, &ad_info)
 				?  0 : ad_info.actor_key);
 	}
 
@@ -1386,7 +1434,7 @@ static ssize_t bonding_show_ad_partner_key(struct device *d,
 	if (bond->params.mode == BOND_MODE_8023AD) {
 		struct ad_info ad_info;
 		count = sprintf(buf, "%d\n",
-				(bond_3ad_get_active_agg_info(bond, &ad_info))
+				bond_3ad_get_active_agg_info(bond, &ad_info)
 				?  0 : ad_info.partner_key);
 	}
 
@@ -1633,6 +1681,7 @@ static struct attribute *per_bond_attrs[] = {
 	&dev_attr_mode.attr,
 	&dev_attr_fail_over_mac.attr,
 	&dev_attr_arp_validate.attr,
+	&dev_attr_arp_all_targets.attr,
 	&dev_attr_arp_interval.attr,
 	&dev_attr_arp_ip_target.attr,
 	&dev_attr_downdelay.attr,

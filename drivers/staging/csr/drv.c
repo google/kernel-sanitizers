@@ -1159,13 +1159,13 @@ unifi_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
             break;
 #ifdef CSR_SUPPORT_SME
           case UNIFI_CFG_CORE_DUMP:
-            CsrWifiRouterCtrlWifiOffIndSend(priv->CSR_WIFI_SME_IFACEQUEUE,0,CSR_WIFI_SME_CONTROL_INDICATION_ERROR);
+            CsrWifiRouterCtrlWifiOffIndSend(priv->CSR_WIFI_SME_IFACEQUEUE, 0, CSR_WIFI_SME_CONTROL_INDICATION_ERROR);
             unifi_trace(priv, UDBG2, "UNIFI_CFG_CORE_DUMP: sent wifi off indication\n");
             break;
 #endif
 #ifdef CSR_SUPPORT_WEXT_AP
           case UNIFI_CFG_SET_AP_CONFIG:
-            r= unifi_cfg_set_ap_config(priv,(unsigned char*)arg);
+            r= unifi_cfg_set_ap_config(priv, (unsigned char*)arg);
             break;
 #endif
           default:
@@ -1275,7 +1275,7 @@ unifi_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
             /* Attach the network device to the stack */
             if (!interfacePriv->netdev_registered)
             {
-                r = uf_register_netdev(priv,interfaceTag);
+                r = uf_register_netdev(priv, interfaceTag);
                 if (r) {
                     unifi_error(priv, "Failed to register the network device.\n");
                     goto out;
@@ -1815,7 +1815,7 @@ udi_log_event(ul_client_t *pcli,
     }
 
     /* Allocate log structure plus actual signal. */
-    logptr = (udi_log_t *)kmalloc(sizeof(udi_log_t) + total_len, GFP_KERNEL);
+    logptr = kmalloc(sizeof(udi_log_t) + total_len, GFP_KERNEL);
 
     if (logptr == NULL) {
         printk(KERN_ERR
@@ -1890,7 +1890,7 @@ uf_sme_queue_message(unifi_priv_t *priv, u8 *buffer, int length)
     }
 
     /* Allocate log structure plus actual signal. */
-    logptr = (udi_log_t *)kmalloc(sizeof(udi_log_t) + length, GFP_ATOMIC);
+    logptr = kmalloc(sizeof(udi_log_t) + length, GFP_ATOMIC);
     if (logptr == NULL) {
         unifi_error(priv, "Failed to allocate %d bytes for an SME message\n",
                     sizeof(udi_log_t) + length);
@@ -1941,7 +1941,7 @@ uf_sme_queue_message(unifi_priv_t *priv, u8 *buffer, int length)
  *
  ****************************************************************************
  */
-static struct file_operations unifi_fops = {
+static const struct file_operations unifi_fops = {
     .owner      = THIS_MODULE,
     .open       = unifi_open,
     .release    = unifi_release,
@@ -2041,7 +2041,7 @@ void uf_destroy_device_nodes(unifi_priv_t *priv)
  * ----------------------------------------------------------------
  */
 static int
-uf_create_debug_device(struct file_operations *fops)
+uf_create_debug_device(const struct file_operations *fops)
 {
     int ret;
 

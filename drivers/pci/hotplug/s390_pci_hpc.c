@@ -16,6 +16,7 @@
 #include <linux/pci.h>
 #include <linux/pci_hotplug.h>
 #include <linux/init.h>
+#include <asm/pci_debug.h>
 #include <asm/sclp.h>
 
 #define SLOT_NAME_SIZE	10
@@ -40,6 +41,28 @@ struct slot {
 	struct zpci_dev *zdev;
 };
 
+static inline int slot_configure(struct slot *slot)
+{
+	int ret = sclp_pci_configure(slot->zdev->fid);
+
+	zpci_dbg(3, "conf fid:%x, rc:%d\n", slot->zdev->fid, ret);
+	if (!ret)
+		slot->zdev->state = ZPCI_FN_STATE_CONFIGURED;
+
+	return ret;
+}
+
+static inline int slot_deconfigure(struct slot *slot)
+{
+	int ret = sclp_pci_deconfigure(slot->zdev->fid);
+
+	zpci_dbg(3, "deconf fid:%x, rc:%d\n", slot->zdev->fid, ret);
+	if (!ret)
+		slot->zdev->state = ZPCI_FN_STATE_STANDBY;
+
+	return ret;
+}
+
 static int enable_slot(struct hotplug_slot *hotplug_slot)
 {
 	struct slot *slot = hotplug_slot->private;
@@ -48,13 +71,23 @@ static int enable_slot(struct hotplug_slot *hotplug_slot)
 	if (slot->zdev->state != ZPCI_FN_STATE_STANDBY)
 		return -EIO;
 
-	rc = sclp_pci_configure(slot->zdev->fid);
-	if (!rc) {
-		slot->zdev->state = ZPCI_FN_STATE_CONFIGURED;
-		/* automatically scan the device after is was configured */
-		zpci_enable_device(slot->zdev);
-		zpci_scan_device(slot->zdev);
-	}
+	rc = slot_configure(slot);
+	if (rc)
+		return rc;
+
+	rc = zpci_enable_device(slot->zdev);
+	if (rc)
+		goto out_deconfigure;
+
+	slot->zdev->state = ZPCI_FN_STATE_ONLINE;
+
+	pci_scan_slot(slot->zdev->bus, ZPCI_DEVFN);
+	pci_bus_add_devices(slot->zdev->bus);
+
+	return rc;
+
+out_deconfigure:
+	slot_deconfigure(slot);
 	return rc;
 }
 
@@ -66,17 +99,14 @@ static int disable_slot(struct hotplug_slot *hotplug_slot)
 	if (!zpci_fn_configured(slot->zdev->state))
 		return -EIO;
 
-	/* TODO: we rely on the user to unbind/remove the device, is that plausible
-	 *	 or do we need to trigger that here?
-	 */
-	rc = sclp_pci_deconfigure(slot->zdev->fid);
-	if (!rc) {
-		/* Fixme: better call List-PCI to find the disabled FH
-		   for the FID since the FH should be opaque... */
-		slot->zdev->fh &= 0x7fffffff;
-		slot->zdev->state = ZPCI_FN_STATE_STANDBY;
-	}
-	return rc;
+	if (slot->zdev->pdev)
+		pci_stop_and_remove_bus_device(slot->zdev->pdev);
+
+	rc = zpci_disable_device(slot->zdev);
+	if (rc)
+		return rc;
+
+	return slot_deconfigure(slot);
 }
 
 static int get_power_status(struct hotplug_slot *hotplug_slot, u8 *value)

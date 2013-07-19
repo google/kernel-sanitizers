@@ -99,6 +99,7 @@ spufs_new_inode(struct super_block *sb, umode_t mode)
 	if (!inode)
 		goto out;
 
+	inode->i_ino = get_next_ino();
 	inode->i_mode = mode;
 	inode->i_uid = current_fsuid();
 	inode->i_gid = current_fsgid();
@@ -237,7 +238,7 @@ const struct file_operations spufs_context_fops = {
 	.release	= spufs_dir_close,
 	.llseek		= dcache_dir_lseek,
 	.read		= generic_read_dir,
-	.readdir	= dcache_readdir,
+	.iterate	= dcache_readdir,
 	.fsync		= noop_fsync,
 };
 EXPORT_SYMBOL_GPL(spufs_context_fops);
@@ -749,6 +750,7 @@ static struct file_system_type spufs_type = {
 	.mount = spufs_mount,
 	.kill_sb = kill_litter_super,
 };
+MODULE_ALIAS_FS("spufs");
 
 static int __init spufs_init(void)
 {

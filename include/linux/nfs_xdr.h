@@ -14,9 +14,6 @@
 #define NFS_DEF_FILE_IO_SIZE	(4096U)
 #define NFS_MIN_FILE_IO_SIZE	(1024U)
 
-/* Forward declaration for NFS v3 */
-struct nfs4_secinfo_flavors;
-
 struct nfs4_string {
 	unsigned int len;
 	char *data;
@@ -104,6 +101,7 @@ struct nfs_fattr {
 #define NFS_ATTR_FATTR_MOUNTED_ON_FILEID (1U << 22)
 #define NFS_ATTR_FATTR_OWNER_NAME	(1U << 23)
 #define NFS_ATTR_FATTR_GROUP_NAME	(1U << 24)
+#define NFS_ATTR_FATTR_V4_SECURITY_LABEL (1U << 25)
 
 #define NFS_ATTR_FATTR (NFS_ATTR_FATTR_TYPE \
 		| NFS_ATTR_FATTR_MODE \
@@ -123,7 +121,8 @@ struct nfs_fattr {
 #define NFS_ATTR_FATTR_V3 (NFS_ATTR_FATTR \
 		| NFS_ATTR_FATTR_SPACE_USED)
 #define NFS_ATTR_FATTR_V4 (NFS_ATTR_FATTR \
-		| NFS_ATTR_FATTR_SPACE_USED)
+		| NFS_ATTR_FATTR_SPACE_USED \
+		| NFS_ATTR_FATTR_V4_SECURITY_LABEL)
 
 /*
  * Info on the file system
@@ -249,6 +248,7 @@ struct nfs4_layoutget_res {
 struct nfs4_layoutget {
 	struct nfs4_layoutget_args args;
 	struct nfs4_layoutget_res res;
+	struct rpc_cred *cred;
 	gfp_t gfp_flags;
 };
 
@@ -349,6 +349,8 @@ struct nfs_openargs {
 	const u32 *		bitmask;
 	const u32 *		open_bitmap;
 	__u32			claim;
+	enum createmode4	createmode;
+	const struct nfs4_label *label;
 };
 
 struct nfs_openres {
@@ -358,6 +360,7 @@ struct nfs_openres {
 	struct nfs4_change_info	cinfo;
 	__u32                   rflags;
 	struct nfs_fattr *      f_attr;
+	struct nfs4_label	*f_label;
 	struct nfs_seqid *	seqid;
 	const struct nfs_server *server;
 	fmode_t			delegation_type;
@@ -486,6 +489,7 @@ struct nfs_readargs {
 	struct nfs_fh *		fh;
 	struct nfs_open_context *context;
 	struct nfs_lock_context *lock_context;
+	nfs4_stateid		stateid;
 	__u64			offset;
 	__u32			count;
 	unsigned int		pgbase;
@@ -507,6 +511,7 @@ struct nfs_writeargs {
 	struct nfs_fh *		fh;
 	struct nfs_open_context *context;
 	struct nfs_lock_context *lock_context;
+	nfs4_stateid		stateid;
 	__u64			offset;
 	__u32			count;
 	enum nfs3_stable_how	stable;
@@ -598,6 +603,7 @@ struct nfs_entry {
 	int			eof;
 	struct nfs_fh *		fh;
 	struct nfs_fattr *	fattr;
+	struct nfs4_label  *label;
 	unsigned char		d_type;
 	struct nfs_server *	server;
 };
@@ -630,6 +636,7 @@ struct nfs_setattrargs {
 	struct iattr *                  iap;
 	const struct nfs_server *	server; /* Needed for name mapping */
 	const u32 *			bitmask;
+	const struct nfs4_label		*label;
 };
 
 struct nfs_setaclargs {
@@ -665,6 +672,7 @@ struct nfs_getaclres {
 struct nfs_setattrres {
 	struct nfs4_sequence_res	seq_res;
 	struct nfs_fattr *              fattr;
+	struct nfs4_label		*label;
 	const struct nfs_server *	server;
 };
 
@@ -862,6 +870,7 @@ struct nfs4_create_arg {
 	const struct iattr *		attrs;
 	const struct nfs_fh *		dir_fh;
 	const u32 *			bitmask;
+	const struct nfs4_label		*label;
 };
 
 struct nfs4_create_res {
@@ -869,6 +878,7 @@ struct nfs4_create_res {
 	const struct nfs_server *	server;
 	struct nfs_fh *			fh;
 	struct nfs_fattr *		fattr;
+	struct nfs4_label		*label;
 	struct nfs4_change_info		dir_cinfo;
 };
 
@@ -893,6 +903,7 @@ struct nfs4_getattr_res {
 	struct nfs4_sequence_res	seq_res;
 	const struct nfs_server *	server;
 	struct nfs_fattr *		fattr;
+	struct nfs4_label		*label;
 };
 
 struct nfs4_link_arg {
@@ -907,6 +918,7 @@ struct nfs4_link_res {
 	struct nfs4_sequence_res	seq_res;
 	const struct nfs_server *	server;
 	struct nfs_fattr *		fattr;
+	struct nfs4_label		*label;
 	struct nfs4_change_info		cinfo;
 	struct nfs_fattr *		dir_attr;
 };
@@ -924,6 +936,7 @@ struct nfs4_lookup_res {
 	const struct nfs_server *	server;
 	struct nfs_fattr *		fattr;
 	struct nfs_fh *			fh;
+	struct nfs4_label		*label;
 };
 
 struct nfs4_lookup_root_arg {
@@ -1050,25 +1063,14 @@ struct nfs4_fs_locations_res {
 	struct nfs4_fs_locations       *fs_locations;
 };
 
-struct nfs4_secinfo_oid {
-	unsigned int len;
-	char data[GSS_OID_MAX_LEN];
-};
-
-struct nfs4_secinfo_gss {
-	struct nfs4_secinfo_oid sec_oid4;
-	unsigned int qop4;
-	unsigned int service;
-};
-
-struct nfs4_secinfo_flavor {
-	unsigned int 		flavor;
-	struct nfs4_secinfo_gss	gss;
+struct nfs4_secinfo4 {
+	u32			flavor;
+	struct rpcsec_gss_info	flavor_info;
 };
 
 struct nfs4_secinfo_flavors {
-	unsigned int num_flavors;
-	struct nfs4_secinfo_flavor flavors[0];
+	unsigned int		num_flavors;
+	struct nfs4_secinfo4	flavors[0];
 };
 
 struct nfs4_secinfo_arg {
@@ -1187,7 +1189,7 @@ struct nfs41_test_stateid_res {
 
 struct nfs41_free_stateid_args {
 	struct nfs4_sequence_args	seq_args;
-	nfs4_stateid			*stateid;
+	nfs4_stateid			stateid;
 };
 
 struct nfs41_free_stateid_res {
@@ -1377,11 +1379,12 @@ struct nfs_rpc_ops {
 	struct dentry *(*try_mount) (int, const char *, struct nfs_mount_info *,
 				     struct nfs_subversion *);
 	int	(*getattr) (struct nfs_server *, struct nfs_fh *,
-			    struct nfs_fattr *);
+			    struct nfs_fattr *, struct nfs4_label *);
 	int	(*setattr) (struct dentry *, struct nfs_fattr *,
 			    struct iattr *);
 	int	(*lookup)  (struct inode *, struct qstr *,
-			    struct nfs_fh *, struct nfs_fattr *);
+			    struct nfs_fh *, struct nfs_fattr *,
+			    struct nfs4_label *);
 	int	(*access)  (struct inode *, struct nfs_access_entry *);
 	int	(*readlink)(struct inode *, struct page *, unsigned int,
 			    unsigned int);

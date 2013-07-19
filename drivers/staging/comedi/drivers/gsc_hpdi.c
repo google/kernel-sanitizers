@@ -18,12 +18,7 @@
     but WITHOUT ANY WARRANTY; without even the implied warranty of
     MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
     GNU General Public License for more details.
-
-    You should have received a copy of the GNU General Public License
-    along with this program; if not, write to the Free Software
-    Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
-
-************************************************************************/
+*/
 
 /*
  * Driver: gsc_hpdi
@@ -77,12 +72,6 @@ static int dio_config_block_size(struct comedi_device *dev, unsigned int *data);
 #define DMA_BUFFER_SIZE 0x10000
 #define NUM_DMA_BUFFERS 4
 #define NUM_DMA_DESCRIPTORS 256
-
-/* indices of base address regions */
-enum base_address_regions {
-	PLX9080_BADDRINDEX = 0,
-	HPDI_BADDRINDEX = 2,
-};
 
 enum hpdi_registers {
 	FIRMWARE_REV_REG = 0x0,
@@ -499,20 +488,13 @@ static int hpdi_auto_attach(struct comedi_device *dev,
 		return -ENOMEM;
 	dev->private = devpriv;
 
-	if (comedi_pci_enable(pcidev, dev->board_name)) {
-		dev_warn(dev->class_dev,
-			 "failed enable PCI device and request regions\n");
-		return -EIO;
-	}
-	dev->iobase = 1;	/* the "detach" needs this */
+	retval = comedi_pci_enable(dev);
+	if (retval)
+		return retval;
 	pci_set_master(pcidev);
 
-	devpriv->plx9080_iobase =
-		ioremap(pci_resource_start(pcidev, PLX9080_BADDRINDEX),
-			pci_resource_len(pcidev, PLX9080_BADDRINDEX));
-	devpriv->hpdi_iobase =
-		ioremap(pci_resource_start(pcidev, HPDI_BADDRINDEX),
-			pci_resource_len(pcidev, HPDI_BADDRINDEX));
+	devpriv->plx9080_iobase = pci_ioremap_bar(pcidev, 0);
+	devpriv->hpdi_iobase = pci_ioremap_bar(pcidev, 2);
 	if (!devpriv->plx9080_iobase || !devpriv->hpdi_iobase) {
 		dev_warn(dev->class_dev, "failed to remap io memory\n");
 		return -ENOMEM;
@@ -596,9 +578,8 @@ static void hpdi_detach(struct comedi_device *dev)
 					    NUM_DMA_DESCRIPTORS,
 					    devpriv->dma_desc,
 					    devpriv->dma_desc_phys_addr);
-		if (dev->iobase)
-			comedi_pci_disable(pcidev);
 	}
+	comedi_pci_disable(dev);
 }
 
 static int dio_config_block_size(struct comedi_device *dev, unsigned int *data)
@@ -943,9 +924,9 @@ static struct comedi_driver gsc_hpdi_driver = {
 };
 
 static int gsc_hpdi_pci_probe(struct pci_dev *dev,
-					const struct pci_device_id *ent)
+			      const struct pci_device_id *id)
 {
-	return comedi_pci_auto_config(dev, &gsc_hpdi_driver);
+	return comedi_pci_auto_config(dev, &gsc_hpdi_driver, id->driver_data);
 }
 
 static DEFINE_PCI_DEVICE_TABLE(gsc_hpdi_pci_table) = {

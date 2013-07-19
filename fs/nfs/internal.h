@@ -165,7 +165,7 @@ extern void nfs_free_client(struct nfs_client *);
 extern struct nfs_client *nfs4_find_client_ident(struct net *, int);
 extern struct nfs_client *
 nfs4_find_client_sessionid(struct net *, const struct sockaddr *,
-				struct nfs4_sessionid *);
+				struct nfs4_sessionid *, u32);
 extern struct nfs_server *nfs_create_server(struct nfs_mount_info *,
 					struct nfs_subversion *);
 extern struct nfs_server *nfs4_create_server(
@@ -229,6 +229,13 @@ extern void nfs_pgheader_init(struct nfs_pageio_descriptor *desc,
 			      struct nfs_pgio_header *hdr,
 			      void (*release)(struct nfs_pgio_header *hdr));
 void nfs_set_pgio_error(struct nfs_pgio_header *hdr, int error, loff_t pos);
+int nfs_iocounter_wait(struct nfs_io_counter *c);
+
+static inline void nfs_iocounter_init(struct nfs_io_counter *c)
+{
+	c->flags = 0;
+	atomic_set(&c->io_count, 0);
+}
 
 /* nfs2xdr.c */
 extern struct rpc_procinfo nfs_procedures[];
@@ -248,6 +255,7 @@ extern int nfs4_decode_dirent(struct xdr_stream *,
 #ifdef CONFIG_NFS_V4_1
 extern const u32 nfs41_maxread_overhead;
 extern const u32 nfs41_maxwrite_overhead;
+extern const u32 nfs41_maxgetdevinfo_overhead;
 #endif
 
 /* nfs4proc.c */

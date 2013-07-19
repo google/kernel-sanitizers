@@ -15,10 +15,6 @@ This program is free software; you can redistribute it and/or modify it under th
 
 This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
 
-You should have received a copy of the GNU General Public License along with this program; if not, write to the Free Software Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
-
-You should also find the complete GPL in the COPYING file accompanying this source code.
-
 @endverbatim
 */
 /*
@@ -704,9 +700,9 @@ static int i_APCI1710_InsnReadSSIValue(struct comedi_device *dev,
 |                                        unsigned char *_   pb_ChannelStatus)          |
 +----------------------------------------------------------------------------+
 | Task              :
-					(0) Set the digital output from selected SSI moule         |
+					(0) Set the digital output from selected SSI module         |
 |                     (b_ModuleNbr) ON
-                    (1) Set the digital output from selected SSI moule         |
+                    (1) Set the digital output from selected SSI module         |
 |                     (b_ModuleNbr) OFF
 					(2)Read the status from selected SSI digital input        |
 |                     (b_InputChannel)

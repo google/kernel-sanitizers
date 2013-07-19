@@ -19,6 +19,7 @@
 #include <linux/io.h>
 #include <linux/err.h>
 #include <linux/platform_device.h>
+#include <linux/reboot.h>
 
 #include <asm/mach/map.h>
 
@@ -272,7 +273,7 @@ static struct clk_lookup clks[] = {
 	CLK("tnetv107x-keypad.0", NULL,			&clk_keypad),
 	CLK(NULL,		"clk_gpio",		&clk_gpio),
 	CLK(NULL,		"clk_mdio",		&clk_mdio),
-	CLK("davinci_mmc.0",	NULL,			&clk_sdio0),
+	CLK("dm6441-mmc.0",	NULL,			&clk_sdio0),
 	CLK(NULL,		"uart0",		&clk_uart0),
 	CLK(NULL,		"uart1",		&clk_uart1),
 	CLK(NULL,		"timer0",		&clk_timer0),
@@ -292,7 +293,7 @@ static struct clk_lookup clks[] = {
 	CLK(NULL,		"clk_system",		&clk_system),
 	CLK(NULL,		"clk_imcop",		&clk_imcop),
 	CLK(NULL,		"clk_spare",		&clk_spare),
-	CLK("davinci_mmc.1",	NULL,			&clk_sdio1),
+	CLK("dm6441-mmc.1",	NULL,			&clk_sdio1),
 	CLK(NULL,		"clk_ddr2_vrst",	&clk_ddr2_vrst),
 	CLK(NULL,		"clk_ddr2_vctl_rst",	&clk_ddr2_vctl_rst),
 	CLK(NULL,		NULL,			NULL),
@@ -730,7 +731,7 @@ static void tnetv107x_watchdog_reset(struct platform_device *pdev)
 	__raw_writel(1, &regs->kick);
 }
 
-void tnetv107x_restart(char mode, const char *cmd)
+void tnetv107x_restart(enum reboot_mode mode, const char *cmd)
 {
 	tnetv107x_watchdog_reset(&tnetv107x_wdt_device);
 }

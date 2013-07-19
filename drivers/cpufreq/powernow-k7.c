@@ -186,7 +186,7 @@ static int get_ranges(unsigned char *pst)
 		fid = *pst++;
 
 		powernow_table[j].frequency = (fsb * fid_codes[fid]) / 10;
-		powernow_table[j].index = fid; /* lower 8 bits */
+		powernow_table[j].driver_data = fid; /* lower 8 bits */
 
 		speed = powernow_table[j].frequency;
 
@@ -203,7 +203,7 @@ static int get_ranges(unsigned char *pst)
 			maximum_speed = speed;
 
 		vid = *pst++;
-		powernow_table[j].index |= (vid << 8); /* upper 8 bits */
+		powernow_table[j].driver_data |= (vid << 8); /* upper 8 bits */
 
 		pr_debug("   FID: 0x%x (%d.%dx [%dMHz])  "
 			 "VID: 0x%x (%d.%03dV)\n", fid, fid_codes[fid] / 10,
@@ -212,7 +212,7 @@ static int get_ranges(unsigned char *pst)
 			 mobile_vid_table[vid]%1000);
 	}
 	powernow_table[number_scales].frequency = CPUFREQ_TABLE_END;
-	powernow_table[number_scales].index = 0;
+	powernow_table[number_scales].driver_data = 0;
 
 	return 0;
 }
@@ -248,7 +248,7 @@ static void change_VID(int vid)
 }
 
 
-static void change_speed(unsigned int index)
+static void change_speed(struct cpufreq_policy *policy, unsigned int index)
 {
 	u8 fid, vid;
 	struct cpufreq_freqs freqs;
@@ -260,10 +260,8 @@ static void change_speed(unsigned int index)
 	 * vid are the upper 8 bits.
 	 */
 
-	fid = powernow_table[index].index & 0xFF;
-	vid = (powernow_table[index].index & 0xFF00) >> 8;
-
-	freqs.cpu = 0;
+	fid = powernow_table[index].driver_data & 0xFF;
+	vid = (powernow_table[index].driver_data & 0xFF00) >> 8;
 
 	rdmsrl(MSR_K7_FID_VID_STATUS, fidvidstatus.val);
 	cfid = fidvidstatus.bits.CFID;
@@ -271,7 +269,7 @@ static void change_speed(unsigned int index)
 
 	freqs.new = powernow_table[index].frequency;
 
-	cpufreq_notify_transition(&freqs, CPUFREQ_PRECHANGE);
+	cpufreq_notify_transition(policy, &freqs, CPUFREQ_PRECHANGE);
 
 	/* Now do the magic poking into the MSRs.  */
 
@@ -292,7 +290,7 @@ static void change_speed(unsigned int index)
 	if (have_a0 == 1)
 		local_irq_enable();
 
-	cpufreq_notify_transition(&freqs, CPUFREQ_POSTCHANGE);
+	cpufreq_notify_transition(policy, &freqs, CPUFREQ_POSTCHANGE);
 }
 
 
@@ -375,8 +373,8 @@ static int powernow_acpi_init(void)
 		fid = pc.bits.fid;
 
 		powernow_table[i].frequency = fsb * fid_codes[fid] / 10;
-		powernow_table[i].index = fid; /* lower 8 bits */
-		powernow_table[i].index |= (vid << 8); /* upper 8 bits */
+		powernow_table[i].driver_data = fid; /* lower 8 bits */
+		powernow_table[i].driver_data |= (vid << 8); /* upper 8 bits */
 
 		speed = powernow_table[i].frequency;
 		speed_mhz = speed / 1000;
@@ -419,7 +417,7 @@ static int powernow_acpi_init(void)
 	}
 
 	powernow_table[i].frequency = CPUFREQ_TABLE_END;
-	powernow_table[i].index = 0;
+	powernow_table[i].driver_data = 0;
 
 	/* notify BIOS that we exist */
 	acpi_processor_notify_smm(THIS_MODULE);
@@ -546,7 +544,7 @@ static int powernow_target(struct cpufreq_policy *policy,
 				relation, &newstate))
 		return -EINVAL;
 
-	change_speed(newstate);
+	change_speed(policy, newstate);
 
 	return 0;
 }

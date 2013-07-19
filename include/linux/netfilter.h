@@ -35,7 +35,7 @@ static inline void nf_inet_addr_mask(const union nf_inet_addr *a1,
 	result->all[3] = a1->all[3] & mask->all[3];
 }
 
-extern void netfilter_init(void);
+extern int netfilter_init(void);
 
 /* Largest hook number + 1 */
 #define NF_MAX_HOOKS 8
@@ -288,11 +288,6 @@ nf_nat_decode_session(struct sk_buff *skb, struct flowi *fl, u_int8_t family)
 	rcu_read_unlock();
 #endif
 }
-
-#ifdef CONFIG_PROC_FS
-#include <linux/proc_fs.h>
-extern struct proc_dir_entry *proc_net_netfilter;
-#endif
 
 #else /* !CONFIG_NETFILTER */
 #define NF_HOOK(pf, hook, skb, indev, outdev, okfn) (okfn)(skb)

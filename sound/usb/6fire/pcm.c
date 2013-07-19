@@ -450,13 +450,13 @@ static int usb6fire_pcm_close(struct snd_pcm_substream *alsa_sub)
 static int usb6fire_pcm_hw_params(struct snd_pcm_substream *alsa_sub,
 		struct snd_pcm_hw_params *hw_params)
 {
-	return snd_pcm_lib_malloc_pages(alsa_sub,
-			params_buffer_bytes(hw_params));
+	return snd_pcm_lib_alloc_vmalloc_buffer(alsa_sub,
+						params_buffer_bytes(hw_params));
 }
 
 static int usb6fire_pcm_hw_free(struct snd_pcm_substream *alsa_sub)
 {
-	return snd_pcm_lib_free_pages(alsa_sub);
+	return snd_pcm_lib_free_vmalloc_buffer(alsa_sub);
 }
 
 static int usb6fire_pcm_prepare(struct snd_pcm_substream *alsa_sub)
@@ -560,6 +560,8 @@ static struct snd_pcm_ops pcm_ops = {
 	.prepare = usb6fire_pcm_prepare,
 	.trigger = usb6fire_pcm_trigger,
 	.pointer = usb6fire_pcm_pointer,
+	.page = snd_pcm_lib_get_vmalloc_page,
+	.mmap = snd_pcm_lib_mmap_vmalloc,
 };
 
 static void usb6fire_pcm_init_urb(struct pcm_urb *urb,
@@ -575,7 +577,6 @@ static void usb6fire_pcm_init_urb(struct pcm_urb *urb,
 	urb->instance.pipe = in ? usb_rcvisocpipe(chip->dev, ep)
 			: usb_sndisocpipe(chip->dev, ep);
 	urb->instance.interval = 1;
-	urb->instance.transfer_flags = URB_ISO_ASAP;
 	urb->instance.complete = handler;
 	urb->instance.context = urb;
 	urb->instance.number_of_packets = PCM_N_PACKETS_PER_URB;
@@ -623,10 +624,6 @@ int usb6fire_pcm_init(struct sfire_chip *chip)
 	snd_pcm_set_ops(pcm, SNDRV_PCM_STREAM_PLAYBACK, &pcm_ops);
 	snd_pcm_set_ops(pcm, SNDRV_PCM_STREAM_CAPTURE, &pcm_ops);
 
-	ret = snd_pcm_lib_preallocate_pages_for_all(pcm,
-			SNDRV_DMA_TYPE_CONTINUOUS,
-			snd_dma_continuous_data(GFP_KERNEL),
-			MAX_BUFSIZE, MAX_BUFSIZE);
 	if (ret) {
 		kfree(rt);
 		snd_printk(KERN_ERR PREFIX

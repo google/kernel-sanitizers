@@ -23,12 +23,11 @@
 #define __MACH_TEGRA_BOARD_H
 
 #include <linux/types.h>
+#include <linux/reboot.h>
 
-void tegra_assert_system_reset(char mode, const char *cmd);
+void tegra_assert_system_reset(enum reboot_mode mode, const char *cmd);
 
-void __init tegra20_init_early(void);
-void __init tegra30_init_early(void);
-void __init tegra114_init_early(void);
+void __init tegra_init_early(void);
 void __init tegra_map_common_io(void);
 void __init tegra_init_irq(void);
 void __init tegra_dt_init_irq(void);
@@ -42,6 +41,7 @@ int tegra_clk_debugfs_init(void);
 static inline int tegra_clk_debugfs_init(void) { return 0; }
 #endif
 
+int __init tegra_powergate_init(void);
 #if defined(CONFIG_ARCH_TEGRA_2x_SOC) && defined(CONFIG_DEBUG_FS)
 int __init tegra_powergate_debugfs_init(void);
 #else

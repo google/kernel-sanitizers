@@ -631,7 +631,6 @@ static int __init get_freq(char *name, int cells, unsigned long *val)
 	return found;
 }
 
-/* should become __cpuinit when secondary_cpu_time_init also is */
 void start_cpu_decrementer(void)
 {
 #if defined(CONFIG_BOOKE) || defined(CONFIG_40x)
@@ -1049,10 +1048,8 @@ static int __init rtc_init(void)
 		return -ENODEV;
 
 	pdev = platform_device_register_simple("rtc-generic", -1, NULL, 0);
-	if (IS_ERR(pdev))
-		return PTR_ERR(pdev);
 
-	return 0;
+	return PTR_RET(pdev);
 }
 
 module_init(rtc_init);

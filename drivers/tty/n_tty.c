@@ -89,6 +89,7 @@ struct n_tty_data {
 	int read_head;
 	int read_tail;
 	int read_cnt;
+	int minimum_to_wake;
 
 	unsigned char *echo_buf;
 	unsigned int echo_pos;
@@ -114,22 +115,25 @@ static inline int tty_put_user(struct tty_struct *tty, unsigned char x,
 }
 
 /**
- *	n_tty_set__room	-	receive space
+ *	n_tty_set_room	-	receive space
  *	@tty: terminal
  *
- *	Called by the driver to find out how much data it is
- *	permitted to feed to the line discipline without any being lost
- *	and thus to manage flow control. Not serialized. Answers for the
- *	"instant".
+ *	Updates tty->receive_room to reflect the currently available space
+ *	in the input buffer, and re-schedules the flip buffer work if space
+ *	just became available.
+ *
+ *	Locks: Concurrent update is protected with read_lock
  */
 
-static void n_tty_set_room(struct tty_struct *tty)
+static int set_room(struct tty_struct *tty)
 {
 	struct n_tty_data *ldata = tty->disc_data;
 	int left;
 	int old_left;
+	unsigned long flags;
 
-	/* ldata->read_cnt is not read locked ? */
+	raw_spin_lock_irqsave(&ldata->read_lock, flags);
+
 	if (I_PARMRK(tty)) {
 		/* Multiply read_cnt by 3, since each byte might take up to
 		 * three times as many spaces when PARMRK is set (depending on
@@ -149,10 +153,23 @@ static void n_tty_set_room(struct tty_struct *tty)
 	old_left = tty->receive_room;
 	tty->receive_room = left;
 
+	raw_spin_unlock_irqrestore(&ldata->read_lock, flags);
+
+	return left && !old_left;
+}
+
+static void n_tty_set_room(struct tty_struct *tty)
+{
 	/* Did this open up the receive buffer? We may need to flip */
-	if (left && !old_left) {
+	if (set_room(tty)) {
 		WARN_RATELIMIT(tty->port->itty == NULL,
 				"scheduling with invalid itty\n");
+		/* see if ldisc has been killed - if so, this means that
+		 * even though the ldisc has been halted and ->buf.work
+		 * cancelled, ->buf.work is about to be rescheduled
+		 */
+		WARN_RATELIMIT(test_bit(TTY_LDISC_HALTED, &tty->flags),
+			       "scheduling buffer work for halted ldisc\n");
 		schedule_work(&tty->port->buf.work);
 	}
 }
@@ -189,34 +206,17 @@ static void put_tty_queue(unsigned char c, struct n_tty_data *ldata)
 }
 
 /**
- *	check_unthrottle	-	allow new receive data
- *	@tty; tty device
- *
- *	Check whether to call the driver unthrottle functions
- *
- *	Can sleep, may be called under the atomic_read_lock mutex but
- *	this is not guaranteed.
- */
-static void check_unthrottle(struct tty_struct *tty)
-{
-	if (tty->count)
-		tty_unthrottle(tty);
-}
-
-/**
  *	reset_buffer_flags	-	reset buffer state
  *	@tty: terminal to reset
  *
- *	Reset the read buffer counters, clear the flags,
- *	and make sure the driver is unthrottled. Called
- *	from n_tty_open() and n_tty_flush_buffer().
+ *	Reset the read buffer counters and clear the flags.
+ *	Called from n_tty_open() and n_tty_flush_buffer().
  *
  *	Locking: tty_read_lock for read fields.
  */
 
-static void reset_buffer_flags(struct tty_struct *tty)
+static void reset_buffer_flags(struct n_tty_data *ldata)
 {
-	struct n_tty_data *ldata = tty->disc_data;
 	unsigned long flags;
 
 	raw_spin_lock_irqsave(&ldata->read_lock, flags);
@@ -229,29 +229,11 @@ static void reset_buffer_flags(struct tty_struct *tty)
 
 	ldata->canon_head = ldata->canon_data = ldata->erasing = 0;
 	bitmap_zero(ldata->read_flags, N_TTY_BUF_SIZE);
-	n_tty_set_room(tty);
 }
 
-/**
- *	n_tty_flush_buffer	-	clean input queue
- *	@tty:	terminal device
- *
- *	Flush the input buffer. Called when the line discipline is
- *	being closed, when the tty layer wants the buffer flushed (eg
- *	at hangup) or when the N_TTY line discipline internally has to
- *	clean the pending queue (for example some signals).
- *
- *	Locking: ctrl_lock, read_lock.
- */
-
-static void n_tty_flush_buffer(struct tty_struct *tty)
+static void n_tty_packet_mode_flush(struct tty_struct *tty)
 {
 	unsigned long flags;
-	/* clear everything and unthrottle the driver */
-	reset_buffer_flags(tty);
-
-	if (!tty->link)
-		return;
 
 	spin_lock_irqsave(&tty->ctrl_lock, flags);
 	if (tty->link->packet) {
@@ -259,6 +241,26 @@ static void n_tty_flush_buffer(struct tty_struct *tty)
 		wake_up_interruptible(&tty->link->read_wait);
 	}
 	spin_unlock_irqrestore(&tty->ctrl_lock, flags);
+}
+
+/**
+ *	n_tty_flush_buffer	-	clean input queue
+ *	@tty:	terminal device
+ *
+ *	Flush the input buffer. Called when the tty layer wants the
+ *	buffer flushed (eg at hangup) or when the N_TTY line discipline
+ *	internally has to clean the pending queue (for example some signals).
+ *
+ *	Locking: ctrl_lock, read_lock.
+ */
+
+static void n_tty_flush_buffer(struct tty_struct *tty)
+{
+	reset_buffer_flags(tty->disc_data);
+	n_tty_set_room(tty);
+
+	if (tty->link)
+		n_tty_packet_mode_flush(tty);
 }
 
 /**
@@ -656,8 +658,7 @@ static void process_echoes(struct tty_struct *tty)
 			if (no_space_left)
 				break;
 		} else {
-			if (O_OPOST(tty) &&
-			    !(test_bit(TTY_HW_COOK_OUT, &tty->flags))) {
+			if (O_OPOST(tty)) {
 				int retval = do_output_char(c, tty, space);
 				if (retval < 0)
 					break;
@@ -1032,23 +1033,19 @@ static void eraser(unsigned char c, struct tty_struct *tty)
  *	isig		-	handle the ISIG optio
  *	@sig: signal
  *	@tty: terminal
- *	@flush: force flush
  *
- *	Called when a signal is being sent due to terminal input. This
- *	may caus terminal flushing to take place according to the termios
- *	settings and character used. Called from the driver receive_buf
- *	path so serialized.
+ *	Called when a signal is being sent due to terminal input.
+ *	Called from the driver receive_buf path so serialized.
  *
- *	Locking: ctrl_lock, read_lock (both via flush buffer)
+ *	Locking: ctrl_lock
  */
 
-static inline void isig(int sig, struct tty_struct *tty, int flush)
+static inline void isig(int sig, struct tty_struct *tty)
 {
-	if (tty->pgrp)
-		kill_pgrp(tty->pgrp, sig, 1);
-	if (flush || !L_NOFLSH(tty)) {
-		n_tty_flush_buffer(tty);
-		tty_driver_flush_buffer(tty);
+	struct pid *tty_pgrp = tty_get_pgrp(tty);
+	if (tty_pgrp) {
+		kill_pgrp(tty_pgrp, sig, 1);
+		put_pid(tty_pgrp);
 	}
 }
 
@@ -1069,7 +1066,11 @@ static inline void n_tty_receive_break(struct tty_struct *tty)
 	if (I_IGNBRK(tty))
 		return;
 	if (I_BRKINT(tty)) {
-		isig(SIGINT, tty, 1);
+		isig(SIGINT, tty);
+		if (!L_NOFLSH(tty)) {
+			n_tty_flush_buffer(tty);
+			tty_driver_flush_buffer(tty);
+		}
 		return;
 	}
 	if (I_PARMRK(tty)) {
@@ -1236,11 +1237,6 @@ static inline void n_tty_receive_char(struct tty_struct *tty, unsigned char c)
 		signal = SIGTSTP;
 		if (c == SUSP_CHAR(tty)) {
 send_signal:
-			/*
-			 * Note that we do not use isig() here because we want
-			 * the order to be:
-			 * 1) flush, 2) echo, 3) signal
-			 */
 			if (!L_NOFLSH(tty)) {
 				n_tty_flush_buffer(tty);
 				tty_driver_flush_buffer(tty);
@@ -1251,8 +1247,7 @@ send_signal:
 				echo_char(c, tty);
 				process_echoes(tty);
 			}
-			if (tty->pgrp)
-				kill_pgrp(tty->pgrp, signal, 1);
+			isig(signal, tty);
 			return;
 		}
 	}
@@ -1469,9 +1464,9 @@ static void n_tty_receive_buf(struct tty_struct *tty, const unsigned char *cp,
 			tty->ops->flush_chars(tty);
 	}
 
-	n_tty_set_room(tty);
+	set_room(tty);
 
-	if ((!ldata->icanon && (ldata->read_cnt >= tty->minimum_to_wake)) ||
+	if ((!ldata->icanon && (ldata->read_cnt >= ldata->minimum_to_wake)) ||
 		L_EXTPROC(tty)) {
 		kill_fasync(&tty->fasync, SIGIO, POLL_IN);
 		if (waitqueue_active(&tty->read_wait))
@@ -1483,14 +1478,14 @@ static void n_tty_receive_buf(struct tty_struct *tty, const unsigned char *cp,
 	 * mode.  We don't want to throttle the driver if we're in
 	 * canonical mode and don't have a newline yet!
 	 */
-	if (tty->receive_room < TTY_THRESHOLD_THROTTLE)
-		tty_throttle(tty);
-
-        /* FIXME: there is a tiny race here if the receive room check runs
-           before the other work executes and empties the buffer (upping
-           the receiving room and unthrottling. We then throttle and get
-           stuck. This has been observed and traced down by Vincent Pillet/
-           We need to address this when we sort out out the rx path locking */
+	while (1) {
+		tty_set_flow_change(tty, TTY_THROTTLE_SAFE);
+		if (tty->receive_room >= TTY_THRESHOLD_THROTTLE)
+			break;
+		if (!tty_throttle_safe(tty))
+			break;
+	}
+	__tty_set_flow_change(tty, 0);
 }
 
 int is_ignored(int sig)
@@ -1531,12 +1526,7 @@ static void n_tty_set_termios(struct tty_struct *tty, struct ktermios *old)
 		wake_up_interruptible(&tty->read_wait);
 
 	ldata->icanon = (L_ICANON(tty) != 0);
-	if (test_bit(TTY_HW_COOK_IN, &tty->flags)) {
-		ldata->raw = 1;
-		ldata->real_raw = 1;
-		n_tty_set_room(tty);
-		return;
-	}
+
 	if (I_ISTRIP(tty) || I_IUCLC(tty) || I_IGNCR(tty) ||
 	    I_ICRNL(tty) || I_INLCR(tty) || L_ICANON(tty) ||
 	    I_IXON(tty) || L_ISIG(tty) || L_ECHO(tty) ||
@@ -1588,6 +1578,14 @@ static void n_tty_set_termios(struct tty_struct *tty, struct ktermios *old)
 			ldata->real_raw = 0;
 	}
 	n_tty_set_room(tty);
+	/*
+	 * Fix tty hang when I_IXON(tty) is cleared, but the tty
+	 * been stopped by STOP_CHAR(tty) before it.
+	 */
+	if (!I_IXON(tty) && old && (old->c_iflag & IXON) && !tty->flow_stopped) {
+		start_tty(tty);
+	}
+
 	/* The termios change make the tty ready for I/O */
 	wake_up_interruptible(&tty->write_wait);
 	wake_up_interruptible(&tty->read_wait);
@@ -1607,7 +1605,9 @@ static void n_tty_close(struct tty_struct *tty)
 {
 	struct n_tty_data *ldata = tty->disc_data;
 
-	n_tty_flush_buffer(tty);
+	if (tty->link)
+		n_tty_packet_mode_flush(tty);
+
 	kfree(ldata->read_buf);
 	kfree(ldata->echo_buf);
 	kfree(ldata);
@@ -1645,12 +1645,14 @@ static int n_tty_open(struct tty_struct *tty)
 		goto err_free_bufs;
 
 	tty->disc_data = ldata;
-	reset_buffer_flags(tty);
-	tty_unthrottle(tty);
+	reset_buffer_flags(tty->disc_data);
 	ldata->column = 0;
-	n_tty_set_termios(tty, NULL);
-	tty->minimum_to_wake = 1;
+	ldata->minimum_to_wake = 1;
 	tty->closing = 0;
+	/* indicate buffer work may resume */
+	clear_bit(TTY_LDISC_HALTED, &tty->flags);
+	n_tty_set_termios(tty, NULL);
+	tty_unthrottle(tty);
 
 	return 0;
 err_free_bufs:
@@ -1740,10 +1742,9 @@ extern ssize_t redirected_tty_write(struct file *, const char __user *,
  *	and if appropriate send any needed signals and return a negative
  *	error code if action should be taken.
  *
- *	FIXME:
- *	Locking: None - redirected write test is safe, testing
- *	current->signal should possibly lock current->sighand
- *	pgrp locking ?
+ *	Locking: redirected write test is safe
+ *		 current->signal->tty check is safe
+ *		 ctrl_lock to safely reference tty->pgrp
  */
 
 static int job_control(struct tty_struct *tty, struct file *file)
@@ -1753,19 +1754,22 @@ static int job_control(struct tty_struct *tty, struct file *file)
 	/* NOTE: not yet done after every sleep pending a thorough
 	   check of the logic of this change. -- jlc */
 	/* don't stop on /dev/console */
-	if (file->f_op->write != redirected_tty_write &&
-	    current->signal->tty == tty) {
-		if (!tty->pgrp)
-			printk(KERN_ERR "n_tty_read: no tty->pgrp!\n");
-		else if (task_pgrp(current) != tty->pgrp) {
-			if (is_ignored(SIGTTIN) ||
-			    is_current_pgrp_orphaned())
-				return -EIO;
-			kill_pgrp(task_pgrp(current), SIGTTIN, 1);
-			set_thread_flag(TIF_SIGPENDING);
-			return -ERESTARTSYS;
-		}
+	if (file->f_op->write == redirected_tty_write ||
+	    current->signal->tty != tty)
+		return 0;
+
+	spin_lock_irq(&tty->ctrl_lock);
+	if (!tty->pgrp)
+		printk(KERN_ERR "n_tty_read: no tty->pgrp!\n");
+	else if (task_pgrp(current) != tty->pgrp) {
+		spin_unlock_irq(&tty->ctrl_lock);
+		if (is_ignored(SIGTTIN) || is_current_pgrp_orphaned())
+			return -EIO;
+		kill_pgrp(task_pgrp(current), SIGTTIN, 1);
+		set_thread_flag(TIF_SIGPENDING);
+		return -ERESTARTSYS;
 	}
+	spin_unlock_irq(&tty->ctrl_lock);
 	return 0;
 }
 
@@ -1807,21 +1811,17 @@ do_it_again:
 	minimum = time = 0;
 	timeout = MAX_SCHEDULE_TIMEOUT;
 	if (!ldata->icanon) {
-		time = (HZ / 10) * TIME_CHAR(tty);
 		minimum = MIN_CHAR(tty);
 		if (minimum) {
+			time = (HZ / 10) * TIME_CHAR(tty);
 			if (time)
-				tty->minimum_to_wake = 1;
+				ldata->minimum_to_wake = 1;
 			else if (!waitqueue_active(&tty->read_wait) ||
-				 (tty->minimum_to_wake > minimum))
-				tty->minimum_to_wake = minimum;
+				 (ldata->minimum_to_wake > minimum))
+				ldata->minimum_to_wake = minimum;
 		} else {
-			timeout = 0;
-			if (time) {
-				timeout = time;
-				time = 0;
-			}
-			tty->minimum_to_wake = minimum = 1;
+			timeout = (HZ / 10) * TIME_CHAR(tty);
+			ldata->minimum_to_wake = minimum = 1;
 		}
 	}
 
@@ -1861,9 +1861,9 @@ do_it_again:
 		   TASK_RUNNING. */
 		set_current_state(TASK_INTERRUPTIBLE);
 
-		if (((minimum - (b - buf)) < tty->minimum_to_wake) &&
+		if (((minimum - (b - buf)) < ldata->minimum_to_wake) &&
 		    ((minimum - (b - buf)) >= 1))
-			tty->minimum_to_wake = (minimum - (b - buf));
+			ldata->minimum_to_wake = (minimum - (b - buf));
 
 		if (!input_available_p(tty, 0)) {
 			if (test_bit(TTY_OTHER_CLOSED, &tty->flags)) {
@@ -1882,7 +1882,6 @@ do_it_again:
 				retval = -ERESTARTSYS;
 				break;
 			}
-			/* FIXME: does n_tty_set_room need locking ? */
 			n_tty_set_room(tty);
 			timeout = schedule_timeout(timeout);
 			continue;
@@ -1959,10 +1958,17 @@ do_it_again:
 		 * longer than TTY_THRESHOLD_UNTHROTTLE in canonical mode,
 		 * we won't get any more characters.
 		 */
-		if (n_tty_chars_in_buffer(tty) <= TTY_THRESHOLD_UNTHROTTLE) {
+		while (1) {
+			tty_set_flow_change(tty, TTY_UNTHROTTLE_SAFE);
+			if (n_tty_chars_in_buffer(tty) > TTY_THRESHOLD_UNTHROTTLE)
+				break;
+			if (!tty->count)
+				break;
 			n_tty_set_room(tty);
-			check_unthrottle(tty);
+			if (!tty_unthrottle_safe(tty))
+				break;
 		}
+		__tty_set_flow_change(tty, 0);
 
 		if (b - buf >= minimum)
 			break;
@@ -1973,7 +1979,7 @@ do_it_again:
 	remove_wait_queue(&tty->read_wait, &wait);
 
 	if (!waitqueue_active(&tty->read_wait))
-		tty->minimum_to_wake = minimum;
+		ldata->minimum_to_wake = minimum;
 
 	__set_current_state(TASK_RUNNING);
 	size = b - buf;
@@ -2039,7 +2045,7 @@ static ssize_t n_tty_write(struct tty_struct *tty, struct file *file,
 			retval = -EIO;
 			break;
 		}
-		if (O_OPOST(tty) && !(test_bit(TTY_HW_COOK_OUT, &tty->flags))) {
+		if (O_OPOST(tty)) {
 			while (nr > 0) {
 				ssize_t num = process_output_block(tty, b, nr);
 				if (num < 0) {
@@ -2105,6 +2111,7 @@ break_out:
 static unsigned int n_tty_poll(struct tty_struct *tty, struct file *file,
 							poll_table *wait)
 {
+	struct n_tty_data *ldata = tty->disc_data;
 	unsigned int mask = 0;
 
 	poll_wait(file, &tty->read_wait, wait);
@@ -2119,9 +2126,9 @@ static unsigned int n_tty_poll(struct tty_struct *tty, struct file *file,
 		mask |= POLLHUP;
 	if (!(mask & (POLLHUP | POLLIN | POLLRDNORM))) {
 		if (MIN_CHAR(tty) && !TIME_CHAR(tty))
-			tty->minimum_to_wake = MIN_CHAR(tty);
+			ldata->minimum_to_wake = MIN_CHAR(tty);
 		else
-			tty->minimum_to_wake = 1;
+			ldata->minimum_to_wake = 1;
 	}
 	if (tty->ops->write && !tty_is_writelocked(tty) &&
 			tty_chars_in_buffer(tty) < WAKEUP_CHARS &&
@@ -2169,6 +2176,18 @@ static int n_tty_ioctl(struct tty_struct *tty, struct file *file,
 	}
 }
 
+static void n_tty_fasync(struct tty_struct *tty, int on)
+{
+	struct n_tty_data *ldata = tty->disc_data;
+
+	if (!waitqueue_active(&tty->read_wait)) {
+		if (on)
+			ldata->minimum_to_wake = 1;
+		else if (!tty->fasync)
+			ldata->minimum_to_wake = N_TTY_BUF_SIZE;
+	}
+}
+
 struct tty_ldisc_ops tty_ldisc_N_TTY = {
 	.magic           = TTY_LDISC_MAGIC,
 	.name            = "n_tty",
@@ -2182,7 +2201,8 @@ struct tty_ldisc_ops tty_ldisc_N_TTY = {
 	.set_termios     = n_tty_set_termios,
 	.poll            = n_tty_poll,
 	.receive_buf     = n_tty_receive_buf,
-	.write_wakeup    = n_tty_write_wakeup
+	.write_wakeup    = n_tty_write_wakeup,
+	.fasync		 = n_tty_fasync,
 };
 
 /**

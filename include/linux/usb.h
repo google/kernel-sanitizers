@@ -394,6 +394,22 @@ enum usb_port_connect_type {
 };
 
 /*
+ * USB 2.0 Link Power Management (LPM) parameters.
+ */
+struct usb2_lpm_parameters {
+	/* Best effort service latency indicate how long the host will drive
+	 * resume on an exit from L1.
+	 */
+	unsigned int besl;
+
+	/* Timeout value in microseconds for the L1 inactivity (LPM) timer.
+	 * When the timer counts to zero, the parent hub will initiate a LPM
+	 * transition to L1.
+	 */
+	int timeout;
+};
+
+/*
  * USB 3.0 Link Power Management (LPM) parameters.
  *
  * PEL and SEL are USB 3.0 Link PM latencies for device-initiated LPM exit.
@@ -468,15 +484,14 @@ struct usb3_lpm_parameters {
  * @wusb: device is Wireless USB
  * @lpm_capable: device supports LPM
  * @usb2_hw_lpm_capable: device can perform USB2 hardware LPM
+ * @usb2_hw_lpm_besl_capable: device can perform USB2 hardware BESL LPM
  * @usb2_hw_lpm_enabled: USB2 hardware LPM enabled
+ * @usb3_lpm_enabled: USB3 hardware LPM enabled
  * @string_langid: language ID for strings
  * @product: iProduct string, if present (static)
  * @manufacturer: iManufacturer string, if present (static)
  * @serial: iSerialNumber string, if present (static)
  * @filelist: usbfs files that are open to this device
- * @usb_classdev: USB class device that was created for usbfs device
- *	access from userspace
- * @usbfs_dentry: usbfs dentry entry for the device
  * @maxchild: number of ports if hub
  * @quirks: quirks of the whole device
  * @urbnum: number of URBs submitted for the whole device
@@ -489,6 +504,7 @@ struct usb3_lpm_parameters {
  *	specific data for the device.
  * @slot_id: Slot ID assigned by xHCI
  * @removable: Device can be physically removed from this port
+ * @l1_params: best effor service latency for USB2 L1 LPM state, and L1 timeout.
  * @u1_params: exit latencies for USB3 U1 LPM state, and hub-initiated timeout.
  * @u2_params: exit latencies for USB3 U2 LPM state, and hub-initiated timeout.
  * @lpm_disable_count: Ref count used by usb_disable_lpm() and usb_enable_lpm()
@@ -540,6 +556,7 @@ struct usb_device {
 	unsigned wusb:1;
 	unsigned lpm_capable:1;
 	unsigned usb2_hw_lpm_capable:1;
+	unsigned usb2_hw_lpm_besl_capable:1;
 	unsigned usb2_hw_lpm_enabled:1;
 	unsigned usb3_lpm_enabled:1;
 	int string_langid;
@@ -568,6 +585,7 @@ struct usb_device {
 	struct wusb_dev *wusb_dev;
 	int slot_id;
 	enum usb_device_removable removable;
+	struct usb2_lpm_parameters l1_params;
 	struct usb3_lpm_parameters u1_params;
 	struct usb3_lpm_parameters u2_params;
 	unsigned lpm_disable_count;
@@ -619,7 +637,7 @@ static inline bool usb_acpi_power_manageable(struct usb_device *hdev, int index)
 #endif
 
 /* USB autosuspend and autoresume */
-#ifdef CONFIG_USB_SUSPEND
+#ifdef CONFIG_PM_RUNTIME
 extern void usb_enable_autosuspend(struct usb_device *udev);
 extern void usb_disable_autosuspend(struct usb_device *udev);
 
@@ -719,6 +737,7 @@ const struct usb_device_id *usb_match_id(struct usb_interface *interface,
 extern int usb_match_one_id(struct usb_interface *interface,
 			    const struct usb_device_id *id);
 
+extern int usb_for_each_dev(void *data, int (*fn)(struct usb_device *, void *));
 extern struct usb_interface *usb_find_interface(struct usb_driver *drv,
 		int minor);
 extern struct usb_interface *usb_ifnum_to_if(const struct usb_device *dev,
@@ -978,7 +997,12 @@ struct usbdrv_wrap {
  *	the "usbfs" filesystem.  This lets devices provide ways to
  *	expose information to user space regardless of where they
  *	do (or don't) show up otherwise in the filesystem.
- * @suspend: Called when the device is going to be suspended by the system.
+ * @suspend: Called when the device is going to be suspended by the
+ *	system either from system sleep or runtime suspend context. The
+ *	return value will be ignored in system sleep context, so do NOT
+ *	try to continue using the device if suspend fails in this case.
+ *	Instead, let the resume or reset-resume routine recover from
+ *	the failure.
  * @resume: Called when the device is being resumed by the system.
  * @reset_resume: Called when the suspended device has been reset instead
  *	of being resumed.

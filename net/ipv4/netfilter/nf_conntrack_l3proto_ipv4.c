@@ -1,6 +1,7 @@
 
 /* (C) 1999-2001 Paul `Rusty' Russell
  * (C) 2002-2004 Netfilter Core Team <coreteam@netfilter.org>
+ * (C) 2006-2012 Patrick McHardy <kaber@trash.net>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -222,7 +223,7 @@ static struct nf_hook_ops ipv4_conntrack_ops[] __read_mostly = {
 static int log_invalid_proto_min = 0;
 static int log_invalid_proto_max = 255;
 
-static ctl_table ip_ct_sysctl_table[] = {
+static struct ctl_table ip_ct_sysctl_table[] = {
 	{
 		.procname	= "ip_conntrack_max",
 		.maxlen		= sizeof(int),

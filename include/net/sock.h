@@ -229,6 +229,8 @@ struct cg_proto;
   *	@sk_omem_alloc: "o" is "option" or "other"
   *	@sk_wmem_queued: persistent queue size
   *	@sk_forward_alloc: space allocated forward
+  *	@sk_napi_id: id of the last napi context to receive data for sk
+  *	@sk_ll_usec: usecs to busypoll when there is no data
   *	@sk_allocation: allocation mode
   *	@sk_sndbuf: size of send buffer in bytes
   *	@sk_flags: %SO_LINGER (l_onoff), %SO_BROADCAST, %SO_KEEPALIVE,
@@ -324,6 +326,10 @@ struct sock {
 	int			sk_forward_alloc;
 #ifdef CONFIG_RPS
 	__u32			sk_rxhash;
+#endif
+#ifdef CONFIG_NET_LL_RX_POLL
+	unsigned int		sk_napi_id;
+	unsigned int		sk_ll_usec;
 #endif
 	atomic_t		sk_drops;
 	int			sk_rcvbuf;
@@ -667,6 +673,7 @@ enum sock_flags {
 		     * user-space instead.
 		     */
 	SOCK_FILTER_LOCKED, /* Filter cannot be changed anymore */
+	SOCK_SELECT_ERR_QUEUE, /* Wake select on error queue */
 };
 
 static inline void sock_copy_flags(struct sock *nsk, struct sock *osk)
@@ -864,6 +871,18 @@ struct timewait_sock_ops;
 struct inet_hashinfo;
 struct raw_hashinfo;
 struct module;
+
+/*
+ * caches using SLAB_DESTROY_BY_RCU should let .next pointer from nulls nodes
+ * un-modified. Special care is taken when initializing object to zero.
+ */
+static inline void sk_prot_clear_nulls(struct sock *sk, int size)
+{
+	if (offsetof(struct sock, sk_node.next) != 0)
+		memset(sk, 0, offsetof(struct sock, sk_node.next));
+	memset(&sk->sk_node.pprev, 0,
+	       size - offsetof(struct sock, sk_node.pprev));
+}
 
 /* Networking protocol blocks we attach to sockets.
  * socket layer -> transport layer interface
@@ -2028,18 +2047,21 @@ static inline void sk_wake_async(struct sock *sk, int how, int band)
 		sock_wake_async(sk->sk_socket, how, band);
 }
 
-#define SOCK_MIN_SNDBUF 2048
-/*
- * Since sk_rmem_alloc sums skb->truesize, even a small frame might need
- * sizeof(sk_buff) + MTU + padding, unless net driver perform copybreak
+/* Since sk_{r,w}mem_alloc sums skb->truesize, even a small frame might
+ * need sizeof(sk_buff) + MTU + padding, unless net driver perform copybreak.
+ * Note: for send buffers, TCP works better if we can build two skbs at
+ * minimum.
  */
-#define SOCK_MIN_RCVBUF (2048 + sizeof(struct sk_buff))
+#define TCP_SKB_MIN_TRUESIZE	(2048 + SKB_DATA_ALIGN(sizeof(struct sk_buff)))
+
+#define SOCK_MIN_SNDBUF		(TCP_SKB_MIN_TRUESIZE * 2)
+#define SOCK_MIN_RCVBUF		 TCP_SKB_MIN_TRUESIZE
 
 static inline void sk_stream_moderate_sndbuf(struct sock *sk)
 {
 	if (!(sk->sk_userlocks & SOCK_SNDBUF_LOCK)) {
 		sk->sk_sndbuf = min(sk->sk_sndbuf, sk->sk_wmem_queued >> 1);
-		sk->sk_sndbuf = max(sk->sk_sndbuf, SOCK_MIN_SNDBUF);
+		sk->sk_sndbuf = max_t(u32, sk->sk_sndbuf, SOCK_MIN_SNDBUF);
 	}
 }
 
@@ -2158,10 +2180,9 @@ static inline void sock_recv_ts_and_drops(struct msghdr *msg, struct sock *sk,
  * @sk:		socket sending this packet
  * @tx_flags:	filled with instructions for time stamping
  *
- * Currently only depends on SOCK_TIMESTAMPING* flags. Returns error code if
- * parameters are invalid.
+ * Currently only depends on SOCK_TIMESTAMPING* flags.
  */
-extern int sock_tx_timestamp(struct sock *sk, __u8 *tx_flags);
+extern void sock_tx_timestamp(struct sock *sk, __u8 *tx_flags);
 
 /**
  * sk_eat_skb - Release a skb if it is no longer needed

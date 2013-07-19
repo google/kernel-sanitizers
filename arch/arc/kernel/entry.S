@@ -142,7 +142,7 @@ VECTOR   reserved                ; Reserved Exceptions
 .endr
 
 #include <linux/linkage.h>   /* ARC_{EXTRY,EXIT} */
-#include <asm/entry.h>       /* SAVE_ALL_{INT1,INT2,TRAP...} */
+#include <asm/entry.h>       /* SAVE_ALL_{INT1,INT2,SYS...} */
 #include <asm/errno.h>
 #include <asm/arcregs.h>
 #include <asm/irqflags.h>
@@ -274,10 +274,8 @@ ARC_ENTRY instr_service
 	SWITCH_TO_KERNEL_STK
 	SAVE_ALL_SYS
 
-	lr  r0, [ecr]
-	lr  r1, [efa]
-
-	mov r2, sp
+	lr  r0, [efa]
+	mov r1, sp
 
 	FAKE_RET_FROM_EXCPN r9
 
@@ -298,9 +296,8 @@ ARC_ENTRY mem_service
 	SWITCH_TO_KERNEL_STK
 	SAVE_ALL_SYS
 
-	lr  r0, [ecr]
-	lr  r1, [efa]
-	mov r2, sp
+	lr  r0, [efa]
+	mov r1, sp
 	bl  do_memory_error
 	b   ret_from_exception
 ARC_EXIT mem_service
@@ -317,11 +314,14 @@ ARC_ENTRY EV_MachineCheck
 	SWITCH_TO_KERNEL_STK
 	SAVE_ALL_SYS
 
-	lr  r0, [ecr]
-	lr  r1, [efa]
-	mov r2, sp
+	lr  r2, [ecr]
+	lr  r0, [efa]
+	mov r1, sp
 
-	brne    r0, 0x200100, 1f
+	lsr  	r3, r2, 8
+	bmsk 	r3, r3, 7
+	brne    r3, ECR_C_MCHK_DUP_TLB, 1f
+
 	bl      do_tlb_overlap_fault
 	b       ret_from_exception
 
@@ -355,8 +355,8 @@ ARC_ENTRY EV_TLBProtV
 	;  ecr and efa were not saved in case an Intr sneaks in
 	;  after fake rtie
 	;
-	lr  r3, [ecr]
-	lr  r4, [efa]
+	lr  r2, [ecr]
+	lr  r1, [efa]	; Faulting Data address
 
 	; --------(4) Return from CPU Exception Mode ---------
 	;  Fake a rtie, but rtie to next label
@@ -368,37 +368,33 @@ ARC_ENTRY EV_TLBProtV
 	;------ (5) Type of Protection Violation? ----------
 	;
 	; ProtV Hardware Exception is triggered for Access Faults of 2 types
-	;   -Access Violaton (WRITE to READ ONLY Page) - for linux COW
-	;   -Unaligned Access (READ/WRITE on odd boundary)
+	;   -Access Violaton	: 00_23_(00|01|02|03)_00
+	;			         x  r  w  r+w
+	;   -Unaligned Access	: 00_23_04_00
 	;
-	cmp r3, 0x230400    ; Misaligned data access ?
-	beq 4f
+	bbit1 r2, ECR_C_BIT_PROTV_MISALIG_DATA, 4f
 
 	;========= (6a) Access Violation Processing ========
-	cmp r3, 0x230100
-	mov r1, 0x0              ; if LD exception ? write = 0
-	mov.ne r1, 0x1           ; else write = 1
-
-	mov r2, r4              ; faulting address
 	mov r0, sp              ; pt_regs
 	bl  do_page_fault
 	b   ret_from_exception
 
 	;========== (6b) Non aligned access ============
 4:
-	mov r0, r3              ; cause code
-	mov r1, r4              ; faulting address
-	mov r2, sp              ; pt_regs
+	mov r0, r1
+	mov r1, sp              ; pt_regs
 
 #ifdef  CONFIG_ARC_MISALIGN_ACCESS
 	SAVE_CALLEE_SAVED_USER
-	mov r3, sp              ; callee_regs
-#endif
+	mov r2, sp              ; callee_regs
 
 	bl  do_misaligned_access
 
-#ifdef  CONFIG_ARC_MISALIGN_ACCESS
-	DISCARD_CALLEE_SAVED_USER
+	; TBD: optimize - do this only if a callee reg was involved
+	; either a dst of emulated LD/ST or src with address-writeback
+	RESTORE_CALLEE_SAVED_USER
+#else
+	bl  do_misaligned_error
 #endif
 
 	b   ret_from_exception
@@ -417,9 +413,8 @@ ARC_ENTRY EV_PrivilegeV
 	SWITCH_TO_KERNEL_STK
 	SAVE_ALL_SYS
 
-	lr  r0, [ecr]
-	lr  r1, [efa]
-	mov r2, sp
+	lr  r0, [efa]
+	mov r1, sp
 
 	FAKE_RET_FROM_EXCPN r9
 
@@ -438,9 +433,8 @@ ARC_ENTRY EV_Extension
 	SWITCH_TO_KERNEL_STK
 	SAVE_ALL_SYS
 
-	lr  r0, [ecr]
-	lr  r1, [efa]
-	mov r2, sp
+	lr  r0, [efa]
+	mov r1, sp
 	bl  do_extension_fault
 	b   ret_from_exception
 ARC_EXIT EV_Extension
@@ -452,7 +446,7 @@ tracesys:
 	; using ERET won't work since next-PC has already committed
 	lr  r12, [efa]
 	GET_CURR_TASK_FIELD_PTR   TASK_THREAD, r11
-	st  r12, [r11, THREAD_FAULT_ADDR]
+	st  r12, [r11, THREAD_FAULT_ADDR]	; thread.fault_address
 
 	; PRE Sys Call Ptrace hook
 	mov r0, sp			; pt_regs needed
@@ -496,11 +490,8 @@ tracesys_exit:
 trap_with_param:
 
 	; stop_pc info by gdb needs this info
-	stw orig_r8_IS_BRKPT, [sp, PT_orig_r8]
-
-	mov r0, r12
-	lr  r1, [efa]
-	mov r2, sp
+	lr  r0, [efa]
+	mov r1, sp
 
 	; Now that we have read EFA, its safe to do "fake" rtie
 	;   and get out of CPU exception mode
@@ -542,11 +533,11 @@ ARC_ENTRY EV_Trap
 	lr  r9, [erstatus]
 
 	SWITCH_TO_KERNEL_STK
-	SAVE_ALL_TRAP
+	SAVE_ALL_SYS
 
 	;------- (4) What caused the Trap --------------
 	lr     r12, [ecr]
-	and.f  0, r12, ECR_PARAM_MASK
+	bmsk.f 0, r12, 7
 	bnz    trap_with_param
 
 	; ======= (5a) Trap is due to System Call ========
@@ -587,11 +578,7 @@ ARC_ENTRY ret_from_exception
 	; Pre-{IRQ,Trap,Exception} K/U mode from pt_regs->status32
 	ld  r8, [sp, PT_status32]   ; returning to User/Kernel Mode
 
-#ifdef CONFIG_PREEMPT
 	bbit0  r8, STATUS_U_BIT, resume_kernel_mode
-#else
-	bbit0  r8, STATUS_U_BIT, restore_regs
-#endif
 
 	; Before returning to User mode check-for-and-complete any pending work
 	; such as rescheduling/signal-delivery etc.
@@ -651,9 +638,9 @@ resume_user_mode_begin:
 	b      resume_user_mode_begin	; unconditionally back to U mode ret chks
 					; for single exit point from this block
 
-#ifdef CONFIG_PREEMPT
-
 resume_kernel_mode:
+
+#ifdef CONFIG_PREEMPT
 
 	; Can't preempt if preemption disabled
 	GET_CURR_THR_INFO_FROM_SP   r10
@@ -685,17 +672,6 @@ restore_regs :
 	; XXX can this be optimised out
 	IRQ_DISABLE_SAVE    r9, r10	;@r10 has prisitine (pre-disable) copy
 
-#ifdef CONFIG_ARC_CURR_IN_REG
-	; Restore User R25
-	; Earlier this used to be only for returning to user mode
-	; However with 2 levels of IRQ this can also happen even if
-	; in kernel mode
-	ld r9, [sp, PT_sp]
-	brhs r9, VMALLOC_START, 8f
-	RESTORE_USER_R25
-8:
-#endif
-
 	; Restore REG File. In case multiple Events outstanding,
 	; use the same priorty as rtie: EXCPN, L2 IRQ, L1 IRQ, None
 	; Note that we use realtime STATUS32 (not pt_regs->status32) to
@@ -712,7 +688,16 @@ not_exception:
 
 #ifdef CONFIG_ARC_COMPACT_IRQ_LEVELS
 
+	; Level 2 interrupt return Path - from hardware standpoint
 	bbit0  r10, STATUS_A2_BIT, not_level2_interrupt
+
+	;------------------------------------------------------------------
+	; However the context returning might not have taken L2 intr itself
+	; e.g. Task'A' user-code -> L2 intr -> schedule -> 'B' user-code ret
+	; Special considerations needed for the context which took L2 intr
+
+	ld   r9, [sp, PT_event]        ; Ensure this is L2 intr context
+	brne r9, event_IRQ2, 149f
 
 	;------------------------------------------------------------------
 	; if L2 IRQ interrupted a L1 ISR,  we'd disbaled preemption earlier
@@ -721,19 +706,15 @@ not_exception:
 	; things to what they were, before returning from L2 context
 	;----------------------------------------------------------------
 
-	ldw  r9, [sp, PT_orig_r8]      ; get orig_r8 to make sure it is
-	brne r9, orig_r8_IS_IRQ2, 149f ; infact a L2 ISR ret path
-
 	ld r9, [sp, PT_status32]       ; get statu32_l2 (saved in pt_regs)
 	bbit0 r9, STATUS_A1_BIT, 149f  ; L1 not active when L2 IRQ, so normal
 
-	; A1 is set in status32_l2
 	; decrement thread_info->preempt_count (re-enable preemption)
 	GET_CURR_THR_INFO_FROM_SP   r10
 	ld      r9, [r10, THREAD_INFO_PREEMPT_COUNT]
 
 	; paranoid check, given A1 was active when A2 happened, preempt count
-	; must not be 0 beccause we would have incremented it.
+	; must not be 0 because we would have incremented it.
 	; If this does happen we simply HALT as it means a BUG !!!
 	cmp     r9, 0
 	bnz     2f
@@ -791,31 +772,6 @@ ARC_ENTRY ret_from_fork
 ARC_EXIT ret_from_fork
 
 ;################### Special Sys Call Wrappers ##########################
-
-; TBD: call do_fork directly from here
-ARC_ENTRY sys_fork_wrapper
-	SAVE_CALLEE_SAVED_USER
-	bl  @sys_fork
-	DISCARD_CALLEE_SAVED_USER
-
-	GET_CURR_THR_INFO_FLAGS   r10
-	btst r10, TIF_SYSCALL_TRACE
-	bnz  tracesys_exit
-
-	b ret_from_system_call
-ARC_EXIT sys_fork_wrapper
-
-ARC_ENTRY sys_vfork_wrapper
-	SAVE_CALLEE_SAVED_USER
-	bl  @sys_vfork
-	DISCARD_CALLEE_SAVED_USER
-
-	GET_CURR_THR_INFO_FLAGS   r10
-	btst r10, TIF_SYSCALL_TRACE
-	bnz  tracesys_exit
-
-	b ret_from_system_call
-ARC_EXIT sys_vfork_wrapper
 
 ARC_ENTRY sys_clone_wrapper
 	SAVE_CALLEE_SAVED_USER

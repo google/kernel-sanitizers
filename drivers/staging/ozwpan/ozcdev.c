@@ -18,7 +18,6 @@
 #include "ozeltbuf.h"
 #include "ozpd.h"
 #include "ozproto.h"
-#include "ozevent.h"
 #include "ozcdev.h"
 /*------------------------------------------------------------------------------
  */
@@ -253,6 +252,7 @@ static long oz_cdev_ioctl(struct file *filp, unsigned int cmd,
 	case OZ_IOCTL_GET_PD_LIST: {
 			struct oz_pd_list list;
 			oz_trace("OZ_IOCTL_GET_PD_LIST\n");
+			memset(&list, 0, sizeof(list));
 			list.count = oz_get_pd_list(list.addr, OZ_MAX_PDS);
 			if (copy_to_user((void __user *)arg, &list,
 				sizeof(list)))
@@ -354,11 +354,13 @@ int oz_cdev_register(void)
 	g_oz_class = class_create(THIS_MODULE, "ozmo_wpan");
 	if (IS_ERR(g_oz_class)) {
 		oz_trace("Failed to register ozmo_wpan class\n");
+		err = PTR_ERR(g_oz_class);
 		goto out1;
 	}
 	dev = device_create(g_oz_class, NULL, g_cdev.devnum, NULL, "ozwpan");
 	if (IS_ERR(dev)) {
 		oz_trace("Failed to create sysfs entry for cdev\n");
+		err = PTR_ERR(dev);
 		goto out1;
 	}
 	return 0;
@@ -387,7 +389,6 @@ int oz_cdev_deregister(void)
  */
 int oz_cdev_init(void)
 {
-	oz_event_log(OZ_EVT_SERVICE, 1, OZ_APPID_SERIAL, NULL, 0);
 	oz_app_enable(OZ_APPID_SERIAL, 1);
 	return 0;
 }
@@ -396,7 +397,6 @@ int oz_cdev_init(void)
  */
 void oz_cdev_term(void)
 {
-	oz_event_log(OZ_EVT_SERVICE, 2, OZ_APPID_SERIAL, NULL, 0);
 	oz_app_enable(OZ_APPID_SERIAL, 0);
 }
 /*------------------------------------------------------------------------------
@@ -406,7 +406,6 @@ int oz_cdev_start(struct oz_pd *pd, int resume)
 {
 	struct oz_serial_ctx *ctx;
 	struct oz_serial_ctx *old_ctx;
-	oz_event_log(OZ_EVT_SERVICE, 3, OZ_APPID_SERIAL, NULL, resume);
 	if (resume) {
 		oz_trace("Serial service resumed.\n");
 		return 0;
@@ -442,7 +441,6 @@ int oz_cdev_start(struct oz_pd *pd, int resume)
 void oz_cdev_stop(struct oz_pd *pd, int pause)
 {
 	struct oz_serial_ctx *ctx;
-	oz_event_log(OZ_EVT_SERVICE, 4, OZ_APPID_SERIAL, NULL, pause);
 	if (pause) {
 		oz_trace("Serial service paused.\n");
 		return;

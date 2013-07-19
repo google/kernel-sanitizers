@@ -14,11 +14,6 @@
     but WITHOUT ANY WARRANTY; without even the implied warranty of
     MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
     GNU General Public License for more details.
-
-    You should have received a copy of the GNU General Public License
-    along with this program; if not, write to the Free Software
-    Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
-
 */
 
 #include <linux/uaccess.h>
@@ -26,17 +21,25 @@
 #include "comedi_internal.h"
 
 const struct comedi_lrange range_bipolar10 = { 1, {BIP_RANGE(10)} };
-EXPORT_SYMBOL(range_bipolar10);
+EXPORT_SYMBOL_GPL(range_bipolar10);
 const struct comedi_lrange range_bipolar5 = { 1, {BIP_RANGE(5)} };
-EXPORT_SYMBOL(range_bipolar5);
+EXPORT_SYMBOL_GPL(range_bipolar5);
 const struct comedi_lrange range_bipolar2_5 = { 1, {BIP_RANGE(2.5)} };
-EXPORT_SYMBOL(range_bipolar2_5);
+EXPORT_SYMBOL_GPL(range_bipolar2_5);
 const struct comedi_lrange range_unipolar10 = { 1, {UNI_RANGE(10)} };
-EXPORT_SYMBOL(range_unipolar10);
+EXPORT_SYMBOL_GPL(range_unipolar10);
 const struct comedi_lrange range_unipolar5 = { 1, {UNI_RANGE(5)} };
-EXPORT_SYMBOL(range_unipolar5);
+EXPORT_SYMBOL_GPL(range_unipolar5);
+const struct comedi_lrange range_unipolar2_5 = { 1, {UNI_RANGE(2.5)} };
+EXPORT_SYMBOL_GPL(range_unipolar2_5);
+const struct comedi_lrange range_0_20mA = { 1, {RANGE_mA(0, 20)} };
+EXPORT_SYMBOL_GPL(range_0_20mA);
+const struct comedi_lrange range_4_20mA = { 1, {RANGE_mA(4, 20)} };
+EXPORT_SYMBOL_GPL(range_4_20mA);
+const struct comedi_lrange range_0_32mA = { 1, {RANGE_mA(0, 32)} };
+EXPORT_SYMBOL_GPL(range_0_32mA);
 const struct comedi_lrange range_unknown = { 1, {{0, 1000000, UNIT_none} } };
-EXPORT_SYMBOL(range_unknown);
+EXPORT_SYMBOL_GPL(range_unknown);
 
 /*
 	COMEDI_RANGEINFO
@@ -165,4 +168,4 @@ int comedi_check_chanlist(struct comedi_subdevice *s, int n,
 	}
 	return 0;
 }
-EXPORT_SYMBOL(comedi_check_chanlist);
+EXPORT_SYMBOL_GPL(comedi_check_chanlist);

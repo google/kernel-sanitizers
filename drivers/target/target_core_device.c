@@ -68,7 +68,6 @@ transport_lookup_cmd_lun(struct se_cmd *se_cmd, u32 unpacked_lun)
 		struct se_dev_entry *deve = se_cmd->se_deve;
 
 		deve->total_cmds++;
-		deve->total_bytes += se_cmd->data_length;
 
 		if ((se_cmd->data_direction == DMA_TO_DEVICE) &&
 		    (deve->lun_flags & TRANSPORT_LUNFLAGS_READ_ONLY)) {
@@ -84,8 +83,6 @@ transport_lookup_cmd_lun(struct se_cmd *se_cmd, u32 unpacked_lun)
 			deve->write_bytes += se_cmd->data_length;
 		else if (se_cmd->data_direction == DMA_FROM_DEVICE)
 			deve->read_bytes += se_cmd->data_length;
-
-		deve->deve_cmds++;
 
 		se_lun = deve->se_lun;
 		se_cmd->se_lun = deve->se_lun;
@@ -273,17 +270,6 @@ int core_free_device_list_for_node(
 	nacl->device_list = NULL;
 
 	return 0;
-}
-
-void core_dec_lacl_count(struct se_node_acl *se_nacl, struct se_cmd *se_cmd)
-{
-	struct se_dev_entry *deve;
-	unsigned long flags;
-
-	spin_lock_irqsave(&se_nacl->device_list_lock, flags);
-	deve = se_nacl->device_list[se_cmd->orig_fe_lun];
-	deve->deve_cmds--;
-	spin_unlock_irqrestore(&se_nacl->device_list_lock, flags);
 }
 
 void core_update_device_list_access(
@@ -1424,7 +1410,6 @@ struct se_device *target_alloc_device(struct se_hba *hba, const char *name)
 	INIT_LIST_HEAD(&dev->t10_alua.tg_pt_gps_list);
 	spin_lock_init(&dev->t10_alua.tg_pt_gps_lock);
 
-	dev->t10_pr.pr_aptpl_buf_len = PR_APTPL_BUF_LEN;
 	dev->t10_wwn.t10_dev = dev;
 	dev->t10_alua.t10_dev = dev;
 
@@ -1559,7 +1544,7 @@ int core_dev_setup_virtual_lun0(void)
 {
 	struct se_hba *hba;
 	struct se_device *dev;
-	char buf[16];
+	char buf[] = "rd_pages=8,rd_nullio=1";
 	int ret;
 
 	hba = core_alloc_hba("rd_mcp", 0, HBA_FLAGS_INTERNAL_USE);
@@ -1572,8 +1557,6 @@ int core_dev_setup_virtual_lun0(void)
 		goto out_free_hba;
 	}
 
-	memset(buf, 0, 16);
-	sprintf(buf, "rd_pages=8");
 	hba->transport->set_configfs_dev_params(dev, buf, sizeof(buf));
 
 	ret = target_configure_device(dev);

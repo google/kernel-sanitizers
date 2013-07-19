@@ -1412,7 +1412,7 @@ static int mount_ubifs(struct ubifs_info *c)
 
 	ubifs_msg("mounted UBI device %d, volume %d, name \"%s\"%s",
 		  c->vi.ubi_num, c->vi.vol_id, c->vi.name,
-		  c->ro_mount ? ", R/O mode" : NULL);
+		  c->ro_mount ? ", R/O mode" : "");
 	x = (long long)c->main_lebs * c->leb_size;
 	y = (long long)c->log_lebs * c->leb_size + c->max_bud_bytes;
 	ubifs_msg("LEB size: %d bytes (%d KiB), min./max. I/O unit sizes: %d bytes/%d bytes",
@@ -1568,6 +1568,12 @@ static int ubifs_remount_rw(struct ubifs_info *c)
 	c->remounting_rw = 1;
 	c->ro_mount = 0;
 
+	if (c->space_fixup) {
+		err = ubifs_fixup_free_space(c);
+		if (err)
+			return err;
+	}
+
 	err = check_free_space(c);
 	if (err)
 		goto out;
@@ -1682,12 +1688,6 @@ static int ubifs_remount_rw(struct ubifs_info *c)
 		 * because, for example, the old index size was imprecise.
 		 */
 		err = dbg_check_space_info(c);
-	}
-
-	if (c->space_fixup) {
-		err = ubifs_fixup_free_space(c);
-		if (err)
-			goto out;
 	}
 
 	mutex_unlock(&c->umount_mutex);
@@ -2174,6 +2174,7 @@ static struct file_system_type ubifs_fs_type = {
 	.mount   = ubifs_mount,
 	.kill_sb = kill_ubifs_super,
 };
+MODULE_ALIAS_FS("ubifs");
 
 /*
  * Inode slab cache constructor.

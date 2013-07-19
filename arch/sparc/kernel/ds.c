@@ -783,6 +783,16 @@ void ldom_set_var(const char *var, const char *value)
 		char  *base, *p;
 		int msg_len, loops;
 
+		if (strlen(var) + strlen(value) + 2 >
+		    sizeof(pkt) - sizeof(pkt.header)) {
+			printk(KERN_ERR PFX
+				"contents length: %zu, which more than max: %lu,"
+				"so could not set (%s) variable to (%s).\n",
+				strlen(var) + strlen(value) + 2,
+				sizeof(pkt) - sizeof(pkt.header), var, value);
+			return;
+		}
+
 		memset(&pkt, 0, sizeof(pkt));
 		pkt.header.data.tag.type = DS_DATA;
 		pkt.header.data.handle = cp->handle;
@@ -843,7 +853,8 @@ void ldom_reboot(const char *boot_command)
 		unsigned long len;
 
 		strcpy(full_boot_str, "boot ");
-		strcpy(full_boot_str + strlen("boot "), boot_command);
+		strlcpy(full_boot_str + strlen("boot "), boot_command,
+			sizeof(full_boot_str + strlen("boot ")));
 		len = strlen(full_boot_str);
 
 		if (reboot_data_supported) {

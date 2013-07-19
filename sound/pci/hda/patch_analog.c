@@ -43,7 +43,6 @@ struct ad198x_spec {
 	hda_nid_t eapd_nid;
 
 	unsigned int beep_amp;	/* beep amp value, set via set_beep_amp() */
-	hda_nid_t beep_dev_nid;
 
 #ifdef ENABLE_AD_STATIC_QUIRKS
 	const struct snd_kcontrol_new *mixers[6];
@@ -609,7 +608,7 @@ static const struct hda_codec_ops ad198x_auto_patch_ops = {
 	.build_controls = ad198x_auto_build_controls,
 	.build_pcms = snd_hda_gen_build_pcms,
 	.init = snd_hda_gen_init,
-	.free = ad198x_free,
+	.free = snd_hda_gen_free,
 	.unsol_event = snd_hda_jack_unsol_event,
 #ifdef CONFIG_PM
 	.check_power_status = snd_hda_gen_check_power_status,
@@ -637,12 +636,6 @@ static int ad198x_parse_auto_config(struct hda_codec *codec)
 	err = snd_hda_gen_parse_auto_config(codec, cfg);
 	if (err < 0)
 		return err;
-
-	if (spec->beep_dev_nid) {
-		err = snd_hda_attach_beep_device(codec, spec->beep_dev_nid);
-		if (err < 0)
-			return err;
-	}
 
 	codec->patch_ops = ad198x_auto_patch_ops;
 
@@ -1240,7 +1233,7 @@ static int ad1986a_parse_auto_config(struct hda_codec *codec)
 	codec->inv_eapd = 1;
 
 	spec->gen.mixer_nid = 0x07;
-	spec->beep_dev_nid = 0x19;
+	spec->gen.beep_nid = 0x19;
 	set_beep_amp(spec, 0x18, 0, HDA_OUTPUT);
 
 	/* AD1986A has a hardware problem that it can't share a stream
@@ -1256,7 +1249,7 @@ static int ad1986a_parse_auto_config(struct hda_codec *codec)
 
 	err = ad198x_parse_auto_config(codec);
 	if (err < 0) {
-		ad198x_free(codec);
+		snd_hda_gen_free(codec);
 		return err;
 	}
 
@@ -1673,7 +1666,7 @@ static int ad1983_parse_auto_config(struct hda_codec *codec)
 		return err;
 	spec = codec->spec;
 
-	spec->beep_dev_nid = 0x10;
+	spec->gen.beep_nid = 0x10;
 	set_beep_amp(spec, 0x10, 0, HDA_OUTPUT);
 	err = ad198x_parse_auto_config(codec);
 	if (err < 0)
@@ -1684,7 +1677,7 @@ static int ad1983_parse_auto_config(struct hda_codec *codec)
 	return 0;
 
  error:
-	ad198x_free(codec);
+	snd_hda_gen_free(codec);
 	return err;
 }
 
@@ -2119,6 +2112,9 @@ static void ad_vmaster_eapd_hook(void *private_data, int enabled)
 {
 	struct hda_codec *codec = private_data;
 	struct ad198x_spec *spec = codec->spec;
+
+	if (!spec->eapd_nid)
+		return;
 	snd_hda_codec_update_cache(codec, spec->eapd_nid, 0,
 				   AC_VERB_SET_EAPD_BTLENABLE,
 				   enabled ? 0x02 : 0x00);
@@ -2187,7 +2183,7 @@ static int ad1981_parse_auto_config(struct hda_codec *codec)
 	spec = codec->spec;
 
 	spec->gen.mixer_nid = 0x0e;
-	spec->beep_dev_nid = 0x10;
+	spec->gen.beep_nid = 0x10;
 	set_beep_amp(spec, 0x0d, 0, HDA_OUTPUT);
 
 	snd_hda_pick_fixup(codec, NULL, ad1981_fixup_tbl, ad1981_fixups);
@@ -2205,7 +2201,7 @@ static int ad1981_parse_auto_config(struct hda_codec *codec)
 	return 0;
 
  error:
-	ad198x_free(codec);
+	snd_hda_gen_free(codec);
 	return err;
 }
 
@@ -3236,7 +3232,7 @@ static int ad1988_parse_auto_config(struct hda_codec *codec)
 
 	spec->gen.mixer_nid = 0x20;
 	spec->gen.mixer_merge_nid = 0x21;
-	spec->beep_dev_nid = 0x10;
+	spec->gen.beep_nid = 0x10;
 	set_beep_amp(spec, 0x10, 0, HDA_OUTPUT);
 	err = ad198x_parse_auto_config(codec);
 	if (err < 0)
@@ -3247,7 +3243,7 @@ static int ad1988_parse_auto_config(struct hda_codec *codec)
 	return 0;
 
  error:
-	ad198x_free(codec);
+	snd_hda_gen_free(codec);
 	return err;
 }
 
@@ -3608,13 +3604,16 @@ static void ad1884_fixup_hp_eapd(struct hda_codec *codec,
 {
 	struct ad198x_spec *spec = codec->spec;
 
-	if (action == HDA_FIXUP_ACT_PRE_PROBE) {
+	switch (action) {
+	case HDA_FIXUP_ACT_PRE_PROBE:
+		spec->gen.vmaster_mute.hook = ad_vmaster_eapd_hook;
+		break;
+	case HDA_FIXUP_ACT_PROBE:
 		if (spec->gen.autocfg.line_out_type == AUTO_PIN_SPEAKER_OUT)
 			spec->eapd_nid = spec->gen.autocfg.line_out_pins[0];
 		else
 			spec->eapd_nid = spec->gen.autocfg.speaker_pins[0];
-		if (spec->eapd_nid)
-			spec->gen.vmaster_mute.hook = ad_vmaster_eapd_hook;
+		break;
 	}
 }
 
@@ -3653,7 +3652,7 @@ static int ad1884_parse_auto_config(struct hda_codec *codec)
 	spec = codec->spec;
 
 	spec->gen.mixer_nid = 0x20;
-	spec->beep_dev_nid = 0x10;
+	spec->gen.beep_nid = 0x10;
 	set_beep_amp(spec, 0x10, 0, HDA_OUTPUT);
 
 	snd_hda_pick_fixup(codec, NULL, ad1884_fixup_tbl, ad1884_fixups);
@@ -3671,7 +3670,7 @@ static int ad1884_parse_auto_config(struct hda_codec *codec)
 	return 0;
 
  error:
-	ad198x_free(codec);
+	snd_hda_gen_free(codec);
 	return err;
 }
 
@@ -5155,7 +5154,7 @@ static int ad1882_parse_auto_config(struct hda_codec *codec)
 
 	spec->gen.mixer_nid = 0x20;
 	spec->gen.mixer_merge_nid = 0x21;
-	spec->beep_dev_nid = 0x10;
+	spec->gen.beep_nid = 0x10;
 	set_beep_amp(spec, 0x10, 0, HDA_OUTPUT);
 	err = ad198x_parse_auto_config(codec);
 	if (err < 0)
@@ -5166,7 +5165,7 @@ static int ad1882_parse_auto_config(struct hda_codec *codec)
 	return 0;
 
  error:
-	ad198x_free(codec);
+	snd_hda_gen_free(codec);
 	return err;
 }
 

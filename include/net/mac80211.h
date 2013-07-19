@@ -93,9 +93,11 @@ struct device;
  * enum ieee80211_max_queues - maximum number of queues
  *
  * @IEEE80211_MAX_QUEUES: Maximum number of regular device queues.
+ * @IEEE80211_MAX_QUEUE_MAP: bitmap with maximum queues set
  */
 enum ieee80211_max_queues {
 	IEEE80211_MAX_QUEUES =		16,
+	IEEE80211_MAX_QUEUE_MAP =	BIT(IEEE80211_MAX_QUEUES) - 1,
 };
 
 #define IEEE80211_INVAL_HW_QUEUE	0xff
@@ -126,6 +128,7 @@ enum ieee80211_ac_numbers {
  *	2^n-1 in the range 1..32767]
  * @cw_max: maximum contention window [like @cw_min]
  * @txop: maximum burst time in units of 32 usecs, 0 meaning disabled
+ * @acm: is mandatory admission control required for the access category
  * @uapsd: is U-APSD mode enabled for the queue
  */
 struct ieee80211_tx_queue_params {
@@ -133,6 +136,7 @@ struct ieee80211_tx_queue_params {
 	u16 cw_min;
 	u16 cw_max;
 	u8 aifs;
+	bool acm;
 	bool uapsd;
 };
 
@@ -207,14 +211,14 @@ struct ieee80211_chanctx_conf {
  * @BSS_CHANGED_QOS: QoS for this association was enabled/disabled. Note
  *	that it is only ever disabled for station mode.
  * @BSS_CHANGED_IDLE: Idle changed for this BSS/interface.
- * @BSS_CHANGED_SSID: SSID changed for this BSS (AP mode)
+ * @BSS_CHANGED_SSID: SSID changed for this BSS (AP and IBSS mode)
  * @BSS_CHANGED_AP_PROBE_RESP: Probe Response changed for this BSS (AP mode)
  * @BSS_CHANGED_PS: PS changed for this BSS (STA mode)
  * @BSS_CHANGED_TXPOWER: TX power setting changed for this interface
  * @BSS_CHANGED_P2P_PS: P2P powersave settings (CTWindow, opportunistic PS)
  *	changed (currently only in P2P client mode, GO mode will be later)
- * @BSS_CHANGED_DTIM_PERIOD: the DTIM period value was changed (set when
- *	it becomes valid, managed mode only)
+ * @BSS_CHANGED_BEACON_INFO: Data from the AP's beacon became available:
+ *	currently dtim_period only is under consideration.
  * @BSS_CHANGED_BANDWIDTH: The bandwidth used by this interface changed,
  *	note that this is only called when it changes after the channel
  *	context had been assigned.
@@ -240,7 +244,7 @@ enum ieee80211_bss_change {
 	BSS_CHANGED_PS			= 1<<17,
 	BSS_CHANGED_TXPOWER		= 1<<18,
 	BSS_CHANGED_P2P_PS		= 1<<19,
-	BSS_CHANGED_DTIM_PERIOD		= 1<<20,
+	BSS_CHANGED_BEACON_INFO		= 1<<20,
 	BSS_CHANGED_BANDWIDTH		= 1<<21,
 
 	/* when adding here, make sure to change ieee80211_reconfig */
@@ -284,7 +288,7 @@ enum ieee80211_rssi_event {
  *	IEEE80211_HW_2GHZ_SHORT_SLOT_INCAPABLE hardware flag
  * @dtim_period: num of beacons before the next DTIM, for beaconing,
  *	valid in station mode only if after the driver was notified
- *	with the %BSS_CHANGED_DTIM_PERIOD flag, will be non-zero then.
+ *	with the %BSS_CHANGED_BEACON_INFO flag, will be non-zero then.
  * @sync_tsf: last beacon's/probe response's TSF timestamp (could be old
  *	as it may have been received during scanning long ago). If the
  *	HW flag %IEEE80211_HW_TIMING_BEACON_ONLY is set, then this can
@@ -301,6 +305,7 @@ enum ieee80211_rssi_event {
  * @basic_rates: bitmap of basic rates, each bit stands for an
  *	index into the rate table configured by the driver in
  *	the current band.
+ * @beacon_rate: associated AP's beacon TX rate
  * @mcast_rate: per-band multicast rate index + 1 (0: disabled)
  * @bssid: The BSSID for this BSS
  * @enable_beacon: whether beaconing should be enabled or not
@@ -324,12 +329,11 @@ enum ieee80211_rssi_event {
  *	your driver/device needs to do.
  * @ps: power-save mode (STA only). This flag is NOT affected by
  *	offchannel/dynamic_ps operations.
- * @ssid: The SSID of the current vif. Only valid in AP-mode.
+ * @ssid: The SSID of the current vif. Valid in AP and IBSS mode.
  * @ssid_len: Length of SSID given in @ssid.
  * @hidden_ssid: The SSID of the current vif is hidden. Only valid in AP-mode.
  * @txpower: TX power in dBm
- * @p2p_ctwindow: P2P CTWindow, only for P2P client interfaces
- * @p2p_oppps: P2P opportunistic PS is enabled
+ * @p2p_noa_attr: P2P NoA attribute for P2P powersave
  */
 struct ieee80211_bss_conf {
 	const u8 *bssid;
@@ -349,6 +353,7 @@ struct ieee80211_bss_conf {
 	u32 sync_device_ts;
 	u8 sync_dtim_count;
 	u32 basic_rates;
+	struct ieee80211_rate *beacon_rate;
 	int mcast_rate[IEEE80211_NUM_BANDS];
 	u16 ht_operation_mode;
 	s32 cqm_rssi_thold;
@@ -363,8 +368,7 @@ struct ieee80211_bss_conf {
 	size_t ssid_len;
 	bool hidden_ssid;
 	int txpower;
-	u8 p2p_ctwindow;
-	bool p2p_oppps;
+	struct ieee80211_p2p_noa_attr p2p_noa_attr;
 };
 
 /**
@@ -458,6 +462,8 @@ struct ieee80211_bss_conf {
  * @IEEE80211_TX_CTL_DONTFRAG: Don't fragment this packet even if it
  *	would be fragmented by size (this is optional, only used for
  *	monitor injection).
+ * @IEEE80211_TX_CTL_PS_RESPONSE: This frame is a response to a poll
+ *	frame (PS-Poll or uAPSD).
  *
  * Note: If you have to add new flags to the enumeration, then don't
  *	 forget to update %IEEE80211_TX_TEMPORARY_FLAGS when necessary.
@@ -493,6 +499,7 @@ enum mac80211_tx_control_flags {
 	IEEE80211_TX_STATUS_EOSP		= BIT(28),
 	IEEE80211_TX_CTL_USE_MINRATE		= BIT(29),
 	IEEE80211_TX_CTL_DONTFRAG		= BIT(30),
+	IEEE80211_TX_CTL_PS_RESPONSE		= BIT(31),
 };
 
 #define IEEE80211_TX_CTL_STBC_SHIFT		23
@@ -561,6 +568,9 @@ enum mac80211_rate_control_flags {
 /* maximum number of rate stages */
 #define IEEE80211_TX_MAX_RATES	4
 
+/* maximum number of rate table entries */
+#define IEEE80211_TX_RATE_TABLE_SIZE	4
+
 /**
  * struct ieee80211_tx_rate - rate selection/status
  *
@@ -601,8 +611,8 @@ static inline void ieee80211_rate_set_vht(struct ieee80211_tx_rate *rate,
 					  u8 mcs, u8 nss)
 {
 	WARN_ON(mcs & ~0xF);
-	WARN_ON(nss & ~0x7);
-	rate->idx = (nss << 4) | mcs;
+	WARN_ON((nss - 1) & ~0x7);
+	rate->idx = ((nss - 1) << 4) | mcs;
 }
 
 static inline u8
@@ -614,7 +624,7 @@ ieee80211_rate_get_vht_mcs(const struct ieee80211_tx_rate *rate)
 static inline u8
 ieee80211_rate_get_vht_nss(const struct ieee80211_tx_rate *rate)
 {
-	return rate->idx >> 4;
+	return (rate->idx >> 4) + 1;
 }
 
 /**
@@ -655,7 +665,11 @@ struct ieee80211_tx_info {
 					struct ieee80211_tx_rate rates[
 						IEEE80211_TX_MAX_RATES];
 					s8 rts_cts_rate_idx;
-					/* 3 bytes free */
+					u8 use_rts:1;
+					u8 use_cts_prot:1;
+					u8 short_preamble:1;
+					u8 skip_table:1;
+					/* 2 bytes free */
 				};
 				/* only needed before rate control */
 				unsigned long jiffies;
@@ -676,6 +690,8 @@ struct ieee80211_tx_info {
 		struct {
 			struct ieee80211_tx_rate driver_rates[
 				IEEE80211_TX_MAX_RATES];
+			u8 pad[4];
+
 			void *rate_driver_data[
 				IEEE80211_TX_INFO_RATE_DRIVER_DATA_SIZE / sizeof(void *)];
 		};
@@ -794,6 +810,7 @@ ieee80211_tx_info_clear_status(struct ieee80211_tx_info *info)
  *	on this subframe
  * @RX_FLAG_AMPDU_DELIM_CRC_KNOWN: The delimiter CRC field is known (the CRC
  *	is stored in the @ampdu_delimiter_crc field)
+ * @RX_FLAG_STBC_MASK: STBC 2 bit bitmask. 1 - Nss=1, 2 - Nss=2, 3 - Nss=3
  */
 enum mac80211_rx_flags {
 	RX_FLAG_MMIC_ERROR		= BIT(0),
@@ -821,7 +838,10 @@ enum mac80211_rx_flags {
 	RX_FLAG_80MHZ			= BIT(23),
 	RX_FLAG_80P80MHZ		= BIT(24),
 	RX_FLAG_160MHZ			= BIT(25),
+	RX_FLAG_STBC_MASK		= BIT(26) | BIT(27),
 };
+
+#define RX_FLAG_STBC_SHIFT		26
 
 /**
  * struct ieee80211_rx_status - receive status
@@ -839,6 +859,10 @@ enum mac80211_rx_flags {
  * @signal: signal strength when receiving this frame, either in dBm, in dB or
  *	unspecified depending on the hardware capabilities flags
  *	@IEEE80211_HW_SIGNAL_*
+ * @chains: bitmask of receive chains for which separate signal strength
+ *	values were filled.
+ * @chain_signal: per-chain signal strength, in dBm (unlike @signal, doesn't
+ *	support dB or unspecified units)
  * @antenna: antenna used
  * @rate_idx: index of data rate into band's supported rates or MCS index if
  *	HT or VHT is used (%RX_FLAG_HT/%RX_FLAG_VHT)
@@ -870,6 +894,8 @@ struct ieee80211_rx_status {
 	u8 band;
 	u8 antenna;
 	s8 signal;
+	u8 chains;
+	s8 chain_signal[IEEE80211_MAX_CHAINS];
 	u8 ampdu_delimiter_crc;
 	u8 vendor_radiotap_align;
 	u8 vendor_radiotap_oui[3];
@@ -974,8 +1000,7 @@ enum ieee80211_smps_mode {
  * @power_level: requested transmit power (in dBm), backward compatibility
  *	value only that is set to the minimum of all interfaces
  *
- * @channel: the channel to tune to
- * @channel_type: the channel (HT) type
+ * @chandef: the channel definition to tune to
  * @radar_enabled: whether radar detection is enabled
  *
  * @long_frame_max_tx_count: Maximum number of transmissions for a "long" frame
@@ -1001,8 +1026,7 @@ struct ieee80211_conf {
 
 	u8 long_frame_max_tx_count, short_frame_max_tx_count;
 
-	struct ieee80211_channel *channel;
-	enum nl80211_channel_type channel_type;
+	struct cfg80211_chan_def chandef;
 	bool radar_enabled;
 	enum ieee80211_smps_mode smps_mode;
 };
@@ -1019,13 +1043,13 @@ struct ieee80211_conf {
  *	the driver passed into mac80211.
  * @block_tx: Indicates whether transmission must be blocked before the
  *	scheduled channel switch, as indicated by the AP.
- * @channel: the new channel to switch to
+ * @chandef: the new channel to switch to
  * @count: the number of TBTT's until the channel switch event
  */
 struct ieee80211_channel_switch {
 	u64 timestamp;
 	bool block_tx;
-	struct ieee80211_channel *channel;
+	struct cfg80211_chan_def chandef;
 	u8 count;
 };
 
@@ -1067,6 +1091,9 @@ enum ieee80211_vif_flags {
  *	path needing to access it; even though the netdev carrier will always
  *	be off when it is %NULL there can still be races and packets could be
  *	processed after it switches back to %NULL.
+ * @debugfs_dir: debugfs dentry, can be used by drivers to create own per
+ *      interface debug files. Note that it will be NULL for the virtual
+ *	monitor interface (if that is requested.)
  * @drv_priv: data area for driver use, will always be aligned to
  *	sizeof(void *).
  */
@@ -1082,6 +1109,10 @@ struct ieee80211_vif {
 	struct ieee80211_chanctx_conf __rcu *chanctx_conf;
 
 	u32 driver_flags;
+
+#ifdef CONFIG_MAC80211_DEBUGFS
+	struct dentry *debugfs_dir;
+#endif
 
 	/* must be last */
 	u8 drv_priv[0] __aligned(sizeof(void *));
@@ -1101,8 +1132,6 @@ static inline bool ieee80211_vif_is_mesh(struct ieee80211_vif *vif)
  * These flags are used for communication about keys between the driver
  * and mac80211, with the @flags parameter of &struct ieee80211_key_conf.
  *
- * @IEEE80211_KEY_FLAG_WMM_STA: Set by mac80211, this flag indicates
- *	that the STA this key will be used with could be using QoS.
  * @IEEE80211_KEY_FLAG_GENERATE_IV: This flag should be set by the
  *	driver to indicate that it requires IV generation for this
  *	particular key.
@@ -1127,7 +1156,6 @@ static inline bool ieee80211_vif_is_mesh(struct ieee80211_vif *vif)
  *	%IEEE80211_KEY_FLAG_SW_MGMT_TX flag to encrypt such frames in SW.
  */
 enum ieee80211_key_flags {
-	IEEE80211_KEY_FLAG_WMM_STA	= 1<<0,
 	IEEE80211_KEY_FLAG_GENERATE_IV	= 1<<1,
 	IEEE80211_KEY_FLAG_GENERATE_MMIC= 1<<2,
 	IEEE80211_KEY_FLAG_PAIRWISE	= 1<<3,
@@ -1219,6 +1247,24 @@ enum ieee80211_sta_rx_bandwidth {
 };
 
 /**
+ * struct ieee80211_sta_rates - station rate selection table
+ *
+ * @rcu_head: RCU head used for freeing the table on update
+ * @rate: transmit rates/flags to be used by default.
+ *	Overriding entries per-packet is possible by using cb tx control.
+ */
+struct ieee80211_sta_rates {
+	struct rcu_head rcu_head;
+	struct {
+		s8 idx;
+		u8 count;
+		u8 count_cts;
+		u8 count_rts;
+		u16 flags;
+	} rate[IEEE80211_TX_RATE_TABLE_SIZE];
+};
+
+/**
  * struct ieee80211_sta - station table entry
  *
  * A station table entry represents a station we are possibly
@@ -1231,9 +1277,8 @@ enum ieee80211_sta_rx_bandwidth {
  * @addr: MAC address
  * @aid: AID we assigned to the station if we're an AP
  * @supp_rates: Bitmap of supported rates (per band)
- * @ht_cap: HT capabilities of this STA; restricted to our own TX capabilities
- * @vht_cap: VHT capabilities of this STA; Not restricting any capabilities
- * 	of remote STA. Taking as is.
+ * @ht_cap: HT capabilities of this STA; restricted to our own capabilities
+ * @vht_cap: VHT capabilities of this STA; restricted to our own capabilities
  * @wme: indicates whether the STA supports WME. Only valid during AP-mode.
  * @drv_priv: data area for driver use, will always be aligned to
  *	sizeof(void *), size is determined in hw information.
@@ -1246,6 +1291,7 @@ enum ieee80211_sta_rx_bandwidth {
  *	notifications and capabilities. The value is only valid after
  *	the station moves to associated state.
  * @smps_mode: current SMPS mode (off, static or dynamic)
+ * @rates: rate control selection table
  */
 struct ieee80211_sta {
 	u32 supp_rates[IEEE80211_NUM_BANDS];
@@ -1259,6 +1305,7 @@ struct ieee80211_sta {
 	u8 rx_nss;
 	enum ieee80211_sta_rx_bandwidth bandwidth;
 	enum ieee80211_smps_mode smps_mode;
+	struct ieee80211_sta_rates __rcu *rates;
 
 	/* must be last */
 	u8 drv_priv[0] __aligned(sizeof(void *));
@@ -1414,6 +1461,9 @@ struct ieee80211_tx_control {
  *	for different virtual interfaces. See the doc section on HW queue
  *	control for more details.
  *
+ * @IEEE80211_HW_SUPPORTS_RC_TABLE: The driver supports using a rate
+ *	selection table provided by the rate control algorithm.
+ *
  * @IEEE80211_HW_P2P_DEV_ADDR_FOR_INTF: Use the P2P Device address for any
  *	P2P Interface. This will be honoured even if more than one interface
  *	is supported.
@@ -1446,6 +1496,7 @@ enum ieee80211_hw_flags {
 	IEEE80211_HW_SUPPORTS_PER_STA_GTK		= 1<<21,
 	IEEE80211_HW_AP_LINK_PS				= 1<<22,
 	IEEE80211_HW_TX_AMPDU_SETUP_IN_HW		= 1<<23,
+	IEEE80211_HW_SUPPORTS_RC_TABLE			= 1<<24,
 	IEEE80211_HW_P2P_DEV_ADDR_FOR_INTF		= 1<<25,
 	IEEE80211_HW_TIMING_BEACON_ONLY			= 1<<26,
 };
@@ -1531,6 +1582,17 @@ enum ieee80211_hw_flags {
  * @netdev_features: netdev features to be set in each netdev created
  *	from this HW. Note only HW checksum features are currently
  *	compatible with mac80211. Other feature bits will be rejected.
+ *
+ * @uapsd_queues: This bitmap is included in (re)association frame to indicate
+ *	for each access category if it is uAPSD trigger-enabled and delivery-
+ *	enabled. Use IEEE80211_WMM_IE_STA_QOSINFO_AC_* to set this bitmap.
+ *	Each bit corresponds to different AC. Value '1' in specific bit means
+ *	that corresponding AC is both trigger- and delivery-enabled. '0' means
+ *	neither enabled.
+ *
+ * @uapsd_max_sp_len: maximum number of total buffered frames the WMM AP may
+ *	deliver to a WMM STA during any Service Period triggered by the WMM STA.
+ *	Use IEEE80211_WMM_IE_STA_QOSINFO_SP_* for correct values.
  */
 struct ieee80211_hw {
 	struct ieee80211_conf conf;
@@ -1556,6 +1618,8 @@ struct ieee80211_hw {
 	u8 radiotap_mcs_details;
 	u16 radiotap_vht_details;
 	netdev_features_t netdev_features;
+	u8 uapsd_queues;
+	u8 uapsd_max_sp_len;
 };
 
 /**
@@ -1950,14 +2014,14 @@ void ieee80211_free_txskb(struct ieee80211_hw *hw, struct sk_buff *skb);
  * filter those response frames except in the case of frames that
  * are buffered in the driver -- those must remain buffered to avoid
  * reordering. Because it is possible that no frames are released
- * in this case, the driver must call ieee80211_sta_eosp_irqsafe()
+ * in this case, the driver must call ieee80211_sta_eosp()
  * to indicate to mac80211 that the service period ended anyway.
  *
  * Finally, if frames from multiple TIDs are released from mac80211
  * but the driver might reorder them, it must clear & set the flags
  * appropriately (only the last frame may have %IEEE80211_TX_STATUS_EOSP)
  * and also take care of the EOSP and MORE_DATA bits in the frame.
- * The driver may also use ieee80211_sta_eosp_irqsafe() in this case.
+ * The driver may also use ieee80211_sta_eosp() in this case.
  */
 
 /**
@@ -2135,6 +2199,24 @@ enum ieee80211_rate_control_changed {
 };
 
 /**
+ * enum ieee80211_roc_type - remain on channel type
+ *
+ * With the support for multi channel contexts and multi channel operations,
+ * remain on channel operations might be limited/deferred/aborted by other
+ * flows/operations which have higher priority (and vise versa).
+ * Specifying the ROC type can be used by devices to prioritize the ROC
+ * operations compared to other operations/flows.
+ *
+ * @IEEE80211_ROC_TYPE_NORMAL: There are no special requirements for this ROC.
+ * @IEEE80211_ROC_TYPE_MGMT_TX: The remain on channel request is required
+ *	for sending managment frames offchannel.
+ */
+enum ieee80211_roc_type {
+	IEEE80211_ROC_TYPE_NORMAL = 0,
+	IEEE80211_ROC_TYPE_MGMT_TX,
+};
+
+/**
  * struct ieee80211_ops - callbacks from mac80211 to the driver
  *
  * This structure contains various callbacks that the driver may
@@ -2212,18 +2294,6 @@ enum ieee80211_rate_control_changed {
  *	MAC address of the device going away.
  *	Hence, this callback must be implemented. It can sleep.
  *
- * @add_interface_debugfs: Drivers can use this callback to add debugfs files
- *	when a vif is added to mac80211. This callback and
- *	@remove_interface_debugfs should be within a CONFIG_MAC80211_DEBUGFS
- *	conditional. @remove_interface_debugfs must be provided for cleanup.
- *	This callback can sleep.
- *
- * @remove_interface_debugfs: Remove the debugfs files which were added using
- *	@add_interface_debugfs. This callback must remove all debugfs entries
- *	that were added because mac80211 only removes interface debugfs when the
- *	interface is destroyed, not when it is removed from the driver.
- *	This callback can sleep.
- *
  * @config: Handler for configuration requests. IEEE 802.11 code calls this
  *	function to change hardware configuration, e.g., channel.
  *	This function should never fail but returns a negative error code
@@ -2244,6 +2314,9 @@ enum ieee80211_rate_control_changed {
  * @configure_filter: Configure the device's RX filter.
  *	See the section "Frame filtering" for more information.
  *	This callback must be implemented and can sleep.
+ *
+ * @set_multicast_list: Configure the device's interface specific RX multicast
+ *	filter. This callback is optional. This callback must be atomic.
  *
  * @set_tim: Set TIM bit. mac80211 calls this function when a TIM bit
  * 	must be set or cleared for a given STA. Must be atomic.
@@ -2426,8 +2499,11 @@ enum ieee80211_rate_control_changed {
  * @testmode_dump: Implement a cfg80211 test mode dump. The callback can sleep.
  *
  * @flush: Flush all pending frames from the hardware queue, making sure
- *	that the hardware queues are empty. If the parameter @drop is set
- *	to %true, pending frames may be dropped. The callback can sleep.
+ *	that the hardware queues are empty. The @queues parameter is a bitmap
+ *	of queues to flush, which is useful if different virtual interfaces
+ *	use different hardware queues; it may also indicate all queues.
+ *	If the parameter @drop is set to %true, pending frames may be dropped.
+ *	The callback can sleep.
  *
  * @channel_switch: Drivers that need (or want) to offload the channel
  *	switch operation for CSAs received from the AP may implement this
@@ -2492,7 +2568,7 @@ enum ieee80211_rate_control_changed {
  *	setting the EOSP flag in the QoS header of the frames. Also, when the
  *	service period ends, the driver must set %IEEE80211_TX_STATUS_EOSP
  *	on the last frame in the SP. Alternatively, it may call the function
- *	ieee80211_sta_eosp_irqsafe() to inform mac80211 of the end of the SP.
+ *	ieee80211_sta_eosp() to inform mac80211 of the end of the SP.
  *	This callback must be atomic.
  * @allow_buffered_frames: Prepare device to allow the given number of frames
  *	to go out to the given station. The frames will be sent by mac80211
@@ -2503,7 +2579,7 @@ enum ieee80211_rate_control_changed {
  *	them between the TIDs, it must set the %IEEE80211_TX_STATUS_EOSP flag
  *	on the last frame and clear it on all others and also handle the EOSP
  *	bit in the QoS header correctly. Alternatively, it can also call the
- *	ieee80211_sta_eosp_irqsafe() function.
+ *	ieee80211_sta_eosp() function.
  *	The @tids parameter is a bitmap and tells the driver which TIDs the
  *	frames will be on; it will at most have two bits set.
  *	This callback must be atomic.
@@ -2591,6 +2667,10 @@ struct ieee80211_ops {
 				 unsigned int changed_flags,
 				 unsigned int *total_flags,
 				 u64 multicast);
+	void (*set_multicast_list)(struct ieee80211_hw *hw,
+				   struct ieee80211_vif *vif, bool allmulti,
+				   struct netdev_hw_addr_list *mc_list);
+
 	int (*set_tim)(struct ieee80211_hw *hw, struct ieee80211_sta *sta,
 		       bool set);
 	int (*set_key)(struct ieee80211_hw *hw, enum set_key_cmd cmd,
@@ -2637,12 +2717,6 @@ struct ieee80211_ops {
 				   struct ieee80211_vif *vif,
 				   struct ieee80211_sta *sta,
 				   struct dentry *dir);
-	void (*add_interface_debugfs)(struct ieee80211_hw *hw,
-				      struct ieee80211_vif *vif,
-				      struct dentry *dir);
-	void (*remove_interface_debugfs)(struct ieee80211_hw *hw,
-					 struct ieee80211_vif *vif,
-					 struct dentry *dir);
 #endif
 	void (*sta_notify)(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
 			enum sta_notify_cmd, struct ieee80211_sta *sta);
@@ -2677,7 +2751,7 @@ struct ieee80211_ops {
 			     struct netlink_callback *cb,
 			     void *data, int len);
 #endif
-	void (*flush)(struct ieee80211_hw *hw, bool drop);
+	void (*flush)(struct ieee80211_hw *hw, u32 queues, bool drop);
 	void (*channel_switch)(struct ieee80211_hw *hw,
 			       struct ieee80211_channel_switch *ch_switch);
 	int (*napi_poll)(struct ieee80211_hw *hw, int budget);
@@ -2687,7 +2761,8 @@ struct ieee80211_ops {
 	int (*remain_on_channel)(struct ieee80211_hw *hw,
 				 struct ieee80211_vif *vif,
 				 struct ieee80211_channel *chan,
-				 int duration);
+				 int duration,
+				 enum ieee80211_roc_type type);
 	int (*cancel_remain_on_channel)(struct ieee80211_hw *hw);
 	int (*set_ringparam)(struct ieee80211_hw *hw, u32 tx, u32 rx);
 	void (*get_ringparam)(struct ieee80211_hw *hw,
@@ -2983,7 +3058,8 @@ void ieee80211_napi_complete(struct ieee80211_hw *hw);
  * This function may not be called in IRQ context. Calls to this function
  * for a single hardware must be synchronized against each other. Calls to
  * this function, ieee80211_rx_ni() and ieee80211_rx_irqsafe() may not be
- * mixed for a single hardware.
+ * mixed for a single hardware. Must not run concurrently with
+ * ieee80211_tx_status() or ieee80211_tx_status_ni().
  *
  * In process context use instead ieee80211_rx_ni().
  *
@@ -2999,7 +3075,8 @@ void ieee80211_rx(struct ieee80211_hw *hw, struct sk_buff *skb);
  * (internally defers to a tasklet.)
  *
  * Calls to this function, ieee80211_rx() or ieee80211_rx_ni() may not
- * be mixed for a single hardware.
+ * be mixed for a single hardware.Must not run concurrently with
+ * ieee80211_tx_status() or ieee80211_tx_status_ni().
  *
  * @hw: the hardware this frame came in on
  * @skb: the buffer to receive, owned by mac80211 after this call
@@ -3013,7 +3090,8 @@ void ieee80211_rx_irqsafe(struct ieee80211_hw *hw, struct sk_buff *skb);
  * (internally disables bottom halves).
  *
  * Calls to this function, ieee80211_rx() and ieee80211_rx_irqsafe() may
- * not be mixed for a single hardware.
+ * not be mixed for a single hardware. Must not run concurrently with
+ * ieee80211_tx_status() or ieee80211_tx_status_ni().
  *
  * @hw: the hardware this frame came in on
  * @skb: the buffer to receive, owned by mac80211 after this call
@@ -3108,6 +3186,25 @@ void ieee80211_sta_set_buffered(struct ieee80211_sta *sta,
 				u8 tid, bool buffered);
 
 /**
+ * ieee80211_get_tx_rates - get the selected transmit rates for a packet
+ *
+ * Call this function in a driver with per-packet rate selection support
+ * to combine the rate info in the packet tx info with the most recent
+ * rate selection table for the station entry.
+ *
+ * @vif: &struct ieee80211_vif pointer from the add_interface callback.
+ * @sta: the receiver station to which this packet is sent.
+ * @skb: the frame to be transmitted.
+ * @dest: buffer for extracted rate/retry information
+ * @max_rates: maximum number of rates to fetch
+ */
+void ieee80211_get_tx_rates(struct ieee80211_vif *vif,
+			    struct ieee80211_sta *sta,
+			    struct sk_buff *skb,
+			    struct ieee80211_tx_rate *dest,
+			    int max_rates);
+
+/**
  * ieee80211_tx_status - transmit status callback
  *
  * Call this function for all transmitted frames after they have been
@@ -3117,7 +3214,8 @@ void ieee80211_sta_set_buffered(struct ieee80211_sta *sta,
  * This function may not be called in IRQ context. Calls to this function
  * for a single hardware must be synchronized against each other. Calls
  * to this function, ieee80211_tx_status_ni() and ieee80211_tx_status_irqsafe()
- * may not be mixed for a single hardware.
+ * may not be mixed for a single hardware. Must not run concurrently with
+ * ieee80211_rx() or ieee80211_rx_ni().
  *
  * @hw: the hardware the frame was transmitted by
  * @skb: the frame that was transmitted, owned by mac80211 after this call
@@ -3842,14 +3940,17 @@ void ieee80211_sta_block_awake(struct ieee80211_hw *hw,
  * %IEEE80211_TX_STATUS_EOSP bit and call this function instead.
  * This applies for PS-Poll as well as uAPSD.
  *
- * Note that there is no non-_irqsafe version right now as
- * it wasn't needed, but just like _tx_status() and _rx()
- * must not be mixed in irqsafe/non-irqsafe versions, this
- * function must not be mixed with those either. Use the
- * all irqsafe, or all non-irqsafe, don't mix! If you need
- * the non-irqsafe version of this, you need to add it.
+ * Note that just like with _tx_status() and _rx() drivers must
+ * not mix calls to irqsafe/non-irqsafe versions, this function
+ * must not be mixed with those either. Use the all irqsafe, or
+ * all non-irqsafe, don't mix!
+ *
+ * NB: the _irqsafe version of this function doesn't exist, no
+ *     driver needs it right now. Don't call this function if
+ *     you'd need the _irqsafe version, look at the git history
+ *     and restore the _irqsafe version!
  */
-void ieee80211_sta_eosp_irqsafe(struct ieee80211_sta *pubsta);
+void ieee80211_sta_eosp(struct ieee80211_sta *pubsta);
 
 /**
  * ieee80211_iter_keys - iterate keys programmed into the device
@@ -4079,7 +4180,7 @@ void ieee80211_send_bar(struct ieee80211_vif *vif, u8 *ra, u16 tid, u16 ssn);
  *	(deprecated; this will be removed once drivers get updated to use
  *	rate_idx_mask)
  * @rate_idx_mask: user-requested (legacy) rate mask
- * @rate_idx_mcs_mask: user-requested MCS rate mask
+ * @rate_idx_mcs_mask: user-requested MCS rate mask (NULL if not in use)
  * @bss: whether this frame is sent out in AP or IBSS mode
  */
 struct ieee80211_tx_rate_control {
@@ -4091,7 +4192,7 @@ struct ieee80211_tx_rate_control {
 	bool rts, short_preamble;
 	u8 max_rate_idx;
 	u32 rate_idx_mask;
-	u8 rate_idx_mcs_mask[IEEE80211_HT_MCS_MASK_LEN];
+	u8 *rate_idx_mcs_mask;
 	bool bss;
 };
 
@@ -4180,37 +4281,55 @@ bool rate_usable_index_exists(struct ieee80211_supported_band *sband,
 	return false;
 }
 
+/**
+ * rate_control_set_rates - pass the sta rate selection to mac80211/driver
+ *
+ * When not doing a rate control probe to test rates, rate control should pass
+ * its rate selection to mac80211. If the driver supports receiving a station
+ * rate table, it will use it to ensure that frames are always sent based on
+ * the most recent rate control module decision.
+ *
+ * @hw: pointer as obtained from ieee80211_alloc_hw()
+ * @pubsta: &struct ieee80211_sta pointer to the target destination.
+ * @rates: new tx rate set to be used for this station.
+ */
+int rate_control_set_rates(struct ieee80211_hw *hw,
+			   struct ieee80211_sta *pubsta,
+			   struct ieee80211_sta_rates *rates);
+
 int ieee80211_rate_control_register(struct rate_control_ops *ops);
 void ieee80211_rate_control_unregister(struct rate_control_ops *ops);
 
 static inline bool
 conf_is_ht20(struct ieee80211_conf *conf)
 {
-	return conf->channel_type == NL80211_CHAN_HT20;
+	return conf->chandef.width == NL80211_CHAN_WIDTH_20;
 }
 
 static inline bool
 conf_is_ht40_minus(struct ieee80211_conf *conf)
 {
-	return conf->channel_type == NL80211_CHAN_HT40MINUS;
+	return conf->chandef.width == NL80211_CHAN_WIDTH_40 &&
+	       conf->chandef.center_freq1 < conf->chandef.chan->center_freq;
 }
 
 static inline bool
 conf_is_ht40_plus(struct ieee80211_conf *conf)
 {
-	return conf->channel_type == NL80211_CHAN_HT40PLUS;
+	return conf->chandef.width == NL80211_CHAN_WIDTH_40 &&
+	       conf->chandef.center_freq1 > conf->chandef.chan->center_freq;
 }
 
 static inline bool
 conf_is_ht40(struct ieee80211_conf *conf)
 {
-	return conf_is_ht40_minus(conf) || conf_is_ht40_plus(conf);
+	return conf->chandef.width == NL80211_CHAN_WIDTH_40;
 }
 
 static inline bool
 conf_is_ht(struct ieee80211_conf *conf)
 {
-	return conf->channel_type != NL80211_CHAN_NO_HT;
+	return conf->chandef.width != NL80211_CHAN_WIDTH_20_NOHT;
 }
 
 static inline enum nl80211_iftype

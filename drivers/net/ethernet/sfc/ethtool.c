@@ -154,6 +154,7 @@ static const struct efx_ethtool_stat efx_ethtool_stats[] = {
 	EFX_ETHTOOL_UINT_CHANNEL_STAT(rx_tcp_udp_chksum_err),
 	EFX_ETHTOOL_UINT_CHANNEL_STAT(rx_mcast_mismatch),
 	EFX_ETHTOOL_UINT_CHANNEL_STAT(rx_frm_trunc),
+	EFX_ETHTOOL_UINT_CHANNEL_STAT(rx_nodesc_trunc),
 };
 
 /* Number of ethtool statistics */
@@ -978,7 +979,8 @@ static int efx_ethtool_set_class_rule(struct efx_nic *efx,
 	     rule->m_ext.data[1]))
 		return -EINVAL;
 
-	efx_filter_init_rx(&spec, EFX_FILTER_PRI_MANUAL, 0,
+	efx_filter_init_rx(&spec, EFX_FILTER_PRI_MANUAL,
+			   efx->rx_scatter ? EFX_FILTER_FLAG_RX_SCATTER : 0,
 			   (rule->ring_cookie == RX_CLS_FLOW_DISC) ?
 			   0xfff : rule->ring_cookie);
 
@@ -1112,6 +1114,20 @@ static int efx_ethtool_set_rxfh_indir(struct net_device *net_dev,
 	return 0;
 }
 
+int efx_ethtool_get_ts_info(struct net_device *net_dev,
+			    struct ethtool_ts_info *ts_info)
+{
+	struct efx_nic *efx = netdev_priv(net_dev);
+
+	/* Software capabilities */
+	ts_info->so_timestamping = (SOF_TIMESTAMPING_RX_SOFTWARE |
+				    SOF_TIMESTAMPING_SOFTWARE);
+	ts_info->phc_index = -1;
+
+	efx_ptp_get_ts_info(efx, ts_info);
+	return 0;
+}
+
 static int efx_ethtool_get_module_eeprom(struct net_device *net_dev,
 					 struct ethtool_eeprom *ee,
 					 u8 *data)
@@ -1174,7 +1190,7 @@ const struct ethtool_ops efx_ethtool_ops = {
 	.get_rxfh_indir_size	= efx_ethtool_get_rxfh_indir_size,
 	.get_rxfh_indir		= efx_ethtool_get_rxfh_indir,
 	.set_rxfh_indir		= efx_ethtool_set_rxfh_indir,
-	.get_ts_info		= efx_ptp_get_ts_info,
+	.get_ts_info		= efx_ethtool_get_ts_info,
 	.get_module_info	= efx_ethtool_get_module_info,
 	.get_module_eeprom	= efx_ethtool_get_module_eeprom,
 };

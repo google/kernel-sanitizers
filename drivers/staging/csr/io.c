@@ -31,6 +31,7 @@
  * ---------------------------------------------------------------------------
  */
 #include <linux/proc_fs.h>
+#include <linux/seq_file.h>
 
 #include "csr_wifi_hip_unifi.h"
 #include "csr_wifi_hip_unifiversion.h"
@@ -76,9 +77,28 @@ DEFINE_SEMAPHORE(Unifi_instance_mutex);
  */
 DECLARE_WAIT_QUEUE_HEAD(Unifi_cleanup_wq);
 
+#ifdef CONFIG_PROC_FS
+/*
+ * seq_file wrappers for procfile show routines.
+ */
+static int uf_proc_show(struct seq_file *m, void *v);
 
-static int uf_read_proc(char *page, char **start, off_t offset, int count,
-                        int *eof, void *data);
+#define UNIFI_DEBUG_TXT_BUFFER (8 * 1024)
+
+static int uf_proc_open(struct inode *inode, struct file *file)
+{
+	return single_open_size(file, uf_proc_show, PDE_DATA(inode),
+				UNIFI_DEBUG_TXT_BUFFER);
+}
+
+static const struct file_operations uf_proc_fops = {
+	.open		= uf_proc_open,
+	.read		= seq_read,
+	.llseek		= seq_lseek,
+	.release	= single_release,
+};
+
+#endif /* CONFIG_PROC_FS */
 
 #ifdef CSR_WIFI_RX_PATH_SPLIT
 
@@ -97,7 +117,7 @@ static CsrResult signal_buffer_init(unifi_priv_t * priv, int size)
          if (priv->rxSignalBuffer.rx_buff[i].bufptr == NULL)
          {
              int j;
-             unifi_error(priv,"signal_buffer_init:Failed to Allocate shared memory for T-H signals \n");
+             unifi_error(priv, "signal_buffer_init:Failed to Allocate shared memory for T-H signals \n");
              for(j=0;j<i;j++)
              {
                  priv->rxSignalBuffer.rx_buff[j].sig_len=0;
@@ -327,8 +347,8 @@ register_unifi_sdio(CsrSdioFunction *sdio_dev, int bus_id, struct device *dev)
      * The following complex casting is in place in order to eliminate 64-bit compilation warning
      * "cast to/from pointer from/to integer of different size"
      */
-    if (!create_proc_read_entry(priv->proc_entry_name, 0, 0,
-                uf_read_proc, (void *)(long)priv->instance))
+    if (!proc_create_data(priv->proc_entry_name, 0, NULL,
+			  &uf_proc_fops, (void *)(long)priv->instance))
     {
         unifi_error(priv, "unifi: can't create /proc/driver/unifi\n");
     }
@@ -340,13 +360,13 @@ register_unifi_sdio(CsrSdioFunction *sdio_dev, int bus_id, struct device *dev)
 
         for(i=1;i<CSR_WIFI_NUM_INTERFACES;i++)
         {
-            if( !uf_alloc_netdevice_for_other_interfaces(priv,i) )
+            if( !uf_alloc_netdevice_for_other_interfaces(priv, i) )
             {
                 /* error occured while allocating the net_device for interface[i]. The net_device are
                  * allocated for the interfaces with id<i. Dont worry, all the allocated net_device will
                  * be releasing chen the control goes to the label failed0.
                  */
-                unifi_error(priv, "Failed to allocate driver private for interface[%d]\n",i);
+                unifi_error(priv, "Failed to allocate driver private for interface[%d]\n", i);
                 goto failed0;
             }
             else
@@ -371,12 +391,12 @@ register_unifi_sdio(CsrSdioFunction *sdio_dev, int bus_id, struct device *dev)
 #ifdef CSR_WIFI_RX_PATH_SPLIT
     if (signal_buffer_init(priv, CSR_WIFI_RX_SIGNAL_BUFFER_SIZE))
     {
-        unifi_error(priv,"Failed to allocate shared memory for T-H signals\n");
+        unifi_error(priv, "Failed to allocate shared memory for T-H signals\n");
         goto failed2;
     }
     priv->rx_workqueue = create_singlethread_workqueue("rx_workq");
     if (priv->rx_workqueue == NULL) {
-        unifi_error(priv,"create_singlethread_workqueue failed \n");
+        unifi_error(priv, "create_singlethread_workqueue failed \n");
         goto failed3;
     }
     INIT_WORK(&priv->rx_work_struct, rx_wq_handler);
@@ -422,7 +442,7 @@ if (log_hip_signals)
     flush_workqueue(priv->rx_workqueue);
     destroy_workqueue(priv->rx_workqueue);
 failed3:
-    signal_buffer_free(priv,CSR_WIFI_RX_SIGNAL_BUFFER_SIZE);
+    signal_buffer_free(priv, CSR_WIFI_RX_SIGNAL_BUFFER_SIZE);
 failed2:
 #endif
     /* Remove the device nodes */
@@ -538,8 +558,8 @@ cleanup_unifi_sdio(unifi_priv_t *priv)
     /* Free any packets left in the Rx queues */
     for(i=0;i<CSR_WIFI_NUM_INTERFACES;i++)
     {
-        uf_free_pending_rx_packets(priv, UF_UNCONTROLLED_PORT_Q, broadcast_address,i);
-        uf_free_pending_rx_packets(priv, UF_CONTROLLED_PORT_Q, broadcast_address,i);
+        uf_free_pending_rx_packets(priv, UF_UNCONTROLLED_PORT_Q, broadcast_address, i);
+        uf_free_pending_rx_packets(priv, UF_CONTROLLED_PORT_Q, broadcast_address, i);
     }
     /*
      * We need to free the resources held by the core, which include tx skbs,
@@ -575,7 +595,7 @@ cleanup_unifi_sdio(unifi_priv_t *priv)
 #ifdef CSR_WIFI_RX_PATH_SPLIT
     flush_workqueue(priv->rx_workqueue);
     destroy_workqueue(priv->rx_workqueue);
-    signal_buffer_free(priv,CSR_WIFI_RX_SIGNAL_BUFFER_SIZE);
+    signal_buffer_free(priv, CSR_WIFI_RX_SIGNAL_BUFFER_SIZE);
 #endif
 
     /* Priv is freed as part of the net_device */
@@ -827,7 +847,7 @@ uf_put_instance(int inst)
 
 /*
  * ---------------------------------------------------------------------------
- *  uf_read_proc
+ *  uf_proc_show
  *
  *      Read method for driver node in /proc/driver/unifi0
  *
@@ -844,107 +864,54 @@ uf_put_instance(int inst)
  * ---------------------------------------------------------------------------
  */
 #ifdef CONFIG_PROC_FS
-static int
-uf_read_proc(char *page, char **start, off_t offset, int count,
-        int *eof, void *data)
+static int uf_proc_show(struct seq_file *m, void *v)
 {
-#define UNIFI_DEBUG_TXT_BUFFER 8*1024
-    unifi_priv_t *priv;
-    int actual_amount_to_copy;
-    char *p, *orig_p;
-    s32 remain = UNIFI_DEBUG_TXT_BUFFER;
-    s32 written;
-    int i;
+	unifi_priv_t *priv;
+	int i;
 
-    /*
-    * The following complex casting is in place in order to eliminate 64-bit compilation warning
-    * "cast to/from pointer from/to integer of different size"
-    */
-    priv = uf_find_instance((int)(long)data);
-    if (!priv) {
-        return 0;
-    }
+	/*
+	 * The following complex casting is in place in order to eliminate
+	 * 64-bit compilation warning "cast to/from pointer from/to integer of
+	 * different size"
+	 */
+	priv = uf_find_instance((long)m->private);
+	if (!priv)
+		return 0;
 
-    p = kmalloc( UNIFI_DEBUG_TXT_BUFFER, GFP_KERNEL );
-
-    orig_p = p;
-
-    written = scnprintf(p, remain, "UniFi SDIO Driver: %s %s %s\n",
-            CSR_WIFI_VERSION, __DATE__, __TIME__);
-    UNIFI_SNPRINTF_RET(p, remain, written);
+	seq_printf(m, "UniFi SDIO Driver: %s %s %s\n",
+		   CSR_WIFI_VERSION, __DATE__, __TIME__);
 #ifdef CSR_SME_USERSPACE
-    written = scnprintf(p, remain, "SME: CSR userspace ");
-    UNIFI_SNPRINTF_RET(p, remain, written);
+	seq_puts(m, "SME: CSR userspace ");
 #ifdef CSR_SUPPORT_WEXT
-    written = scnprintf(p, remain, "with WEXT support\n");
+	seq_puts(m, "with WEXT support\n");
 #else
-    written = scnprintf(p, remain, "\n");
+	seq_putc(m, '\n');
 #endif /* CSR_SUPPORT_WEXT */
-    UNIFI_SNPRINTF_RET(p, remain, written);
 #endif /* CSR_SME_USERSPACE */
 #ifdef CSR_NATIVE_LINUX
-    written = scnprintf(p, remain, "SME: native\n");
-    UNIFI_SNPRINTF_RET(p, remain, written);
+	seq_puts(m, "SME: native\n");
 #endif
 
 #ifdef CSR_SUPPORT_SME
-    written = scnprintf(p, remain,
-            "Firmware (ROM) build:%u, Patch:%u\n",
-            priv->card_info.fw_build,
-            priv->sme_versions.firmwarePatch);
-    UNIFI_SNPRINTF_RET(p, remain, written);
+	seq_printf(m, "Firmware (ROM) build:%u, Patch:%u\n",
+		   priv->card_info.fw_build,
+		   priv->sme_versions.firmwarePatch);
 #endif
-    p += unifi_print_status(priv->card, p, &remain);
 
-    written = scnprintf(p, remain, "Last dbg str: %s\n",
-            priv->last_debug_string);
-    UNIFI_SNPRINTF_RET(p, remain, written);
+	unifi_print_status(priv->card, m);
 
-    written = scnprintf(p, remain, "Last dbg16:");
-    UNIFI_SNPRINTF_RET(p, remain, written);
-    for (i = 0; i < 8; i++) {
-        written = scnprintf(p, remain, " %04X",
-                priv->last_debug_word16[i]);
-        UNIFI_SNPRINTF_RET(p, remain, written);
-    }
-    written = scnprintf(p, remain, "\n");
-    UNIFI_SNPRINTF_RET(p, remain, written);
-    written = scnprintf(p, remain, "           ");
-    UNIFI_SNPRINTF_RET(p, remain, written);
-    for (; i < 16; i++) {
-        written = scnprintf(p, remain, " %04X",
-                priv->last_debug_word16[i]);
-        UNIFI_SNPRINTF_RET(p, remain, written);
-    }
-    written = scnprintf(p, remain, "\n");
-    UNIFI_SNPRINTF_RET(p, remain, written);
-    *start = page;
+	seq_printf(m, "Last dbg str: %s\n", priv->last_debug_string);
 
-    written = UNIFI_DEBUG_TXT_BUFFER - remain;
-
-    if( offset >= written )
-    {
-        *eof = 1;
-        kfree( orig_p );
-        return(0);
-    }
-
-    if( offset + count > written )
-    {
-        actual_amount_to_copy = written - offset;
-        *eof = 1;
-    }
-    else
-    {
-        actual_amount_to_copy = count;
-    }
-
-    memcpy( page, &(orig_p[offset]), actual_amount_to_copy );
-
-    kfree( orig_p );
-
-    return( actual_amount_to_copy );
-} /* uf_read_proc() */
+	seq_puts(m, "Last dbg16:");
+	for (i = 0; i < 8; i++)
+		seq_printf(m, " %04X", priv->last_debug_word16[i]);
+	seq_putc(m, '\n');
+	seq_puts(m, "           ");
+	for (; i < 16; i++)
+		seq_printf(m, " %04X", priv->last_debug_word16[i]);
+	seq_putc(m, '\n');
+	return 0;
+}
 #endif
 
 

@@ -587,284 +587,348 @@ static const struct drm_display_mode edid_cea_modes[] = {
 	/* 1 - 640x480@60Hz */
 	{ DRM_MODE("640x480", DRM_MODE_TYPE_DRIVER, 25175, 640, 656,
 		   752, 800, 0, 480, 490, 492, 525, 0,
-		   DRM_MODE_FLAG_NHSYNC | DRM_MODE_FLAG_NVSYNC) },
+		   DRM_MODE_FLAG_NHSYNC | DRM_MODE_FLAG_NVSYNC),
+	  .vrefresh = 60, },
 	/* 2 - 720x480@60Hz */
 	{ DRM_MODE("720x480", DRM_MODE_TYPE_DRIVER, 27000, 720, 736,
 		   798, 858, 0, 480, 489, 495, 525, 0,
-		   DRM_MODE_FLAG_NHSYNC | DRM_MODE_FLAG_NVSYNC) },
+		   DRM_MODE_FLAG_NHSYNC | DRM_MODE_FLAG_NVSYNC),
+	  .vrefresh = 60, },
 	/* 3 - 720x480@60Hz */
 	{ DRM_MODE("720x480", DRM_MODE_TYPE_DRIVER, 27000, 720, 736,
 		   798, 858, 0, 480, 489, 495, 525, 0,
-		   DRM_MODE_FLAG_NHSYNC | DRM_MODE_FLAG_NVSYNC) },
+		   DRM_MODE_FLAG_NHSYNC | DRM_MODE_FLAG_NVSYNC),
+	  .vrefresh = 60, },
 	/* 4 - 1280x720@60Hz */
 	{ DRM_MODE("1280x720", DRM_MODE_TYPE_DRIVER, 74250, 1280, 1390,
 		   1430, 1650, 0, 720, 725, 730, 750, 0,
-		   DRM_MODE_FLAG_PHSYNC | DRM_MODE_FLAG_PVSYNC) },
+		   DRM_MODE_FLAG_PHSYNC | DRM_MODE_FLAG_PVSYNC),
+	  .vrefresh = 60, },
 	/* 5 - 1920x1080i@60Hz */
 	{ DRM_MODE("1920x1080i", DRM_MODE_TYPE_DRIVER, 74250, 1920, 2008,
 		   2052, 2200, 0, 1080, 1084, 1094, 1125, 0,
 		   DRM_MODE_FLAG_PHSYNC | DRM_MODE_FLAG_PVSYNC |
-			DRM_MODE_FLAG_INTERLACE) },
+			DRM_MODE_FLAG_INTERLACE),
+	  .vrefresh = 60, },
 	/* 6 - 1440x480i@60Hz */
 	{ DRM_MODE("1440x480i", DRM_MODE_TYPE_DRIVER, 27000, 1440, 1478,
 		   1602, 1716, 0, 480, 488, 494, 525, 0,
 		   DRM_MODE_FLAG_NHSYNC | DRM_MODE_FLAG_NVSYNC |
-			DRM_MODE_FLAG_INTERLACE | DRM_MODE_FLAG_DBLCLK) },
+			DRM_MODE_FLAG_INTERLACE | DRM_MODE_FLAG_DBLCLK),
+	  .vrefresh = 60, },
 	/* 7 - 1440x480i@60Hz */
 	{ DRM_MODE("1440x480i", DRM_MODE_TYPE_DRIVER, 27000, 1440, 1478,
 		   1602, 1716, 0, 480, 488, 494, 525, 0,
 		   DRM_MODE_FLAG_NHSYNC | DRM_MODE_FLAG_NVSYNC |
-			DRM_MODE_FLAG_INTERLACE | DRM_MODE_FLAG_DBLCLK) },
+			DRM_MODE_FLAG_INTERLACE | DRM_MODE_FLAG_DBLCLK),
+	  .vrefresh = 60, },
 	/* 8 - 1440x240@60Hz */
 	{ DRM_MODE("1440x240", DRM_MODE_TYPE_DRIVER, 27000, 1440, 1478,
 		   1602, 1716, 0, 240, 244, 247, 262, 0,
 		   DRM_MODE_FLAG_NHSYNC | DRM_MODE_FLAG_NVSYNC |
-			DRM_MODE_FLAG_DBLCLK) },
+			DRM_MODE_FLAG_DBLCLK),
+	  .vrefresh = 60, },
 	/* 9 - 1440x240@60Hz */
 	{ DRM_MODE("1440x240", DRM_MODE_TYPE_DRIVER, 27000, 1440, 1478,
 		   1602, 1716, 0, 240, 244, 247, 262, 0,
 		   DRM_MODE_FLAG_NHSYNC | DRM_MODE_FLAG_NVSYNC |
-			DRM_MODE_FLAG_DBLCLK) },
+			DRM_MODE_FLAG_DBLCLK),
+	  .vrefresh = 60, },
 	/* 10 - 2880x480i@60Hz */
 	{ DRM_MODE("2880x480i", DRM_MODE_TYPE_DRIVER, 54000, 2880, 2956,
 		   3204, 3432, 0, 480, 488, 494, 525, 0,
 		   DRM_MODE_FLAG_NHSYNC | DRM_MODE_FLAG_NVSYNC |
-			DRM_MODE_FLAG_INTERLACE) },
+			DRM_MODE_FLAG_INTERLACE),
+	  .vrefresh = 60, },
 	/* 11 - 2880x480i@60Hz */
 	{ DRM_MODE("2880x480i", DRM_MODE_TYPE_DRIVER, 54000, 2880, 2956,
 		   3204, 3432, 0, 480, 488, 494, 525, 0,
 		   DRM_MODE_FLAG_NHSYNC | DRM_MODE_FLAG_NVSYNC |
-			DRM_MODE_FLAG_INTERLACE) },
+			DRM_MODE_FLAG_INTERLACE),
+	  .vrefresh = 60, },
 	/* 12 - 2880x240@60Hz */
 	{ DRM_MODE("2880x240", DRM_MODE_TYPE_DRIVER, 54000, 2880, 2956,
 		   3204, 3432, 0, 240, 244, 247, 262, 0,
-		   DRM_MODE_FLAG_NHSYNC | DRM_MODE_FLAG_NVSYNC) },
+		   DRM_MODE_FLAG_NHSYNC | DRM_MODE_FLAG_NVSYNC),
+	  .vrefresh = 60, },
 	/* 13 - 2880x240@60Hz */
 	{ DRM_MODE("2880x240", DRM_MODE_TYPE_DRIVER, 54000, 2880, 2956,
 		   3204, 3432, 0, 240, 244, 247, 262, 0,
-		   DRM_MODE_FLAG_NHSYNC | DRM_MODE_FLAG_NVSYNC) },
+		   DRM_MODE_FLAG_NHSYNC | DRM_MODE_FLAG_NVSYNC),
+	  .vrefresh = 60, },
 	/* 14 - 1440x480@60Hz */
 	{ DRM_MODE("1440x480", DRM_MODE_TYPE_DRIVER, 54000, 1440, 1472,
 		   1596, 1716, 0, 480, 489, 495, 525, 0,
-		   DRM_MODE_FLAG_NHSYNC | DRM_MODE_FLAG_NVSYNC) },
+		   DRM_MODE_FLAG_NHSYNC | DRM_MODE_FLAG_NVSYNC),
+	  .vrefresh = 60, },
 	/* 15 - 1440x480@60Hz */
 	{ DRM_MODE("1440x480", DRM_MODE_TYPE_DRIVER, 54000, 1440, 1472,
 		   1596, 1716, 0, 480, 489, 495, 525, 0,
-		   DRM_MODE_FLAG_NHSYNC | DRM_MODE_FLAG_NVSYNC) },
+		   DRM_MODE_FLAG_NHSYNC | DRM_MODE_FLAG_NVSYNC),
+	  .vrefresh = 60, },
 	/* 16 - 1920x1080@60Hz */
 	{ DRM_MODE("1920x1080", DRM_MODE_TYPE_DRIVER, 148500, 1920, 2008,
 		   2052, 2200, 0, 1080, 1084, 1089, 1125, 0,
-		   DRM_MODE_FLAG_PHSYNC | DRM_MODE_FLAG_PVSYNC) },
+		   DRM_MODE_FLAG_PHSYNC | DRM_MODE_FLAG_PVSYNC),
+	  .vrefresh = 60, },
 	/* 17 - 720x576@50Hz */
 	{ DRM_MODE("720x576", DRM_MODE_TYPE_DRIVER, 27000, 720, 732,
 		   796, 864, 0, 576, 581, 586, 625, 0,
-		   DRM_MODE_FLAG_NHSYNC | DRM_MODE_FLAG_NVSYNC) },
+		   DRM_MODE_FLAG_NHSYNC | DRM_MODE_FLAG_NVSYNC),
+	  .vrefresh = 50, },
 	/* 18 - 720x576@50Hz */
 	{ DRM_MODE("720x576", DRM_MODE_TYPE_DRIVER, 27000, 720, 732,
 		   796, 864, 0, 576, 581, 586, 625, 0,
-		   DRM_MODE_FLAG_NHSYNC | DRM_MODE_FLAG_NVSYNC) },
+		   DRM_MODE_FLAG_NHSYNC | DRM_MODE_FLAG_NVSYNC),
+	  .vrefresh = 50, },
 	/* 19 - 1280x720@50Hz */
 	{ DRM_MODE("1280x720", DRM_MODE_TYPE_DRIVER, 74250, 1280, 1720,
 		   1760, 1980, 0, 720, 725, 730, 750, 0,
-		   DRM_MODE_FLAG_PHSYNC | DRM_MODE_FLAG_PVSYNC) },
+		   DRM_MODE_FLAG_PHSYNC | DRM_MODE_FLAG_PVSYNC),
+	  .vrefresh = 50, },
 	/* 20 - 1920x1080i@50Hz */
 	{ DRM_MODE("1920x1080i", DRM_MODE_TYPE_DRIVER, 74250, 1920, 2448,
 		   2492, 2640, 0, 1080, 1084, 1094, 1125, 0,
 		   DRM_MODE_FLAG_PHSYNC | DRM_MODE_FLAG_PVSYNC |
-			DRM_MODE_FLAG_INTERLACE) },
+			DRM_MODE_FLAG_INTERLACE),
+	  .vrefresh = 50, },
 	/* 21 - 1440x576i@50Hz */
 	{ DRM_MODE("1440x576i", DRM_MODE_TYPE_DRIVER, 27000, 1440, 1464,
 		   1590, 1728, 0, 576, 580, 586, 625, 0,
 		   DRM_MODE_FLAG_NHSYNC | DRM_MODE_FLAG_NVSYNC |
-			DRM_MODE_FLAG_INTERLACE | DRM_MODE_FLAG_DBLCLK) },
+			DRM_MODE_FLAG_INTERLACE | DRM_MODE_FLAG_DBLCLK),
+	  .vrefresh = 50, },
 	/* 22 - 1440x576i@50Hz */
 	{ DRM_MODE("1440x576i", DRM_MODE_TYPE_DRIVER, 27000, 1440, 1464,
 		   1590, 1728, 0, 576, 580, 586, 625, 0,
 		   DRM_MODE_FLAG_NHSYNC | DRM_MODE_FLAG_NVSYNC |
-			DRM_MODE_FLAG_INTERLACE | DRM_MODE_FLAG_DBLCLK) },
+			DRM_MODE_FLAG_INTERLACE | DRM_MODE_FLAG_DBLCLK),
+	  .vrefresh = 50, },
 	/* 23 - 1440x288@50Hz */
 	{ DRM_MODE("1440x288", DRM_MODE_TYPE_DRIVER, 27000, 1440, 1464,
 		   1590, 1728, 0, 288, 290, 293, 312, 0,
 		   DRM_MODE_FLAG_NHSYNC | DRM_MODE_FLAG_NVSYNC |
-			DRM_MODE_FLAG_DBLCLK) },
+			DRM_MODE_FLAG_DBLCLK),
+	  .vrefresh = 50, },
 	/* 24 - 1440x288@50Hz */
 	{ DRM_MODE("1440x288", DRM_MODE_TYPE_DRIVER, 27000, 1440, 1464,
 		   1590, 1728, 0, 288, 290, 293, 312, 0,
 		   DRM_MODE_FLAG_NHSYNC | DRM_MODE_FLAG_NVSYNC |
-			DRM_MODE_FLAG_DBLCLK) },
+			DRM_MODE_FLAG_DBLCLK),
+	  .vrefresh = 50, },
 	/* 25 - 2880x576i@50Hz */
 	{ DRM_MODE("2880x576i", DRM_MODE_TYPE_DRIVER, 54000, 2880, 2928,
 		   3180, 3456, 0, 576, 580, 586, 625, 0,
 		   DRM_MODE_FLAG_NHSYNC | DRM_MODE_FLAG_NVSYNC |
-			DRM_MODE_FLAG_INTERLACE) },
+			DRM_MODE_FLAG_INTERLACE),
+	  .vrefresh = 50, },
 	/* 26 - 2880x576i@50Hz */
 	{ DRM_MODE("2880x576i", DRM_MODE_TYPE_DRIVER, 54000, 2880, 2928,
 		   3180, 3456, 0, 576, 580, 586, 625, 0,
 		   DRM_MODE_FLAG_NHSYNC | DRM_MODE_FLAG_NVSYNC |
-			DRM_MODE_FLAG_INTERLACE) },
+			DRM_MODE_FLAG_INTERLACE),
+	  .vrefresh = 50, },
 	/* 27 - 2880x288@50Hz */
 	{ DRM_MODE("2880x288", DRM_MODE_TYPE_DRIVER, 54000, 2880, 2928,
 		   3180, 3456, 0, 288, 290, 293, 312, 0,
-		   DRM_MODE_FLAG_NHSYNC | DRM_MODE_FLAG_NVSYNC) },
+		   DRM_MODE_FLAG_NHSYNC | DRM_MODE_FLAG_NVSYNC),
+	  .vrefresh = 50, },
 	/* 28 - 2880x288@50Hz */
 	{ DRM_MODE("2880x288", DRM_MODE_TYPE_DRIVER, 54000, 2880, 2928,
 		   3180, 3456, 0, 288, 290, 293, 312, 0,
-		   DRM_MODE_FLAG_NHSYNC | DRM_MODE_FLAG_NVSYNC) },
+		   DRM_MODE_FLAG_NHSYNC | DRM_MODE_FLAG_NVSYNC),
+	  .vrefresh = 50, },
 	/* 29 - 1440x576@50Hz */
 	{ DRM_MODE("1440x576", DRM_MODE_TYPE_DRIVER, 54000, 1440, 1464,
 		   1592, 1728, 0, 576, 581, 586, 625, 0,
-		   DRM_MODE_FLAG_NHSYNC | DRM_MODE_FLAG_NVSYNC) },
+		   DRM_MODE_FLAG_NHSYNC | DRM_MODE_FLAG_NVSYNC),
+	  .vrefresh = 50, },
 	/* 30 - 1440x576@50Hz */
 	{ DRM_MODE("1440x576", DRM_MODE_TYPE_DRIVER, 54000, 1440, 1464,
 		   1592, 1728, 0, 576, 581, 586, 625, 0,
-		   DRM_MODE_FLAG_NHSYNC | DRM_MODE_FLAG_NVSYNC) },
+		   DRM_MODE_FLAG_NHSYNC | DRM_MODE_FLAG_NVSYNC),
+	  .vrefresh = 50, },
 	/* 31 - 1920x1080@50Hz */
 	{ DRM_MODE("1920x1080", DRM_MODE_TYPE_DRIVER, 148500, 1920, 2448,
 		   2492, 2640, 0, 1080, 1084, 1089, 1125, 0,
-		   DRM_MODE_FLAG_PHSYNC | DRM_MODE_FLAG_PVSYNC) },
+		   DRM_MODE_FLAG_PHSYNC | DRM_MODE_FLAG_PVSYNC),
+	  .vrefresh = 50, },
 	/* 32 - 1920x1080@24Hz */
 	{ DRM_MODE("1920x1080", DRM_MODE_TYPE_DRIVER, 74250, 1920, 2558,
 		   2602, 2750, 0, 1080, 1084, 1089, 1125, 0,
-		   DRM_MODE_FLAG_PHSYNC | DRM_MODE_FLAG_PVSYNC) },
+		   DRM_MODE_FLAG_PHSYNC | DRM_MODE_FLAG_PVSYNC),
+	  .vrefresh = 24, },
 	/* 33 - 1920x1080@25Hz */
 	{ DRM_MODE("1920x1080", DRM_MODE_TYPE_DRIVER, 74250, 1920, 2448,
 		   2492, 2640, 0, 1080, 1084, 1089, 1125, 0,
-		   DRM_MODE_FLAG_PHSYNC | DRM_MODE_FLAG_PVSYNC) },
+		   DRM_MODE_FLAG_PHSYNC | DRM_MODE_FLAG_PVSYNC),
+	  .vrefresh = 25, },
 	/* 34 - 1920x1080@30Hz */
 	{ DRM_MODE("1920x1080", DRM_MODE_TYPE_DRIVER, 74250, 1920, 2008,
 		   2052, 2200, 0, 1080, 1084, 1089, 1125, 0,
-		   DRM_MODE_FLAG_PHSYNC | DRM_MODE_FLAG_PVSYNC) },
+		   DRM_MODE_FLAG_PHSYNC | DRM_MODE_FLAG_PVSYNC),
+	  .vrefresh = 30, },
 	/* 35 - 2880x480@60Hz */
 	{ DRM_MODE("2880x480", DRM_MODE_TYPE_DRIVER, 108000, 2880, 2944,
 		   3192, 3432, 0, 480, 489, 495, 525, 0,
-		   DRM_MODE_FLAG_NHSYNC | DRM_MODE_FLAG_NVSYNC) },
+		   DRM_MODE_FLAG_NHSYNC | DRM_MODE_FLAG_NVSYNC),
+	  .vrefresh = 60, },
 	/* 36 - 2880x480@60Hz */
 	{ DRM_MODE("2880x480", DRM_MODE_TYPE_DRIVER, 108000, 2880, 2944,
 		   3192, 3432, 0, 480, 489, 495, 525, 0,
-		   DRM_MODE_FLAG_NHSYNC | DRM_MODE_FLAG_NVSYNC) },
+		   DRM_MODE_FLAG_NHSYNC | DRM_MODE_FLAG_NVSYNC),
+	  .vrefresh = 60, },
 	/* 37 - 2880x576@50Hz */
 	{ DRM_MODE("2880x576", DRM_MODE_TYPE_DRIVER, 108000, 2880, 2928,
 		   3184, 3456, 0, 576, 581, 586, 625, 0,
-		   DRM_MODE_FLAG_NHSYNC | DRM_MODE_FLAG_NVSYNC) },
+		   DRM_MODE_FLAG_NHSYNC | DRM_MODE_FLAG_NVSYNC),
+	  .vrefresh = 50, },
 	/* 38 - 2880x576@50Hz */
 	{ DRM_MODE("2880x576", DRM_MODE_TYPE_DRIVER, 108000, 2880, 2928,
 		   3184, 3456, 0, 576, 581, 586, 625, 0,
-		   DRM_MODE_FLAG_NHSYNC | DRM_MODE_FLAG_NVSYNC) },
+		   DRM_MODE_FLAG_NHSYNC | DRM_MODE_FLAG_NVSYNC),
+	  .vrefresh = 50, },
 	/* 39 - 1920x1080i@50Hz */
 	{ DRM_MODE("1920x1080i", DRM_MODE_TYPE_DRIVER, 72000, 1920, 1952,
 		   2120, 2304, 0, 1080, 1126, 1136, 1250, 0,
 		   DRM_MODE_FLAG_PHSYNC | DRM_MODE_FLAG_NVSYNC |
-			DRM_MODE_FLAG_INTERLACE) },
+			DRM_MODE_FLAG_INTERLACE),
+	  .vrefresh = 50, },
 	/* 40 - 1920x1080i@100Hz */
 	{ DRM_MODE("1920x1080i", DRM_MODE_TYPE_DRIVER, 148500, 1920, 2448,
 		   2492, 2640, 0, 1080, 1084, 1094, 1125, 0,
 		   DRM_MODE_FLAG_PHSYNC | DRM_MODE_FLAG_PVSYNC |
-			DRM_MODE_FLAG_INTERLACE) },
+			DRM_MODE_FLAG_INTERLACE),
+	  .vrefresh = 100, },
 	/* 41 - 1280x720@100Hz */
 	{ DRM_MODE("1280x720", DRM_MODE_TYPE_DRIVER, 148500, 1280, 1720,
 		   1760, 1980, 0, 720, 725, 730, 750, 0,
-		   DRM_MODE_FLAG_PHSYNC | DRM_MODE_FLAG_PVSYNC) },
+		   DRM_MODE_FLAG_PHSYNC | DRM_MODE_FLAG_PVSYNC),
+	  .vrefresh = 100, },
 	/* 42 - 720x576@100Hz */
 	{ DRM_MODE("720x576", DRM_MODE_TYPE_DRIVER, 54000, 720, 732,
 		   796, 864, 0, 576, 581, 586, 625, 0,
-		   DRM_MODE_FLAG_NHSYNC | DRM_MODE_FLAG_NVSYNC) },
+		   DRM_MODE_FLAG_NHSYNC | DRM_MODE_FLAG_NVSYNC),
+	  .vrefresh = 100, },
 	/* 43 - 720x576@100Hz */
 	{ DRM_MODE("720x576", DRM_MODE_TYPE_DRIVER, 54000, 720, 732,
 		   796, 864, 0, 576, 581, 586, 625, 0,
-		   DRM_MODE_FLAG_NHSYNC | DRM_MODE_FLAG_NVSYNC) },
+		   DRM_MODE_FLAG_NHSYNC | DRM_MODE_FLAG_NVSYNC),
+	  .vrefresh = 100, },
 	/* 44 - 1440x576i@100Hz */
 	{ DRM_MODE("1440x576", DRM_MODE_TYPE_DRIVER, 54000, 1440, 1464,
 		   1590, 1728, 0, 576, 580, 586, 625, 0,
 		   DRM_MODE_FLAG_NHSYNC | DRM_MODE_FLAG_NVSYNC |
-			DRM_MODE_FLAG_DBLCLK) },
+			DRM_MODE_FLAG_DBLCLK),
+	  .vrefresh = 100, },
 	/* 45 - 1440x576i@100Hz */
 	{ DRM_MODE("1440x576", DRM_MODE_TYPE_DRIVER, 54000, 1440, 1464,
 		   1590, 1728, 0, 576, 580, 586, 625, 0,
 		   DRM_MODE_FLAG_NHSYNC | DRM_MODE_FLAG_NVSYNC |
-			DRM_MODE_FLAG_DBLCLK) },
+			DRM_MODE_FLAG_DBLCLK),
+	  .vrefresh = 100, },
 	/* 46 - 1920x1080i@120Hz */
 	{ DRM_MODE("1920x1080i", DRM_MODE_TYPE_DRIVER, 148500, 1920, 2008,
 		   2052, 2200, 0, 1080, 1084, 1094, 1125, 0,
 		   DRM_MODE_FLAG_PHSYNC | DRM_MODE_FLAG_PVSYNC |
-			DRM_MODE_FLAG_INTERLACE) },
+			DRM_MODE_FLAG_INTERLACE),
+	  .vrefresh = 120, },
 	/* 47 - 1280x720@120Hz */
 	{ DRM_MODE("1280x720", DRM_MODE_TYPE_DRIVER, 148500, 1280, 1390,
 		   1430, 1650, 0, 720, 725, 730, 750, 0,
-		   DRM_MODE_FLAG_PHSYNC | DRM_MODE_FLAG_PVSYNC) },
+		   DRM_MODE_FLAG_PHSYNC | DRM_MODE_FLAG_PVSYNC),
+	  .vrefresh = 120, },
 	/* 48 - 720x480@120Hz */
 	{ DRM_MODE("720x480", DRM_MODE_TYPE_DRIVER, 54000, 720, 736,
 		   798, 858, 0, 480, 489, 495, 525, 0,
-		   DRM_MODE_FLAG_NHSYNC | DRM_MODE_FLAG_NVSYNC) },
+		   DRM_MODE_FLAG_NHSYNC | DRM_MODE_FLAG_NVSYNC),
+	  .vrefresh = 120, },
 	/* 49 - 720x480@120Hz */
 	{ DRM_MODE("720x480", DRM_MODE_TYPE_DRIVER, 54000, 720, 736,
 		   798, 858, 0, 480, 489, 495, 525, 0,
-		   DRM_MODE_FLAG_NHSYNC | DRM_MODE_FLAG_NVSYNC) },
+		   DRM_MODE_FLAG_NHSYNC | DRM_MODE_FLAG_NVSYNC),
+	  .vrefresh = 120, },
 	/* 50 - 1440x480i@120Hz */
 	{ DRM_MODE("1440x480i", DRM_MODE_TYPE_DRIVER, 54000, 1440, 1478,
 		   1602, 1716, 0, 480, 488, 494, 525, 0,
 		   DRM_MODE_FLAG_NHSYNC | DRM_MODE_FLAG_NVSYNC |
-			DRM_MODE_FLAG_INTERLACE | DRM_MODE_FLAG_DBLCLK) },
+			DRM_MODE_FLAG_INTERLACE | DRM_MODE_FLAG_DBLCLK),
+	  .vrefresh = 120, },
 	/* 51 - 1440x480i@120Hz */
 	{ DRM_MODE("1440x480i", DRM_MODE_TYPE_DRIVER, 54000, 1440, 1478,
 		   1602, 1716, 0, 480, 488, 494, 525, 0,
 		   DRM_MODE_FLAG_NHSYNC | DRM_MODE_FLAG_NVSYNC |
-			DRM_MODE_FLAG_INTERLACE | DRM_MODE_FLAG_DBLCLK) },
+			DRM_MODE_FLAG_INTERLACE | DRM_MODE_FLAG_DBLCLK),
+	  .vrefresh = 120, },
 	/* 52 - 720x576@200Hz */
 	{ DRM_MODE("720x576", DRM_MODE_TYPE_DRIVER, 108000, 720, 732,
 		   796, 864, 0, 576, 581, 586, 625, 0,
-		   DRM_MODE_FLAG_NHSYNC | DRM_MODE_FLAG_NVSYNC) },
+		   DRM_MODE_FLAG_NHSYNC | DRM_MODE_FLAG_NVSYNC),
+	  .vrefresh = 200, },
 	/* 53 - 720x576@200Hz */
 	{ DRM_MODE("720x576", DRM_MODE_TYPE_DRIVER, 108000, 720, 732,
 		   796, 864, 0, 576, 581, 586, 625, 0,
-		   DRM_MODE_FLAG_NHSYNC | DRM_MODE_FLAG_NVSYNC) },
+		   DRM_MODE_FLAG_NHSYNC | DRM_MODE_FLAG_NVSYNC),
+	  .vrefresh = 200, },
 	/* 54 - 1440x576i@200Hz */
 	{ DRM_MODE("1440x576i", DRM_MODE_TYPE_DRIVER, 108000, 1440, 1464,
 		   1590, 1728, 0, 576, 580, 586, 625, 0,
 		   DRM_MODE_FLAG_NHSYNC | DRM_MODE_FLAG_NVSYNC |
-			DRM_MODE_FLAG_INTERLACE | DRM_MODE_FLAG_DBLCLK) },
+			DRM_MODE_FLAG_INTERLACE | DRM_MODE_FLAG_DBLCLK),
+	  .vrefresh = 200, },
 	/* 55 - 1440x576i@200Hz */
 	{ DRM_MODE("1440x576i", DRM_MODE_TYPE_DRIVER, 108000, 1440, 1464,
 		   1590, 1728, 0, 576, 580, 586, 625, 0,
 		   DRM_MODE_FLAG_NHSYNC | DRM_MODE_FLAG_NVSYNC |
-			DRM_MODE_FLAG_INTERLACE | DRM_MODE_FLAG_DBLCLK) },
+			DRM_MODE_FLAG_INTERLACE | DRM_MODE_FLAG_DBLCLK),
+	  .vrefresh = 200, },
 	/* 56 - 720x480@240Hz */
 	{ DRM_MODE("720x480", DRM_MODE_TYPE_DRIVER, 108000, 720, 736,
 		   798, 858, 0, 480, 489, 495, 525, 0,
-		   DRM_MODE_FLAG_NHSYNC | DRM_MODE_FLAG_NVSYNC) },
+		   DRM_MODE_FLAG_NHSYNC | DRM_MODE_FLAG_NVSYNC),
+	  .vrefresh = 240, },
 	/* 57 - 720x480@240Hz */
 	{ DRM_MODE("720x480", DRM_MODE_TYPE_DRIVER, 108000, 720, 736,
 		   798, 858, 0, 480, 489, 495, 525, 0,
-		   DRM_MODE_FLAG_NHSYNC | DRM_MODE_FLAG_NVSYNC) },
+		   DRM_MODE_FLAG_NHSYNC | DRM_MODE_FLAG_NVSYNC),
+	  .vrefresh = 240, },
 	/* 58 - 1440x480i@240 */
 	{ DRM_MODE("1440x480i", DRM_MODE_TYPE_DRIVER, 108000, 1440, 1478,
 		   1602, 1716, 0, 480, 488, 494, 525, 0,
 		   DRM_MODE_FLAG_NHSYNC | DRM_MODE_FLAG_NVSYNC |
-			DRM_MODE_FLAG_INTERLACE | DRM_MODE_FLAG_DBLCLK) },
+			DRM_MODE_FLAG_INTERLACE | DRM_MODE_FLAG_DBLCLK),
+	  .vrefresh = 240, },
 	/* 59 - 1440x480i@240 */
 	{ DRM_MODE("1440x480i", DRM_MODE_TYPE_DRIVER, 108000, 1440, 1478,
 		   1602, 1716, 0, 480, 488, 494, 525, 0,
 		   DRM_MODE_FLAG_NHSYNC | DRM_MODE_FLAG_NVSYNC |
-			DRM_MODE_FLAG_INTERLACE | DRM_MODE_FLAG_DBLCLK) },
+			DRM_MODE_FLAG_INTERLACE | DRM_MODE_FLAG_DBLCLK),
+	  .vrefresh = 240, },
 	/* 60 - 1280x720@24Hz */
 	{ DRM_MODE("1280x720", DRM_MODE_TYPE_DRIVER, 59400, 1280, 3040,
 		   3080, 3300, 0, 720, 725, 730, 750, 0,
-		   DRM_MODE_FLAG_PHSYNC | DRM_MODE_FLAG_PVSYNC) },
+		   DRM_MODE_FLAG_PHSYNC | DRM_MODE_FLAG_PVSYNC),
+	  .vrefresh = 24, },
 	/* 61 - 1280x720@25Hz */
 	{ DRM_MODE("1280x720", DRM_MODE_TYPE_DRIVER, 74250, 1280, 3700,
 		   3740, 3960, 0, 720, 725, 730, 750, 0,
-		   DRM_MODE_FLAG_PHSYNC | DRM_MODE_FLAG_PVSYNC) },
+		   DRM_MODE_FLAG_PHSYNC | DRM_MODE_FLAG_PVSYNC),
+	  .vrefresh = 25, },
 	/* 62 - 1280x720@30Hz */
 	{ DRM_MODE("1280x720", DRM_MODE_TYPE_DRIVER, 74250, 1280, 3040,
 		   3080, 3300, 0, 720, 725, 730, 750, 0,
-		   DRM_MODE_FLAG_PHSYNC | DRM_MODE_FLAG_PVSYNC) },
+		   DRM_MODE_FLAG_PHSYNC | DRM_MODE_FLAG_PVSYNC),
+	  .vrefresh = 30, },
 	/* 63 - 1920x1080@120Hz */
 	{ DRM_MODE("1920x1080", DRM_MODE_TYPE_DRIVER, 297000, 1920, 2008,
 		   2052, 2200, 0, 1080, 1084, 1089, 1125, 0,
-		   DRM_MODE_FLAG_PHSYNC | DRM_MODE_FLAG_PVSYNC) },
+		   DRM_MODE_FLAG_PHSYNC | DRM_MODE_FLAG_PVSYNC),
+	 .vrefresh = 120, },
 	/* 64 - 1920x1080@100Hz */
 	{ DRM_MODE("1920x1080", DRM_MODE_TYPE_DRIVER, 297000, 1920, 2448,
 		   2492, 2640, 0, 1080, 1084, 1094, 1125, 0,
-		   DRM_MODE_FLAG_PHSYNC | DRM_MODE_FLAG_PVSYNC) },
+		   DRM_MODE_FLAG_PHSYNC | DRM_MODE_FLAG_PVSYNC),
+	 .vrefresh = 100, },
 };
 
 /*** DDC fetch and block validation ***/
@@ -903,6 +967,9 @@ bool drm_edid_block_valid(u8 *raw_edid, int block, bool print_bad_edid)
 	int i;
 	u8 csum = 0;
 	struct edid *edid = (struct edid *)raw_edid;
+
+	if (WARN_ON(!raw_edid))
+		return false;
 
 	if (edid_fixup > 8 || edid_fixup < 0)
 		edid_fixup = 6;
@@ -946,15 +1013,15 @@ bool drm_edid_block_valid(u8 *raw_edid, int block, bool print_bad_edid)
 		break;
 	}
 
-	return 1;
+	return true;
 
 bad:
-	if (raw_edid && print_bad_edid) {
+	if (print_bad_edid) {
 		printk(KERN_ERR "Raw EDID:\n");
 		print_hex_dump(KERN_ERR, " \t", DUMP_PREFIX_NONE, 16, 1,
 			       raw_edid, EDID_LENGTH, false);
 	}
-	return 0;
+	return false;
 }
 EXPORT_SYMBOL(drm_edid_block_valid);
 
@@ -1634,7 +1701,7 @@ static struct drm_display_mode *drm_mode_detailed(struct drm_device *dev,
 	unsigned vblank = (pt->vactive_vblank_hi & 0xf) << 8 | pt->vblank_lo;
 	unsigned hsync_offset = (pt->hsync_vsync_offset_pulse_width_hi & 0xc0) << 2 | pt->hsync_offset_lo;
 	unsigned hsync_pulse_width = (pt->hsync_vsync_offset_pulse_width_hi & 0x30) << 4 | pt->hsync_pulse_width_lo;
-	unsigned vsync_offset = (pt->hsync_vsync_offset_pulse_width_hi & 0xc) >> 2 | pt->vsync_offset_pulse_width_lo >> 4;
+	unsigned vsync_offset = (pt->hsync_vsync_offset_pulse_width_hi & 0xc) << 2 | pt->vsync_offset_pulse_width_lo >> 4;
 	unsigned vsync_pulse_width = (pt->hsync_vsync_offset_pulse_width_hi & 0x3) << 4 | (pt->vsync_offset_pulse_width_lo & 0xf);
 
 	/* ignore tiny modes */
@@ -1642,11 +1709,11 @@ static struct drm_display_mode *drm_mode_detailed(struct drm_device *dev,
 		return NULL;
 
 	if (pt->misc & DRM_EDID_PT_STEREO) {
-		printk(KERN_WARNING "stereo mode not supported\n");
+		DRM_DEBUG_KMS("stereo mode not supported\n");
 		return NULL;
 	}
 	if (!(pt->misc & DRM_EDID_PT_SEPARATE_SYNC)) {
-		printk(KERN_WARNING "composite sync not supported\n");
+		DRM_DEBUG_KMS("composite sync not supported\n");
 	}
 
 	/* it is incorrect if hsync/vsync width is zero */
@@ -1715,6 +1782,7 @@ set_size:
 	}
 
 	mode->type = DRM_MODE_TYPE_DRIVER;
+	mode->vrefresh = drm_mode_vrefresh(mode);
 	drm_mode_set_name(mode);
 
 	return mode;
@@ -2256,6 +2324,31 @@ u8 *drm_find_cea_extension(struct edid *edid)
 }
 EXPORT_SYMBOL(drm_find_cea_extension);
 
+/*
+ * Calculate the alternate clock for the CEA mode
+ * (60Hz vs. 59.94Hz etc.)
+ */
+static unsigned int
+cea_mode_alternate_clock(const struct drm_display_mode *cea_mode)
+{
+	unsigned int clock = cea_mode->clock;
+
+	if (cea_mode->vrefresh % 6 != 0)
+		return clock;
+
+	/*
+	 * edid_cea_modes contains the 59.94Hz
+	 * variant for 240 and 480 line modes,
+	 * and the 60Hz variant otherwise.
+	 */
+	if (cea_mode->vdisplay == 240 || cea_mode->vdisplay == 480)
+		clock = clock * 1001 / 1000;
+	else
+		clock = DIV_ROUND_UP(clock * 1000, 1001);
+
+	return clock;
+}
+
 /**
  * drm_match_cea_mode - look for a CEA mode matching given mode
  * @to_match: display mode
@@ -2265,19 +2358,88 @@ EXPORT_SYMBOL(drm_find_cea_extension);
  */
 u8 drm_match_cea_mode(const struct drm_display_mode *to_match)
 {
-	struct drm_display_mode *cea_mode;
 	u8 mode;
 
-	for (mode = 0; mode < ARRAY_SIZE(edid_cea_modes); mode++) {
-		cea_mode = (struct drm_display_mode *)&edid_cea_modes[mode];
+	if (!to_match->clock)
+		return 0;
 
-		if (drm_mode_equal(to_match, cea_mode))
+	for (mode = 0; mode < ARRAY_SIZE(edid_cea_modes); mode++) {
+		const struct drm_display_mode *cea_mode = &edid_cea_modes[mode];
+		unsigned int clock1, clock2;
+
+		/* Check both 60Hz and 59.94Hz */
+		clock1 = cea_mode->clock;
+		clock2 = cea_mode_alternate_clock(cea_mode);
+
+		if ((KHZ2PICOS(to_match->clock) == KHZ2PICOS(clock1) ||
+		     KHZ2PICOS(to_match->clock) == KHZ2PICOS(clock2)) &&
+		    drm_mode_equal_no_clocks(to_match, cea_mode))
 			return mode + 1;
 	}
 	return 0;
 }
 EXPORT_SYMBOL(drm_match_cea_mode);
 
+static int
+add_alternate_cea_modes(struct drm_connector *connector, struct edid *edid)
+{
+	struct drm_device *dev = connector->dev;
+	struct drm_display_mode *mode, *tmp;
+	LIST_HEAD(list);
+	int modes = 0;
+
+	/* Don't add CEA modes if the CEA extension block is missing */
+	if (!drm_find_cea_extension(edid))
+		return 0;
+
+	/*
+	 * Go through all probed modes and create a new mode
+	 * with the alternate clock for certain CEA modes.
+	 */
+	list_for_each_entry(mode, &connector->probed_modes, head) {
+		const struct drm_display_mode *cea_mode;
+		struct drm_display_mode *newmode;
+		u8 cea_mode_idx = drm_match_cea_mode(mode) - 1;
+		unsigned int clock1, clock2;
+
+		if (cea_mode_idx >= ARRAY_SIZE(edid_cea_modes))
+			continue;
+
+		cea_mode = &edid_cea_modes[cea_mode_idx];
+
+		clock1 = cea_mode->clock;
+		clock2 = cea_mode_alternate_clock(cea_mode);
+
+		if (clock1 == clock2)
+			continue;
+
+		if (mode->clock != clock1 && mode->clock != clock2)
+			continue;
+
+		newmode = drm_mode_duplicate(dev, cea_mode);
+		if (!newmode)
+			continue;
+
+		/*
+		 * The current mode could be either variant. Make
+		 * sure to pick the "other" clock for the new mode.
+		 */
+		if (mode->clock != clock1)
+			newmode->clock = clock1;
+		else
+			newmode->clock = clock2;
+
+		list_add_tail(&newmode->head, &list);
+	}
+
+	list_for_each_entry_safe(mode, tmp, &list, head) {
+		list_del(&mode->head);
+		drm_mode_probed_add(connector, mode);
+		modes++;
+	}
+
+	return modes;
+}
 
 static int
 do_cea_modes (struct drm_connector *connector, u8 *db, u8 len)
@@ -2293,6 +2455,7 @@ do_cea_modes (struct drm_connector *connector, u8 *db, u8 len)
 			newmode = drm_mode_duplicate(dev,
 						     &edid_cea_modes[cea_mode]);
 			if (newmode) {
+				newmode->vrefresh = 0;
 				drm_mode_probed_add(connector, newmode);
 				modes++;
 			}
@@ -2508,6 +2671,65 @@ void drm_edid_to_eld(struct drm_connector *connector, struct edid *edid)
 	DRM_DEBUG_KMS("ELD size %d, SAD count %d\n", (int)eld[2], sad_count);
 }
 EXPORT_SYMBOL(drm_edid_to_eld);
+
+/**
+ * drm_edid_to_sad - extracts SADs from EDID
+ * @edid: EDID to parse
+ * @sads: pointer that will be set to the extracted SADs
+ *
+ * Looks for CEA EDID block and extracts SADs (Short Audio Descriptors) from it.
+ * Note: returned pointer needs to be kfreed
+ *
+ * Return number of found SADs or negative number on error.
+ */
+int drm_edid_to_sad(struct edid *edid, struct cea_sad **sads)
+{
+	int count = 0;
+	int i, start, end, dbl;
+	u8 *cea;
+
+	cea = drm_find_cea_extension(edid);
+	if (!cea) {
+		DRM_DEBUG_KMS("SAD: no CEA Extension found\n");
+		return -ENOENT;
+	}
+
+	if (cea_revision(cea) < 3) {
+		DRM_DEBUG_KMS("SAD: wrong CEA revision\n");
+		return -ENOTSUPP;
+	}
+
+	if (cea_db_offsets(cea, &start, &end)) {
+		DRM_DEBUG_KMS("SAD: invalid data block offsets\n");
+		return -EPROTO;
+	}
+
+	for_each_cea_db(cea, i, start, end) {
+		u8 *db = &cea[i];
+
+		if (cea_db_tag(db) == AUDIO_BLOCK) {
+			int j;
+			dbl = cea_db_payload_len(db);
+
+			count = dbl / 3; /* SAD is 3B */
+			*sads = kcalloc(count, sizeof(**sads), GFP_KERNEL);
+			if (!*sads)
+				return -ENOMEM;
+			for (j = 0; j < count; j++) {
+				u8 *sad = &db[1 + j * 3];
+
+				(*sads)[j].format = (sad[0] & 0x78) >> 3;
+				(*sads)[j].channels = sad[0] & 0x7;
+				(*sads)[j].freq = sad[1] & 0x7F;
+				(*sads)[j].byte2 = sad[2];
+			}
+			break;
+		}
+	}
+
+	return count;
+}
+EXPORT_SYMBOL(drm_edid_to_sad);
 
 /**
  * drm_av_sync_delay - HDMI/DP sink audio-video sync delay in millisecond
@@ -2800,6 +3022,7 @@ int drm_add_edid_modes(struct drm_connector *connector, struct edid *edid)
 	if (edid->features & DRM_EDID_FEATURE_DEFAULT_GTF)
 		num_modes += add_inferred_modes(connector, edid);
 	num_modes += add_cea_modes(connector, edid);
+	num_modes += add_alternate_cea_modes(connector, edid);
 
 	if (quirks & (EDID_QUIRK_PREFER_LARGE_60 | EDID_QUIRK_PREFER_LARGE_75))
 		edid_fixup_preferred(connector, quirks);

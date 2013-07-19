@@ -687,9 +687,10 @@ int sirfsoc_uart_probe(struct platform_device *pdev)
 
 	if (sirfport->hw_flow_ctrl) {
 		sirfport->p = pinctrl_get_select_default(&pdev->dev);
-		ret = IS_ERR(sirfport->p);
-		if (ret)
+		if (IS_ERR(sirfport->p)) {
+			ret = PTR_ERR(sirfport->p);
 			goto err;
+		}
 	}
 
 	sirfport->clk = clk_get(&pdev->dev, NULL);
@@ -758,7 +759,7 @@ static struct of_device_id sirfsoc_uart_ids[] = {
 	{ .compatible = "sirf,marco-uart", },
 	{}
 };
-MODULE_DEVICE_TABLE(of, sirfsoc_serial_of_match);
+MODULE_DEVICE_TABLE(of, sirfsoc_uart_ids);
 
 static struct platform_driver sirfsoc_uart_driver = {
 	.probe		= sirfsoc_uart_probe,

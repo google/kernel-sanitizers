@@ -957,12 +957,12 @@ static int vidioc_querystd(struct file *file, void *priv, v4l2_std_id *std_id)
 	return 0;
 }
 
-static int vidioc_s_std(struct file *file, void *priv, v4l2_std_id *id)
+static int vidioc_s_std(struct file *file, void *priv, v4l2_std_id id)
 {
 	struct viu_fh *fh = priv;
 
-	fh->dev->std = *id;
-	decoder_call(fh->dev, core, s_std, *id);
+	fh->dev->std = id;
+	decoder_call(fh->dev, core, s_std, id);
 	return 0;
 }
 
@@ -1475,7 +1475,6 @@ static struct video_device viu_template = {
 	.release	= video_device_release,
 
 	.tvnorms        = V4L2_STD_NTSC_M | V4L2_STD_PAL,
-	.current_norm   = V4L2_STD_NTSC_M,
 };
 
 static int viu_of_probe(struct platform_device *op)
@@ -1546,6 +1545,7 @@ static int viu_of_probe(struct platform_device *op)
 	viu_dev->vidq.timeout.function = viu_vid_timeout;
 	viu_dev->vidq.timeout.data     = (unsigned long)viu_dev;
 	init_timer(&viu_dev->vidq.timeout);
+	viu_dev->std = V4L2_STD_NTSC_M;
 	viu_dev->first = 1;
 
 	/* Allocate memory for video device */

@@ -14,6 +14,7 @@
 
 #include <linux/module.h>
 #include <linux/moduleparam.h>
+#include <linux/interrupt.h>
 #include <linux/irqreturn.h>
 #include <linux/init.h>
 #include <linux/spi/spi.h>
@@ -342,7 +343,7 @@ static void byte_swap_64(u64 *data_in, u64 *data_out, u32 len)
 		data_out[i] = cpu_to_be64(le64_to_cpu(data_in[i]));
 }
 
-static int wm0010_firmware_load(char *name, struct snd_soc_codec *codec)
+static int wm0010_firmware_load(const char *name, struct snd_soc_codec *codec)
 {
 	struct spi_device *spi = to_spi_device(codec->dev);
 	struct wm0010_priv *wm0010 = snd_soc_codec_get_drvdata(codec);
@@ -361,8 +362,8 @@ static int wm0010_firmware_load(char *name, struct snd_soc_codec *codec)
 
 	ret = request_firmware(&fw, name, codec->dev);
 	if (ret != 0) {
-		dev_err(codec->dev, "Failed to request application: %d\n",
-			ret);
+		dev_err(codec->dev, "Failed to request application(%s): %d\n",
+			name, ret);
 		return ret;
 	}
 
@@ -667,6 +668,7 @@ static int wm0010_boot(struct snd_soc_codec *codec)
 		/* On wm0010 only the CLKCTRL1 value is used */
 		pll_rec.clkctrl1 = wm0010->pll_clkctrl1;
 
+		ret = -ENOMEM;
 		len = pll_rec.length + 8;
 		out = kzalloc(len, GFP_KERNEL);
 		if (!out) {
@@ -971,6 +973,13 @@ static int wm0010_spi_probe(struct spi_device *spi)
 	}
 	wm0010->irq = irq;
 
+	ret = irq_set_irq_wake(irq, 1);
+	if (ret) {
+		dev_err(wm0010->dev, "Failed to set IRQ %d as wake source: %d\n",
+			irq, ret);
+		return ret;
+	}
+
 	if (spi->max_speed_hz)
 		wm0010->board_max_spi_speed = spi->max_speed_hz;
 	else
@@ -993,6 +1002,8 @@ static int wm0010_spi_remove(struct spi_device *spi)
 
 	gpio_set_value_cansleep(wm0010->gpio_reset,
 				wm0010->gpio_reset_value);
+
+	irq_set_irq_wake(wm0010->irq, 0);
 
 	if (wm0010->irq)
 		free_irq(wm0010->irq, wm0010);

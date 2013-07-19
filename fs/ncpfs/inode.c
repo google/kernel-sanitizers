@@ -403,18 +403,24 @@ static int ncp_parse_options(struct ncp_mount_data_kernel *data, char *options) 
 		switch (optval) {
 			case 'u':
 				data->uid = make_kuid(current_user_ns(), optint);
-				if (!uid_valid(data->uid))
+				if (!uid_valid(data->uid)) {
+					ret = -EINVAL;
 					goto err;
+				}
 				break;
 			case 'g':
 				data->gid = make_kgid(current_user_ns(), optint);
-				if (!gid_valid(data->gid))
+				if (!gid_valid(data->gid)) {
+					ret = -EINVAL;
 					goto err;
+				}
 				break;
 			case 'o':
 				data->mounted_uid = make_kuid(current_user_ns(), optint);
-				if (!uid_valid(data->mounted_uid))
+				if (!uid_valid(data->mounted_uid)) {
+					ret = -EINVAL;
 					goto err;
+				}
 				break;
 			case 'm':
 				data->file_mode = optint;
@@ -891,6 +897,10 @@ int ncp_notify_change(struct dentry *dentry, struct iattr *attr)
 	if (!server)	/* How this could happen? */
 		goto out;
 
+	result = -EPERM;
+	if (IS_DEADDIR(dentry->d_inode))
+		goto out;
+
 	/* ageing the dentry to force validation */
 	ncp_age_dentry(server, dentry);
 
@@ -1051,6 +1061,7 @@ static struct file_system_type ncp_fs_type = {
 	.kill_sb	= kill_anon_super,
 	.fs_flags	= FS_BINARY_MOUNTDATA,
 };
+MODULE_ALIAS_FS("ncpfs");
 
 static int __init init_ncp_fs(void)
 {

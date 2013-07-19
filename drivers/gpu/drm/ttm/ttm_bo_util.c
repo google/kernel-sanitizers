@@ -86,6 +86,7 @@ int ttm_mem_io_lock(struct ttm_mem_type_manager *man, bool interruptible)
 	mutex_lock(&man->io_reserve_mutex);
 	return 0;
 }
+EXPORT_SYMBOL(ttm_mem_io_lock);
 
 void ttm_mem_io_unlock(struct ttm_mem_type_manager *man)
 {
@@ -94,6 +95,7 @@ void ttm_mem_io_unlock(struct ttm_mem_type_manager *man)
 
 	mutex_unlock(&man->io_reserve_mutex);
 }
+EXPORT_SYMBOL(ttm_mem_io_unlock);
 
 static int ttm_mem_io_evict(struct ttm_mem_type_manager *man)
 {
@@ -111,8 +113,9 @@ static int ttm_mem_io_evict(struct ttm_mem_type_manager *man)
 	return 0;
 }
 
-static int ttm_mem_io_reserve(struct ttm_bo_device *bdev,
-			      struct ttm_mem_reg *mem)
+
+int ttm_mem_io_reserve(struct ttm_bo_device *bdev,
+		       struct ttm_mem_reg *mem)
 {
 	struct ttm_mem_type_manager *man = &bdev->man[mem->mem_type];
 	int ret = 0;
@@ -134,9 +137,10 @@ retry:
 	}
 	return ret;
 }
+EXPORT_SYMBOL(ttm_mem_io_reserve);
 
-static void ttm_mem_io_free(struct ttm_bo_device *bdev,
-			    struct ttm_mem_reg *mem)
+void ttm_mem_io_free(struct ttm_bo_device *bdev,
+		     struct ttm_mem_reg *mem)
 {
 	struct ttm_mem_type_manager *man = &bdev->man[mem->mem_type];
 
@@ -149,6 +153,7 @@ static void ttm_mem_io_free(struct ttm_bo_device *bdev,
 		bdev->driver->io_mem_free(bdev, mem);
 
 }
+EXPORT_SYMBOL(ttm_mem_io_free);
 
 int ttm_mem_io_reserve_vm(struct ttm_buffer_object *bo)
 {
@@ -428,6 +433,7 @@ static int ttm_buffer_object_transfer(struct ttm_buffer_object *bo,
 	struct ttm_buffer_object *fbo;
 	struct ttm_bo_device *bdev = bo->bdev;
 	struct ttm_bo_driver *driver = bdev->driver;
+	int ret;
 
 	fbo = kmalloc(sizeof(*fbo), GFP_KERNEL);
 	if (!fbo)
@@ -440,7 +446,6 @@ static int ttm_buffer_object_transfer(struct ttm_buffer_object *bo,
 	 * TODO: Explicit member copy would probably be better here.
 	 */
 
-	init_waitqueue_head(&fbo->event_queue);
 	INIT_LIST_HEAD(&fbo->ddestroy);
 	INIT_LIST_HEAD(&fbo->lru);
 	INIT_LIST_HEAD(&fbo->swap);
@@ -458,6 +463,10 @@ static int ttm_buffer_object_transfer(struct ttm_buffer_object *bo,
 	kref_init(&fbo->kref);
 	fbo->destroy = &ttm_transfered_destroy;
 	fbo->acc_size = 0;
+	fbo->resv = &fbo->ttm_resv;
+	reservation_object_init(fbo->resv);
+	ret = ww_mutex_trylock(&fbo->resv->lock);
+	WARN_ON(!ret);
 
 	*new_obj = fbo;
 	return 0;

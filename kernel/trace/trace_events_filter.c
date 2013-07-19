@@ -44,6 +44,7 @@ enum filter_op_ids
 	OP_LE,
 	OP_GT,
 	OP_GE,
+	OP_BAND,
 	OP_NONE,
 	OP_OPEN_PAREN,
 };
@@ -54,6 +55,7 @@ struct filter_op {
 	int precedence;
 };
 
+/* Order must be the same as enum filter_op_ids above */
 static struct filter_op filter_ops[] = {
 	{ OP_OR,	"||",		1 },
 	{ OP_AND,	"&&",		2 },
@@ -64,6 +66,7 @@ static struct filter_op filter_ops[] = {
 	{ OP_LE,	"<=",		5 },
 	{ OP_GT,	">",		5 },
 	{ OP_GE,	">=",		5 },
+	{ OP_BAND,	"&",		6 },
 	{ OP_NONE,	"OP_NONE",	0 },
 	{ OP_OPEN_PAREN, "(",		0 },
 };
@@ -155,6 +158,9 @@ static int filter_pred_##type(struct filter_pred *pred, void *event)	\
 		break;							\
 	case OP_GE:							\
 		match = (*addr >= val);					\
+		break;							\
+	case OP_BAND:							\
+		match = (*addr & val);					\
 		break;							\
 	default:							\
 		break;							\
@@ -658,33 +664,6 @@ void print_subsystem_event_filter(struct event_subsystem *system,
 	mutex_unlock(&event_mutex);
 }
 
-static struct ftrace_event_field *
-__find_event_field(struct list_head *head, char *name)
-{
-	struct ftrace_event_field *field;
-
-	list_for_each_entry(field, head, link) {
-		if (!strcmp(field->name, name))
-			return field;
-	}
-
-	return NULL;
-}
-
-static struct ftrace_event_field *
-find_event_field(struct ftrace_event_call *call, char *name)
-{
-	struct ftrace_event_field *field;
-	struct list_head *head;
-
-	field = __find_event_field(&ftrace_common_fields, name);
-	if (field)
-		return field;
-
-	head = trace_get_fields(call);
-	return __find_event_field(head, name);
-}
-
 static int __alloc_pred_stack(struct pred_stack *stack, int n_preds)
 {
 	stack->preds = kcalloc(n_preds + 1, sizeof(*stack->preds), GFP_KERNEL);
@@ -777,7 +756,11 @@ static int filter_set_pred(struct event_filter *filter,
 
 static void __free_preds(struct event_filter *filter)
 {
+	int i;
+
 	if (filter->preds) {
+		for (i = 0; i < filter->n_preds; i++)
+			kfree(filter->preds[i].ops);
 		kfree(filter->preds);
 		filter->preds = NULL;
 	}
@@ -1337,7 +1320,7 @@ static struct filter_pred *create_pred(struct filter_parse_state *ps,
 		return NULL;
 	}
 
-	field = find_event_field(call, operand1);
+	field = trace_find_event_field(call, operand1);
 	if (!field) {
 		parse_error(ps, FILT_ERR_FIELD_NOT_FOUND, 0);
 		return NULL;
@@ -1907,16 +1890,17 @@ out_unlock:
 	return err;
 }
 
-int apply_subsystem_event_filter(struct event_subsystem *system,
+int apply_subsystem_event_filter(struct ftrace_subsystem_dir *dir,
 				 char *filter_string)
 {
+	struct event_subsystem *system = dir->subsystem;
 	struct event_filter *filter;
 	int err = 0;
 
 	mutex_lock(&event_mutex);
 
 	/* Make sure the system still has events */
-	if (!system->nr_events) {
+	if (!dir->nr_events) {
 		err = -ENODEV;
 		goto out_unlock;
 	}

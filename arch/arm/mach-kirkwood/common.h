@@ -11,6 +11,8 @@
 #ifndef __ARCH_KIRKWOOD_COMMON_H
 #define __ARCH_KIRKWOOD_COMMON_H
 
+#include <linux/reboot.h>
+
 struct dsa_platform_data;
 struct mv643xx_eth_platform_data;
 struct mv_sata_platform_data;
@@ -30,7 +32,7 @@ void kirkwood_init(void);
 void kirkwood_init_early(void);
 void kirkwood_init_irq(void);
 
-void kirkwood_setup_cpu_mbus(void);
+void kirkwood_setup_wins(void);
 
 void kirkwood_enable_pcie(void);
 void kirkwood_pcie_id(u32 *dev, u32 *rev);
@@ -51,7 +53,9 @@ void kirkwood_nand_init_rnb(struct mtd_partition *parts, int nr_parts,
 			    int (*dev_ready)(struct mtd_info *));
 void kirkwood_audio_init(void);
 void kirkwood_cpuidle_init(void);
-void kirkwood_restart(char, const char *);
+void kirkwood_cpufreq_init(void);
+
+void kirkwood_restart(enum reboot_mode, const char *);
 void kirkwood_clk_init(void);
 
 /* board init functions for boards not fully converted to fdt */
@@ -64,6 +68,11 @@ static inline void dreamplug_init(void) {};
 void guruplug_dt_init(void);
 #else
 static inline void guruplug_dt_init(void) {};
+#endif
+#ifdef CONFIG_MACH_SHEEVAPLUG_DT
+void sheevaplug_dt_init(void);
+#else
+static inline void sheevaplug_dt_init(void) {};
 #endif
 #ifdef CONFIG_MACH_TS219_DT
 void qnap_dt_ts219_init(void);
@@ -119,6 +128,12 @@ void km_kirkwood_init(void);
 static inline void km_kirkwood_init(void) {};
 #endif
 
+#ifdef CONFIG_MACH_DB88F628X_BP_DT
+void db88f628x_init(void);
+#else
+static inline void db88f628x_init(void) {};
+#endif
+
 #ifdef CONFIG_MACH_MPLCEC4_DT
 void mplcec4_init(void);
 #else
@@ -141,10 +156,22 @@ void openblocks_a6_init(void);
 static inline void openblocks_a6_init(void) {};
 #endif
 
+#ifdef CONFIG_MACH_READYNAS_DT
+void netgear_readynas_init(void);
+#else
+static inline void netgear_readynas_init(void) {};
+#endif
+
 #ifdef CONFIG_MACH_TOPKICK_DT
 void usi_topkick_init(void);
 #else
 static inline void usi_topkick_init(void) {};
+#endif
+
+#ifdef CONFIG_MACH_CLOUDBOX_DT
+void cloudbox_init(void);
+#else
+static inline void cloudbox_init(void) {};
 #endif
 
 /* early init functions not converted to fdt yet */

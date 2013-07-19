@@ -20,6 +20,7 @@
 #include <linux/mv643xx_i2c.h>
 #include <linux/timex.h>
 #include <linux/kexec.h>
+#include <linux/reboot.h>
 #include <net/dsa.h>
 #include <asm/page.h>
 #include <asm/mach/map.h>
@@ -33,7 +34,6 @@
 #include <linux/platform_data/usb-ehci-orion.h>
 #include <plat/common.h>
 #include <plat/time.h>
-#include <plat/addr-map.h>
 #include <linux/platform_data/dma-mv_xor.h>
 #include "common.h"
 
@@ -529,12 +529,9 @@ void __init kirkwood_init_early(void)
 {
 	orion_time_set_base(TIMER_VIRT_BASE);
 
-	/*
-	 * Some Kirkwood devices allocate their coherent buffers from atomic
-	 * context. Increase size of atomic coherent pool to make sure such
-	 * the allocations won't fail.
-	 */
-	init_dma_coherent_pool_size(SZ_1M);
+	mvebu_mbus_init("marvell,kirkwood-mbus",
+			BRIDGE_WINS_BASE, BRIDGE_WINS_SZ,
+			DDR_WINDOW_CPU_BASE, DDR_WINDOW_CPU_SZ);
 }
 
 int kirkwood_tclk;
@@ -602,6 +599,29 @@ void __init kirkwood_audio_init(void)
 }
 
 /*****************************************************************************
+ * CPU Frequency
+ ****************************************************************************/
+static struct resource kirkwood_cpufreq_resources[] = {
+	[0] = {
+		.start  = CPU_CONTROL_PHYS,
+		.end    = CPU_CONTROL_PHYS + 3,
+		.flags  = IORESOURCE_MEM,
+	},
+};
+
+static struct platform_device kirkwood_cpufreq_device = {
+	.name		= "kirkwood-cpufreq",
+	.id		= -1,
+	.num_resources	= ARRAY_SIZE(kirkwood_cpufreq_resources),
+	.resource	= kirkwood_cpufreq_resources,
+};
+
+void __init kirkwood_cpufreq_init(void)
+{
+	platform_device_register(&kirkwood_cpufreq_device);
+}
+
+/*****************************************************************************
  * General
  ****************************************************************************/
 /*
@@ -650,6 +670,14 @@ char * __init kirkwood_id(void)
 	}
 }
 
+void __init kirkwood_setup_wins(void)
+{
+	mvebu_mbus_add_window("nand", KIRKWOOD_NAND_MEM_PHYS_BASE,
+			      KIRKWOOD_NAND_MEM_SIZE);
+	mvebu_mbus_add_window("sram", KIRKWOOD_SRAM_PHYS_BASE,
+			      KIRKWOOD_SRAM_SIZE);
+}
+
 void __init kirkwood_l2_init(void)
 {
 #ifdef CONFIG_CACHE_FEROCEON_L2
@@ -675,7 +703,7 @@ void __init kirkwood_init(void)
 	 */
 	writel(readl(CPU_CONFIG) & ~CPU_CONFIG_ERROR_PROP, CPU_CONFIG);
 
-	kirkwood_setup_cpu_mbus();
+	kirkwood_setup_wins();
 
 	kirkwood_l2_init();
 
@@ -695,7 +723,7 @@ void __init kirkwood_init(void)
 #endif
 }
 
-void kirkwood_restart(char mode, const char *cmd)
+void kirkwood_restart(enum reboot_mode mode, const char *cmd)
 {
 	/*
 	 * Enable soft reset to assert RSTOUTn.

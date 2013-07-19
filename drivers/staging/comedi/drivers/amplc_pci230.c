@@ -16,10 +16,6 @@
     but WITHOUT ANY WARRANTY; without even the implied warranty of
     MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
     GNU General Public License for more details.
-
-    You should have received a copy of the GNU General Public License
-    along with this program; if not, write to the Free Software
-    Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
   */
 /*
 Driver: amplc_pci230
@@ -2645,12 +2641,11 @@ static int pci230_attach_common(struct comedi_device *dev,
 	comedi_set_hw_dev(dev, &pci_dev->dev);
 
 	dev->board_name = thisboard->name;
-	/* Enable PCI device and reserve I/O spaces. */
-	if (comedi_pci_enable(pci_dev, "amplc_pci230") < 0) {
-		dev_err(dev->class_dev,
-			"failed to enable PCI device and request regions\n");
-		return -EIO;
-	}
+
+	rc = comedi_pci_enable(dev);
+	if (rc)
+		return rc;
+
 	/* Read base addresses of the PCI230's two I/O regions from PCI
 	 * configuration register. */
 	iobase1 = pci_resource_start(pci_dev, 2);
@@ -2833,18 +2828,13 @@ static int pci230_auto_attach(struct comedi_device *dev,
 
 static void pci230_detach(struct comedi_device *dev)
 {
-	const struct pci230_board *thisboard = comedi_board(dev);
 	struct pci_dev *pcidev = comedi_to_pci_dev(dev);
 
-	if (dev->subdevices && thisboard->have_dio)
-		subdev_8255_cleanup(dev, &dev->subdevices[2]);
 	if (dev->irq)
 		free_irq(dev->irq, dev);
-	if (pcidev) {
-		if (dev->iobase)
-			comedi_pci_disable(pcidev);
+	comedi_pci_disable(dev);
+	if (pcidev)
 		pci_dev_put(pcidev);
-	}
 }
 
 static struct comedi_driver amplc_pci230_driver = {
@@ -2859,9 +2849,10 @@ static struct comedi_driver amplc_pci230_driver = {
 };
 
 static int amplc_pci230_pci_probe(struct pci_dev *dev,
-					    const struct pci_device_id *ent)
+				  const struct pci_device_id *id)
 {
-	return comedi_pci_auto_config(dev, &amplc_pci230_driver);
+	return comedi_pci_auto_config(dev, &amplc_pci230_driver,
+				      id->driver_data);
 }
 
 static DEFINE_PCI_DEVICE_TABLE(amplc_pci230_pci_table) = {

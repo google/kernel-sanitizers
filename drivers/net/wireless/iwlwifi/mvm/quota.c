@@ -22,7 +22,7 @@
  * USA
  *
  * The full GNU General Public License is included in this distribution
- * in the file called LICENSE.GPL.
+ * in the file called COPYING.
  *
  * Contact Information:
  *  Intel Linux Wireless <ilw@linux.intel.com>
@@ -114,7 +114,8 @@ static void iwl_mvm_quota_iterator(void *_data, u8 *mac,
 			data->n_interfaces[id]++;
 		break;
 	case NL80211_IFTYPE_MONITOR:
-		data->n_interfaces[id]++;
+		if (mvmvif->monitor_active)
+			data->n_interfaces[id]++;
 		break;
 	case NL80211_IFTYPE_P2P_DEVICE:
 		break;
@@ -168,27 +169,34 @@ int iwl_mvm_update_quotas(struct iwl_mvm *mvm, struct ieee80211_vif *newvif)
 			num_active_bindings++;
 	}
 
-	if (!num_active_bindings)
-		goto send_cmd;
-
-	quota = IWL_MVM_MAX_QUOTA / num_active_bindings;
-	quota_rem = IWL_MVM_MAX_QUOTA % num_active_bindings;
+	quota = 0;
+	quota_rem = 0;
+	if (num_active_bindings) {
+		quota = IWL_MVM_MAX_QUOTA / num_active_bindings;
+		quota_rem = IWL_MVM_MAX_QUOTA % num_active_bindings;
+	}
 
 	for (idx = 0, i = 0; i < MAX_BINDINGS; i++) {
-		if (data.n_interfaces[i] <= 0)
+		if (data.colors[i] < 0)
 			continue;
 
 		cmd.quotas[idx].id_and_color =
 			cpu_to_le32(FW_CMD_ID_AND_COLOR(i, data.colors[i]));
-		cmd.quotas[idx].quota = cpu_to_le32(quota);
-		cmd.quotas[idx].max_duration = cpu_to_le32(IWL_MVM_MAX_QUOTA);
+
+		if (data.n_interfaces[i] <= 0) {
+			cmd.quotas[idx].quota = cpu_to_le32(0);
+			cmd.quotas[idx].max_duration = cpu_to_le32(0);
+		} else {
+			cmd.quotas[idx].quota = cpu_to_le32(quota);
+			cmd.quotas[idx].max_duration =
+				cpu_to_le32(IWL_MVM_MAX_QUOTA);
+		}
 		idx++;
 	}
 
 	/* Give the remainder of the session to the first binding */
 	le32_add_cpu(&cmd.quotas[0].quota, quota_rem);
 
-send_cmd:
 	ret = iwl_mvm_send_cmd_pdu(mvm, TIME_QUOTA_CMD, CMD_SYNC,
 				   sizeof(cmd), &cmd);
 	if (ret)

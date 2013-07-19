@@ -374,7 +374,6 @@ static int rxq_number = 8;
 static int txq_number = 8;
 
 static int rxq_def;
-static int txq_def;
 
 #define MVNETA_DRIVER_NAME "mvneta"
 #define MVNETA_DRIVER_VERSION "1.0"
@@ -1475,7 +1474,8 @@ error:
 static int mvneta_tx(struct sk_buff *skb, struct net_device *dev)
 {
 	struct mvneta_port *pp = netdev_priv(dev);
-	struct mvneta_tx_queue *txq = &pp->txqs[txq_def];
+	u16 txq_id = skb_get_queue_mapping(skb);
+	struct mvneta_tx_queue *txq = &pp->txqs[txq_id];
 	struct mvneta_tx_desc *tx_desc;
 	struct netdev_queue *nq;
 	int frags = 0;
@@ -1485,7 +1485,7 @@ static int mvneta_tx(struct sk_buff *skb, struct net_device *dev)
 		goto out;
 
 	frags = skb_shinfo(skb)->nr_frags + 1;
-	nq    = netdev_get_tx_queue(dev, txq_def);
+	nq    = netdev_get_tx_queue(dev, txq_id);
 
 	/* Get a descriptor for the first part of the packet */
 	tx_desc = mvneta_txq_next_desc_get(txq);
@@ -1969,13 +1969,8 @@ static int mvneta_rxq_init(struct mvneta_port *pp,
 	rxq->descs = dma_alloc_coherent(pp->dev->dev.parent,
 					rxq->size * MVNETA_DESC_ALIGNED_SIZE,
 					&rxq->descs_phys, GFP_KERNEL);
-	if (rxq->descs == NULL) {
-		netdev_err(pp->dev,
-			   "rxq=%d: Can't allocate %d bytes for %d RX descr\n",
-			   rxq->id, rxq->size * MVNETA_DESC_ALIGNED_SIZE,
-			   rxq->size);
+	if (rxq->descs == NULL)
 		return -ENOMEM;
-	}
 
 	BUG_ON(rxq->descs !=
 	       PTR_ALIGN(rxq->descs, MVNETA_CPU_D_CACHE_LINE_SIZE));
@@ -2029,13 +2024,8 @@ static int mvneta_txq_init(struct mvneta_port *pp,
 	txq->descs = dma_alloc_coherent(pp->dev->dev.parent,
 					txq->size * MVNETA_DESC_ALIGNED_SIZE,
 					&txq->descs_phys, GFP_KERNEL);
-	if (txq->descs == NULL) {
-		netdev_err(pp->dev,
-			   "txQ=%d: Can't allocate %d bytes for %d TX descr\n",
-			   txq->id, txq->size * MVNETA_DESC_ALIGNED_SIZE,
-			   txq->size);
+	if (txq->descs == NULL)
 		return -ENOMEM;
-	}
 
 	/* Make sure descriptor address is cache line size aligned  */
 	BUG_ON(txq->descs !=
@@ -2259,6 +2249,21 @@ static int mvneta_change_mtu(struct net_device *dev, int mtu)
 	mvneta_port_up(pp);
 
 	return 0;
+}
+
+/* Get mac address */
+static void mvneta_get_mac_addr(struct mvneta_port *pp, unsigned char *addr)
+{
+	u32 mac_addr_l, mac_addr_h;
+
+	mac_addr_l = mvreg_read(pp, MVNETA_MAC_ADDR_LOW);
+	mac_addr_h = mvreg_read(pp, MVNETA_MAC_ADDR_HIGH);
+	addr[0] = (mac_addr_h >> 24) & 0xFF;
+	addr[1] = (mac_addr_h >> 16) & 0xFF;
+	addr[2] = (mac_addr_h >> 8) & 0xFF;
+	addr[3] = mac_addr_h & 0xFF;
+	addr[4] = (mac_addr_l >> 8) & 0xFF;
+	addr[5] = mac_addr_l & 0xFF;
 }
 
 /* Handle setting mac address */
@@ -2677,7 +2682,9 @@ static int mvneta_probe(struct platform_device *pdev)
 	u32 phy_addr;
 	struct mvneta_port *pp;
 	struct net_device *dev;
-	const char *mac_addr;
+	const char *dt_mac_addr;
+	char hw_mac_addr[ETH_ALEN];
+	const char *mac_from;
 	int phy_mode;
 	int err;
 
@@ -2689,7 +2696,7 @@ static int mvneta_probe(struct platform_device *pdev)
 		return -EINVAL;
 	}
 
-	dev = alloc_etherdev_mq(sizeof(struct mvneta_port), 8);
+	dev = alloc_etherdev_mqs(sizeof(struct mvneta_port), txq_number, rxq_number);
 	if (!dev)
 		return -ENOMEM;
 
@@ -2712,13 +2719,6 @@ static int mvneta_probe(struct platform_device *pdev)
 		err = -EINVAL;
 		goto err_free_irq;
 	}
-
-	mac_addr = of_get_mac_address(dn);
-
-	if (!mac_addr || !is_valid_ether_addr(mac_addr))
-		eth_hw_addr_random(dev);
-	else
-		memcpy(dev->dev_addr, mac_addr, ETH_ALEN);
 
 	dev->tx_queue_len = MVNETA_MAX_TXD;
 	dev->watchdog_timeo = 5 * HZ;
@@ -2750,6 +2750,21 @@ static int mvneta_probe(struct platform_device *pdev)
 
 	clk_prepare_enable(pp->clk);
 
+	dt_mac_addr = of_get_mac_address(dn);
+	if (dt_mac_addr && is_valid_ether_addr(dt_mac_addr)) {
+		mac_from = "device tree";
+		memcpy(dev->dev_addr, dt_mac_addr, ETH_ALEN);
+	} else {
+		mvneta_get_mac_addr(pp, hw_mac_addr);
+		if (is_valid_ether_addr(hw_mac_addr)) {
+			mac_from = "hardware";
+			memcpy(dev->dev_addr, hw_mac_addr, ETH_ALEN);
+		} else {
+			mac_from = "random";
+			eth_hw_addr_random(dev);
+		}
+	}
+
 	pp->tx_done_timer.data = (unsigned long)dev;
 
 	pp->tx_ring_size = MVNETA_MAX_TXD;
@@ -2771,17 +2786,19 @@ static int mvneta_probe(struct platform_device *pdev)
 
 	netif_napi_add(dev, &pp->napi, mvneta_poll, pp->weight);
 
+	dev->features = NETIF_F_SG | NETIF_F_IP_CSUM;
+	dev->hw_features |= NETIF_F_SG | NETIF_F_IP_CSUM;
+	dev->vlan_features |= NETIF_F_SG | NETIF_F_IP_CSUM;
+	dev->priv_flags |= IFF_UNICAST_FLT;
+
 	err = register_netdev(dev);
 	if (err < 0) {
 		dev_err(&pdev->dev, "failed to register\n");
 		goto err_deinit;
 	}
 
-	dev->features = NETIF_F_SG | NETIF_F_IP_CSUM;
-	dev->hw_features = NETIF_F_SG | NETIF_F_IP_CSUM;
-	dev->priv_flags |= IFF_UNICAST_FLT;
-
-	netdev_info(dev, "mac: %pM\n", dev->dev_addr);
+	netdev_info(dev, "Using %s mac address %pM\n", mac_from,
+		    dev->dev_addr);
 
 	platform_set_drvdata(pdev, pp->dev);
 
@@ -2813,8 +2830,6 @@ static int mvneta_remove(struct platform_device *pdev)
 	irq_dispose_mapping(dev->irq);
 	free_netdev(dev);
 
-	platform_set_drvdata(pdev, NULL);
-
 	return 0;
 }
 
@@ -2843,4 +2858,3 @@ module_param(rxq_number, int, S_IRUGO);
 module_param(txq_number, int, S_IRUGO);
 
 module_param(rxq_def, int, S_IRUGO);
-module_param(txq_def, int, S_IRUGO);

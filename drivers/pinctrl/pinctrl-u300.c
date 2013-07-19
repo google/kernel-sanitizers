@@ -860,7 +860,7 @@ static void u300_pin_dbg_show(struct pinctrl_dev *pctldev, struct seq_file *s,
 	seq_printf(s, " " DRIVER_NAME);
 }
 
-static struct pinctrl_ops u300_pctrl_ops = {
+static const struct pinctrl_ops u300_pctrl_ops = {
 	.get_groups_count = u300_get_groups_count,
 	.get_group_name = u300_get_group_name,
 	.get_group_pins = u300_get_group_pins,
@@ -1003,7 +1003,7 @@ static int u300_pmx_get_groups(struct pinctrl_dev *pctldev, unsigned selector,
 	return 0;
 }
 
-static struct pinmux_ops u300_pmx_ops = {
+static const struct pinmux_ops u300_pmx_ops = {
 	.get_functions_count = u300_pmx_get_funcs_count,
 	.get_function_name = u300_pmx_get_func_name,
 	.get_function_groups = u300_pmx_get_groups,
@@ -1046,7 +1046,7 @@ static int u300_pin_config_set(struct pinctrl_dev *pctldev, unsigned pin,
 	return 0;
 }
 
-static struct pinconf_ops u300_pconf_ops = {
+static const struct pinconf_ops u300_pconf_ops = {
 	.is_generic = true,
 	.pin_config_get = u300_pin_config_get,
 	.pin_config_set = u300_pin_config_set,
@@ -1100,15 +1100,21 @@ static int u300_pmx_remove(struct platform_device *pdev)
 	struct u300_pmx *upmx = platform_get_drvdata(pdev);
 
 	pinctrl_unregister(upmx->pctl);
-	platform_set_drvdata(pdev, NULL);
 
 	return 0;
 }
+
+static const struct of_device_id u300_pinctrl_match[] = {
+	{ .compatible = "stericsson,pinctrl-u300" },
+	{},
+};
+
 
 static struct platform_driver u300_pmx_driver = {
 	.driver = {
 		.name = DRIVER_NAME,
 		.owner = THIS_MODULE,
+		.of_match_table = u300_pinctrl_match,
 	},
 	.probe = u300_pmx_probe,
 	.remove = u300_pmx_remove,

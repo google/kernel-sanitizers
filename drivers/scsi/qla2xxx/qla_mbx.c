@@ -177,10 +177,14 @@ qla2x00_mailbox_command(scsi_qla_host_t *vha, mbx_cmd_t *mcp)
 			WRT_REG_WORD(&reg->isp.hccr, HCCR_SET_HOST_INT);
 		spin_unlock_irqrestore(&ha->hardware_lock, flags);
 
-		wait_for_completion_timeout(&ha->mbx_intr_comp, mcp->tov * HZ);
-
-		clear_bit(MBX_INTR_WAIT, &ha->mbx_cmd_flags);
-
+		if (!wait_for_completion_timeout(&ha->mbx_intr_comp,
+		    mcp->tov * HZ)) {
+			ql_dbg(ql_dbg_mbx, vha, 0x117a,
+			    "cmd=%x Timeout.\n", command);
+			spin_lock_irqsave(&ha->hardware_lock, flags);
+			clear_bit(MBX_INTR_WAIT, &ha->mbx_cmd_flags);
+			spin_unlock_irqrestore(&ha->hardware_lock, flags);
+		}
 	} else {
 		ql_dbg(ql_dbg_mbx, vha, 0x1011,
 		    "Cmd=%x Polling Mode.\n", command);
@@ -277,9 +281,11 @@ qla2x00_mailbox_command(scsi_qla_host_t *vha, mbx_cmd_t *mcp)
 
 		/*
 		 * Attempt to capture a firmware dump for further analysis
-		 * of the current firmware state
+		 * of the current firmware state.  We do not need to do this
+		 * if we are intentionally generating a dump.
 		 */
-		ha->isp_ops->fw_dump(vha, 0);
+		if (mcp->mb[0] != MBC_GEN_SYSTEM_ERROR)
+			ha->isp_ops->fw_dump(vha, 0);
 
 		rval = QLA_FUNCTION_TIMEOUT;
 	}
@@ -3866,64 +3872,6 @@ qla81xx_restart_mpi_firmware(scsi_qla_host_t *vha)
 	return rval;
 }
 
-int
-qla2x00_set_driver_version(scsi_qla_host_t *vha, char *version)
-{
-	int rval;
-	mbx_cmd_t mc;
-	mbx_cmd_t *mcp = &mc;
-	int len;
-	uint16_t dwlen;
-	uint8_t *str;
-	dma_addr_t str_dma;
-	struct qla_hw_data *ha = vha->hw;
-
-	if (!IS_FWI2_CAPABLE(ha) || IS_QLA82XX(ha))
-		return QLA_FUNCTION_FAILED;
-
-	ql_dbg(ql_dbg_mbx + ql_dbg_verbose, vha, 0x1155,
-	    "Entered %s.\n", __func__);
-
-	str = dma_pool_alloc(ha->s_dma_pool, GFP_KERNEL, &str_dma);
-	if (!str) {
-		ql_log(ql_log_warn, vha, 0x1156,
-		    "Failed to allocate driver version param.\n");
-		return QLA_MEMORY_ALLOC_FAILED;
-	}
-
-	memcpy(str, "\x7\x3\x11\x0", 4);
-	dwlen = str[0];
-	len = dwlen * sizeof(uint32_t) - 4;
-	memset(str + 4, 0, len);
-	if (len > strlen(version))
-		len = strlen(version);
-	memcpy(str + 4, version, len);
-
-	mcp->mb[0] = MBC_SET_RNID_PARAMS;
-	mcp->mb[1] = RNID_TYPE_SET_VERSION << 8 | dwlen;
-	mcp->mb[2] = MSW(LSD(str_dma));
-	mcp->mb[3] = LSW(LSD(str_dma));
-	mcp->mb[6] = MSW(MSD(str_dma));
-	mcp->mb[7] = LSW(MSD(str_dma));
-	mcp->out_mb = MBX_7|MBX_6|MBX_3|MBX_2|MBX_1|MBX_0;
-	mcp->in_mb = MBX_0;
-	mcp->tov = MBX_TOV_SECONDS;
-	mcp->flags = 0;
-	rval = qla2x00_mailbox_command(vha, mcp);
-
-	if (rval != QLA_SUCCESS) {
-		ql_dbg(ql_dbg_mbx, vha, 0x1157,
-		    "Failed=%x mb[0]=%x.\n", rval, mcp->mb[0]);
-	} else {
-		ql_dbg(ql_dbg_mbx + ql_dbg_verbose, vha, 0x1158,
-		    "Done %s.\n", __func__);
-	}
-
-	dma_pool_free(ha->s_dma_pool, str, str_dma);
-
-	return rval;
-}
-
 static int
 qla2x00_read_asic_temperature(scsi_qla_host_t *vha, uint16_t *temp)
 {
@@ -4171,7 +4119,6 @@ qla2x00_loopback_test(scsi_qla_host_t *vha, struct msg_echo_lb *mreq,
 	int rval;
 	mbx_cmd_t mc;
 	mbx_cmd_t *mcp = &mc;
-	uint32_t iter_cnt = 0x1;
 
 	ql_dbg(ql_dbg_mbx + ql_dbg_verbose, vha, 0x10f7,
 	    "Entered %s.\n", __func__);
@@ -4197,8 +4144,8 @@ qla2x00_loopback_test(scsi_qla_host_t *vha, struct msg_echo_lb *mreq,
 	mcp->mb[7] = MSW(MSD(mreq->rcv_dma));
 
 	/* Iteration count */
-	mcp->mb[18] = LSW(iter_cnt);
-	mcp->mb[19] = MSW(iter_cnt);
+	mcp->mb[18] = LSW(mreq->iteration_count);
+	mcp->mb[19] = MSW(mreq->iteration_count);
 
 	mcp->out_mb = MBX_21|MBX_20|MBX_19|MBX_18|MBX_17|MBX_16|MBX_15|
 	    MBX_14|MBX_13|MBX_12|MBX_11|MBX_10|MBX_7|MBX_6|MBX_1|MBX_0;
@@ -4576,7 +4523,8 @@ qla2x00_get_thermal_temp(scsi_qla_host_t *vha, uint16_t *temp)
 			goto done;
 
 		ql_log(ql_log_warn, vha, 0x10c9,
-		    "Thermal not supported by I2C.\n");
+		    "Thermal not supported through I2C bus, trying alternate "
+		    "method (ISP access).\n");
 		ha->thermal_support &= ~THERMAL_SUPPORT_I2C;
 	}
 
@@ -4586,7 +4534,7 @@ qla2x00_get_thermal_temp(scsi_qla_host_t *vha, uint16_t *temp)
 			goto done;
 
 		ql_log(ql_log_warn, vha, 0x1019,
-		    "Thermal not supported by ISP.\n");
+		    "Thermal not supported through ISP.\n");
 		ha->thermal_support &= ~THERMAL_SUPPORT_ISP;
 	}
 

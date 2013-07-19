@@ -67,11 +67,10 @@ static void usb_port_device_release(struct device *dev)
 {
 	struct usb_port *port_dev = to_usb_port(dev);
 
-	dev_pm_qos_hide_flags(dev);
 	kfree(port_dev);
 }
 
-#ifdef CONFIG_USB_SUSPEND
+#ifdef CONFIG_PM_RUNTIME
 static int usb_port_runtime_resume(struct device *dev)
 {
 	struct usb_port *port_dev = to_usb_port(dev);
@@ -87,7 +86,7 @@ static int usb_port_runtime_resume(struct device *dev)
 	usb_autopm_get_interface(intf);
 	set_bit(port1, hub->busy_bits);
 
-	retval = usb_hub_set_port_power(hdev, port1, true);
+	retval = usb_hub_set_port_power(hdev, hub, port1, true);
 	if (port_dev->child && !retval) {
 		/*
 		 * Wait for usb hub port to be reconnected in order to make
@@ -129,7 +128,7 @@ static int usb_port_runtime_suspend(struct device *dev)
 
 	usb_autopm_get_interface(intf);
 	set_bit(port1, hub->busy_bits);
-	retval = usb_hub_set_port_power(hdev, port1, false);
+	retval = usb_hub_set_port_power(hdev, hub, port1, false);
 	usb_clear_port_feature(hdev, port1, USB_PORT_FEAT_C_CONNECTION);
 	usb_clear_port_feature(hdev, port1,	USB_PORT_FEAT_C_ENABLE);
 	clear_bit(port1, hub->busy_bits);
@@ -139,10 +138,9 @@ static int usb_port_runtime_suspend(struct device *dev)
 #endif
 
 static const struct dev_pm_ops usb_port_pm_ops = {
-#ifdef CONFIG_USB_SUSPEND
+#ifdef CONFIG_PM_RUNTIME
 	.runtime_suspend =	usb_port_runtime_suspend,
 	.runtime_resume =	usb_port_runtime_resume,
-	.runtime_idle =		pm_generic_runtime_idle,
 #endif
 };
 

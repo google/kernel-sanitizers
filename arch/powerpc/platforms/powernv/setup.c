@@ -78,7 +78,9 @@ static void pnv_show_cpuinfo(struct seq_file *m)
 	if (root)
 		model = of_get_property(root, "model", NULL);
 	seq_printf(m, "machine\t\t: PowerNV %s\n", model);
-	if (firmware_has_feature(FW_FEATURE_OPALv2))
+	if (firmware_has_feature(FW_FEATURE_OPALv3))
+		seq_printf(m, "firmware\t: OPAL v3\n");
+	else if (firmware_has_feature(FW_FEATURE_OPALv2))
 		seq_printf(m, "firmware\t: OPAL v2\n");
 	else if (firmware_has_feature(FW_FEATURE_OPAL))
 		seq_printf(m, "firmware\t: OPAL v1\n");
@@ -90,6 +92,8 @@ static void pnv_show_cpuinfo(struct seq_file *m)
 static void  __noreturn pnv_restart(char *cmd)
 {
 	long rc = OPAL_BUSY;
+
+	opal_notifier_disable();
 
 	while (rc == OPAL_BUSY || rc == OPAL_BUSY_EVENT) {
 		rc = opal_cec_reboot();
@@ -105,6 +109,8 @@ static void  __noreturn pnv_restart(char *cmd)
 static void __noreturn pnv_power_off(void)
 {
 	long rc = OPAL_BUSY;
+
+	opal_notifier_disable();
 
 	while (rc == OPAL_BUSY || rc == OPAL_BUSY_EVENT) {
 		rc = opal_cec_power_down(0);
@@ -124,6 +130,17 @@ static void __noreturn pnv_halt(void)
 
 static void pnv_progress(char *s, unsigned short hex)
 {
+}
+
+static void pnv_shutdown(void)
+{
+	/* Let the PCI code clear up IODA tables */
+	pnv_pci_shutdown();
+
+	/* And unregister all OPAL interrupts so they don't fire
+	 * up while we kexec
+	 */
+	opal_shutdown();
 }
 
 #ifdef CONFIG_KEXEC
@@ -187,6 +204,7 @@ define_machine(powernv) {
 	.init_IRQ		= pnv_init_IRQ,
 	.show_cpuinfo		= pnv_show_cpuinfo,
 	.progress		= pnv_progress,
+	.machine_shutdown	= pnv_shutdown,
 	.power_save             = power7_idle,
 	.calibrate_decr		= generic_calibrate_decr,
 #ifdef CONFIG_KEXEC

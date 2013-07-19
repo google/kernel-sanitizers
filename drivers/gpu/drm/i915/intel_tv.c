@@ -905,20 +905,19 @@ intel_tv_mode_valid(struct drm_connector *connector,
 
 
 static bool
-intel_tv_mode_fixup(struct drm_encoder *encoder,
-		    const struct drm_display_mode *mode,
-		    struct drm_display_mode *adjusted_mode)
+intel_tv_compute_config(struct intel_encoder *encoder,
+			struct intel_crtc_config *pipe_config)
 {
-	struct intel_tv *intel_tv = enc_to_intel_tv(encoder);
+	struct intel_tv *intel_tv = enc_to_intel_tv(&encoder->base);
 	const struct tv_mode *tv_mode = intel_tv_mode_find(intel_tv);
 
 	if (!tv_mode)
 		return false;
 
-	if (intel_encoder_check_is_cloned(&intel_tv->base))
-		return false;
+	pipe_config->adjusted_mode.clock = tv_mode->clock;
+	DRM_DEBUG_KMS("forcing bpc to 8 for TV\n");
+	pipe_config->pipe_bpp = 8*3;
 
-	adjusted_mode->clock = tv_mode->clock;
 	return true;
 }
 
@@ -1485,7 +1484,6 @@ out:
 }
 
 static const struct drm_encoder_helper_funcs intel_tv_helper_funcs = {
-	.mode_fixup = intel_tv_mode_fixup,
 	.mode_set = intel_tv_mode_set,
 };
 
@@ -1520,12 +1518,12 @@ static int tv_is_present_in_vbt(struct drm_device *dev)
 	struct child_device_config *p_child;
 	int i, ret;
 
-	if (!dev_priv->child_dev_num)
+	if (!dev_priv->vbt.child_dev_num)
 		return 1;
 
 	ret = 0;
-	for (i = 0; i < dev_priv->child_dev_num; i++) {
-		p_child = dev_priv->child_dev + i;
+	for (i = 0; i < dev_priv->vbt.child_dev_num; i++) {
+		p_child = dev_priv->vbt.child_dev + i;
 		/*
 		 * If the device type is not TV, continue.
 		 */
@@ -1563,7 +1561,7 @@ intel_tv_init(struct drm_device *dev)
 		return;
 	}
 	/* Even if we have an encoder we may not have a connector */
-	if (!dev_priv->int_tv_support)
+	if (!dev_priv->vbt.int_tv_support)
 		return;
 
 	/*
@@ -1612,7 +1610,7 @@ intel_tv_init(struct drm_device *dev)
 	 *
 	 * More recent chipsets favour HDMI rather than integrated S-Video.
 	 */
-	connector->polled = DRM_CONNECTOR_POLL_CONNECT;
+	intel_connector->polled = DRM_CONNECTOR_POLL_CONNECT;
 
 	drm_connector_init(dev, connector, &intel_tv_connector_funcs,
 			   DRM_MODE_CONNECTOR_SVIDEO);
@@ -1620,6 +1618,7 @@ intel_tv_init(struct drm_device *dev)
 	drm_encoder_init(dev, &intel_encoder->base, &intel_tv_enc_funcs,
 			 DRM_MODE_ENCODER_TVDAC);
 
+	intel_encoder->compute_config = intel_tv_compute_config;
 	intel_encoder->enable = intel_enable_tv;
 	intel_encoder->disable = intel_disable_tv;
 	intel_encoder->get_hw_state = intel_tv_get_hw_state;

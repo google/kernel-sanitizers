@@ -141,8 +141,9 @@ static int w1_ds2780_add_slave(struct w1_slave *sl)
 	return 0;
 
 bin_attr_failed:
+	platform_device_del(pdev);
 pdev_add_failed:
-	platform_device_unregister(pdev);
+	platform_device_put(pdev);
 pdev_alloc_failed:
 	ida_simple_remove(&bat_ida, id);
 noid:
@@ -187,3 +188,4 @@ module_exit(w1_ds2780_exit);
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Clifton Barnes <cabarnes@indesign-llc.com>");
 MODULE_DESCRIPTION("1-wire Driver for Maxim/Dallas DS2780 Stand-Alone Fuel Gauge IC");
+MODULE_ALIAS("w1-family-" __stringify(W1_FAMILY_DS2780));

@@ -1439,8 +1439,11 @@ static void __dquot_initialize(struct inode *inode, int type)
 			 * did a write before quota was turned on
 			 */
 			rsv = inode_get_rsv_space(inode);
-			if (unlikely(rsv))
+			if (unlikely(rsv)) {
+				spin_lock(&dq_data_lock);
 				dquot_resv_space(inode->i_dquot[cnt], rsv);
+				spin_unlock(&dq_data_lock);
+			}
 		}
 	}
 out_err:
@@ -2582,7 +2585,7 @@ static int do_proc_dqstats(struct ctl_table *table, int write,
 	return proc_dointvec(table, write, buffer, lenp, ppos);
 }
 
-static ctl_table fs_dqstats_table[] = {
+static struct ctl_table fs_dqstats_table[] = {
 	{
 		.procname	= "lookups",
 		.data		= &dqstats.stat[DQST_LOOKUPS],
@@ -2651,7 +2654,7 @@ static ctl_table fs_dqstats_table[] = {
 	{ },
 };
 
-static ctl_table fs_table[] = {
+static struct ctl_table fs_table[] = {
 	{
 		.procname	= "quota",
 		.mode		= 0555,
@@ -2660,7 +2663,7 @@ static ctl_table fs_table[] = {
 	{ },
 };
 
-static ctl_table sys_table[] = {
+static struct ctl_table sys_table[] = {
 	{
 		.procname	= "fs",
 		.mode		= 0555,

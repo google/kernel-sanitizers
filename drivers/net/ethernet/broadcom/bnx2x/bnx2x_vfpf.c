@@ -36,6 +36,8 @@ void bnx2x_add_tlv(struct bnx2x *bp, void *tlvs_list, u16 offset, u16 type,
 void bnx2x_vfpf_prep(struct bnx2x *bp, struct vfpf_first_tlv *first_tlv,
 		     u16 type, u16 length)
 {
+	mutex_lock(&bp->vf2pf_mutex);
+
 	DP(BNX2X_MSG_IOV, "preparing to send %d tlv over vf pf channel\n",
 	   type);
 
@@ -47,6 +49,15 @@ void bnx2x_vfpf_prep(struct bnx2x *bp, struct vfpf_first_tlv *first_tlv,
 
 	/* init first tlv header */
 	first_tlv->resp_msg_offset = sizeof(bp->vf2pf_mbox->req);
+}
+
+/* releases the mailbox */
+void bnx2x_vfpf_finalize(struct bnx2x *bp, struct vfpf_first_tlv *first_tlv)
+{
+	DP(BNX2X_MSG_IOV, "done sending [%d] tlv over vf pf channel\n",
+	   first_tlv->tl.type);
+
+	mutex_unlock(&bp->vf2pf_mutex);
 }
 
 /* list the types and lengths of the tlvs on the buffer */
@@ -102,12 +113,22 @@ static int bnx2x_send_msg2pf(struct bnx2x *bp, u8 *done, dma_addr_t msg_mapping)
 {
 	struct cstorm_vf_zone_data __iomem *zone_data =
 		REG_ADDR(bp, PXP_VF_ADDR_CSDM_GLOBAL_START);
-	int tout = 600, interval = 100; /* wait for 60 seconds */
+	int tout = 100, interval = 100; /* wait for 10 seconds */
 
 	if (*done) {
 		BNX2X_ERR("done was non zero before message to pf was sent\n");
 		WARN_ON(true);
 		return -EINVAL;
+	}
+
+	/* if PF indicated channel is down avoid sending message. Return success
+	 * so calling flow can continue
+	 */
+	bnx2x_sample_bulletin(bp);
+	if (bp->old_bulletin.valid_bitmap & 1 << CHANNEL_DOWN) {
+		DP(BNX2X_MSG_IOV, "detecting channel down. Aborting message\n");
+		*done = PFVF_STATUS_SUCCESS;
+		return 0;
 	}
 
 	/* Write message address */
@@ -181,8 +202,10 @@ int bnx2x_vfpf_acquire(struct bnx2x *bp, u8 tx_count, u8 rx_count)
 	/* clear mailbox and prep first tlv */
 	bnx2x_vfpf_prep(bp, &req->first_tlv, CHANNEL_TLV_ACQUIRE, sizeof(*req));
 
-	if (bnx2x_get_vf_id(bp, &vf_id))
-		return -EAGAIN;
+	if (bnx2x_get_vf_id(bp, &vf_id)) {
+		rc = -EAGAIN;
+		goto out;
+	}
 
 	req->vfdev_info.vf_id = vf_id;
 	req->vfdev_info.vf_os = 0;
@@ -213,14 +236,14 @@ int bnx2x_vfpf_acquire(struct bnx2x *bp, u8 tx_count, u8 rx_count)
 
 		/* PF timeout */
 		if (rc)
-			return rc;
+			goto out;
 
 		/* copy acquire response from buffer to bp */
 		memcpy(&bp->acquire_resp, resp, sizeof(bp->acquire_resp));
 
 		attempts++;
 
-		/* test whether the PF accepted our request. If not, humble the
+		/* test whether the PF accepted our request. If not, humble
 		 * the request and try again.
 		 */
 		if (bp->acquire_resp.hdr.status == PFVF_STATUS_SUCCESS) {
@@ -253,7 +276,8 @@ int bnx2x_vfpf_acquire(struct bnx2x *bp, u8 tx_count, u8 rx_count)
 			/* PF reports error */
 			BNX2X_ERR("Failed to get the requested amount of resources: %d. Breaking...\n",
 				  bp->acquire_resp.hdr.status);
-			return -EAGAIN;
+			rc = -EAGAIN;
+			goto out;
 		}
 	}
 
@@ -279,20 +303,24 @@ int bnx2x_vfpf_acquire(struct bnx2x *bp, u8 tx_count, u8 rx_count)
 		       bp->acquire_resp.resc.current_mac_addr,
 		       ETH_ALEN);
 
-	return 0;
+out:
+	bnx2x_vfpf_finalize(bp, &req->first_tlv);
+	return rc;
 }
 
 int bnx2x_vfpf_release(struct bnx2x *bp)
 {
 	struct vfpf_release_tlv *req = &bp->vf2pf_mbox->req.release;
 	struct pfvf_general_resp_tlv *resp = &bp->vf2pf_mbox->resp.general_resp;
-	u32 rc = 0, vf_id;
+	u32 rc, vf_id;
 
 	/* clear mailbox and prep first tlv */
 	bnx2x_vfpf_prep(bp, &req->first_tlv, CHANNEL_TLV_RELEASE, sizeof(*req));
 
-	if (bnx2x_get_vf_id(bp, &vf_id))
-		return -EAGAIN;
+	if (bnx2x_get_vf_id(bp, &vf_id)) {
+		rc = -EAGAIN;
+		goto out;
+	}
 
 	req->vf_id = vf_id;
 
@@ -308,18 +336,22 @@ int bnx2x_vfpf_release(struct bnx2x *bp)
 
 	if (rc)
 		/* PF timeout */
-		return rc;
+		goto out;
+
 	if (resp->hdr.status == PFVF_STATUS_SUCCESS) {
 		/* PF released us */
 		DP(BNX2X_MSG_SP, "vf released\n");
 	} else {
 		/* PF reports error */
-		BNX2X_ERR("PF failed our release request - are we out of sync? response status: %d\n",
+		BNX2X_ERR("PF failed our release request - are we out of sync? Response status: %d\n",
 			  resp->hdr.status);
-		return -EAGAIN;
+		rc = -EAGAIN;
+		goto out;
 	}
+out:
+	bnx2x_vfpf_finalize(bp, &req->first_tlv);
 
-	return 0;
+	return rc;
 }
 
 /* Tell PF about SB addresses */
@@ -350,16 +382,20 @@ int bnx2x_vfpf_init(struct bnx2x *bp)
 
 	rc = bnx2x_send_msg2pf(bp, &resp->hdr.status, bp->vf2pf_mbox_mapping);
 	if (rc)
-		return rc;
+		goto out;
 
 	if (resp->hdr.status != PFVF_STATUS_SUCCESS) {
 		BNX2X_ERR("INIT VF failed: %d. Breaking...\n",
 			  resp->hdr.status);
-		return -EAGAIN;
+		rc = -EAGAIN;
+		goto out;
 	}
 
 	DP(BNX2X_MSG_SP, "INIT VF Succeeded\n");
-	return 0;
+out:
+	bnx2x_vfpf_finalize(bp, &req->first_tlv);
+
+	return rc;
 }
 
 /* CLOSE VF - opposite to INIT_VF */
@@ -379,6 +415,9 @@ void bnx2x_vfpf_close_vf(struct bnx2x *bp)
 	/* Close the queues */
 	for_each_queue(bp, i)
 		bnx2x_vfpf_teardown_queue(bp, i);
+
+	/* remove mac */
+	bnx2x_vfpf_config_mac(bp, bp->dev->dev_addr, bp->fp->index, false);
 
 	/* clear mailbox and prep first tlv */
 	bnx2x_vfpf_prep(bp, &req->first_tlv, CHANNEL_TLV_CLOSE, sizeof(*req));
@@ -400,6 +439,8 @@ void bnx2x_vfpf_close_vf(struct bnx2x *bp)
 	else if (resp->hdr.status != PFVF_STATUS_SUCCESS)
 		BNX2X_ERR("Sending CLOSE failed: pf response was %d\n",
 			  resp->hdr.status);
+
+	bnx2x_vfpf_finalize(bp, &req->first_tlv);
 
 free_irq:
 	/* Disable HW interrupts, NAPI */
@@ -435,7 +476,6 @@ int bnx2x_vfpf_setup_q(struct bnx2x *bp, int fp_idx)
 	/* calculate queue flags */
 	flags |= VFPF_QUEUE_FLG_STATS;
 	flags |= VFPF_QUEUE_FLG_CACHE_ALIGN;
-	flags |= IS_MF_SD(bp) ? VFPF_QUEUE_FLG_OV : 0;
 	flags |= VFPF_QUEUE_FLG_VLAN;
 	DP(NETIF_MSG_IFUP, "vlan removal enabled\n");
 
@@ -486,8 +526,11 @@ int bnx2x_vfpf_setup_q(struct bnx2x *bp, int fp_idx)
 	if (resp->hdr.status != PFVF_STATUS_SUCCESS) {
 		BNX2X_ERR("Status of SETUP_Q for queue[%d] is %d\n",
 			  fp_idx, resp->hdr.status);
-		return -EINVAL;
+		rc = -EINVAL;
 	}
+
+	bnx2x_vfpf_finalize(bp, &req->first_tlv);
+
 	return rc;
 }
 
@@ -515,41 +558,46 @@ int bnx2x_vfpf_teardown_queue(struct bnx2x *bp, int qidx)
 	if (rc) {
 		BNX2X_ERR("Sending TEARDOWN for queue %d failed: %d\n", qidx,
 			  rc);
-		return rc;
+		goto out;
 	}
 
 	/* PF failed the transaction */
 	if (resp->hdr.status != PFVF_STATUS_SUCCESS) {
 		BNX2X_ERR("TEARDOWN for queue %d failed: %d\n", qidx,
 			  resp->hdr.status);
-		return -EINVAL;
+		rc = -EINVAL;
 	}
 
-	return 0;
+out:
+	bnx2x_vfpf_finalize(bp, &req->first_tlv);
+	return rc;
 }
 
 /* request pf to add a mac for the vf */
-int bnx2x_vfpf_set_mac(struct bnx2x *bp)
+int bnx2x_vfpf_config_mac(struct bnx2x *bp, u8 *addr, u8 vf_qid, bool set)
 {
 	struct vfpf_set_q_filters_tlv *req = &bp->vf2pf_mbox->req.set_q_filters;
 	struct pfvf_general_resp_tlv *resp = &bp->vf2pf_mbox->resp.general_resp;
-	int rc;
+	struct pf_vf_bulletin_content bulletin = bp->pf2vf_bulletin->content;
+	int rc = 0;
 
 	/* clear mailbox and prep first tlv */
 	bnx2x_vfpf_prep(bp, &req->first_tlv, CHANNEL_TLV_SET_Q_FILTERS,
 			sizeof(*req));
 
 	req->flags = VFPF_SET_Q_FILTERS_MAC_VLAN_CHANGED;
-	req->vf_qid = 0;
+	req->vf_qid = vf_qid;
 	req->n_mac_vlan_filters = 1;
-	req->filters[0].flags =
-		VFPF_Q_FILTER_DEST_MAC_VALID | VFPF_Q_FILTER_SET_MAC;
+
+	req->filters[0].flags = VFPF_Q_FILTER_DEST_MAC_VALID;
+	if (set)
+		req->filters[0].flags |= VFPF_Q_FILTER_SET_MAC;
 
 	/* sample bulletin board for new mac */
 	bnx2x_sample_bulletin(bp);
 
 	/* copy mac from device to request */
-	memcpy(req->filters[0].mac, bp->dev->dev_addr, ETH_ALEN);
+	memcpy(req->filters[0].mac, addr, ETH_ALEN);
 
 	/* add list termination tlv */
 	bnx2x_add_tlv(bp, req, req->first_tlv.tl.length, CHANNEL_TLV_LIST_END,
@@ -562,13 +610,16 @@ int bnx2x_vfpf_set_mac(struct bnx2x *bp)
 	rc = bnx2x_send_msg2pf(bp, &resp->hdr.status, bp->vf2pf_mbox_mapping);
 	if (rc) {
 		BNX2X_ERR("failed to send message to pf. rc was %d\n", rc);
-		return rc;
+		goto out;
 	}
 
 	/* failure may mean PF was configured with a new mac for us */
 	while (resp->hdr.status == PFVF_STATUS_FAILURE) {
 		DP(BNX2X_MSG_IOV,
 		   "vfpf SET MAC failed. Check bulletin board for new posts\n");
+
+		/* copy mac from bulletin to device */
+		memcpy(bp->dev->dev_addr, bulletin.mac, ETH_ALEN);
 
 		/* check if bulletin board was updated */
 		if (bnx2x_sample_bulletin(bp) == PFVF_BULLETIN_UPDATED) {
@@ -587,8 +638,10 @@ int bnx2x_vfpf_set_mac(struct bnx2x *bp)
 
 	if (resp->hdr.status != PFVF_STATUS_SUCCESS) {
 		BNX2X_ERR("vfpf SET MAC failed: %d\n", resp->hdr.status);
-		return -EINVAL;
+		rc = -EINVAL;
 	}
+out:
+	bnx2x_vfpf_finalize(bp, &req->first_tlv);
 
 	return 0;
 }
@@ -643,14 +696,16 @@ int bnx2x_vfpf_set_mcast(struct net_device *dev)
 	rc = bnx2x_send_msg2pf(bp, &resp->hdr.status, bp->vf2pf_mbox_mapping);
 	if (rc) {
 		BNX2X_ERR("Sending a message failed: %d\n", rc);
-		return rc;
+		goto out;
 	}
 
 	if (resp->hdr.status != PFVF_STATUS_SUCCESS) {
 		BNX2X_ERR("Set Rx mode/multicast failed: %d\n",
 			  resp->hdr.status);
-		return -EINVAL;
+		rc = -EINVAL;
 	}
+out:
+	bnx2x_vfpf_finalize(bp, &req->first_tlv);
 
 	return 0;
 }
@@ -689,7 +744,8 @@ int bnx2x_vfpf_storm_rx_mode(struct bnx2x *bp)
 		break;
 	default:
 		BNX2X_ERR("BAD rx mode (%d)\n", mode);
-		return -EINVAL;
+		rc = -EINVAL;
+		goto out;
 	}
 
 	req->flags |= VFPF_SET_Q_FILTERS_RX_MASK_CHANGED;
@@ -708,8 +764,10 @@ int bnx2x_vfpf_storm_rx_mode(struct bnx2x *bp)
 
 	if (resp->hdr.status != PFVF_STATUS_SUCCESS) {
 		BNX2X_ERR("Set Rx mode failed: %d\n", resp->hdr.status);
-		return -EINVAL;
+		rc = -EINVAL;
 	}
+out:
+	bnx2x_vfpf_finalize(bp, &req->first_tlv);
 
 	return rc;
 }
@@ -739,7 +797,7 @@ static inline void bnx2x_set_vf_mbxs_valid(struct bnx2x *bp)
 		storm_memset_vf_mbx_valid(bp, bnx2x_vf(bp, i, abs_vfid));
 }
 
-/* enable vf_pf mailbox (aka vf-pf-chanell) */
+/* enable vf_pf mailbox (aka vf-pf-channel) */
 void bnx2x_vf_enable_mbx(struct bnx2x *bp, u8 abs_vfid)
 {
 	bnx2x_vf_flr_clnup_epilog(bp, abs_vfid);
@@ -796,7 +854,6 @@ static int bnx2x_copy32_vf_dmae(struct bnx2x *bp, u8 from_vf,
 		dmae.dst_addr_hi = vf_addr_hi;
 	}
 	dmae.len = len32;
-	bnx2x_dp_dmae(bp, &dmae, BNX2X_MSG_DMAE);
 
 	/* issue the command and wait for completion */
 	return bnx2x_issue_dmae_with_comp(bp, &dmae);
@@ -1004,7 +1061,7 @@ static void bnx2x_vf_mbx_init_vf(struct bnx2x *bp, struct bnx2x_virtf *vf,
 }
 
 /* convert MBX queue-flags to standard SP queue-flags */
-static void bnx2x_vf_mbx_set_q_flags(u32 mbx_q_flags,
+static void bnx2x_vf_mbx_set_q_flags(struct bnx2x *bp, u32 mbx_q_flags,
 				     unsigned long *sp_q_flags)
 {
 	if (mbx_q_flags & VFPF_QUEUE_FLG_TPA)
@@ -1015,8 +1072,6 @@ static void bnx2x_vf_mbx_set_q_flags(u32 mbx_q_flags,
 		__set_bit(BNX2X_Q_FLG_TPA_GRO, sp_q_flags);
 	if (mbx_q_flags & VFPF_QUEUE_FLG_STATS)
 		__set_bit(BNX2X_Q_FLG_STATS, sp_q_flags);
-	if (mbx_q_flags & VFPF_QUEUE_FLG_OV)
-		__set_bit(BNX2X_Q_FLG_OV, sp_q_flags);
 	if (mbx_q_flags & VFPF_QUEUE_FLG_VLAN)
 		__set_bit(BNX2X_Q_FLG_VLAN, sp_q_flags);
 	if (mbx_q_flags & VFPF_QUEUE_FLG_COS)
@@ -1025,6 +1080,10 @@ static void bnx2x_vf_mbx_set_q_flags(u32 mbx_q_flags,
 		__set_bit(BNX2X_Q_FLG_HC, sp_q_flags);
 	if (mbx_q_flags & VFPF_QUEUE_FLG_DHC)
 		__set_bit(BNX2X_Q_FLG_DHC, sp_q_flags);
+
+	/* outer vlan removal is set according to PF's multi function mode */
+	if (IS_MF_SD(bp))
+		__set_bit(BNX2X_Q_FLG_OV, sp_q_flags);
 }
 
 static void bnx2x_vf_mbx_setup_q(struct bnx2x *bp, struct bnx2x_virtf *vf,
@@ -1054,7 +1113,7 @@ static void bnx2x_vf_mbx_setup_q(struct bnx2x *bp, struct bnx2x_virtf *vf,
 		struct bnx2x_queue_init_params *init_p;
 		struct bnx2x_queue_setup_params *setup_p;
 
-		/* reinit the VF operation context */
+		/* re-init the VF operation context */
 		memset(&vf->op_params.qctor, 0 , sizeof(vf->op_params.qctor));
 		setup_p = &vf->op_params.qctor.prep_qsetup;
 		init_p =  &vf->op_params.qctor.qstate.params.init;
@@ -1075,11 +1134,11 @@ static void bnx2x_vf_mbx_setup_q(struct bnx2x *bp, struct bnx2x_virtf *vf,
 			init_p->tx.hc_rate = setup_q->txq.hc_rate;
 			init_p->tx.sb_cq_index = setup_q->txq.sb_index;
 
-			bnx2x_vf_mbx_set_q_flags(setup_q->txq.flags,
+			bnx2x_vf_mbx_set_q_flags(bp, setup_q->txq.flags,
 						 &init_p->tx.flags);
 
 			/* tx setup - flags */
-			bnx2x_vf_mbx_set_q_flags(setup_q->txq.flags,
+			bnx2x_vf_mbx_set_q_flags(bp, setup_q->txq.flags,
 						 &setup_p->flags);
 
 			/* tx setup - general, nothing */
@@ -1107,11 +1166,11 @@ static void bnx2x_vf_mbx_setup_q(struct bnx2x *bp, struct bnx2x_virtf *vf,
 			/* rx init */
 			init_p->rx.hc_rate = setup_q->rxq.hc_rate;
 			init_p->rx.sb_cq_index = setup_q->rxq.sb_index;
-			bnx2x_vf_mbx_set_q_flags(setup_q->rxq.flags,
+			bnx2x_vf_mbx_set_q_flags(bp, setup_q->rxq.flags,
 						 &init_p->rx.flags);
 
 			/* rx setup - flags */
-			bnx2x_vf_mbx_set_q_flags(setup_q->rxq.flags,
+			bnx2x_vf_mbx_set_q_flags(bp, setup_q->rxq.flags,
 						 &setup_p->flags);
 
 			/* rx setup - general */
@@ -1538,8 +1597,9 @@ static void bnx2x_vf_mbx_request(struct bnx2x *bp, struct bnx2x_virtf *vf,
 		 * support them. Or this may be because someone wrote a crappy
 		 * VF driver and is sending garbage over the channel.
 		 */
-		BNX2X_ERR("unknown TLV. type %d length %d. first 20 bytes of mailbox buffer:\n",
-			  mbx->first_tlv.tl.type, mbx->first_tlv.tl.length);
+		BNX2X_ERR("unknown TLV. type %d length %d vf->state was %d. first 20 bytes of mailbox buffer:\n",
+			  mbx->first_tlv.tl.type, mbx->first_tlv.tl.length,
+			  vf->state);
 		for (i = 0; i < 20; i++)
 			DP_CONT(BNX2X_MSG_IOV, "%x ",
 				mbx->msg->req.tlv_buf_size.tlv_buffer[i]);
@@ -1555,8 +1615,11 @@ static void bnx2x_vf_mbx_request(struct bnx2x *bp, struct bnx2x_virtf *vf,
 			bnx2x_vf_mbx_resp(bp, vf);
 		} else {
 			/* can't send a response since this VF is unknown to us
-			 * just unlock the channel and be done with.
+			 * just ack the FW to release the mailbox and unlock
+			 * the channel.
 			 */
+			storm_memset_vf_mbx_ack(bp, vf->abs_vfid);
+			mmiowb();
 			bnx2x_unlock_vf_pf_channel(bp, vf,
 						   mbx->first_tlv.tl.type);
 		}

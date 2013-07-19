@@ -307,8 +307,8 @@ static void __cpuinit store_permanent_mappings(void)
 		hv_store_mapping(addr, pages << PAGE_SHIFT, pa);
 	}
 
-	hv_store_mapping((HV_VirtAddr)_stext,
-			 (uint32_t)(_einittext - _stext), 0);
+	hv_store_mapping((HV_VirtAddr)_text,
+			 (uint32_t)(_einittext - _text), 0);
 }
 
 /*
@@ -329,6 +329,7 @@ static void __init setup_memory(void)
 #if defined(CONFIG_HIGHMEM) || defined(__tilegx__)
 	long lowmem_pages;
 #endif
+	unsigned long physpages = 0;
 
 	/* We are using a char to hold the cpu_2_node[] mapping */
 	BUILD_BUG_ON(MAX_NUMNODES > 127);
@@ -388,8 +389,8 @@ static void __init setup_memory(void)
 				continue;
 			}
 		}
-		if (num_physpages + PFN_DOWN(range.size) > maxmem_pfn) {
-			int max_size = maxmem_pfn - num_physpages;
+		if (physpages + PFN_DOWN(range.size) > maxmem_pfn) {
+			int max_size = maxmem_pfn - physpages;
 			if (max_size > 0) {
 				pr_err("Maxmem reduced node %d to %d pages\n",
 				       i, max_size);
@@ -446,7 +447,7 @@ static void __init setup_memory(void)
 		node_start_pfn[i] = start;
 		node_end_pfn[i] = end;
 		node_controller[i] = range.controller;
-		num_physpages += size;
+		physpages += size;
 		max_pfn = end;
 
 		/* Mark node as online */
@@ -465,7 +466,7 @@ static void __init setup_memory(void)
 	 * we're willing to use at 8 million pages (32GB of 4KB pages).
 	 */
 	cap = 8 * 1024 * 1024;  /* 8 million pages */
-	if (num_physpages > cap) {
+	if (physpages > cap) {
 		int num_nodes = num_online_nodes();
 		int cap_each = cap / num_nodes;
 		unsigned long dropped_pages = 0;
@@ -476,10 +477,10 @@ static void __init setup_memory(void)
 				node_end_pfn[i] = node_start_pfn[i] + cap_each;
 			}
 		}
-		num_physpages -= dropped_pages;
+		physpages -= dropped_pages;
 		pr_warning("Only using %ldMB memory;"
 		       " ignoring %ldMB.\n",
-		       num_physpages >> (20 - PAGE_SHIFT),
+		       physpages >> (20 - PAGE_SHIFT),
 		       dropped_pages >> (20 - PAGE_SHIFT));
 		pr_warning("Consider using a larger page size.\n");
 	}
@@ -497,7 +498,7 @@ static void __init setup_memory(void)
 
 	lowmem_pages = (mappable_physpages > MAXMEM_PFN) ?
 		MAXMEM_PFN : mappable_physpages;
-	highmem_pages = (long) (num_physpages - lowmem_pages);
+	highmem_pages = (long) (physpages - lowmem_pages);
 
 	pr_notice("%ldMB HIGHMEM available.\n",
 	       pages_to_mb(highmem_pages > 0 ? highmem_pages : 0));
@@ -514,7 +515,6 @@ static void __init setup_memory(void)
 		pr_warning("Use a HIGHMEM enabled kernel.\n");
 		max_low_pfn = MAXMEM_PFN;
 		max_pfn = MAXMEM_PFN;
-		num_physpages = MAXMEM_PFN;
 		node_end_pfn[0] = MAXMEM_PFN;
 	} else {
 		pr_notice("%ldMB memory available.\n",
@@ -1004,15 +1004,8 @@ void __cpuinit setup_cpu(int boot)
 
 #ifdef CONFIG_BLK_DEV_INITRD
 
-/*
- * Note that the kernel can potentially support other compression
- * techniques than gz, though we don't do so by default.  If we ever
- * decide to do so we can either look for other filename extensions,
- * or just allow a file with this name to be compressed with an
- * arbitrary compressor (somewhat counterintuitively).
- */
 static int __initdata set_initramfs_file;
-static char __initdata initramfs_file[128] = "initramfs.cpio.gz";
+static char __initdata initramfs_file[128] = "initramfs";
 
 static int __init setup_initramfs_file(char *str)
 {
@@ -1026,9 +1019,9 @@ static int __init setup_initramfs_file(char *str)
 early_param("initramfs_file", setup_initramfs_file);
 
 /*
- * We look for an "initramfs.cpio.gz" file in the hvfs.
- * If there is one, we allocate some memory for it and it will be
- * unpacked to the initramfs.
+ * We look for a file called "initramfs" in the hvfs.  If there is one, we
+ * allocate some memory for it and it will be unpacked to the initramfs.
+ * If it's compressed, the initd code will uncompress it first.
  */
 static void __init load_hv_initrd(void)
 {
@@ -1038,10 +1031,16 @@ static void __init load_hv_initrd(void)
 
 	fd = hv_fs_findfile((HV_VirtAddr) initramfs_file);
 	if (fd == HV_ENOENT) {
-		if (set_initramfs_file)
+		if (set_initramfs_file) {
 			pr_warning("No such hvfs initramfs file '%s'\n",
 				   initramfs_file);
-		return;
+			return;
+		} else {
+			/* Try old backwards-compatible name. */
+			fd = hv_fs_findfile((HV_VirtAddr)"initramfs.cpio.gz");
+			if (fd == HV_ENOENT)
+				return;
+		}
 	}
 	BUG_ON(fd < 0);
 	stat = hv_fs_fstat(fd);

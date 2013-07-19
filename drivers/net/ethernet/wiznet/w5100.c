@@ -734,7 +734,6 @@ err_hw_probe:
 	unregister_netdev(ndev);
 err_register:
 	free_netdev(ndev);
-	platform_set_drvdata(pdev, NULL);
 	return err;
 }
 
@@ -750,11 +749,10 @@ static int w5100_remove(struct platform_device *pdev)
 
 	unregister_netdev(ndev);
 	free_netdev(ndev);
-	platform_set_drvdata(pdev, NULL);
 	return 0;
 }
 
-#ifdef CONFIG_PM
+#ifdef CONFIG_PM_SLEEP
 static int w5100_suspend(struct device *dev)
 {
 	struct platform_device *pdev = to_platform_device(dev);
@@ -787,7 +785,7 @@ static int w5100_resume(struct device *dev)
 	}
 	return 0;
 }
-#endif /* CONFIG_PM */
+#endif /* CONFIG_PM_SLEEP */
 
 static SIMPLE_DEV_PM_OPS(w5100_pm_ops, w5100_suspend, w5100_resume);
 

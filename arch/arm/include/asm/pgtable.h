@@ -24,6 +24,9 @@
 #include <asm/memory.h>
 #include <asm/pgtable-hwdef.h>
 
+
+#include <asm/tlbflush.h>
+
 #ifdef CONFIG_ARM_LPAE
 #include <asm/pgtable-3level.h>
 #else
@@ -59,6 +62,15 @@ extern void __pgd_error(const char *file, int line, pgd_t);
  * non-high vector CPUs.
  */
 #define FIRST_USER_ADDRESS	PAGE_SIZE
+
+/*
+ * Use TASK_SIZE as the ceiling argument for free_pgtables() and
+ * free_pgd_range() to avoid freeing the modules pmd when LPAE is enabled (pmd
+ * page shared between user and kernel).
+ */
+#ifdef CONFIG_ARM_LPAE
+#define USER_PGTABLES_CEILING	TASK_SIZE
+#endif
 
 /*
  * The pgprot_* and protection_map entries will be fixed up in runtime
@@ -308,13 +320,6 @@ static inline pte_t pte_modify(pte_t pte, pgprot_t newprot)
  */
 #define HAVE_ARCH_UNMAPPED_AREA
 #define HAVE_ARCH_UNMAPPED_AREA_TOPDOWN
-
-/*
- * remap a physical page `pfn' of size `size' with page protection `prot'
- * into virtual address `from'
- */
-#define io_remap_pfn_range(vma,from,pfn,size,prot) \
-		remap_pfn_range(vma, from, pfn, size, prot)
 
 #define pgtable_cache_init() do { } while (0)
 

@@ -14,11 +14,6 @@
     but WITHOUT ANY WARRANTY; without even the implied warranty of
     MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
     GNU General Public License for more details.
-
-    You should have received a copy of the GNU General Public License
-    along with this program; if not, write to the Free Software
-    Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
-
 */
 /*
 Driver: s526
@@ -552,17 +547,11 @@ static int s526_attach(struct comedi_device *dev, struct comedi_devconfig *it)
 {
 	struct s526_private *devpriv;
 	struct comedi_subdevice *s;
-	int iobase;
 	int ret;
 
-	dev->board_name = dev->driver->driver_name;
-
-	iobase = it->options[0];
-	if (!iobase || !request_region(iobase, S526_IOSIZE, dev->board_name)) {
-		comedi_error(dev, "I/O port conflict");
-		return -EIO;
-	}
-	dev->iobase = iobase;
+	ret = comedi_request_region(dev, it->options[0], S526_IOSIZE);
+	if (ret)
+		return ret;
 
 	devpriv = kzalloc(sizeof(*devpriv), GFP_KERNEL);
 	if (!devpriv)
@@ -616,22 +605,14 @@ static int s526_attach(struct comedi_device *dev, struct comedi_devconfig *it)
 	s->insn_bits = s526_dio_insn_bits;
 	s->insn_config = s526_dio_insn_config;
 
-	dev_info(dev->class_dev, "%s attached\n", dev->board_name);
-
 	return 1;
-}
-
-static void s526_detach(struct comedi_device *dev)
-{
-	if (dev->iobase > 0)
-		release_region(dev->iobase, S526_IOSIZE);
 }
 
 static struct comedi_driver s526_driver = {
 	.driver_name	= "s526",
 	.module		= THIS_MODULE,
 	.attach		= s526_attach,
-	.detach		= s526_detach,
+	.detach		= comedi_legacy_detach,
 };
 module_comedi_driver(s526_driver);
 

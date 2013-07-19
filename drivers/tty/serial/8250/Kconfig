@@ -12,9 +12,8 @@ config SERIAL_8250
 	  here are those that are setting up dedicated Ethernet WWW/FTP
 	  servers, or users that have one of the various bus mice instead of a
 	  serial mouse and don't intend to use their machine's standard serial
-	  port for anything.  (Note that the Cyclades and Stallion multi
-	  serial port drivers do not need this driver built in for them to
-	  work.)
+	  port for anything.  (Note that the Cyclades multi serial port driver
+	  does not need this driver built in for it to work.)
 
 	  To compile this driver as a module, choose M here: the
 	  module will be called 8250.
@@ -32,6 +31,23 @@ config SERIAL_8250
 
 	  Most people will say Y or M here, so that they can use serial mice,
 	  modems and similar devices connecting to the standard serial ports.
+
+config SERIAL_8250_DEPRECATED_OPTIONS
+	bool "Support 8250_core.* kernel options (DEPRECATED)"
+	depends on SERIAL_8250
+	default y
+	---help---
+	  In 3.7 we renamed 8250 to 8250_core by mistake, so now we have to
+	  accept kernel parameters in both forms like 8250_core.nr_uarts=4 and
+	  8250.nr_uarts=4. We now renamed the module back to 8250, but if
+	  anybody noticed in 3.7 and changed their userspace we still have to
+	  keep the 8350_core.* options around until they revert the changes
+	  they already did.
+
+	  If 8250 is built as a module, this adds 8250_core alias instead. 
+
+	  If you did not notice yet and/or you have userspace from pre-3.7, it
+	  is safe (and recommended) to say N here.
 
 config SERIAL_8250_PNP
 	bool "8250/16550 PNP device support" if EXPERT

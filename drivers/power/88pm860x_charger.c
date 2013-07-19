@@ -714,7 +714,6 @@ out_irq:
 	while (--i >= 0)
 		free_irq(info->irq[i], info);
 out:
-	kfree(info);
 	return ret;
 }
 
@@ -723,12 +722,10 @@ static int pm860x_charger_remove(struct platform_device *pdev)
 	struct pm860x_charger_info *info = platform_get_drvdata(pdev);
 	int i;
 
-	platform_set_drvdata(pdev, NULL);
 	power_supply_unregister(&info->usb);
 	free_irq(info->irq[0], info);
 	for (i = 0; i < info->irq_nums; i++)
 		free_irq(info->irq[i], info);
-	kfree(info);
 	return 0;
 }
 

@@ -18,12 +18,6 @@
     but WITHOUT ANY WARRANTY; without even the implied warranty of
     MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
     GNU General Public License for more details.
-
-    You should have received a copy of the GNU General Public License
-    along with this program; if not, write to the Free Software
-    Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
-
-************************************************************************
 */
 /*
 Driver: ni_daq_dio24
@@ -52,8 +46,6 @@ static int dio24_auto_attach(struct comedi_device *dev,
 	struct comedi_subdevice *s;
 	int ret;
 
-	dev->board_name = dev->driver->driver_name;
-
 	link->config_flags |= CONF_AUTO_SET_IO;
 	ret = comedi_pcmcia_enable(dev, NULL);
 	if (ret)
@@ -73,18 +65,11 @@ static int dio24_auto_attach(struct comedi_device *dev,
 	return 0;
 }
 
-static void dio24_detach(struct comedi_device *dev)
-{
-	if (dev->subdevices)
-		subdev_8255_cleanup(dev, &dev->subdevices[0]);
-	comedi_pcmcia_disable(dev);
-}
-
 static struct comedi_driver driver_dio24 = {
 	.driver_name	= "ni_daq_dio24",
 	.module		= THIS_MODULE,
 	.auto_attach	= dio24_auto_attach,
-	.detach		= dio24_detach,
+	.detach		= comedi_pcmcia_disable,
 };
 
 static int dio24_cs_attach(struct pcmcia_device *link)

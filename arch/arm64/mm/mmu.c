@@ -261,7 +261,7 @@ static void __init create_mapping(phys_addr_t phys, unsigned long virt,
 void __iomem * __init early_io_map(phys_addr_t phys, unsigned long virt)
 {
 	unsigned long size, mask;
-	bool page64k = IS_ENABLED(ARM64_64K_PAGES);
+	bool page64k = IS_ENABLED(CONFIG_ARM64_64K_PAGES);
 	pgd_t *pgd;
 	pud_t *pud;
 	pmd_t *pmd;
@@ -297,6 +297,16 @@ static void __init map_mem(void)
 {
 	struct memblock_region *reg;
 
+	/*
+	 * Temporarily limit the memblock range. We need to do this as
+	 * create_mapping requires puds, pmds and ptes to be allocated from
+	 * memory addressable from the initial direct kernel mapping.
+	 *
+	 * The initial direct kernel mapping, located at swapper_pg_dir,
+	 * gives us PGDIR_SIZE memory starting from PHYS_OFFSET (aligned).
+	 */
+	memblock_set_current_limit((PHYS_OFFSET & PGDIR_MASK) + PGDIR_SIZE);
+
 	/* map all the memory banks */
 	for_each_memblock(memory, reg) {
 		phys_addr_t start = reg->base;
@@ -307,6 +317,9 @@ static void __init map_mem(void)
 
 		create_mapping(start, __phys_to_virt(start), end - start);
 	}
+
+	/* Limit no longer required. */
+	memblock_set_current_limit(MEMBLOCK_ALLOC_ANYWHERE);
 }
 
 /*
@@ -316,12 +329,6 @@ static void __init map_mem(void)
 void __init paging_init(void)
 {
 	void *zero_page;
-
-	/*
-	 * Maximum PGDIR_SIZE addressable via the initial direct kernel
-	 * mapping in swapper_pg_dir.
-	 */
-	memblock_set_current_limit((PHYS_OFFSET & PGDIR_MASK) + PGDIR_SIZE);
 
 	init_mem_pgprot();
 	map_mem();
@@ -339,7 +346,6 @@ void __init paging_init(void)
 	bootmem_init();
 
 	empty_zero_page = virt_to_page(zero_page);
-	__flush_dcache_page(empty_zero_page);
 
 	/*
 	 * TTBR0 is only used for the identity mapping at this stage. Make it
@@ -391,17 +397,14 @@ int kern_addr_valid(unsigned long addr)
 }
 #ifdef CONFIG_SPARSEMEM_VMEMMAP
 #ifdef CONFIG_ARM64_64K_PAGES
-int __meminit vmemmap_populate(struct page *start_page,
-			       unsigned long size, int node)
+int __meminit vmemmap_populate(unsigned long start, unsigned long end, int node)
 {
-	return vmemmap_populate_basepages(start_page, size, node);
+	return vmemmap_populate_basepages(start, end, node);
 }
 #else	/* !CONFIG_ARM64_64K_PAGES */
-int __meminit vmemmap_populate(struct page *start_page,
-			       unsigned long size, int node)
+int __meminit vmemmap_populate(unsigned long start, unsigned long end, int node)
 {
-	unsigned long addr = (unsigned long)start_page;
-	unsigned long end = (unsigned long)(start_page + size);
+	unsigned long addr = start;
 	unsigned long next;
 	pgd_t *pgd;
 	pud_t *pud;
@@ -434,7 +437,7 @@ int __meminit vmemmap_populate(struct page *start_page,
 	return 0;
 }
 #endif	/* CONFIG_ARM64_64K_PAGES */
-void vmemmap_free(struct page *memmap, unsigned long nr_pages)
+void vmemmap_free(unsigned long start, unsigned long end)
 {
 }
 #endif	/* CONFIG_SPARSEMEM_VMEMMAP */

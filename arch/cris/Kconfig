@@ -43,7 +43,7 @@ config CRIS
 	select GENERIC_ATOMIC64
 	select HAVE_GENERIC_HARDIRQS
 	select HAVE_UID16
-	select HAVE_VIRT_TO_BUS
+	select VIRT_TO_BUS
 	select ARCH_WANT_IPC_PARSE_VERSION
 	select GENERIC_IRQ_SHOW
 	select GENERIC_IOMAP
@@ -134,11 +134,13 @@ config SVINTO_SIM
 
 config ETRAXFS
 	bool "ETRAX-FS-V32"
+	select CPU_FREQ_TABLE if CPU_FREQ
 	help
 	  Support CRIS V32.
 
 config CRIS_MACH_ARTPEC3
         bool "ARTPEC-3"
+	select CPU_FREQ_TABLE if CPU_FREQ
         help
           Support Axis ARTPEC-3.
 
@@ -264,7 +266,6 @@ config ETRAX_AXISFLASHMAP
 	select MTD_CFI
 	select MTD_CFI_AMDSTD
 	select MTD_JEDECPROBE if ETRAX_ARCH_V32
-	select MTD_CHAR
 	select MTD_BLOCK
 	select MTD_COMPLEX_MAPPINGS
 	help
@@ -638,39 +639,9 @@ endchoice
 
 endmenu
 
-source "drivers/base/Kconfig"
-
-# standard linux drivers
-source "drivers/mtd/Kconfig"
-
-source "drivers/parport/Kconfig"
-
-source "drivers/pnp/Kconfig"
-
-source "drivers/block/Kconfig"
-
-source "drivers/ide/Kconfig"
-
-source "drivers/net/Kconfig"
-
-source "drivers/i2c/Kconfig"
-
-source "drivers/rtc/Kconfig"
-
-#
-# input before char - char/joystick depends on it. As does USB.
-#
-source "drivers/input/Kconfig"
-
-source "drivers/char/Kconfig"
+source "drivers/Kconfig"
 
 source "fs/Kconfig"
-
-source "drivers/usb/Kconfig"
-
-source "drivers/uwb/Kconfig"
-
-source "drivers/staging/Kconfig"
 
 source "arch/cris/Kconfig.debug"
 

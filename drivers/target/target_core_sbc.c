@@ -38,10 +38,26 @@ static sense_reason_t
 sbc_emulate_readcapacity(struct se_cmd *cmd)
 {
 	struct se_device *dev = cmd->se_dev;
+	unsigned char *cdb = cmd->t_task_cdb;
 	unsigned long long blocks_long = dev->transport->get_blocks(dev);
 	unsigned char *rbuf;
 	unsigned char buf[8];
 	u32 blocks;
+
+	/*
+	 * SBC-2 says:
+	 *   If the PMI bit is set to zero and the LOGICAL BLOCK
+	 *   ADDRESS field is not set to zero, the device server shall
+	 *   terminate the command with CHECK CONDITION status with
+	 *   the sense key set to ILLEGAL REQUEST and the additional
+	 *   sense code set to INVALID FIELD IN CDB.
+	 *
+	 * In SBC-3, these fields are obsolete, but some SCSI
+	 * compliance tests actually check this, so we might as well
+	 * follow SBC-2.
+	 */
+	if (!(cdb[8] & 1) && !!(cdb[2] | cdb[3] | cdb[4] | cdb[5]))
+		return TCM_INVALID_CDB_FIELD;
 
 	if (blocks_long >= 0x00000000ffffffff)
 		blocks = 0xffffffff;
@@ -464,8 +480,11 @@ sbc_parse_cdb(struct se_cmd *cmd, struct sbc_ops *ops)
 		break;
 	case SYNCHRONIZE_CACHE:
 	case SYNCHRONIZE_CACHE_16:
-		if (!ops->execute_sync_cache)
-			return TCM_UNSUPPORTED_SCSI_OPCODE;
+		if (!ops->execute_sync_cache) {
+			size = 0;
+			cmd->execute_cmd = sbc_emulate_noop;
+			break;
+		}
 
 		/*
 		 * Extract LBA and range to be flushed for emulated SYNCHRONIZE_CACHE
@@ -578,7 +597,7 @@ sbc_parse_cdb(struct se_cmd *cmd, struct sbc_ops *ops)
 			pr_err("cmd exceeds last lba %llu "
 				"(lba %llu, sectors %u)\n",
 				end_lba, cmd->t_task_lba, sectors);
-			return TCM_INVALID_CDB_FIELD;
+			return TCM_ADDRESS_OUT_OF_RANGE;
 		}
 
 		size = sbc_get_size(cmd, sectors);
@@ -593,3 +612,88 @@ u32 sbc_get_device_type(struct se_device *dev)
 	return TYPE_DISK;
 }
 EXPORT_SYMBOL(sbc_get_device_type);
+
+sense_reason_t
+sbc_execute_unmap(struct se_cmd *cmd,
+	sense_reason_t (*do_unmap_fn)(struct se_cmd *, void *,
+				      sector_t, sector_t),
+	void *priv)
+{
+	struct se_device *dev = cmd->se_dev;
+	unsigned char *buf, *ptr = NULL;
+	sector_t lba;
+	int size;
+	u32 range;
+	sense_reason_t ret = 0;
+	int dl, bd_dl;
+
+	/* We never set ANC_SUP */
+	if (cmd->t_task_cdb[1])
+		return TCM_INVALID_CDB_FIELD;
+
+	if (cmd->data_length == 0) {
+		target_complete_cmd(cmd, SAM_STAT_GOOD);
+		return 0;
+	}
+
+	if (cmd->data_length < 8) {
+		pr_warn("UNMAP parameter list length %u too small\n",
+			cmd->data_length);
+		return TCM_PARAMETER_LIST_LENGTH_ERROR;
+	}
+
+	buf = transport_kmap_data_sg(cmd);
+	if (!buf)
+		return TCM_LOGICAL_UNIT_COMMUNICATION_FAILURE;
+
+	dl = get_unaligned_be16(&buf[0]);
+	bd_dl = get_unaligned_be16(&buf[2]);
+
+	size = cmd->data_length - 8;
+	if (bd_dl > size)
+		pr_warn("UNMAP parameter list length %u too small, ignoring bd_dl %u\n",
+			cmd->data_length, bd_dl);
+	else
+		size = bd_dl;
+
+	if (size / 16 > dev->dev_attrib.max_unmap_block_desc_count) {
+		ret = TCM_INVALID_PARAMETER_LIST;
+		goto err;
+	}
+
+	/* First UNMAP block descriptor starts at 8 byte offset */
+	ptr = &buf[8];
+	pr_debug("UNMAP: Sub: %s Using dl: %u bd_dl: %u size: %u"
+		" ptr: %p\n", dev->transport->name, dl, bd_dl, size, ptr);
+
+	while (size >= 16) {
+		lba = get_unaligned_be64(&ptr[0]);
+		range = get_unaligned_be32(&ptr[8]);
+		pr_debug("UNMAP: Using lba: %llu and range: %u\n",
+				 (unsigned long long)lba, range);
+
+		if (range > dev->dev_attrib.max_unmap_lba_count) {
+			ret = TCM_INVALID_PARAMETER_LIST;
+			goto err;
+		}
+
+		if (lba + range > dev->transport->get_blocks(dev) + 1) {
+			ret = TCM_ADDRESS_OUT_OF_RANGE;
+			goto err;
+		}
+
+		ret = do_unmap_fn(cmd, priv, lba, range);
+		if (ret)
+			goto err;
+
+		ptr += 16;
+		size -= 16;
+	}
+
+err:
+	transport_kunmap_data_sg(cmd);
+	if (!ret)
+		target_complete_cmd(cmd, GOOD);
+	return ret;
+}
+EXPORT_SYMBOL(sbc_execute_unmap);

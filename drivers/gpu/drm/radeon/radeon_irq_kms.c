@@ -82,6 +82,23 @@ static void radeon_hotplug_work_func(struct work_struct *work)
 }
 
 /**
+ * radeon_irq_reset_work_func - execute gpu reset
+ *
+ * @work: work struct
+ *
+ * Execute scheduled gpu reset (cayman+).
+ * This function is called when the irq handler
+ * thinks we need a gpu reset.
+ */
+static void radeon_irq_reset_work_func(struct work_struct *work)
+{
+	struct radeon_device *rdev = container_of(work, struct radeon_device,
+						  reset_work);
+
+	radeon_gpu_reset(rdev);
+}
+
+/**
  * radeon_driver_irq_preinstall_kms - drm irq preinstall callback
  *
  * @dev: drm dev pointer
@@ -99,6 +116,7 @@ void radeon_driver_irq_preinstall_kms(struct drm_device *dev)
 	/* Disable *all* interrupts */
 	for (i = 0; i < RADEON_NUM_RINGS; i++)
 		atomic_set(&rdev->irq.ring_int[i], 0);
+	rdev->irq.dpm_thermal = false;
 	for (i = 0; i < RADEON_MAX_HPD_PINS; i++)
 		rdev->irq.hpd[i] = false;
 	for (i = 0; i < RADEON_MAX_CRTCS; i++) {
@@ -146,6 +164,7 @@ void radeon_driver_irq_uninstall_kms(struct drm_device *dev)
 	/* Disable *all* interrupts */
 	for (i = 0; i < RADEON_NUM_RINGS; i++)
 		atomic_set(&rdev->irq.ring_int[i], 0);
+	rdev->irq.dpm_thermal = false;
 	for (i = 0; i < RADEON_MAX_HPD_PINS; i++)
 		rdev->irq.hpd[i] = false;
 	for (i = 0; i < RADEON_MAX_CRTCS; i++) {
@@ -243,6 +262,7 @@ int radeon_irq_kms_init(struct radeon_device *rdev)
 
 	INIT_WORK(&rdev->hotplug_work, radeon_hotplug_work_func);
 	INIT_WORK(&rdev->audio_work, r600_audio_update_hdmi);
+	INIT_WORK(&rdev->reset_work, radeon_irq_reset_work_func);
 
 	spin_lock_init(&rdev->irq.lock);
 	r = drm_vblank_init(rdev->ddev, rdev->num_crtc);
@@ -270,7 +290,7 @@ int radeon_irq_kms_init(struct radeon_device *rdev)
 }
 
 /**
- * radeon_irq_kms_fini - tear down driver interrrupt info
+ * radeon_irq_kms_fini - tear down driver interrupt info
  *
  * @rdev: radeon device pointer
  *
@@ -400,6 +420,9 @@ void radeon_irq_kms_enable_afmt(struct radeon_device *rdev, int block)
 {
 	unsigned long irqflags;
 
+	if (!rdev->ddev->irq_enabled)
+		return;
+
 	spin_lock_irqsave(&rdev->irq.lock, irqflags);
 	rdev->irq.afmt[block] = true;
 	radeon_irq_set(rdev);
@@ -418,6 +441,9 @@ void radeon_irq_kms_enable_afmt(struct radeon_device *rdev, int block)
 void radeon_irq_kms_disable_afmt(struct radeon_device *rdev, int block)
 {
 	unsigned long irqflags;
+
+	if (!rdev->ddev->irq_enabled)
+		return;
 
 	spin_lock_irqsave(&rdev->irq.lock, irqflags);
 	rdev->irq.afmt[block] = false;
@@ -438,6 +464,9 @@ void radeon_irq_kms_enable_hpd(struct radeon_device *rdev, unsigned hpd_mask)
 	unsigned long irqflags;
 	int i;
 
+	if (!rdev->ddev->irq_enabled)
+		return;
+
 	spin_lock_irqsave(&rdev->irq.lock, irqflags);
 	for (i = 0; i < RADEON_MAX_HPD_PINS; ++i)
 		rdev->irq.hpd[i] |= !!(hpd_mask & (1 << i));
@@ -457,6 +486,9 @@ void radeon_irq_kms_disable_hpd(struct radeon_device *rdev, unsigned hpd_mask)
 {
 	unsigned long irqflags;
 	int i;
+
+	if (!rdev->ddev->irq_enabled)
+		return;
 
 	spin_lock_irqsave(&rdev->irq.lock, irqflags);
 	for (i = 0; i < RADEON_MAX_HPD_PINS; ++i)

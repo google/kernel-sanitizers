@@ -57,7 +57,7 @@ eb_create(struct drm_i915_gem_execbuffer2 *args)
 	if (eb == NULL) {
 		int size = args->buffer_count;
 		int count = PAGE_SIZE / sizeof(struct hlist_head) / 2;
-		BUILD_BUG_ON(!is_power_of_2(PAGE_SIZE / sizeof(struct hlist_head)));
+		BUILD_BUG_ON_NOT_POWER_OF_2(PAGE_SIZE / sizeof(struct hlist_head));
 		while (count > 2*size)
 			count >>= 1;
 		eb = kzalloc(count*sizeof(struct hlist_head) +
@@ -305,7 +305,7 @@ i915_gem_execbuffer_relocate_object(struct drm_i915_gem_object *obj,
 	struct drm_i915_gem_exec_object2 *entry = obj->exec_entry;
 	int remain, ret;
 
-	user_relocs = (void __user *)(uintptr_t)entry->relocs_ptr;
+	user_relocs = to_user_ptr(entry->relocs_ptr);
 
 	remain = entry->relocation_count;
 	while (remain) {
@@ -359,8 +359,7 @@ i915_gem_execbuffer_relocate_object_slow(struct drm_i915_gem_object *obj,
 }
 
 static int
-i915_gem_execbuffer_relocate(struct drm_device *dev,
-			     struct eb_objects *eb)
+i915_gem_execbuffer_relocate(struct eb_objects *eb)
 {
 	struct drm_i915_gem_object *obj;
 	int ret = 0;
@@ -475,7 +474,6 @@ i915_gem_execbuffer_unreserve_object(struct drm_i915_gem_object *obj)
 
 static int
 i915_gem_execbuffer_reserve(struct intel_ring_buffer *ring,
-			    struct drm_file *file,
 			    struct list_head *objects,
 			    bool *need_relocs)
 {
@@ -618,7 +616,7 @@ i915_gem_execbuffer_relocate_slow(struct drm_device *dev,
 		u64 invalid_offset = (u64)-1;
 		int j;
 
-		user_relocs = (void __user *)(uintptr_t)exec[i].relocs_ptr;
+		user_relocs = to_user_ptr(exec[i].relocs_ptr);
 
 		if (copy_from_user(reloc+total, user_relocs,
 				   exec[i].relocation_count * sizeof(*reloc))) {
@@ -663,7 +661,7 @@ i915_gem_execbuffer_relocate_slow(struct drm_device *dev,
 		goto err;
 
 	need_relocs = (args->flags & I915_EXEC_NO_RELOC) == 0;
-	ret = i915_gem_execbuffer_reserve(ring, file, &eb->objects, &need_relocs);
+	ret = i915_gem_execbuffer_reserve(ring, &eb->objects, &need_relocs);
 	if (ret)
 		goto err;
 
@@ -732,22 +730,31 @@ validate_exec_list(struct drm_i915_gem_exec_object2 *exec,
 		   int count)
 {
 	int i;
+	int relocs_total = 0;
+	int relocs_max = INT_MAX / sizeof(struct drm_i915_gem_relocation_entry);
 
 	for (i = 0; i < count; i++) {
-		char __user *ptr = (char __user *)(uintptr_t)exec[i].relocs_ptr;
+		char __user *ptr = to_user_ptr(exec[i].relocs_ptr);
 		int length; /* limited by fault_in_pages_readable() */
 
 		if (exec[i].flags & __EXEC_OBJECT_UNKNOWN_FLAGS)
 			return -EINVAL;
 
-		/* First check for malicious input causing overflow */
-		if (exec[i].relocation_count >
-		    INT_MAX / sizeof(struct drm_i915_gem_relocation_entry))
+		/* First check for malicious input causing overflow in
+		 * the worst case where we need to allocate the entire
+		 * relocation tree as a single array.
+		 */
+		if (exec[i].relocation_count > relocs_max - relocs_total)
 			return -EINVAL;
+		relocs_total += exec[i].relocation_count;
 
 		length = exec[i].relocation_count *
 			sizeof(struct drm_i915_gem_relocation_entry);
-		/* we may also need to update the presumed offsets */
+		/*
+		 * We must check that the entire relocation array is safe
+		 * to read, but since we may need to update the presumed
+		 * offsets during execution, check for full write access.
+		 */
 		if (!access_ok(VERIFY_WRITE, ptr, length))
 			return -EFAULT;
 
@@ -779,7 +786,7 @@ i915_gem_execbuffer_move_to_active(struct list_head *objects,
 			obj->dirty = 1;
 			obj->last_write_seqno = intel_ring_get_seqno(ring);
 			if (obj->pin_count) /* check for potential scanout */
-				intel_mark_fb_busy(obj);
+				intel_mark_fb_busy(obj, ring);
 		}
 
 		trace_i915_gem_object_change_domain(obj, old_read, old_write);
@@ -789,13 +796,14 @@ i915_gem_execbuffer_move_to_active(struct list_head *objects,
 static void
 i915_gem_execbuffer_retire_commands(struct drm_device *dev,
 				    struct drm_file *file,
-				    struct intel_ring_buffer *ring)
+				    struct intel_ring_buffer *ring,
+				    struct drm_i915_gem_object *obj)
 {
 	/* Unconditionally force add_request to emit a full flush. */
 	ring->gpu_caches_dirty = true;
 
 	/* Add a breadcrumb for the completion of the batch buffer */
-	(void)i915_add_request(ring, file, NULL);
+	(void)__i915_add_request(ring, file, obj, NULL);
 }
 
 static int
@@ -878,6 +886,15 @@ i915_gem_do_execbuffer(struct drm_device *dev, void *data,
 			return -EPERM;
 		}
 		break;
+	case I915_EXEC_VEBOX:
+		ring = &dev_priv->ring[VECS];
+		if (ctx_id != 0) {
+			DRM_DEBUG("Ring %s doesn't support contexts\n",
+				  ring->name);
+			return -EPERM;
+		}
+		break;
+
 	default:
 		DRM_DEBUG("execbuf with unknown ring: %d\n",
 			  (int)(args->flags & I915_EXEC_RING_MASK));
@@ -944,9 +961,8 @@ i915_gem_do_execbuffer(struct drm_device *dev, void *data,
 		}
 
 		if (copy_from_user(cliprects,
-				     (struct drm_clip_rect __user *)(uintptr_t)
-				     args->cliprects_ptr,
-				     sizeof(*cliprects)*args->num_cliprects)) {
+				   to_user_ptr(args->cliprects_ptr),
+				   sizeof(*cliprects)*args->num_cliprects)) {
 			ret = -EFAULT;
 			goto pre_mutex_err;
 		}
@@ -981,13 +997,13 @@ i915_gem_do_execbuffer(struct drm_device *dev, void *data,
 
 	/* Move the objects en-masse into the GTT, evicting if necessary. */
 	need_relocs = (args->flags & I915_EXEC_NO_RELOC) == 0;
-	ret = i915_gem_execbuffer_reserve(ring, file, &eb->objects, &need_relocs);
+	ret = i915_gem_execbuffer_reserve(ring, &eb->objects, &need_relocs);
 	if (ret)
 		goto err;
 
 	/* The objects are in their final locations, apply the relocations. */
 	if (need_relocs)
-		ret = i915_gem_execbuffer_relocate(dev, eb);
+		ret = i915_gem_execbuffer_relocate(eb);
 	if (ret) {
 		if (ret == -EFAULT) {
 			ret = i915_gem_execbuffer_relocate_slow(dev, args, file, ring,
@@ -1068,7 +1084,7 @@ i915_gem_do_execbuffer(struct drm_device *dev, void *data,
 	trace_i915_gem_ring_dispatch(ring, intel_ring_get_seqno(ring), flags);
 
 	i915_gem_execbuffer_move_to_active(&eb->objects, ring);
-	i915_gem_execbuffer_retire_commands(dev, file, ring);
+	i915_gem_execbuffer_retire_commands(dev, file, ring, batch_obj);
 
 err:
 	eb_destroy(eb);
@@ -1110,7 +1126,7 @@ i915_gem_execbuffer(struct drm_device *dev, void *data,
 		return -ENOMEM;
 	}
 	ret = copy_from_user(exec_list,
-			     (void __user *)(uintptr_t)args->buffers_ptr,
+			     to_user_ptr(args->buffers_ptr),
 			     sizeof(*exec_list) * args->buffer_count);
 	if (ret != 0) {
 		DRM_DEBUG("copy %d exec entries failed %d\n",
@@ -1149,7 +1165,7 @@ i915_gem_execbuffer(struct drm_device *dev, void *data,
 		for (i = 0; i < args->buffer_count; i++)
 			exec_list[i].offset = exec2_list[i].offset;
 		/* ... and back out to userspace */
-		ret = copy_to_user((void __user *)(uintptr_t)args->buffers_ptr,
+		ret = copy_to_user(to_user_ptr(args->buffers_ptr),
 				   exec_list,
 				   sizeof(*exec_list) * args->buffer_count);
 		if (ret) {
@@ -1190,8 +1206,7 @@ i915_gem_execbuffer2(struct drm_device *dev, void *data,
 		return -ENOMEM;
 	}
 	ret = copy_from_user(exec2_list,
-			     (struct drm_i915_relocation_entry __user *)
-			     (uintptr_t) args->buffers_ptr,
+			     to_user_ptr(args->buffers_ptr),
 			     sizeof(*exec2_list) * args->buffer_count);
 	if (ret != 0) {
 		DRM_DEBUG("copy %d exec entries failed %d\n",
@@ -1203,7 +1218,7 @@ i915_gem_execbuffer2(struct drm_device *dev, void *data,
 	ret = i915_gem_do_execbuffer(dev, data, file, args, exec2_list);
 	if (!ret) {
 		/* Copy the new buffer offsets back to the user's exec list. */
-		ret = copy_to_user((void __user *)(uintptr_t)args->buffers_ptr,
+		ret = copy_to_user(to_user_ptr(args->buffers_ptr),
 				   exec2_list,
 				   sizeof(*exec2_list) * args->buffer_count);
 		if (ret) {

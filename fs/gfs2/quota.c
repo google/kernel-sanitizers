@@ -121,7 +121,7 @@ static u64 qd2index(struct gfs2_quota_data *qd)
 {
 	struct kqid qid = qd->qd_id;
 	return (2 * (u64)from_kqid(&init_user_ns, qid)) +
-		(qid.type == USRQUOTA) ? 0 : 1;
+		((qid.type == USRQUOTA) ? 0 : 1);
 }
 
 static u64 qd2offset(struct gfs2_quota_data *qd)
@@ -721,7 +721,7 @@ get_a_page:
 			goto unlock_out;
 	}
 
-	gfs2_trans_add_meta(ip->i_gl, bh);
+	gfs2_trans_add_data(ip->i_gl, bh);
 
 	kaddr = kmap_atomic(page);
 	if (offset + sizeof(struct gfs2_quota) > PAGE_CACHE_SIZE)
@@ -1154,11 +1154,6 @@ int gfs2_quota_sync(struct super_block *sb, int type)
 	return error;
 }
 
-static int gfs2_quota_sync_timeo(struct super_block *sb, int type)
-{
-	return gfs2_quota_sync(sb, type);
-}
-
 int gfs2_quota_refresh(struct gfs2_sbd *sdp, struct kqid qid)
 {
 	struct gfs2_quota_data *qd;
@@ -1414,7 +1409,7 @@ int gfs2_quotad(void *data)
 					   &tune->gt_statfs_quantum);
 
 		/* Update quota file */
-		quotad_check_timeo(sdp, "sync", gfs2_quota_sync_timeo, t,
+		quotad_check_timeo(sdp, "sync", gfs2_quota_sync, t,
 				   &quotad_timeo, &tune->gt_quota_quantum);
 
 		/* Check for & recover partially truncated inodes */

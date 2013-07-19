@@ -508,7 +508,7 @@ out:
 
 static int pgctrl_open(struct inode *inode, struct file *file)
 {
-	return single_open(file, pgctrl_show, PDE(inode)->data);
+	return single_open(file, pgctrl_show, PDE_DATA(inode));
 }
 
 static const struct file_operations pktgen_fops = {
@@ -1685,7 +1685,7 @@ static ssize_t pktgen_if_write(struct file *file,
 
 static int pktgen_if_open(struct inode *inode, struct file *file)
 {
-	return single_open(file, pktgen_if_show, PDE(inode)->data);
+	return single_open(file, pktgen_if_show, PDE_DATA(inode));
 }
 
 static const struct file_operations pktgen_if_fops = {
@@ -1823,7 +1823,7 @@ out:
 
 static int pktgen_thread_open(struct inode *inode, struct file *file)
 {
-	return single_open(file, pktgen_thread_show, PDE(inode)->data);
+	return single_open(file, pktgen_thread_show, PDE_DATA(inode));
 }
 
 static const struct file_operations pktgen_thread_fops = {
@@ -1904,7 +1904,7 @@ static void pktgen_change_name(const struct pktgen_net *pn, struct net_device *d
 			if (pkt_dev->odev != dev)
 				continue;
 
-			remove_proc_entry(pkt_dev->entry->name, pn->proc_dir);
+			proc_remove(pkt_dev->entry);
 
 			pkt_dev->entry = proc_create_data(dev->name, 0600,
 							  pn->proc_dir,
@@ -1921,7 +1921,7 @@ static void pktgen_change_name(const struct pktgen_net *pn, struct net_device *d
 static int pktgen_device_event(struct notifier_block *unused,
 			       unsigned long event, void *ptr)
 {
-	struct net_device *dev = ptr;
+	struct net_device *dev = netdev_notifier_info_to_dev(ptr);
 	struct pktgen_net *pn = net_generic(dev_net(dev), pg_net_id);
 
 	if (pn->pktgen_exiting)
@@ -2198,7 +2198,7 @@ static inline int f_pick(struct pktgen_dev *pkt_dev)
 				pkt_dev->curfl = 0; /*reset */
 		}
 	} else {
-		flow = random32() % pkt_dev->cflows;
+		flow = prandom_u32() % pkt_dev->cflows;
 		pkt_dev->curfl = flow;
 
 		if (pkt_dev->flows[flow].count > pkt_dev->lflow) {
@@ -2246,7 +2246,7 @@ static void set_cur_queue_map(struct pktgen_dev *pkt_dev)
 	else if (pkt_dev->queue_map_min <= pkt_dev->queue_map_max) {
 		__u16 t;
 		if (pkt_dev->flags & F_QUEUE_MAP_RND) {
-			t = random32() %
+			t = prandom_u32() %
 				(pkt_dev->queue_map_max -
 				 pkt_dev->queue_map_min + 1)
 				+ pkt_dev->queue_map_min;
@@ -2278,7 +2278,7 @@ static void mod_cur_headers(struct pktgen_dev *pkt_dev)
 		__u32 tmp;
 
 		if (pkt_dev->flags & F_MACSRC_RND)
-			mc = random32() % pkt_dev->src_mac_count;
+			mc = prandom_u32() % pkt_dev->src_mac_count;
 		else {
 			mc = pkt_dev->cur_src_mac_offset++;
 			if (pkt_dev->cur_src_mac_offset >=
@@ -2304,7 +2304,7 @@ static void mod_cur_headers(struct pktgen_dev *pkt_dev)
 		__u32 tmp;
 
 		if (pkt_dev->flags & F_MACDST_RND)
-			mc = random32() % pkt_dev->dst_mac_count;
+			mc = prandom_u32() % pkt_dev->dst_mac_count;
 
 		else {
 			mc = pkt_dev->cur_dst_mac_offset++;
@@ -2331,21 +2331,21 @@ static void mod_cur_headers(struct pktgen_dev *pkt_dev)
 		for (i = 0; i < pkt_dev->nr_labels; i++)
 			if (pkt_dev->labels[i] & MPLS_STACK_BOTTOM)
 				pkt_dev->labels[i] = MPLS_STACK_BOTTOM |
-					     ((__force __be32)random32() &
+					     ((__force __be32)prandom_u32() &
 						      htonl(0x000fffff));
 	}
 
 	if ((pkt_dev->flags & F_VID_RND) && (pkt_dev->vlan_id != 0xffff)) {
-		pkt_dev->vlan_id = random32() & (4096-1);
+		pkt_dev->vlan_id = prandom_u32() & (4096 - 1);
 	}
 
 	if ((pkt_dev->flags & F_SVID_RND) && (pkt_dev->svlan_id != 0xffff)) {
-		pkt_dev->svlan_id = random32() & (4096 - 1);
+		pkt_dev->svlan_id = prandom_u32() & (4096 - 1);
 	}
 
 	if (pkt_dev->udp_src_min < pkt_dev->udp_src_max) {
 		if (pkt_dev->flags & F_UDPSRC_RND)
-			pkt_dev->cur_udp_src = random32() %
+			pkt_dev->cur_udp_src = prandom_u32() %
 				(pkt_dev->udp_src_max - pkt_dev->udp_src_min)
 				+ pkt_dev->udp_src_min;
 
@@ -2358,7 +2358,7 @@ static void mod_cur_headers(struct pktgen_dev *pkt_dev)
 
 	if (pkt_dev->udp_dst_min < pkt_dev->udp_dst_max) {
 		if (pkt_dev->flags & F_UDPDST_RND) {
-			pkt_dev->cur_udp_dst = random32() %
+			pkt_dev->cur_udp_dst = prandom_u32() %
 				(pkt_dev->udp_dst_max - pkt_dev->udp_dst_min)
 				+ pkt_dev->udp_dst_min;
 		} else {
@@ -2375,7 +2375,7 @@ static void mod_cur_headers(struct pktgen_dev *pkt_dev)
 		if (imn < imx) {
 			__u32 t;
 			if (pkt_dev->flags & F_IPSRC_RND)
-				t = random32() % (imx - imn) + imn;
+				t = prandom_u32() % (imx - imn) + imn;
 			else {
 				t = ntohl(pkt_dev->cur_saddr);
 				t++;
@@ -2396,17 +2396,15 @@ static void mod_cur_headers(struct pktgen_dev *pkt_dev)
 				__be32 s;
 				if (pkt_dev->flags & F_IPDST_RND) {
 
-					t = random32() % (imx - imn) + imn;
-					s = htonl(t);
-
-					while (ipv4_is_loopback(s) ||
-					       ipv4_is_multicast(s) ||
-					       ipv4_is_lbcast(s) ||
-					       ipv4_is_zeronet(s) ||
-					       ipv4_is_local_multicast(s)) {
-						t = random32() % (imx - imn) + imn;
+					do {
+						t = prandom_u32() %
+							(imx - imn) + imn;
 						s = htonl(t);
-					}
+					} while (ipv4_is_loopback(s) ||
+						ipv4_is_multicast(s) ||
+						ipv4_is_lbcast(s) ||
+						ipv4_is_zeronet(s) ||
+						ipv4_is_local_multicast(s));
 					pkt_dev->cur_daddr = s;
 				} else {
 					t = ntohl(pkt_dev->cur_daddr);
@@ -2437,7 +2435,7 @@ static void mod_cur_headers(struct pktgen_dev *pkt_dev)
 
 			for (i = 0; i < 4; i++) {
 				pkt_dev->cur_in6_daddr.s6_addr32[i] =
-				    (((__force __be32)random32() |
+				    (((__force __be32)prandom_u32() |
 				      pkt_dev->min_in6_daddr.s6_addr32[i]) &
 				     pkt_dev->max_in6_daddr.s6_addr32[i]);
 			}
@@ -2447,7 +2445,7 @@ static void mod_cur_headers(struct pktgen_dev *pkt_dev)
 	if (pkt_dev->min_pkt_size < pkt_dev->max_pkt_size) {
 		__u32 t;
 		if (pkt_dev->flags & F_TXSIZE_RND) {
-			t = random32() %
+			t = prandom_u32() %
 				(pkt_dev->max_pkt_size - pkt_dev->min_pkt_size)
 				+ pkt_dev->min_pkt_size;
 		} else {
@@ -2629,6 +2627,29 @@ static void pktgen_finalize_skb(struct pktgen_dev *pkt_dev, struct sk_buff *skb,
 	pgh->tv_usec = htonl(timestamp.tv_usec);
 }
 
+static struct sk_buff *pktgen_alloc_skb(struct net_device *dev,
+					struct pktgen_dev *pkt_dev,
+					unsigned int extralen)
+{
+	struct sk_buff *skb = NULL;
+	unsigned int size = pkt_dev->cur_pkt_size + 64 + extralen +
+			    pkt_dev->pkt_overhead;
+
+	if (pkt_dev->flags & F_NODE) {
+		int node = pkt_dev->node >= 0 ? pkt_dev->node : numa_node_id();
+
+		skb = __alloc_skb(NET_SKB_PAD + size, GFP_NOWAIT, 0, node);
+		if (likely(skb)) {
+			skb_reserve(skb, NET_SKB_PAD);
+			skb->dev = dev;
+		}
+	} else {
+		 skb = __netdev_alloc_skb(dev, size, GFP_NOWAIT);
+	}
+
+	return skb;
+}
+
 static struct sk_buff *fill_packet_ipv4(struct net_device *odev,
 					struct pktgen_dev *pkt_dev)
 {
@@ -2659,32 +2680,13 @@ static struct sk_buff *fill_packet_ipv4(struct net_device *odev,
 
 	datalen = (odev->hard_header_len + 16) & ~0xf;
 
-	if (pkt_dev->flags & F_NODE) {
-		int node;
-
-		if (pkt_dev->node >= 0)
-			node = pkt_dev->node;
-		else
-			node =  numa_node_id();
-
-		skb = __alloc_skb(NET_SKB_PAD + pkt_dev->cur_pkt_size + 64
-				  + datalen + pkt_dev->pkt_overhead, GFP_NOWAIT, 0, node);
-		if (likely(skb)) {
-			skb_reserve(skb, NET_SKB_PAD);
-			skb->dev = odev;
-		}
-	}
-	else
-	  skb = __netdev_alloc_skb(odev,
-				   pkt_dev->cur_pkt_size + 64
-				   + datalen + pkt_dev->pkt_overhead, GFP_NOWAIT);
-
+	skb = pktgen_alloc_skb(odev, pkt_dev, datalen);
 	if (!skb) {
 		sprintf(pkt_dev->result, "No memory");
 		return NULL;
 	}
-	prefetchw(skb->data);
 
+	prefetchw(skb->data);
 	skb_reserve(skb, datalen);
 
 	/*  Reserve for ethernet and IP header  */
@@ -2710,14 +2712,14 @@ static struct sk_buff *fill_packet_ipv4(struct net_device *odev,
 		*vlan_encapsulated_proto = htons(ETH_P_IP);
 	}
 
-	skb->network_header = skb->tail;
-	skb->transport_header = skb->network_header + sizeof(struct iphdr);
-	skb_put(skb, sizeof(struct iphdr) + sizeof(struct udphdr));
+	skb_set_mac_header(skb, 0);
+	skb_set_network_header(skb, skb->len);
+	iph = (struct iphdr *) skb_put(skb, sizeof(struct iphdr));
+
+	skb_set_transport_header(skb, skb->len);
+	udph = (struct udphdr *) skb_put(skb, sizeof(struct udphdr));
 	skb_set_queue_mapping(skb, queue_map);
 	skb->priority = pkt_dev->skb_priority;
-
-	iph = ip_hdr(skb);
-	udph = udp_hdr(skb);
 
 	memcpy(eth, pkt_dev->hh, 12);
 	*(__be16 *) & eth[12] = protocol;
@@ -2748,8 +2750,6 @@ static struct sk_buff *fill_packet_ipv4(struct net_device *odev,
 	iph->check = 0;
 	iph->check = ip_fast_csum((void *)iph, iph->ihl);
 	skb->protocol = protocol;
-	skb->mac_header = (skb->network_header - ETH_HLEN -
-			   pkt_dev->pkt_overhead);
 	skb->dev = odev;
 	skb->pkt_type = PACKET_HOST;
 	pktgen_finalize_skb(pkt_dev, skb, datalen);
@@ -2790,15 +2790,13 @@ static struct sk_buff *fill_packet_ipv6(struct net_device *odev,
 	mod_cur_headers(pkt_dev);
 	queue_map = pkt_dev->cur_queue_map;
 
-	skb = __netdev_alloc_skb(odev,
-				 pkt_dev->cur_pkt_size + 64
-				 + 16 + pkt_dev->pkt_overhead, GFP_NOWAIT);
+	skb = pktgen_alloc_skb(odev, pkt_dev, 16);
 	if (!skb) {
 		sprintf(pkt_dev->result, "No memory");
 		return NULL;
 	}
-	prefetchw(skb->data);
 
+	prefetchw(skb->data);
 	skb_reserve(skb, 16);
 
 	/*  Reserve for ethernet and IP header  */
@@ -2824,13 +2822,14 @@ static struct sk_buff *fill_packet_ipv6(struct net_device *odev,
 		*vlan_encapsulated_proto = htons(ETH_P_IPV6);
 	}
 
-	skb->network_header = skb->tail;
-	skb->transport_header = skb->network_header + sizeof(struct ipv6hdr);
-	skb_put(skb, sizeof(struct ipv6hdr) + sizeof(struct udphdr));
+	skb_set_mac_header(skb, 0);
+	skb_set_network_header(skb, skb->len);
+	iph = (struct ipv6hdr *) skb_put(skb, sizeof(struct ipv6hdr));
+
+	skb_set_transport_header(skb, skb->len);
+	udph = (struct udphdr *) skb_put(skb, sizeof(struct udphdr));
 	skb_set_queue_mapping(skb, queue_map);
 	skb->priority = pkt_dev->skb_priority;
-	iph = ipv6_hdr(skb);
-	udph = udp_hdr(skb);
 
 	memcpy(eth, pkt_dev->hh, 12);
 	*(__be16 *) &eth[12] = protocol;
@@ -2865,8 +2864,6 @@ static struct sk_buff *fill_packet_ipv6(struct net_device *odev,
 	iph->daddr = pkt_dev->cur_in6_daddr;
 	iph->saddr = pkt_dev->cur_in6_saddr;
 
-	skb->mac_header = (skb->network_header - ETH_HLEN -
-			   pkt_dev->pkt_overhead);
 	skb->protocol = protocol;
 	skb->dev = odev;
 	skb->pkt_type = PACKET_HOST;
@@ -3576,8 +3573,6 @@ static void _rem_dev_from_if_list(struct pktgen_thread *t,
 static int pktgen_remove_device(struct pktgen_thread *t,
 				struct pktgen_dev *pkt_dev)
 {
-	struct pktgen_net *pn = t->net;
-
 	pr_debug("remove_device pkt_dev=%p\n", pkt_dev);
 
 	if (pkt_dev->running) {
@@ -3597,7 +3592,7 @@ static int pktgen_remove_device(struct pktgen_thread *t,
 	_rem_dev_from_if_list(t, pkt_dev);
 
 	if (pkt_dev->entry)
-		remove_proc_entry(pkt_dev->entry->name, pn->proc_dir);
+		proc_remove(pkt_dev->entry);
 
 #ifdef CONFIG_XFRM
 	free_SAs(pkt_dev);

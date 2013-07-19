@@ -22,7 +22,7 @@
  * USA
  *
  * The full GNU General Public License is included in this distribution
- * in the file called LICENSE.GPL.
+ * in the file called COPYING.
  *
  * Contact Information:
  *  Intel Linux Wireless <ilw@linux.intel.com>
@@ -76,6 +76,11 @@ int iwl_mvm_send_cmd(struct iwl_mvm *mvm, struct iwl_host_cmd *cmd)
 {
 	int ret;
 
+#if defined(CONFIG_IWLWIFI_DEBUGFS) && defined(CONFIG_PM_SLEEP)
+	if (WARN_ON(mvm->d3_test_active))
+		return -EIO;
+#endif
+
 	/*
 	 * Synchronous commands from this op-mode must hold
 	 * the mutex, this ensures we don't try to send two
@@ -124,6 +129,11 @@ int iwl_mvm_send_cmd_status(struct iwl_mvm *mvm, struct iwl_host_cmd *cmd,
 	int ret, resp_len;
 
 	lockdep_assert_held(&mvm->mutex);
+
+#if defined(CONFIG_IWLWIFI_DEBUGFS) && defined(CONFIG_PM_SLEEP)
+	if (WARN_ON(mvm->d3_test_active))
+		return -EIO;
+#endif
 
 	/*
 	 * Only synchronous commands can wait for status,
@@ -253,8 +263,9 @@ int iwl_mvm_rx_fw_error(struct iwl_mvm *mvm, struct iwl_rx_cmd_buffer *rxb,
 u8 first_antenna(u8 mask)
 {
 	BUILD_BUG_ON(ANT_A != BIT(0)); /* using ffs is wrong if not */
-	WARN_ON_ONCE(!mask); /* ffs will return 0 if mask is zeroed */
-	return (u8)(BIT(ffs(mask)));
+	if (WARN_ON_ONCE(!mask)) /* ffs will return 0 if mask is zeroed */
+		return BIT(0);
+	return BIT(ffs(mask) - 1);
 }
 
 /*
@@ -462,11 +473,42 @@ int iwl_mvm_send_lq_cmd(struct iwl_mvm *mvm, struct iwl_lq_cmd *lq,
 		.data = { lq, },
 	};
 
-	if (WARN_ON(lq->sta_id == IWL_INVALID_STATION))
+	if (WARN_ON(lq->sta_id == IWL_MVM_STATION_COUNT))
 		return -EINVAL;
 
 	if (WARN_ON(init && (cmd.flags & CMD_ASYNC)))
 		return -EINVAL;
 
 	return iwl_mvm_send_cmd(mvm, &cmd);
+}
+
+/**
+ * iwl_mvm_update_smps - Get a requst to change the SMPS mode
+ * @req_type: The part of the driver who call for a change.
+ * @smps_requests: The request to change the SMPS mode.
+ *
+ * Get a requst to change the SMPS mode,
+ * and change it according to all other requests in the driver.
+ */
+void iwl_mvm_update_smps(struct iwl_mvm *mvm, struct ieee80211_vif *vif,
+			 enum iwl_mvm_smps_type_request req_type,
+			 enum ieee80211_smps_mode smps_request)
+{
+	struct iwl_mvm_vif *mvmvif;
+	enum ieee80211_smps_mode smps_mode = IEEE80211_SMPS_AUTOMATIC;
+	int i;
+
+	lockdep_assert_held(&mvm->mutex);
+	mvmvif = iwl_mvm_vif_from_mac80211(vif);
+	mvmvif->smps_requests[req_type] = smps_request;
+	for (i = 0; i < NUM_IWL_MVM_SMPS_REQ; i++) {
+		if (mvmvif->smps_requests[i] == IEEE80211_SMPS_STATIC) {
+			smps_mode = IEEE80211_SMPS_STATIC;
+			break;
+		}
+		if (mvmvif->smps_requests[i] == IEEE80211_SMPS_DYNAMIC)
+			smps_mode = IEEE80211_SMPS_DYNAMIC;
+	}
+
+	ieee80211_request_smps(vif, smps_mode);
 }

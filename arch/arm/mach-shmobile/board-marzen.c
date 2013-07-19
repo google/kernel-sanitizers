@@ -25,19 +25,18 @@
 #include <linux/platform_device.h>
 #include <linux/delay.h>
 #include <linux/io.h>
-#include <linux/gpio.h>
+#include <linux/leds.h>
 #include <linux/dma-mapping.h>
+#include <linux/pinctrl/machine.h>
+#include <linux/platform_data/gpio-rcar.h>
 #include <linux/regulator/fixed.h>
 #include <linux/regulator/machine.h>
 #include <linux/smsc911x.h>
 #include <linux/spi/spi.h>
 #include <linux/spi/sh_hspi.h>
+#include <linux/mmc/host.h>
 #include <linux/mmc/sh_mobile_sdhi.h>
 #include <linux/mfd/tmio.h>
-#include <linux/usb/otg.h>
-#include <linux/usb/ehci_pdriver.h>
-#include <linux/usb/ohci_pdriver.h>
-#include <linux/pm_runtime.h>
 #include <mach/hardware.h>
 #include <mach/r8a7779.h>
 #include <mach/common.h>
@@ -58,6 +57,8 @@ static struct regulator_consumer_supply dummy_supplies[] = {
 	REGULATOR_SUPPLY("vdd33a", "smsc911x"),
 };
 
+static struct rcar_phy_platform_data usb_phy_platform_data __initdata;
+
 /* SMSC LAN89218 */
 static struct resource smsc911x_resources[] = {
 	[0] = {
@@ -66,7 +67,7 @@ static struct resource smsc911x_resources[] = {
 		.flags		= IORESOURCE_MEM,
 	},
 	[1] = {
-		.start		= gic_spi(28), /* IRQ 1 */
+		.start		= irq_pin(1), /* IRQ 1 */
 		.flags		= IORESOURCE_IRQ,
 	},
 };
@@ -96,7 +97,7 @@ static struct resource sdhi0_resources[] = {
 		.flags	= IORESOURCE_MEM,
 	},
 	[1] = {
-		.start	= gic_spi(104),
+		.start	= gic_iid(0x88),
 		.flags	= IORESOURCE_IRQ,
 	},
 };
@@ -147,24 +148,34 @@ static struct platform_device hspi_device = {
 	.num_resources	= ARRAY_SIZE(hspi_resources),
 };
 
-/* USB PHY */
-static struct resource usb_phy_resources[] = {
-	[0] = {
-		.start		= 0xffe70000,
-		.end		= 0xffe70900 - 1,
-		.flags		= IORESOURCE_MEM,
-	},
-	[1] = {
-		.start		= 0xfff70000,
-		.end		= 0xfff70900 - 1,
-		.flags		= IORESOURCE_MEM,
+/* LEDS */
+static struct gpio_led marzen_leds[] = {
+	{
+		.name		= "led2",
+		.gpio		= RCAR_GP_PIN(4, 29),
+		.default_state	= LEDS_GPIO_DEFSTATE_ON,
+	}, {
+		.name		= "led3",
+		.gpio		= RCAR_GP_PIN(4, 30),
+		.default_state	= LEDS_GPIO_DEFSTATE_ON,
+	}, {
+		.name		= "led4",
+		.gpio		= RCAR_GP_PIN(4, 31),
+		.default_state	= LEDS_GPIO_DEFSTATE_ON,
 	},
 };
 
-static struct platform_device usb_phy_device = {
-	.name		= "rcar_usb_phy",
-	.resource	= usb_phy_resources,
-	.num_resources	= ARRAY_SIZE(usb_phy_resources),
+static struct gpio_led_platform_data marzen_leds_pdata = {
+	.leds		= marzen_leds,
+	.num_leds	= ARRAY_SIZE(marzen_leds),
+};
+
+static struct platform_device leds_device = {
+	.name	= "leds-gpio",
+	.id	= 0,
+	.dev	= {
+		.platform_data  = &marzen_leds_pdata,
+	},
 };
 
 static struct platform_device *marzen_devices[] __initdata = {
@@ -172,159 +183,43 @@ static struct platform_device *marzen_devices[] __initdata = {
 	&sdhi0_device,
 	&thermal_device,
 	&hspi_device,
-	&usb_phy_device,
+	&leds_device,
 };
 
-/* USB */
-static struct usb_phy *phy;
-static int usb_power_on(struct platform_device *pdev)
-{
-	if (!phy)
-		return -EIO;
-
-	pm_runtime_enable(&pdev->dev);
-	pm_runtime_get_sync(&pdev->dev);
-
-	usb_phy_init(phy);
-
-	return 0;
-}
-
-static void usb_power_off(struct platform_device *pdev)
-{
-	if (!phy)
-		return;
-
-	usb_phy_shutdown(phy);
-
-	pm_runtime_put_sync(&pdev->dev);
-	pm_runtime_disable(&pdev->dev);
-}
-
-static struct usb_ehci_pdata ehcix_pdata = {
-	.power_on	= usb_power_on,
-	.power_off	= usb_power_off,
-	.power_suspend	= usb_power_off,
+static const struct pinctrl_map marzen_pinctrl_map[] = {
+	/* HSPI0 */
+	PIN_MAP_MUX_GROUP_DEFAULT("sh-hspi.0", "pfc-r8a7779",
+				  "hspi0", "hspi0"),
+	/* SCIF2 (CN18: DEBUG0) */
+	PIN_MAP_MUX_GROUP_DEFAULT("sh-sci.2", "pfc-r8a7779",
+				  "scif2_data_c", "scif2"),
+	/* SCIF4 (CN19: DEBUG1) */
+	PIN_MAP_MUX_GROUP_DEFAULT("sh-sci.4", "pfc-r8a7779",
+				  "scif4_data", "scif4"),
+	/* SDHI0 */
+	PIN_MAP_MUX_GROUP_DEFAULT("sh_mobile_sdhi.0", "pfc-r8a7779",
+				  "sdhi0_data4", "sdhi0"),
+	PIN_MAP_MUX_GROUP_DEFAULT("sh_mobile_sdhi.0", "pfc-r8a7779",
+				  "sdhi0_ctrl", "sdhi0"),
+	PIN_MAP_MUX_GROUP_DEFAULT("sh_mobile_sdhi.0", "pfc-r8a7779",
+				  "sdhi0_cd", "sdhi0"),
+	PIN_MAP_MUX_GROUP_DEFAULT("sh_mobile_sdhi.0", "pfc-r8a7779",
+				  "sdhi0_wp", "sdhi0"),
+	/* SMSC */
+	PIN_MAP_MUX_GROUP_DEFAULT("smsc911x", "pfc-r8a7779",
+				  "intc_irq1_b", "intc"),
+	PIN_MAP_MUX_GROUP_DEFAULT("smsc911x", "pfc-r8a7779",
+				  "lbsc_ex_cs0", "lbsc"),
+	/* USB0 */
+	PIN_MAP_MUX_GROUP_DEFAULT("ehci-platform.0", "pfc-r8a7779",
+				  "usb0", "usb0"),
+	/* USB1 */
+	PIN_MAP_MUX_GROUP_DEFAULT("ehci-platform.0", "pfc-r8a7779",
+				  "usb1", "usb1"),
+	/* USB2 */
+	PIN_MAP_MUX_GROUP_DEFAULT("ehci-platform.1", "pfc-r8a7779",
+				  "usb2", "usb2"),
 };
-
-static struct resource ehci0_resources[] = {
-	[0] = {
-		.start	= 0xffe70000,
-		.end	= 0xffe70400 - 1,
-		.flags	= IORESOURCE_MEM,
-	},
-	[1] = {
-		.start	= gic_spi(44),
-		.flags	= IORESOURCE_IRQ,
-	},
-};
-
-static struct platform_device ehci0_device = {
-	.name	= "ehci-platform",
-	.id	= 0,
-	.dev	= {
-		.dma_mask		= &ehci0_device.dev.coherent_dma_mask,
-		.coherent_dma_mask	= 0xffffffff,
-		.platform_data		= &ehcix_pdata,
-	},
-	.num_resources	= ARRAY_SIZE(ehci0_resources),
-	.resource	= ehci0_resources,
-};
-
-static struct resource ehci1_resources[] = {
-	[0] = {
-		.start	= 0xfff70000,
-		.end	= 0xfff70400 - 1,
-		.flags	= IORESOURCE_MEM,
-	},
-	[1] = {
-		.start	= gic_spi(45),
-		.flags	= IORESOURCE_IRQ,
-	},
-};
-
-static struct platform_device ehci1_device = {
-	.name	= "ehci-platform",
-	.id	= 1,
-	.dev	= {
-		.dma_mask		= &ehci1_device.dev.coherent_dma_mask,
-		.coherent_dma_mask	= 0xffffffff,
-		.platform_data		= &ehcix_pdata,
-	},
-	.num_resources	= ARRAY_SIZE(ehci1_resources),
-	.resource	= ehci1_resources,
-};
-
-static struct usb_ohci_pdata ohcix_pdata = {
-	.power_on	= usb_power_on,
-	.power_off	= usb_power_off,
-	.power_suspend	= usb_power_off,
-};
-
-static struct resource ohci0_resources[] = {
-	[0] = {
-		.start	= 0xffe70400,
-		.end	= 0xffe70800 - 1,
-		.flags	= IORESOURCE_MEM,
-	},
-	[1] = {
-		.start	= gic_spi(44),
-		.flags	= IORESOURCE_IRQ,
-	},
-};
-
-static struct platform_device ohci0_device = {
-	.name	= "ohci-platform",
-	.id	= 0,
-	.dev	= {
-		.dma_mask		= &ohci0_device.dev.coherent_dma_mask,
-		.coherent_dma_mask	= 0xffffffff,
-		.platform_data		= &ohcix_pdata,
-	},
-	.num_resources	= ARRAY_SIZE(ohci0_resources),
-	.resource	= ohci0_resources,
-};
-
-static struct resource ohci1_resources[] = {
-	[0] = {
-		.start	= 0xfff70400,
-		.end	= 0xfff70800 - 1,
-		.flags	= IORESOURCE_MEM,
-	},
-	[1] = {
-		.start	= gic_spi(45),
-		.flags	= IORESOURCE_IRQ,
-	},
-};
-
-static struct platform_device ohci1_device = {
-	.name	= "ohci-platform",
-	.id	= 1,
-	.dev	= {
-		.dma_mask		= &ohci1_device.dev.coherent_dma_mask,
-		.coherent_dma_mask	= 0xffffffff,
-		.platform_data		= &ohcix_pdata,
-	},
-	.num_resources	= ARRAY_SIZE(ohci1_resources),
-	.resource	= ohci1_resources,
-};
-
-static struct platform_device *marzen_late_devices[] __initdata = {
-	&ehci0_device,
-	&ehci1_device,
-	&ohci0_device,
-	&ohci1_device,
-};
-
-void __init marzen_init_late(void)
-{
-	/* get usb phy */
-	phy = usb_get_phy(USB_PHY_TYPE_USB2);
-
-	shmobile_init_late();
-	platform_add_devices(marzen_late_devices,
-			     ARRAY_SIZE(marzen_late_devices));
-}
 
 static void __init marzen_init(void)
 {
@@ -333,45 +228,13 @@ static void __init marzen_init(void)
 	regulator_register_fixed(1, dummy_supplies,
 				ARRAY_SIZE(dummy_supplies));
 
+	pinctrl_register_mappings(marzen_pinctrl_map,
+				  ARRAY_SIZE(marzen_pinctrl_map));
 	r8a7779_pinmux_init();
-
-	/* SCIF2 (CN18: DEBUG0) */
-	gpio_request(GPIO_FN_TX2_C, NULL);
-	gpio_request(GPIO_FN_RX2_C, NULL);
-
-	/* SCIF4 (CN19: DEBUG1) */
-	gpio_request(GPIO_FN_TX4, NULL);
-	gpio_request(GPIO_FN_RX4, NULL);
-
-	/* LAN89218 */
-	gpio_request(GPIO_FN_EX_CS0, NULL); /* nCS */
-	gpio_request(GPIO_FN_IRQ1_B, NULL); /* IRQ + PME */
-
-	/* SD0 (CN20) */
-	gpio_request(GPIO_FN_SD0_CLK, NULL);
-	gpio_request(GPIO_FN_SD0_CMD, NULL);
-	gpio_request(GPIO_FN_SD0_DAT0, NULL);
-	gpio_request(GPIO_FN_SD0_DAT1, NULL);
-	gpio_request(GPIO_FN_SD0_DAT2, NULL);
-	gpio_request(GPIO_FN_SD0_DAT3, NULL);
-	gpio_request(GPIO_FN_SD0_CD, NULL);
-	gpio_request(GPIO_FN_SD0_WP, NULL);
-
-	/* HSPI 0 */
-	gpio_request(GPIO_FN_HSPI_CLK0,	NULL);
-	gpio_request(GPIO_FN_HSPI_CS0,	NULL);
-	gpio_request(GPIO_FN_HSPI_TX0,	NULL);
-	gpio_request(GPIO_FN_HSPI_RX0,	NULL);
-
-	/* USB (CN21) */
-	gpio_request(GPIO_FN_USB_OVC0, NULL);
-	gpio_request(GPIO_FN_USB_OVC1, NULL);
-	gpio_request(GPIO_FN_USB_OVC2, NULL);
-
-	/* USB (CN22) */
-	gpio_request(GPIO_FN_USB_PENC2, NULL);
+	r8a7779_init_irq_extpin(1); /* IRQ1 as individual interrupt */
 
 	r8a7779_add_standard_devices();
+	r8a7779_add_usb_phy_device(&usb_phy_platform_data);
 	platform_add_devices(marzen_devices, ARRAY_SIZE(marzen_devices));
 }
 
@@ -382,6 +245,6 @@ MACHINE_START(MARZEN, "marzen")
 	.nr_irqs	= NR_IRQS_LEGACY,
 	.init_irq	= r8a7779_init_irq,
 	.init_machine	= marzen_init,
-	.init_late	= marzen_init_late,
+	.init_late	= r8a7779_init_late,
 	.init_time	= r8a7779_earlytimer_init,
 MACHINE_END

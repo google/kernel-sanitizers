@@ -552,9 +552,12 @@ static int FNAME(page_fault)(struct kvm_vcpu *vcpu, gva_t addr, u32 error_code,
 
 	pgprintk("%s: addr %lx err %x\n", __func__, addr, error_code);
 
-	if (unlikely(error_code & PFERR_RSVD_MASK))
-		return handle_mmio_page_fault(vcpu, addr, error_code,
+	if (unlikely(error_code & PFERR_RSVD_MASK)) {
+		r = handle_mmio_page_fault(vcpu, addr, error_code,
 					      mmu_is_nested(vcpu));
+		if (likely(r != RET_MMIO_PF_INVALID))
+			return r;
+	};
 
 	r = mmu_topup_memory_caches(vcpu);
 	if (r)
@@ -627,7 +630,7 @@ static int FNAME(page_fault)(struct kvm_vcpu *vcpu, gva_t addr, u32 error_code,
 		goto out_unlock;
 
 	kvm_mmu_audit(vcpu, AUDIT_PRE_PAGE_FAULT);
-	kvm_mmu_free_some_pages(vcpu);
+	make_mmu_pages_available(vcpu);
 	if (!force_pt_level)
 		transparent_hugepage_adjust(vcpu, &walker.gfn, &pfn, &level);
 	r = FNAME(fetch)(vcpu, addr, &walker, write_fault,
@@ -792,7 +795,8 @@ static int FNAME(sync_page)(struct kvm_vcpu *vcpu, struct kvm_mmu_page *sp)
 		pte_access &= gpte_access(vcpu, gpte);
 		protect_clean_gpte(&pte_access, gpte);
 
-		if (sync_mmio_spte(&sp->spt[i], gfn, pte_access, &nr_present))
+		if (sync_mmio_spte(vcpu->kvm, &sp->spt[i], gfn, pte_access,
+		      &nr_present))
 			continue;
 
 		if (gfn != sp->gfns[i]) {

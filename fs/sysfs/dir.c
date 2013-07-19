@@ -74,7 +74,7 @@ static int sysfs_sd_compare(const struct sysfs_dirent *left,
 }
 
 /**
- *	sysfs_link_subling - link sysfs_dirent into sibling rbtree
+ *	sysfs_link_sibling - link sysfs_dirent into sibling rbtree
  *	@sd: sysfs_dirent of interest
  *
  *	Link @sd into its sibling rbtree which starts from
@@ -165,21 +165,8 @@ struct sysfs_dirent *sysfs_get_active(struct sysfs_dirent *sd)
 	if (unlikely(!sd))
 		return NULL;
 
-	while (1) {
-		int v, t;
-
-		v = atomic_read(&sd->s_active);
-		if (unlikely(v < 0))
-			return NULL;
-
-		t = atomic_cmpxchg(&sd->s_active, v, v + 1);
-		if (likely(t == v))
-			break;
-		if (t < 0)
-			return NULL;
-
-		cpu_relax();
-	}
+	if (!atomic_inc_unless_negative(&sd->s_active))
+		return NULL;
 
 	if (likely(!ignore_lockdep(sd)))
 		rwsem_acquire_read(&sd->dep_map, 0, 1, _RET_IP_);
@@ -280,6 +267,10 @@ void release_sysfs_dirent(struct sysfs_dirent * sd)
 	 * sd->s_parent won't change beneath us.
 	 */
 	parent_sd = sd->s_parent;
+
+	WARN(!(sd->s_flags & SYSFS_FLAG_REMOVED),
+		"sysfs: free using entry: %s/%s\n",
+		parent_sd ? parent_sd->s_name : "", sd->s_name);
 
 	if (sysfs_type(sd) == SYSFS_KOBJ_LINK)
 		sysfs_put(sd->s_symlink.target_sd);
@@ -399,7 +390,7 @@ struct sysfs_dirent *sysfs_new_dirent(const char *name, umode_t mode, int type)
 
 	sd->s_name = name;
 	sd->s_mode = mode;
-	sd->s_flags = type;
+	sd->s_flags = type | SYSFS_FLAG_REMOVED;
 
 	return sd;
 
@@ -478,6 +469,9 @@ int __sysfs_add_one(struct sysfs_addrm_cxt *acxt, struct sysfs_dirent *sd)
 		struct iattr *ps_iattrs = &ps_iattr->ia_iattr;
 		ps_iattrs->ia_ctime = ps_iattrs->ia_mtime = CURRENT_TIME;
 	}
+
+	/* Mark the entry added into directory tree */
+	sd->s_flags &= ~SYSFS_FLAG_REMOVED;
 
 	return 0;
 }
@@ -1004,64 +998,56 @@ static struct sysfs_dirent *sysfs_dir_next_pos(const void *ns,
 	return pos;
 }
 
-static int sysfs_readdir(struct file * filp, void * dirent, filldir_t filldir)
+static int sysfs_readdir(struct file *file, struct dir_context *ctx)
 {
-	struct dentry *dentry = filp->f_path.dentry;
+	struct dentry *dentry = file->f_path.dentry;
 	struct sysfs_dirent * parent_sd = dentry->d_fsdata;
-	struct sysfs_dirent *pos = filp->private_data;
+	struct sysfs_dirent *pos = file->private_data;
 	enum kobj_ns_type type;
 	const void *ns;
-	ino_t ino;
 
 	type = sysfs_ns_type(parent_sd);
 	ns = sysfs_info(dentry->d_sb)->ns[type];
 
-	if (filp->f_pos == 0) {
-		ino = parent_sd->s_ino;
-		if (filldir(dirent, ".", 1, filp->f_pos, ino, DT_DIR) == 0)
-			filp->f_pos++;
-	}
-	if (filp->f_pos == 1) {
-		if (parent_sd->s_parent)
-			ino = parent_sd->s_parent->s_ino;
-		else
-			ino = parent_sd->s_ino;
-		if (filldir(dirent, "..", 2, filp->f_pos, ino, DT_DIR) == 0)
-			filp->f_pos++;
-	}
+	if (!dir_emit_dots(file, ctx))
+		return 0;
 	mutex_lock(&sysfs_mutex);
-	for (pos = sysfs_dir_pos(ns, parent_sd, filp->f_pos, pos);
+	for (pos = sysfs_dir_pos(ns, parent_sd, ctx->pos, pos);
 	     pos;
-	     pos = sysfs_dir_next_pos(ns, parent_sd, filp->f_pos, pos)) {
-		const char * name;
-		unsigned int type;
-		int len, ret;
-
-		name = pos->s_name;
-		len = strlen(name);
-		ino = pos->s_ino;
-		type = dt_type(pos);
-		filp->f_pos = pos->s_hash;
-		filp->private_data = sysfs_get(pos);
+	     pos = sysfs_dir_next_pos(ns, parent_sd, ctx->pos, pos)) {
+		const char *name = pos->s_name;
+		unsigned int type = dt_type(pos);
+		int len = strlen(name);
+		ino_t ino = pos->s_ino;
+		ctx->pos = pos->s_hash;
+		file->private_data = sysfs_get(pos);
 
 		mutex_unlock(&sysfs_mutex);
-		ret = filldir(dirent, name, len, filp->f_pos, ino, type);
+		if (!dir_emit(ctx, name, len, ino, type))
+			return 0;
 		mutex_lock(&sysfs_mutex);
-		if (ret < 0)
-			break;
 	}
 	mutex_unlock(&sysfs_mutex);
-	if ((filp->f_pos > 1) && !pos) { /* EOF */
-		filp->f_pos = INT_MAX;
-		filp->private_data = NULL;
-	}
+	file->private_data = NULL;
+	ctx->pos = INT_MAX;
 	return 0;
 }
 
+static loff_t sysfs_dir_llseek(struct file *file, loff_t offset, int whence)
+{
+	struct inode *inode = file_inode(file);
+	loff_t ret;
+
+	mutex_lock(&inode->i_mutex);
+	ret = generic_file_llseek(file, offset, whence);
+	mutex_unlock(&inode->i_mutex);
+
+	return ret;
+}
 
 const struct file_operations sysfs_dir_operations = {
 	.read		= generic_read_dir,
-	.readdir	= sysfs_readdir,
+	.iterate	= sysfs_readdir,
 	.release	= sysfs_dir_release,
-	.llseek		= generic_file_llseek,
+	.llseek		= sysfs_dir_llseek,
 };

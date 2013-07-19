@@ -188,6 +188,8 @@ struct ieee80211_channel {
  *	when used with 802.11g (on the 2.4 GHz band); filled by the
  *	core code when registering the wiphy.
  * @IEEE80211_RATE_ERP_G: This is an ERP rate in 802.11g mode.
+ * @IEEE80211_RATE_SUPPORTS_5MHZ: Rate can be used in 5 MHz mode
+ * @IEEE80211_RATE_SUPPORTS_10MHZ: Rate can be used in 10 MHz mode
  */
 enum ieee80211_rate_flags {
 	IEEE80211_RATE_SHORT_PREAMBLE	= 1<<0,
@@ -195,6 +197,8 @@ enum ieee80211_rate_flags {
 	IEEE80211_RATE_MANDATORY_B	= 1<<2,
 	IEEE80211_RATE_MANDATORY_G	= 1<<3,
 	IEEE80211_RATE_ERP_G		= 1<<4,
+	IEEE80211_RATE_SUPPORTS_5MHZ	= 1<<5,
+	IEEE80211_RATE_SUPPORTS_10MHZ	= 1<<6,
 };
 
 /**
@@ -433,6 +437,30 @@ bool cfg80211_chandef_usable(struct wiphy *wiphy,
 			     u32 prohibited_flags);
 
 /**
+ * ieee80211_chandef_rate_flags - returns rate flags for a channel
+ *
+ * In some channel types, not all rates may be used - for example CCK
+ * rates may not be used in 5/10 MHz channels.
+ *
+ * @chandef: channel definition for the channel
+ *
+ * Returns: rate flags which apply for this channel
+ */
+static inline enum ieee80211_rate_flags
+ieee80211_chandef_rate_flags(struct cfg80211_chan_def *chandef)
+{
+	switch (chandef->width) {
+	case NL80211_CHAN_WIDTH_5:
+		return IEEE80211_RATE_SUPPORTS_5MHZ;
+	case NL80211_CHAN_WIDTH_10:
+		return IEEE80211_RATE_SUPPORTS_10MHZ;
+	default:
+		break;
+	}
+	return 0;
+}
+
+/**
  * enum survey_info_flags - survey information flags
  *
  * @SURVEY_INFO_NOISE_DBM: noise (in dBm) was filled in
@@ -611,22 +639,10 @@ struct cfg80211_ap_settings {
 };
 
 /**
- * enum plink_action - actions to perform in mesh peers
- *
- * @PLINK_ACTION_INVALID: action 0 is reserved
- * @PLINK_ACTION_OPEN: start mesh peer link establishment
- * @PLINK_ACTION_BLOCK: block traffic from this mesh peer
- */
-enum plink_actions {
-	PLINK_ACTION_INVALID,
-	PLINK_ACTION_OPEN,
-	PLINK_ACTION_BLOCK,
-};
-
-/**
  * enum station_parameters_apply_mask - station parameter values to apply
  * @STATION_PARAM_APPLY_UAPSD: apply new uAPSD parameters (uapsd_queues, max_sp)
  * @STATION_PARAM_APPLY_CAPABILITY: apply new capability
+ * @STATION_PARAM_APPLY_PLINK_STATE: apply new plink state
  *
  * Not all station parameters have in-band "no change" signalling,
  * for those that don't these flags will are used.
@@ -634,6 +650,7 @@ enum plink_actions {
 enum station_parameters_apply_mask {
 	STATION_PARAM_APPLY_UAPSD = BIT(0),
 	STATION_PARAM_APPLY_CAPABILITY = BIT(1),
+	STATION_PARAM_APPLY_PLINK_STATE = BIT(2),
 };
 
 /**
@@ -669,7 +686,7 @@ enum station_parameters_apply_mask {
  * @ext_capab_len: number of extended capabilities
  */
 struct station_parameters {
-	u8 *supported_rates;
+	const u8 *supported_rates;
 	struct net_device *vlan;
 	u32 sta_flags_mask, sta_flags_set;
 	u32 sta_modify_mask;
@@ -678,15 +695,58 @@ struct station_parameters {
 	u8 supported_rates_len;
 	u8 plink_action;
 	u8 plink_state;
-	struct ieee80211_ht_cap *ht_capa;
-	struct ieee80211_vht_cap *vht_capa;
+	const struct ieee80211_ht_cap *ht_capa;
+	const struct ieee80211_vht_cap *vht_capa;
 	u8 uapsd_queues;
 	u8 max_sp;
 	enum nl80211_mesh_power_mode local_pm;
 	u16 capability;
-	u8 *ext_capab;
+	const u8 *ext_capab;
 	u8 ext_capab_len;
 };
+
+/**
+ * enum cfg80211_station_type - the type of station being modified
+ * @CFG80211_STA_AP_CLIENT: client of an AP interface
+ * @CFG80211_STA_AP_MLME_CLIENT: client of an AP interface that has
+ *	the AP MLME in the device
+ * @CFG80211_STA_AP_STA: AP station on managed interface
+ * @CFG80211_STA_IBSS: IBSS station
+ * @CFG80211_STA_TDLS_PEER_SETUP: TDLS peer on managed interface (dummy entry
+ *	while TDLS setup is in progress, it moves out of this state when
+ *	being marked authorized; use this only if TDLS with external setup is
+ *	supported/used)
+ * @CFG80211_STA_TDLS_PEER_ACTIVE: TDLS peer on managed interface (active
+ *	entry that is operating, has been marked authorized by userspace)
+ * @CFG80211_STA_MESH_PEER_KERNEL: peer on mesh interface (kernel managed)
+ * @CFG80211_STA_MESH_PEER_USER: peer on mesh interface (user managed)
+ */
+enum cfg80211_station_type {
+	CFG80211_STA_AP_CLIENT,
+	CFG80211_STA_AP_MLME_CLIENT,
+	CFG80211_STA_AP_STA,
+	CFG80211_STA_IBSS,
+	CFG80211_STA_TDLS_PEER_SETUP,
+	CFG80211_STA_TDLS_PEER_ACTIVE,
+	CFG80211_STA_MESH_PEER_KERNEL,
+	CFG80211_STA_MESH_PEER_USER,
+};
+
+/**
+ * cfg80211_check_station_change - validate parameter changes
+ * @wiphy: the wiphy this operates on
+ * @params: the new parameters for a station
+ * @statype: the type of station being modified
+ *
+ * Utility function for the @change_station driver method. Call this function
+ * with the appropriate station type looking up the station (and checking that
+ * it exists). It will verify whether the station change is acceptable, and if
+ * not will return an error code. Note that it may modify the parameters for
+ * backward compatibility reasons, so don't use them before calling this.
+ */
+int cfg80211_check_station_change(struct wiphy *wiphy,
+				  struct station_parameters *params,
+				  enum cfg80211_station_type statype);
 
 /**
  * enum station_info_flags - station information flags
@@ -721,6 +781,8 @@ struct station_parameters {
  * @STATION_INFO_LOCAL_PM: @local_pm filled
  * @STATION_INFO_PEER_PM: @peer_pm filled
  * @STATION_INFO_NONPEER_PM: @nonpeer_pm filled
+ * @STATION_INFO_CHAIN_SIGNAL: @chain_signal filled
+ * @STATION_INFO_CHAIN_SIGNAL_AVG: @chain_signal_avg filled
  */
 enum station_info_flags {
 	STATION_INFO_INACTIVE_TIME	= 1<<0,
@@ -749,6 +811,8 @@ enum station_info_flags {
 	STATION_INFO_NONPEER_PM		= 1<<23,
 	STATION_INFO_RX_BYTES64		= 1<<24,
 	STATION_INFO_TX_BYTES64		= 1<<25,
+	STATION_INFO_CHAIN_SIGNAL	= 1<<26,
+	STATION_INFO_CHAIN_SIGNAL_AVG	= 1<<27,
 };
 
 /**
@@ -825,6 +889,8 @@ struct sta_bss_parameters {
 	u16 beacon_interval;
 };
 
+#define IEEE80211_MAX_CHAINS	4
+
 /**
  * struct station_info - station information
  *
@@ -842,6 +908,9 @@ struct sta_bss_parameters {
  *	For CFG80211_SIGNAL_TYPE_MBM, value is expressed in _dBm_.
  * @signal_avg: Average signal strength, type depends on the wiphy's signal_type.
  *	For CFG80211_SIGNAL_TYPE_MBM, value is expressed in _dBm_.
+ * @chains: bitmask for filled values in @chain_signal, @chain_signal_avg
+ * @chain_signal: per-chain signal strength of last received packet in dBm
+ * @chain_signal_avg: per-chain signal strength average in dBm
  * @txrate: current unicast bitrate from this station
  * @rxrate: current unicast bitrate to this station
  * @rx_packets: packets received from this station
@@ -877,6 +946,11 @@ struct station_info {
 	u8 plink_state;
 	s8 signal;
 	s8 signal_avg;
+
+	u8 chains;
+	s8 chain_signal[IEEE80211_MAX_CHAINS];
+	s8 chain_signal_avg[IEEE80211_MAX_CHAINS];
+
 	struct rate_info txrate;
 	struct rate_info rxrate;
 	u32 rx_packets;
@@ -915,6 +989,7 @@ struct station_info {
  * @MONITOR_FLAG_CONTROL: pass control frames
  * @MONITOR_FLAG_OTHER_BSS: disable BSSID filtering
  * @MONITOR_FLAG_COOK_FRAMES: report frames after processing
+ * @MONITOR_FLAG_ACTIVE: active monitor, ACKs frames on its MAC address
  */
 enum monitor_flags {
 	MONITOR_FLAG_FCSFAIL		= 1<<NL80211_MNTR_FLAG_FCSFAIL,
@@ -922,6 +997,7 @@ enum monitor_flags {
 	MONITOR_FLAG_CONTROL		= 1<<NL80211_MNTR_FLAG_CONTROL,
 	MONITOR_FLAG_OTHER_BSS		= 1<<NL80211_MNTR_FLAG_OTHER_BSS,
 	MONITOR_FLAG_COOK_FRAMES	= 1<<NL80211_MNTR_FLAG_COOK_FRAMES,
+	MONITOR_FLAG_ACTIVE		= 1<<NL80211_MNTR_FLAG_ACTIVE,
 };
 
 /**
@@ -1076,6 +1152,9 @@ struct bss_parameters {
  *	setting for new peer links.
  * @dot11MeshAwakeWindowDuration: The duration in TUs the STA will remain awake
  *	after transmitting its beacon.
+ * @plink_timeout: If no tx activity is seen from a STA we've established
+ *	peering with for longer than this time (in seconds), then remove it
+ *	from the STA's list of peers.  Default is 30 minutes.
  */
 struct mesh_config {
 	u16 dot11MeshRetryTimeout;
@@ -1105,6 +1184,7 @@ struct mesh_config {
 	u16 dot11MeshHWMPconfirmationInterval;
 	enum nl80211_mesh_power_mode power_mode;
 	u16 dot11MeshAwakeWindowDuration;
+	u32 plink_timeout;
 };
 
 /**
@@ -1115,13 +1195,16 @@ struct mesh_config {
  * @sync_method: which synchronization method to use
  * @path_sel_proto: which path selection protocol to use
  * @path_metric: which metric to use
+ * @auth_id: which authentication method this mesh is using
  * @ie: vendor information elements (optional)
  * @ie_len: length of vendor information elements
  * @is_authenticated: this mesh requires authentication
  * @is_secure: this mesh uses security
+ * @user_mpm: userspace handles all MPM functions
  * @dtim_period: DTIM period to use
  * @beacon_interval: beacon interval to use
  * @mcast_rate: multicat rate for Mesh Node [6Mbps is the default for 802.11a]
+ * @basic_rates: basic rates to use when creating the mesh
  *
  * These parameters are fixed when the mesh is created.
  */
@@ -1132,13 +1215,16 @@ struct mesh_setup {
 	u8 sync_method;
 	u8 path_sel_proto;
 	u8 path_metric;
+	u8 auth_id;
 	const u8 *ie;
 	u8 ie_len;
 	bool is_authenticated;
 	bool is_secure;
+	bool user_mpm;
 	u8 dtim_period;
 	u16 beacon_interval;
 	int mcast_rate[IEEE80211_NUM_BANDS];
+	u32 basic_rates;
 };
 
 /**
@@ -1207,6 +1293,7 @@ struct cfg80211_ssid {
  * @scan_start: time (in jiffies) when the scan started
  * @wdev: the wireless device to scan for
  * @aborted: (internal) scan request was notified as aborted
+ * @notified: (internal) scan request was notified as done or aborted
  * @no_cck: used to send probe requests at non CCK rate in 2GHz band
  */
 struct cfg80211_scan_request {
@@ -1224,7 +1311,7 @@ struct cfg80211_scan_request {
 	/* internal */
 	struct wiphy *wiphy;
 	unsigned long scan_start;
-	bool aborted;
+	bool aborted, notified;
 	bool no_cck;
 
 	/* keep last */
@@ -1372,7 +1459,8 @@ const u8 *ieee80211_bss_get_ie(struct cfg80211_bss *bss, u8 ie);
  * This structure provides information needed to complete IEEE 802.11
  * authentication.
  *
- * @bss: The BSS to authenticate with.
+ * @bss: The BSS to authenticate with, the callee must obtain a reference
+ *	to it if it needs to keep it.
  * @auth_type: Authentication type (algorithm)
  * @ie: Extra IEs to add to Authentication frame or %NULL
  * @ie_len: Length of ie buffer in octets
@@ -1398,9 +1486,11 @@ struct cfg80211_auth_request {
  * enum cfg80211_assoc_req_flags - Over-ride default behaviour in association.
  *
  * @ASSOC_REQ_DISABLE_HT:  Disable HT (802.11n)
+ * @ASSOC_REQ_DISABLE_VHT:  Disable VHT
  */
 enum cfg80211_assoc_req_flags {
 	ASSOC_REQ_DISABLE_HT		= BIT(0),
+	ASSOC_REQ_DISABLE_VHT		= BIT(1),
 };
 
 /**
@@ -1408,11 +1498,10 @@ enum cfg80211_assoc_req_flags {
  *
  * This structure provides information needed to complete IEEE 802.11
  * (re)association.
- * @bss: The BSS to associate with. If the call is successful the driver
- *	is given a reference that it must release, normally via a call to
- *	cfg80211_send_rx_assoc(), or, if association timed out, with a
- *	call to cfg80211_put_bss() (in addition to calling
- *	cfg80211_send_assoc_timeout())
+ * @bss: The BSS to associate with. If the call is successful the driver is
+ *	given a reference that it must give back to cfg80211_send_rx_assoc()
+ *	or to cfg80211_assoc_timeout(). To ensure proper refcounting, new
+ *	association requests while already associating must be rejected.
  * @ie: Extra IEs to add to (Re)Association Request frame or %NULL
  * @ie_len: Length of ie buffer in octets
  * @use_mfp: Use management frame protection (IEEE 802.11w) in this association
@@ -1422,6 +1511,8 @@ enum cfg80211_assoc_req_flags {
  * @ht_capa:  HT Capabilities over-rides.  Values set in ht_capa_mask
  *   will be used in ht_capa.  Un-supported values will be ignored.
  * @ht_capa_mask:  The bits of ht_capa which are to be used.
+ * @vht_capa: VHT capability override
+ * @vht_capa_mask: VHT capability mask indicating which fields to use
  */
 struct cfg80211_assoc_request {
 	struct cfg80211_bss *bss;
@@ -1432,6 +1523,7 @@ struct cfg80211_assoc_request {
 	u32 flags;
 	struct ieee80211_ht_cap ht_capa;
 	struct ieee80211_ht_cap ht_capa_mask;
+	struct ieee80211_vht_cap vht_capa, vht_capa_mask;
 };
 
 /**
@@ -1542,6 +1634,8 @@ struct cfg80211_ibss_params {
  * @ht_capa:  HT Capabilities over-rides.  Values set in ht_capa_mask
  *   will be used in ht_capa.  Un-supported values will be ignored.
  * @ht_capa_mask:  The bits of ht_capa which are to be used.
+ * @vht_capa:  VHT Capability overrides
+ * @vht_capa_mask: The bits of vht_capa which are to be used.
  */
 struct cfg80211_connect_params {
 	struct ieee80211_channel *channel;
@@ -1560,6 +1654,8 @@ struct cfg80211_connect_params {
 	int bg_scan_period;
 	struct ieee80211_ht_cap ht_capa;
 	struct ieee80211_ht_cap ht_capa_mask;
+	struct ieee80211_vht_cap vht_capa;
+	struct ieee80211_vht_cap vht_capa_mask;
 };
 
 /**
@@ -1722,6 +1818,21 @@ struct cfg80211_gtk_rekey_data {
 };
 
 /**
+ * struct cfg80211_update_ft_ies_params - FT IE Information
+ *
+ * This structure provides information needed to update the fast transition IE
+ *
+ * @md: The Mobility Domain ID, 2 Octet value
+ * @ie: Fast Transition IEs
+ * @ie_len: Length of ft_ie in octets
+ */
+struct cfg80211_update_ft_ies_params {
+	u16 md;
+	const u8 *ie;
+	size_t ie_len;
+};
+
+/**
  * struct cfg80211_ops - backend description for wireless configuration
  *
  * This struct is registered by fullmac card drivers and/or wireless stacks
@@ -1781,9 +1892,8 @@ struct cfg80211_gtk_rekey_data {
  * @change_station: Modify a given station. Note that flags changes are not much
  *	validated in cfg80211, in particular the auth/assoc/authorized flags
  *	might come to the driver in invalid combinations -- make sure to check
- *	them, also against the existing state! Also, supported_rates changes are
- *	not checked in station mode -- drivers need to reject (or ignore) them
- *	for anything but TDLS peers.
+ *	them, also against the existing state! Drivers must call
+ *	cfg80211_check_station_change() to validate the information.
  * @get_station: get station information for the station identified by @mac
  * @dump_station: dump station callback -- resume dump at index @idx
  *
@@ -1793,7 +1903,9 @@ struct cfg80211_gtk_rekey_data {
  * @get_mpath: get a mesh path for the given parameters
  * @dump_mpath: dump mesh path callback -- resume dump at index @idx
  * @join_mesh: join the mesh network with the specified parameters
+ *	(invoked with the wireless_dev mutex held)
  * @leave_mesh: leave the current mesh network
+ *	(invoked with the wireless_dev mutex held)
  *
  * @get_mesh_config: Get the current mesh configuration
  *
@@ -1820,20 +1932,28 @@ struct cfg80211_gtk_rekey_data {
  *	the scan/scan_done bracket too.
  *
  * @auth: Request to authenticate with the specified peer
+ *	(invoked with the wireless_dev mutex held)
  * @assoc: Request to (re)associate with the specified peer
+ *	(invoked with the wireless_dev mutex held)
  * @deauth: Request to deauthenticate from the specified peer
+ *	(invoked with the wireless_dev mutex held)
  * @disassoc: Request to disassociate from the specified peer
+ *	(invoked with the wireless_dev mutex held)
  *
  * @connect: Connect to the ESS with the specified parameters. When connected,
  *	call cfg80211_connect_result() with status code %WLAN_STATUS_SUCCESS.
  *	If the connection fails for some reason, call cfg80211_connect_result()
  *	with the status from the AP.
+ *	(invoked with the wireless_dev mutex held)
  * @disconnect: Disconnect from the BSS/ESS.
+ *	(invoked with the wireless_dev mutex held)
  *
  * @join_ibss: Join the specified IBSS (or create if necessary). Once done, call
  *	cfg80211_ibss_joined(), also call that function when changing BSSID due
  *	to a merge.
+ *	(invoked with the wireless_dev mutex held)
  * @leave_ibss: Leave the IBSS.
+ *	(invoked with the wireless_dev mutex held)
  *
  * @set_mcast_rate: Set the specified multicast rate (only if vif is in ADHOC or
  *	MESH mode)
@@ -1941,6 +2061,16 @@ struct cfg80211_gtk_rekey_data {
  *	advertise the support for MAC based ACL have to implement this callback.
  *
  * @start_radar_detection: Start radar detection in the driver.
+ *
+ * @update_ft_ies: Provide updated Fast BSS Transition information to the
+ *	driver. If the SME is in the driver/firmware, this information can be
+ *	used in building Authentication and Reassociation Request frames.
+ *
+ * @crit_proto_start: Indicates a critical protocol needs more link reliability
+ *	for a given duration (milliseconds). The protocol is provided so the
+ *	driver can take the most appropriate actions.
+ * @crit_proto_stop: Indicates critical protocol no longer needs increased link
+ *	reliability. This operation can not fail.
  */
 struct cfg80211_ops {
 	int	(*suspend)(struct wiphy *wiphy, struct cfg80211_wowlan *wow);
@@ -2168,6 +2298,14 @@ struct cfg80211_ops {
 	int	(*start_radar_detection)(struct wiphy *wiphy,
 					 struct net_device *dev,
 					 struct cfg80211_chan_def *chandef);
+	int	(*update_ft_ies)(struct wiphy *wiphy, struct net_device *dev,
+				 struct cfg80211_update_ft_ies_params *ftie);
+	int	(*crit_proto_start)(struct wiphy *wiphy,
+				    struct wireless_dev *wdev,
+				    enum nl80211_crit_proto_id protocol,
+				    u16 duration);
+	void	(*crit_proto_stop)(struct wiphy *wiphy,
+				   struct wireless_dev *wdev);
 };
 
 /*
@@ -2232,6 +2370,7 @@ struct cfg80211_ops {
  *	responds to probe-requests in hardware.
  * @WIPHY_FLAG_OFFCHAN_TX: Device supports direct off-channel TX.
  * @WIPHY_FLAG_HAS_REMAIN_ON_CHANNEL: Device supports remain-on-channel call.
+ * @WIPHY_FLAG_SUPPORTS_5_10_MHZ: Device supports 5 MHz and 10 MHz channels.
  */
 enum wiphy_flags {
 	WIPHY_FLAG_CUSTOM_REGULATORY		= BIT(0),
@@ -2255,6 +2394,7 @@ enum wiphy_flags {
 	WIPHY_FLAG_AP_PROBE_RESP_OFFLOAD	= BIT(19),
 	WIPHY_FLAG_OFFCHAN_TX			= BIT(20),
 	WIPHY_FLAG_HAS_REMAIN_ON_CHANNEL	= BIT(21),
+	WIPHY_FLAG_SUPPORTS_5_10_MHZ		= BIT(22),
 };
 
 /**
@@ -2481,9 +2621,14 @@ struct wiphy_wowlan_support {
  *	may request, if implemented.
  *
  * @wowlan: WoWLAN support information
+ * @wowlan_config: current WoWLAN configuration; this should usually not be
+ *	used since access to it is necessarily racy, use the parameter passed
+ *	to the suspend() operation instead.
  *
  * @ap_sme_capa: AP SME capabilities, flags from &enum nl80211_ap_sme_features.
  * @ht_capa_mod_mask:  Specify what ht_cap values can be over-ridden.
+ *	If null, then none can be over-ridden.
+ * @vht_capa_mod_mask:  Specify what VHT capabilities can be over-ridden.
  *	If null, then none can be over-ridden.
  *
  * @max_acl_mac_addrs: Maximum number of MAC addresses that the device
@@ -2545,7 +2690,8 @@ struct wiphy {
 	u32 hw_version;
 
 #ifdef CONFIG_PM
-	struct wiphy_wowlan_support wowlan;
+	const struct wiphy_wowlan_support *wowlan;
+	struct cfg80211_wowlan *wowlan_config;
 #endif
 
 	u16 max_remain_on_channel_duration;
@@ -2593,6 +2739,7 @@ struct wiphy {
 	struct dentry *debugfsdir;
 
 	const struct ieee80211_ht_cap *ht_capa_mod_mask;
+	const struct ieee80211_vht_cap *vht_capa_mod_mask;
 
 #ifdef CONFIG_NET_NS
 	/* the network namespace this phy lives in currently */
@@ -2742,7 +2889,7 @@ struct cfg80211_cached_keys;
  * @current_bss: (private) Used by the internal configuration code
  * @channel: (private) Used by the internal configuration code to track
  *	the user-set AP, monitor and WDS channel
- * @preset_chan: (private) Used by the internal configuration code to
+ * @preset_chandef: (private) Used by the internal configuration code to
  *	track the channel to be used for AP later
  * @bssid: (private) Used by the internal configuration code
  * @ssid: (private) Used by the internal configuration code
@@ -2756,14 +2903,23 @@ struct cfg80211_cached_keys;
  *	by cfg80211 on change_interface
  * @mgmt_registrations: list of registrations for management frames
  * @mgmt_registrations_lock: lock for the list
- * @mtx: mutex used to lock data in this struct
- * @cleanup_work: work struct used for cleanup that can't be done directly
+ * @mtx: mutex used to lock data in this struct, may be used by drivers
+ *	and some API functions require it held
  * @beacon_interval: beacon interval used on this device for transmitting
  *	beacons, 0 when not valid
  * @address: The address for this device, valid only if @netdev is %NULL
  * @p2p_started: true if this is a P2P Device that has been started
  * @cac_started: true if DFS channel availability check has been started
  * @cac_start_time: timestamp (jiffies) when the dfs state was entered.
+ * @ps: powersave mode is enabled
+ * @ps_timeout: dynamic powersave timeout
+ * @ap_unexpected_nlportid: (private) netlink port ID of application
+ *	registered for unexpected class 3 frames (AP mode)
+ * @conn: (private) cfg80211 software SME connection state machine data
+ * @connect_keys: (private) keys to set after connection is established
+ * @ibss_fixed: (private) IBSS is using fixed BSSID
+ * @event_list: (private) list for internal event processing
+ * @event_lock: (private) lock for event list
  */
 struct wireless_dev {
 	struct wiphy *wiphy;
@@ -2780,8 +2936,6 @@ struct wireless_dev {
 
 	struct mutex mtx;
 
-	struct work_struct cleanup_work;
-
 	bool use_4addr, p2p_started;
 
 	u8 address[ETH_ALEN] __aligned(sizeof(u16));
@@ -2789,11 +2943,6 @@ struct wireless_dev {
 	/* currently used for IBSS and SME - might be rearranged later */
 	u8 ssid[IEEE80211_MAX_SSID_LEN];
 	u8 ssid_len, mesh_id_len, mesh_id_up_len;
-	enum {
-		CFG80211_SME_IDLE,
-		CFG80211_SME_CONNECTING,
-		CFG80211_SME_CONNECTED,
-	} sme_state;
 	struct cfg80211_conn *conn;
 	struct cfg80211_cached_keys *connect_keys;
 
@@ -2910,6 +3059,15 @@ ieee80211_get_channel(struct wiphy *wiphy, int freq)
 struct ieee80211_rate *
 ieee80211_get_response_rate(struct ieee80211_supported_band *sband,
 			    u32 basic_rates, int bitrate);
+
+/**
+ * ieee80211_mandatory_rates - get mandatory rates for a given band
+ * @sband: the band to look for rates in
+ *
+ * This function returns a bitmap of the mandatory rates for the given
+ * band, bits are set according to the rate position in the bitrates array.
+ */
+u32 ieee80211_mandatory_rates(struct ieee80211_supported_band *sband);
 
 /*
  * Radiotap parsing functions -- for controlled injection support
@@ -3314,122 +3472,87 @@ void cfg80211_put_bss(struct wiphy *wiphy, struct cfg80211_bss *bss);
 void cfg80211_unlink_bss(struct wiphy *wiphy, struct cfg80211_bss *bss);
 
 /**
- * cfg80211_send_rx_auth - notification of processed authentication
+ * cfg80211_rx_mlme_mgmt - notification of processed MLME management frame
  * @dev: network device
  * @buf: authentication frame (header + body)
  * @len: length of the frame data
  *
- * This function is called whenever an authentication has been processed in
- * station mode. The driver is required to call either this function or
- * cfg80211_send_auth_timeout() to indicate the result of cfg80211_ops::auth()
- * call. This function may sleep.
+ * This function is called whenever an authentication, disassociation or
+ * deauthentication frame has been received and processed in station mode.
+ * After being asked to authenticate via cfg80211_ops::auth() the driver must
+ * call either this function or cfg80211_auth_timeout().
+ * After being asked to associate via cfg80211_ops::assoc() the driver must
+ * call either this function or cfg80211_auth_timeout().
+ * While connected, the driver must calls this for received and processed
+ * disassociation and deauthentication frames. If the frame couldn't be used
+ * because it was unprotected, the driver must call the function
+ * cfg80211_rx_unprot_mlme_mgmt() instead.
+ *
+ * This function may sleep. The caller must hold the corresponding wdev's mutex.
  */
-void cfg80211_send_rx_auth(struct net_device *dev, const u8 *buf, size_t len);
+void cfg80211_rx_mlme_mgmt(struct net_device *dev, const u8 *buf, size_t len);
 
 /**
- * cfg80211_send_auth_timeout - notification of timed out authentication
+ * cfg80211_auth_timeout - notification of timed out authentication
  * @dev: network device
  * @addr: The MAC address of the device with which the authentication timed out
  *
- * This function may sleep.
+ * This function may sleep. The caller must hold the corresponding wdev's
+ * mutex.
  */
-void cfg80211_send_auth_timeout(struct net_device *dev, const u8 *addr);
+void cfg80211_auth_timeout(struct net_device *dev, const u8 *addr);
 
 /**
- * cfg80211_send_rx_assoc - notification of processed association
+ * cfg80211_rx_assoc_resp - notification of processed association response
  * @dev: network device
- * @bss: the BSS struct association was requested for, the struct reference
- *	is owned by cfg80211 after this call
- * @buf: (re)association response frame (header + body)
+ * @bss: the BSS that association was requested with, ownership of the pointer
+ *	moves to cfg80211 in this call
+ * @buf: authentication frame (header + body)
  * @len: length of the frame data
  *
- * This function is called whenever a (re)association response has been
- * processed in station mode. The driver is required to call either this
- * function or cfg80211_send_assoc_timeout() to indicate the result of
- * cfg80211_ops::assoc() call. This function may sleep.
+ * After being asked to associate via cfg80211_ops::assoc() the driver must
+ * call either this function or cfg80211_auth_timeout().
+ *
+ * This function may sleep. The caller must hold the corresponding wdev's mutex.
  */
-void cfg80211_send_rx_assoc(struct net_device *dev, struct cfg80211_bss *bss,
+void cfg80211_rx_assoc_resp(struct net_device *dev,
+			    struct cfg80211_bss *bss,
 			    const u8 *buf, size_t len);
 
 /**
- * cfg80211_send_assoc_timeout - notification of timed out association
+ * cfg80211_assoc_timeout - notification of timed out association
  * @dev: network device
- * @addr: The MAC address of the device with which the association timed out
+ * @bss: The BSS entry with which association timed out.
  *
- * This function may sleep.
+ * This function may sleep. The caller must hold the corresponding wdev's mutex.
  */
-void cfg80211_send_assoc_timeout(struct net_device *dev, const u8 *addr);
+void cfg80211_assoc_timeout(struct net_device *dev, struct cfg80211_bss *bss);
 
 /**
- * cfg80211_send_deauth - notification of processed deauthentication
+ * cfg80211_tx_mlme_mgmt - notification of transmitted deauth/disassoc frame
  * @dev: network device
- * @buf: deauthentication frame (header + body)
+ * @buf: 802.11 frame (header + body)
  * @len: length of the frame data
  *
  * This function is called whenever deauthentication has been processed in
  * station mode. This includes both received deauthentication frames and
- * locally generated ones. This function may sleep.
+ * locally generated ones. This function may sleep. The caller must hold the
+ * corresponding wdev's mutex.
  */
-void cfg80211_send_deauth(struct net_device *dev, const u8 *buf, size_t len);
+void cfg80211_tx_mlme_mgmt(struct net_device *dev, const u8 *buf, size_t len);
 
 /**
- * __cfg80211_send_deauth - notification of processed deauthentication
+ * cfg80211_rx_unprot_mlme_mgmt - notification of unprotected mlme mgmt frame
  * @dev: network device
  * @buf: deauthentication frame (header + body)
  * @len: length of the frame data
  *
- * Like cfg80211_send_deauth(), but doesn't take the wdev lock.
- */
-void __cfg80211_send_deauth(struct net_device *dev, const u8 *buf, size_t len);
-
-/**
- * cfg80211_send_disassoc - notification of processed disassociation
- * @dev: network device
- * @buf: disassociation response frame (header + body)
- * @len: length of the frame data
- *
- * This function is called whenever disassociation has been processed in
- * station mode. This includes both received disassociation frames and locally
- * generated ones. This function may sleep.
- */
-void cfg80211_send_disassoc(struct net_device *dev, const u8 *buf, size_t len);
-
-/**
- * __cfg80211_send_disassoc - notification of processed disassociation
- * @dev: network device
- * @buf: disassociation response frame (header + body)
- * @len: length of the frame data
- *
- * Like cfg80211_send_disassoc(), but doesn't take the wdev lock.
- */
-void __cfg80211_send_disassoc(struct net_device *dev, const u8 *buf,
-	size_t len);
-
-/**
- * cfg80211_send_unprot_deauth - notification of unprotected deauthentication
- * @dev: network device
- * @buf: deauthentication frame (header + body)
- * @len: length of the frame data
- *
- * This function is called whenever a received Deauthentication frame has been
- * dropped in station mode because of MFP being used but the Deauthentication
+ * This function is called whenever a received deauthentication or dissassoc
+ * frame has been dropped in station mode because of MFP being used but the
  * frame was not protected. This function may sleep.
  */
-void cfg80211_send_unprot_deauth(struct net_device *dev, const u8 *buf,
-				 size_t len);
-
-/**
- * cfg80211_send_unprot_disassoc - notification of unprotected disassociation
- * @dev: network device
- * @buf: disassociation frame (header + body)
- * @len: length of the frame data
- *
- * This function is called whenever a received Disassociation frame has been
- * dropped in station mode because of MFP being used but the Disassociation
- * frame was not protected. This function may sleep.
- */
-void cfg80211_send_unprot_disassoc(struct net_device *dev, const u8 *buf,
-				   size_t len);
+void cfg80211_rx_unprot_mlme_mgmt(struct net_device *dev,
+				  const u8 *buf, size_t len);
 
 /**
  * cfg80211_michael_mic_failure - notification of Michael MIC failure (TKIP)
@@ -3958,6 +4081,17 @@ bool cfg80211_reg_can_beacon(struct wiphy *wiphy,
 void cfg80211_ch_switch_notify(struct net_device *dev,
 			       struct cfg80211_chan_def *chandef);
 
+/**
+ * ieee80211_operating_class_to_band - convert operating class to band
+ *
+ * @operating_class: the operating class to convert
+ * @band: band pointer to fill
+ *
+ * Returns %true if the conversion was successful, %false otherwise.
+ */
+bool ieee80211_operating_class_to_band(u8 operating_class,
+				       enum ieee80211_band *band);
+
 /*
  * cfg80211_tdls_oper_request - request userspace to perform TDLS operation
  * @dev: the device on which the operation is requested
@@ -4002,6 +4136,30 @@ u32 cfg80211_calculate_bitrate(struct rate_info *rate);
 void cfg80211_unregister_wdev(struct wireless_dev *wdev);
 
 /**
+ * struct cfg80211_ft_event - FT Information Elements
+ * @ies: FT IEs
+ * @ies_len: length of the FT IE in bytes
+ * @target_ap: target AP's MAC address
+ * @ric_ies: RIC IE
+ * @ric_ies_len: length of the RIC IE in bytes
+ */
+struct cfg80211_ft_event_params {
+	const u8 *ies;
+	size_t ies_len;
+	const u8 *target_ap;
+	const u8 *ric_ies;
+	size_t ric_ies_len;
+};
+
+/**
+ * cfg80211_ft_event - notify userspace about FT IE and RIC IE
+ * @netdev: network device
+ * @ft_event: IE information
+ */
+void cfg80211_ft_event(struct net_device *netdev,
+		       struct cfg80211_ft_event_params *ft_event);
+
+/**
  * cfg80211_get_p2p_attr - find and copy a P2P attribute from IE buffer
  * @ies: the input IE buffer
  * @len: the input length
@@ -4035,6 +4193,18 @@ int cfg80211_get_p2p_attr(const u8 *ies, unsigned int len,
 void cfg80211_report_wowlan_wakeup(struct wireless_dev *wdev,
 				   struct cfg80211_wowlan_wakeup *wakeup,
 				   gfp_t gfp);
+
+/**
+ * cfg80211_crit_proto_stopped() - indicate critical protocol stopped by driver.
+ *
+ * @wdev: the wireless device for which critical protocol is stopped.
+ * @gfp: allocation flags
+ *
+ * This function can be called by the driver to indicate it has reverted
+ * operation back to normal. One reason could be that the duration given
+ * by .crit_proto_start() has expired.
+ */
+void cfg80211_crit_proto_stopped(struct wireless_dev *wdev, gfp_t gfp);
 
 /* Logging, debugging and troubleshooting/diagnostic helpers. */
 

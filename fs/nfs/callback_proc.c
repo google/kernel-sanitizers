@@ -406,7 +406,8 @@ __be32 nfs4_callback_sequence(struct cb_sequenceargs *args,
 	int i;
 	__be32 status = htonl(NFS4ERR_BADSESSION);
 
-	clp = nfs4_find_client_sessionid(cps->net, args->csa_addr, &args->csa_sessionid);
+	clp = nfs4_find_client_sessionid(cps->net, args->csa_addr,
+					 &args->csa_sessionid, cps->minorversion);
 	if (clp == NULL)
 		goto out;
 
@@ -414,7 +415,7 @@ __be32 nfs4_callback_sequence(struct cb_sequenceargs *args,
 
 	spin_lock(&tbl->slot_tbl_lock);
 	/* state manager is resetting the session */
-	if (test_bit(NFS4_SESSION_DRAINING, &clp->cl_session->session_state)) {
+	if (test_bit(NFS4_SLOT_TBL_DRAINING, &tbl->slot_tbl_state)) {
 		spin_unlock(&tbl->slot_tbl_lock);
 		status = htonl(NFS4ERR_DELAY);
 		/* Return NFS4ERR_BADSESSION if we're draining the session
@@ -500,7 +501,7 @@ __be32 nfs4_callback_recallany(struct cb_recallanyargs *args, void *dummy,
 		     &args->craa_type_mask))
 		pnfs_recall_all_layouts(cps->clp);
 	if (flags)
-		nfs_expire_all_delegation_types(cps->clp, flags);
+		nfs_expire_unused_delegation_types(cps->clp, flags);
 out:
 	dprintk("%s: exit with status = %d\n", __func__, ntohl(status));
 	return status;

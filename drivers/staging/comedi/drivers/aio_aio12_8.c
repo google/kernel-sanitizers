@@ -14,10 +14,6 @@
     but WITHOUT ANY WARRANTY; without even the implied warranty of
     MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
     GNU General Public License for more details.
-
-    You should have received a copy of the GNU General Public License
-    along with this program; if not, write to the Free Software
-    Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
 */
 
 /*
@@ -200,17 +196,11 @@ static int aio_aio12_8_attach(struct comedi_device *dev,
 	const struct aio12_8_boardtype *board = comedi_board(dev);
 	struct aio12_8_private *devpriv;
 	struct comedi_subdevice *s;
-	int iobase;
 	int ret;
 
-	dev->board_name = board->name;
-
-	iobase = it->options[0];
-	if (!request_region(iobase, 32, dev->board_name)) {
-		printk(KERN_ERR "I/O port conflict");
-		return -EIO;
-	}
-	dev->iobase = iobase;
+	ret = comedi_request_region(dev, it->options[0], 32);
+	if (ret)
+		return ret;
 
 	devpriv = kzalloc(sizeof(*devpriv), GFP_KERNEL);
 	if (!devpriv)
@@ -250,8 +240,8 @@ static int aio_aio12_8_attach(struct comedi_device *dev,
 
 	s = &dev->subdevices[2];
 	/* 8255 Digital i/o subdevice */
-	iobase = dev->iobase + AIO12_8_8255_BASE_REG;
-	ret = subdev_8255_init(dev, s, NULL, iobase);
+	ret = subdev_8255_init(dev, s, NULL,
+			       dev->iobase + AIO12_8_8255_BASE_REG);
 	if (ret)
 		return ret;
 
@@ -265,19 +255,11 @@ static int aio_aio12_8_attach(struct comedi_device *dev,
 	return 0;
 }
 
-static void aio_aio12_8_detach(struct comedi_device *dev)
-{
-	if (dev->subdevices)
-		subdev_8255_cleanup(dev, &dev->subdevices[2]);
-	if (dev->iobase)
-		release_region(dev->iobase, 24);
-}
-
 static struct comedi_driver aio_aio12_8_driver = {
 	.driver_name	= "aio_aio12_8",
 	.module		= THIS_MODULE,
 	.attach		= aio_aio12_8_attach,
-	.detach		= aio_aio12_8_detach,
+	.detach		= comedi_legacy_detach,
 	.board_name	= &board_types[0].name,
 	.num_names	= ARRAY_SIZE(board_types),
 	.offset		= sizeof(struct aio12_8_boardtype),

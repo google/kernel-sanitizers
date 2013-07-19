@@ -111,17 +111,6 @@
 #define MSR_TM_TRANSACTIONAL(x)	(((x) & MSR_TS_MASK) == MSR_TS_T)
 #define MSR_TM_SUSPENDED(x)	(((x) & MSR_TS_MASK) == MSR_TS_S)
 
-/* Reason codes describing kernel causes for transaction aborts.  By
-   convention, bit0 is copied to TEXASR[56] (IBM bit 7) which is set if
-   the failure is persistent.
-*/
-#define TM_CAUSE_RESCHED	0xfe
-#define TM_CAUSE_TLBI		0xfc
-#define TM_CAUSE_FAC_UNAV	0xfa
-#define TM_CAUSE_SYSCALL	0xf9 /* Persistent */
-#define TM_CAUSE_MISC		0xf6
-#define TM_CAUSE_SIGNAL		0xf4
-
 #if defined(CONFIG_PPC_BOOK3S_64)
 #define MSR_64BIT	MSR_SF
 
@@ -266,7 +255,18 @@
 #define SPRN_HSRR0	0x13A	/* Hypervisor Save/Restore 0 */
 #define SPRN_HSRR1	0x13B	/* Hypervisor Save/Restore 1 */
 #define SPRN_FSCR	0x099	/* Facility Status & Control Register */
-#define FSCR_TAR	(1<<8)	/* Enable Target Adress Register */
+#define   FSCR_TAR	(1 << (63-55)) /* Enable Target Address Register */
+#define   FSCR_EBB	(1 << (63-56)) /* Enable Event Based Branching */
+#define   FSCR_DSCR	(1 << (63-61)) /* Enable Data Stream Control Register */
+#define SPRN_HFSCR	0xbe	/* HV=1 Facility Status & Control Register */
+#define   HFSCR_TAR	(1 << (63-55)) /* Enable Target Address Register */
+#define   HFSCR_EBB	(1 << (63-56)) /* Enable Event Based Branching */
+#define   HFSCR_TM	(1 << (63-58)) /* Enable Transactional Memory */
+#define   HFSCR_PM	(1 << (63-60)) /* Enable prob/priv access to PMU SPRs */
+#define   HFSCR_BHRB	(1 << (63-59)) /* Enable Branch History Rolling Buffer*/
+#define   HFSCR_DSCR	(1 << (63-61)) /* Enable Data Stream Control Register */
+#define   HFSCR_VECVSX	(1 << (63-62)) /* Enable VMX/VSX  */
+#define   HFSCR_FP	(1 << (63-63)) /* Enable Floating Point */
 #define SPRN_TAR	0x32f	/* Target Address Register */
 #define SPRN_LPCR	0x13E	/* LPAR Control Register */
 #define   LPCR_VPM0	(1ul << (63-0))
@@ -289,6 +289,7 @@
 #define     LPCR_PECE1	0x00002000	/* decrementer can cause exit */
 #define     LPCR_PECE2	0x00001000	/* machine check etc can cause exit */
 #define   LPCR_MER	0x00000800	/* Mediated External Exception */
+#define   LPCR_MER_SH	11
 #define   LPCR_LPES    0x0000000c
 #define   LPCR_LPES0   0x00000008      /* LPAR Env selector 0 */
 #define   LPCR_LPES1   0x00000004      /* LPAR Env selector 1 */
@@ -620,16 +621,21 @@
 #define   MMCR0_PMXE	0x04000000UL /* performance monitor exception enable */
 #define   MMCR0_FCECE	0x02000000UL /* freeze ctrs on enabled cond or event */
 #define   MMCR0_TBEE	0x00400000UL /* time base exception enable */
+#define   MMCR0_EBE	0x00100000UL /* Event based branch enable */
+#define   MMCR0_PMCC	0x000c0000UL /* PMC control */
+#define   MMCR0_PMCC_U6	0x00080000UL /* PMC1-6 are R/W by user (PR) */
 #define   MMCR0_PMC1CE	0x00008000UL /* PMC1 count enable*/
 #define   MMCR0_PMCjCE	0x00004000UL /* PMCj count enable*/
 #define   MMCR0_TRIGGER	0x00002000UL /* TRIGGER enable */
 #define   MMCR0_PMAO	0x00000080UL /* performance monitor alert has occurred, set to 0 after handling exception */
 #define   MMCR0_SHRFC	0x00000040UL /* SHRre freeze conditions between threads */
+#define   MMCR0_FC56	0x00000010UL /* freeze counters 5 and 6 */
 #define   MMCR0_FCTI	0x00000008UL /* freeze counters in tags inactive mode */
 #define   MMCR0_FCTA	0x00000004UL /* freeze counters in tags active mode */
 #define   MMCR0_FCWAIT	0x00000002UL /* freeze counter in WAIT state */
 #define   MMCR0_FCHV	0x00000001UL /* freeze conditions in hypervisor mode */
 #define SPRN_MMCR1	798
+#define SPRN_MMCR2	769
 #define SPRN_MMCRA	0x312
 #define   MMCRA_SDSYNC	0x80000000UL /* SDAR synced with SIAR */
 #define   MMCRA_SDAR_DCACHE_MISS 0x40000000UL
@@ -648,6 +654,13 @@
 #define   POWER7P_MMCRA_SIAR_VALID 0x10000000	/* P7+ SIAR contents valid */
 #define   POWER7P_MMCRA_SDAR_VALID 0x08000000	/* P7+ SDAR contents valid */
 
+#define SPRN_MMCRH	316	/* Hypervisor monitor mode control register */
+#define SPRN_MMCRS	894	/* Supervisor monitor mode control register */
+#define SPRN_MMCRC	851	/* Core monitor mode control register */
+#define SPRN_EBBHR	804	/* Event based branch handler register */
+#define SPRN_EBBRR	805	/* Event based branch return register */
+#define SPRN_BESCR	806	/* Branch event status and control register */
+
 #define SPRN_PMC1	787
 #define SPRN_PMC2	788
 #define SPRN_PMC3	789
@@ -658,6 +671,16 @@
 #define SPRN_PMC8	794
 #define SPRN_SIAR	780
 #define SPRN_SDAR	781
+#define SPRN_SIER	784
+#define   SIER_SIPR		0x2000000	/* Sampled MSR_PR */
+#define   SIER_SIHV		0x1000000	/* Sampled MSR_HV */
+#define   SIER_SIAR_VALID	0x0400000	/* SIAR contents valid */
+#define   SIER_SDAR_VALID	0x0200000	/* SDAR contents valid */
+
+/* When EBB is enabled, some of MMCR0/MMCR2/SIER are user accessible */
+#define MMCR0_USER_MASK	(MMCR0_FC | MMCR0_PMXE | MMCR0_PMAO)
+#define MMCR2_USER_MASK	0x4020100804020000UL /* (FC1P|FC2P|FC3P|FC4P|FC5P|FC6P) */
+#define SIER_USER_MASK	0x7fffffUL
 
 #define SPRN_PA6T_MMCR0 795
 #define   PA6T_MMCR0_EN0	0x0000000000000001UL

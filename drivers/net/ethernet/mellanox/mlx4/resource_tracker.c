@@ -75,6 +75,7 @@ struct res_gid {
 	u8			gid[16];
 	enum mlx4_protocol	prot;
 	enum mlx4_steer_type	steer;
+	u64			reg_id;
 };
 
 enum res_qp_states {
@@ -99,6 +100,9 @@ struct res_qp {
 	struct list_head	mcg_list;
 	spinlock_t		mcg_spl;
 	int			local_qpn;
+	atomic_t		ref_count;
+	u32			qpc_flags;
+	u8			sched_queue;
 };
 
 enum res_mtt_states {
@@ -197,6 +201,7 @@ enum res_fs_rule_states {
 
 struct res_fs_rule {
 	struct res_common	com;
+	int			qpn;
 };
 
 static void *res_tracker_lookup(struct rb_root *root, u64 res_id)
@@ -350,12 +355,76 @@ static void update_gid(struct mlx4_dev *dev, struct mlx4_cmd_mailbox *inbox,
 	}
 }
 
+static int update_vport_qp_param(struct mlx4_dev *dev,
+				 struct mlx4_cmd_mailbox *inbox,
+				 u8 slave, u32 qpn)
+{
+	struct mlx4_qp_context	*qpc = inbox->buf + 8;
+	struct mlx4_vport_oper_state *vp_oper;
+	struct mlx4_priv *priv;
+	u32 qp_type;
+	int port;
+
+	port = (qpc->pri_path.sched_queue & 0x40) ? 2 : 1;
+	priv = mlx4_priv(dev);
+	vp_oper = &priv->mfunc.master.vf_oper[slave].vport[port];
+
+	if (MLX4_VGT != vp_oper->state.default_vlan) {
+		qp_type	= (be32_to_cpu(qpc->flags) >> 16) & 0xff;
+		if (MLX4_QP_ST_RC == qp_type ||
+		    (MLX4_QP_ST_UD == qp_type &&
+		     !mlx4_is_qp_reserved(dev, qpn)))
+			return -EINVAL;
+
+		/* the reserved QPs (special, proxy, tunnel)
+		 * do not operate over vlans
+		 */
+		if (mlx4_is_qp_reserved(dev, qpn))
+			return 0;
+
+		/* force strip vlan by clear vsd */
+		qpc->param3 &= ~cpu_to_be32(MLX4_STRIP_VLAN);
+
+		if (vp_oper->state.link_state == IFLA_VF_LINK_STATE_DISABLE &&
+		    dev->caps.flags2 & MLX4_DEV_CAP_FLAG2_UPDATE_QP) {
+			qpc->pri_path.vlan_control =
+				MLX4_VLAN_CTRL_ETH_TX_BLOCK_TAGGED |
+				MLX4_VLAN_CTRL_ETH_TX_BLOCK_PRIO_TAGGED |
+				MLX4_VLAN_CTRL_ETH_TX_BLOCK_UNTAGGED |
+				MLX4_VLAN_CTRL_ETH_RX_BLOCK_PRIO_TAGGED |
+				MLX4_VLAN_CTRL_ETH_RX_BLOCK_UNTAGGED |
+				MLX4_VLAN_CTRL_ETH_RX_BLOCK_TAGGED;
+		} else if (0 != vp_oper->state.default_vlan) {
+			qpc->pri_path.vlan_control =
+				MLX4_VLAN_CTRL_ETH_TX_BLOCK_TAGGED |
+				MLX4_VLAN_CTRL_ETH_RX_BLOCK_PRIO_TAGGED |
+				MLX4_VLAN_CTRL_ETH_RX_BLOCK_UNTAGGED;
+		} else { /* priority tagged */
+			qpc->pri_path.vlan_control =
+				MLX4_VLAN_CTRL_ETH_TX_BLOCK_TAGGED |
+				MLX4_VLAN_CTRL_ETH_RX_BLOCK_TAGGED;
+		}
+
+		qpc->pri_path.fvl_rx |= MLX4_FVL_RX_FORCE_ETH_VLAN;
+		qpc->pri_path.vlan_index = vp_oper->vlan_idx;
+		qpc->pri_path.fl |= MLX4_FL_CV | MLX4_FL_ETH_HIDE_CQE_VLAN;
+		qpc->pri_path.feup |= MLX4_FEUP_FORCE_ETH_UP | MLX4_FVL_FORCE_ETH_VLAN;
+		qpc->pri_path.sched_queue &= 0xC7;
+		qpc->pri_path.sched_queue |= (vp_oper->state.default_qos) << 3;
+	}
+	if (vp_oper->state.spoofchk) {
+		qpc->pri_path.feup |= MLX4_FSM_FORCE_ETH_SRC_MAC;
+		qpc->pri_path.grh_mylmc = (0x80 & qpc->pri_path.grh_mylmc) + vp_oper->mac_idx;
+	}
+	return 0;
+}
+
 static int mpt_mask(struct mlx4_dev *dev)
 {
 	return dev->caps.num_mpts - 1;
 }
 
-static void *find_res(struct mlx4_dev *dev, int res_id,
+static void *find_res(struct mlx4_dev *dev, u64 res_id,
 		      enum mlx4_resource type)
 {
 	struct mlx4_priv *priv = mlx4_priv(dev);
@@ -447,6 +516,7 @@ static struct res_common *alloc_qp_tr(int id)
 	ret->local_qpn = id;
 	INIT_LIST_HEAD(&ret->mcg_list);
 	spin_lock_init(&ret->mcg_spl);
+	atomic_set(&ret->ref_count, 0);
 
 	return &ret->com;
 }
@@ -554,7 +624,7 @@ static struct res_common *alloc_xrcdn_tr(int id)
 	return &ret->com;
 }
 
-static struct res_common *alloc_fs_rule_tr(u64 id)
+static struct res_common *alloc_fs_rule_tr(u64 id, int qpn)
 {
 	struct res_fs_rule *ret;
 
@@ -564,7 +634,7 @@ static struct res_common *alloc_fs_rule_tr(u64 id)
 
 	ret->com.res_id = id;
 	ret->com.state = RES_FS_RULE_ALLOCATED;
-
+	ret->qpn = qpn;
 	return &ret->com;
 }
 
@@ -602,7 +672,7 @@ static struct res_common *alloc_tr(u64 id, enum mlx4_resource type, int slave,
 		ret = alloc_xrcdn_tr(id);
 		break;
 	case RES_FS_RULE:
-		ret = alloc_fs_rule_tr(id);
+		ret = alloc_fs_rule_tr(id, extra);
 		break;
 	default:
 		return NULL;
@@ -671,10 +741,14 @@ undo:
 
 static int remove_qp_ok(struct res_qp *res)
 {
-	if (res->com.state == RES_QP_BUSY)
+	if (res->com.state == RES_QP_BUSY || atomic_read(&res->ref_count) ||
+	    !list_empty(&res->mcg_list)) {
+		pr_err("resource tracker: fail to remove qp, state %d, ref_count %d\n",
+		       res->com.state, atomic_read(&res->ref_count));
 		return -EBUSY;
-	else if (res->com.state != RES_QP_RESERVED)
+	} else if (res->com.state != RES_QP_RESERVED) {
 		return -EPERM;
+	}
 
 	return 0;
 }
@@ -2060,6 +2134,8 @@ int mlx4_RST2INIT_QP_wrapper(struct mlx4_dev *dev, int slave,
 	if (err)
 		return err;
 	qp->local_qpn = local_qpn;
+	qp->sched_queue = 0;
+	qp->qpc_flags = be32_to_cpu(qpc->flags);
 
 	err = get_res(dev, slave, mtt_base, RES_MTT, &mtt);
 	if (err)
@@ -2782,6 +2858,9 @@ int mlx4_INIT2RTR_QP_wrapper(struct mlx4_dev *dev, int slave,
 {
 	int err;
 	struct mlx4_qp_context *qpc = inbox->buf + 8;
+	int qpn = vhcr->in_modifier & 0x7fffff;
+	struct res_qp *qp;
+	u8 orig_sched_queue;
 
 	err = verify_qp_parameters(dev, inbox, QP_TRANS_INIT2RTR, slave);
 	if (err)
@@ -2790,8 +2869,30 @@ int mlx4_INIT2RTR_QP_wrapper(struct mlx4_dev *dev, int slave,
 	update_pkey_index(dev, slave, inbox);
 	update_gid(dev, inbox, (u8)slave);
 	adjust_proxy_tun_qkey(dev, vhcr, qpc);
+	orig_sched_queue = qpc->pri_path.sched_queue;
+	err = update_vport_qp_param(dev, inbox, slave, qpn);
+	if (err)
+		return err;
 
-	return mlx4_GEN_QP_wrapper(dev, slave, vhcr, inbox, outbox, cmd);
+	err = get_res(dev, slave, qpn, RES_QP, &qp);
+	if (err)
+		return err;
+	if (qp->com.from_state != RES_QP_HW) {
+		err = -EBUSY;
+		goto out;
+	}
+
+	err = mlx4_DMA_wrapper(dev, slave, vhcr, inbox, outbox, cmd);
+out:
+	/* if no error, save sched queue value passed in by VF. This is
+	 * essentially the QOS value provided by the VF. This will be useful
+	 * if we allow dynamic changes from VST back to VGT
+	 */
+	if (!err)
+		qp->sched_queue = orig_sched_queue;
+
+	put_res(dev, slave, qpn, RES_QP);
+	return err;
 }
 
 int mlx4_RTR2RTS_QP_wrapper(struct mlx4_dev *dev, int slave,
@@ -2927,7 +3028,7 @@ static struct res_gid *find_gid(struct mlx4_dev *dev, int slave,
 
 static int add_mcg_res(struct mlx4_dev *dev, int slave, struct res_qp *rqp,
 		       u8 *gid, enum mlx4_protocol prot,
-		       enum mlx4_steer_type steer)
+		       enum mlx4_steer_type steer, u64 reg_id)
 {
 	struct res_gid *res;
 	int err;
@@ -2944,6 +3045,7 @@ static int add_mcg_res(struct mlx4_dev *dev, int slave, struct res_qp *rqp,
 		memcpy(res->gid, gid, 16);
 		res->prot = prot;
 		res->steer = steer;
+		res->reg_id = reg_id;
 		list_add_tail(&res->list, &rqp->mcg_list);
 		err = 0;
 	}
@@ -2954,7 +3056,7 @@ static int add_mcg_res(struct mlx4_dev *dev, int slave, struct res_qp *rqp,
 
 static int rem_mcg_res(struct mlx4_dev *dev, int slave, struct res_qp *rqp,
 		       u8 *gid, enum mlx4_protocol prot,
-		       enum mlx4_steer_type steer)
+		       enum mlx4_steer_type steer, u64 *reg_id)
 {
 	struct res_gid *res;
 	int err;
@@ -2964,6 +3066,7 @@ static int rem_mcg_res(struct mlx4_dev *dev, int slave, struct res_qp *rqp,
 	if (!res || res->prot != prot || res->steer != steer)
 		err = -EINVAL;
 	else {
+		*reg_id = res->reg_id;
 		list_del(&res->list);
 		kfree(res);
 		err = 0;
@@ -2971,6 +3074,37 @@ static int rem_mcg_res(struct mlx4_dev *dev, int slave, struct res_qp *rqp,
 	spin_unlock_irq(&rqp->mcg_spl);
 
 	return err;
+}
+
+static int qp_attach(struct mlx4_dev *dev, struct mlx4_qp *qp, u8 gid[16],
+		     int block_loopback, enum mlx4_protocol prot,
+		     enum mlx4_steer_type type, u64 *reg_id)
+{
+	switch (dev->caps.steering_mode) {
+	case MLX4_STEERING_MODE_DEVICE_MANAGED:
+		return mlx4_trans_to_dmfs_attach(dev, qp, gid, gid[5],
+						block_loopback, prot,
+						reg_id);
+	case MLX4_STEERING_MODE_B0:
+		return mlx4_qp_attach_common(dev, qp, gid,
+					    block_loopback, prot, type);
+	default:
+		return -EINVAL;
+	}
+}
+
+static int qp_detach(struct mlx4_dev *dev, struct mlx4_qp *qp, u8 gid[16],
+		     enum mlx4_protocol prot, enum mlx4_steer_type type,
+		     u64 reg_id)
+{
+	switch (dev->caps.steering_mode) {
+	case MLX4_STEERING_MODE_DEVICE_MANAGED:
+		return mlx4_flow_detach(dev, reg_id);
+	case MLX4_STEERING_MODE_B0:
+		return mlx4_qp_detach_common(dev, qp, gid, prot, type);
+	default:
+		return -EINVAL;
+	}
 }
 
 int mlx4_QP_ATTACH_wrapper(struct mlx4_dev *dev, int slave,
@@ -2985,6 +3119,7 @@ int mlx4_QP_ATTACH_wrapper(struct mlx4_dev *dev, int slave,
 	int err;
 	int qpn;
 	struct res_qp *rqp;
+	u64 reg_id = 0;
 	int attach = vhcr->op_modifier;
 	int block_loopback = vhcr->in_modifier >> 31;
 	u8 steer_type_mask = 2;
@@ -2997,30 +3132,32 @@ int mlx4_QP_ATTACH_wrapper(struct mlx4_dev *dev, int slave,
 
 	qp.qpn = qpn;
 	if (attach) {
-		err = add_mcg_res(dev, slave, rqp, gid, prot, type);
-		if (err)
+		err = qp_attach(dev, &qp, gid, block_loopback, prot,
+				type, &reg_id);
+		if (err) {
+			pr_err("Fail to attach rule to qp 0x%x\n", qpn);
 			goto ex_put;
-
-		err = mlx4_qp_attach_common(dev, &qp, gid,
-					    block_loopback, prot, type);
+		}
+		err = add_mcg_res(dev, slave, rqp, gid, prot, type, reg_id);
 		if (err)
-			goto ex_rem;
+			goto ex_detach;
 	} else {
-		err = rem_mcg_res(dev, slave, rqp, gid, prot, type);
+		err = rem_mcg_res(dev, slave, rqp, gid, prot, type, &reg_id);
 		if (err)
 			goto ex_put;
-		err = mlx4_qp_detach_common(dev, &qp, gid, prot, type);
+
+		err = qp_detach(dev, &qp, gid, prot, type, reg_id);
+		if (err)
+			pr_err("Fail to detach rule from qp 0x%x reg_id = 0x%llx\n",
+			       qpn, reg_id);
 	}
-
 	put_res(dev, slave, qpn, RES_QP);
-	return 0;
+	return err;
 
-ex_rem:
-	/* ignore error return below, already in error */
-	(void) rem_mcg_res(dev, slave, rqp, gid, prot, type);
+ex_detach:
+	qp_detach(dev, &qp, gid, prot, type, reg_id);
 ex_put:
 	put_res(dev, slave, qpn, RES_QP);
-
 	return err;
 }
 
@@ -3121,6 +3258,7 @@ int mlx4_QP_FLOW_STEERING_ATTACH_wrapper(struct mlx4_dev *dev, int slave,
 	struct list_head *rlist = &tracker->slave_list[slave].res_list[RES_MAC];
 	int err;
 	int qpn;
+	struct res_qp *rqp;
 	struct mlx4_net_trans_rule_hw_ctrl *ctrl;
 	struct _rule_hw  *rule_header;
 	int header_id;
@@ -3131,7 +3269,7 @@ int mlx4_QP_FLOW_STEERING_ATTACH_wrapper(struct mlx4_dev *dev, int slave,
 
 	ctrl = (struct mlx4_net_trans_rule_hw_ctrl *)inbox->buf;
 	qpn = be32_to_cpu(ctrl->qpn) & 0xffffff;
-	err = get_res(dev, slave, qpn, RES_QP, NULL);
+	err = get_res(dev, slave, qpn, RES_QP, &rqp);
 	if (err) {
 		pr_err("Steering rule with qpn 0x%x rejected.\n", qpn);
 		return err;
@@ -3172,14 +3310,16 @@ int mlx4_QP_FLOW_STEERING_ATTACH_wrapper(struct mlx4_dev *dev, int slave,
 	if (err)
 		goto err_put;
 
-	err = add_res_range(dev, slave, vhcr->out_param, 1, RES_FS_RULE, 0);
+	err = add_res_range(dev, slave, vhcr->out_param, 1, RES_FS_RULE, qpn);
 	if (err) {
 		mlx4_err(dev, "Fail to add flow steering resources.\n ");
 		/* detach rule*/
 		mlx4_cmd(dev, vhcr->out_param, 0, 0,
 			 MLX4_QP_FLOW_STEERING_DETACH, MLX4_CMD_TIME_CLASS_A,
 			 MLX4_CMD_NATIVE);
+		goto err_put;
 	}
+	atomic_inc(&rqp->ref_count);
 err_put:
 	put_res(dev, slave, qpn, RES_QP);
 	return err;
@@ -3192,20 +3332,35 @@ int mlx4_QP_FLOW_STEERING_DETACH_wrapper(struct mlx4_dev *dev, int slave,
 					 struct mlx4_cmd_info *cmd)
 {
 	int err;
+	struct res_qp *rqp;
+	struct res_fs_rule *rrule;
 
 	if (dev->caps.steering_mode !=
 	    MLX4_STEERING_MODE_DEVICE_MANAGED)
 		return -EOPNOTSUPP;
 
+	err = get_res(dev, slave, vhcr->in_param, RES_FS_RULE, &rrule);
+	if (err)
+		return err;
+	/* Release the rule form busy state before removal */
+	put_res(dev, slave, vhcr->in_param, RES_FS_RULE);
+	err = get_res(dev, slave, rrule->qpn, RES_QP, &rqp);
+	if (err)
+		return err;
+
 	err = rem_res_range(dev, slave, vhcr->in_param, 1, RES_FS_RULE, 0);
 	if (err) {
 		mlx4_err(dev, "Fail to remove flow steering resources.\n ");
-		return err;
+		goto out;
 	}
 
 	err = mlx4_cmd(dev, vhcr->in_param, 0, 0,
 		       MLX4_QP_FLOW_STEERING_DETACH, MLX4_CMD_TIME_CLASS_A,
 		       MLX4_CMD_NATIVE);
+	if (!err)
+		atomic_dec(&rqp->ref_count);
+out:
+	put_res(dev, slave, rrule->qpn, RES_QP);
 	return err;
 }
 
@@ -3238,9 +3393,16 @@ static void detach_qp(struct mlx4_dev *dev, int slave, struct res_qp *rqp)
 	struct mlx4_qp qp; /* dummy for calling attach/detach */
 
 	list_for_each_entry_safe(rgid, tmp, &rqp->mcg_list, list) {
-		qp.qpn = rqp->local_qpn;
-		(void) mlx4_qp_detach_common(dev, &qp, rgid->gid, rgid->prot,
-					     rgid->steer);
+		switch (dev->caps.steering_mode) {
+		case MLX4_STEERING_MODE_DEVICE_MANAGED:
+			mlx4_flow_detach(dev, rgid->reg_id);
+			break;
+		case MLX4_STEERING_MODE_B0:
+			qp.qpn = rqp->local_qpn;
+			(void) mlx4_qp_detach_common(dev, &qp, rgid->gid,
+						     rgid->prot, rgid->steer);
+			break;
+		}
 		list_del(&rgid->list);
 		kfree(rgid);
 	}
@@ -3803,6 +3965,7 @@ void mlx4_delete_all_resources_for_slave(struct mlx4_dev *dev, int slave)
 	mutex_lock(&priv->mfunc.master.res_tracker.slave_list[slave].mutex);
 	/*VLAN*/
 	rem_slave_macs(dev, slave);
+	rem_slave_fs_rule(dev, slave);
 	rem_slave_qps(dev, slave);
 	rem_slave_srqs(dev, slave);
 	rem_slave_cqs(dev, slave);
@@ -3811,6 +3974,114 @@ void mlx4_delete_all_resources_for_slave(struct mlx4_dev *dev, int slave)
 	rem_slave_mtts(dev, slave);
 	rem_slave_counters(dev, slave);
 	rem_slave_xrcdns(dev, slave);
-	rem_slave_fs_rule(dev, slave);
 	mutex_unlock(&priv->mfunc.master.res_tracker.slave_list[slave].mutex);
+}
+
+void mlx4_vf_immed_vlan_work_handler(struct work_struct *_work)
+{
+	struct mlx4_vf_immed_vlan_work *work =
+		container_of(_work, struct mlx4_vf_immed_vlan_work, work);
+	struct mlx4_cmd_mailbox *mailbox;
+	struct mlx4_update_qp_context *upd_context;
+	struct mlx4_dev *dev = &work->priv->dev;
+	struct mlx4_resource_tracker *tracker =
+		&work->priv->mfunc.master.res_tracker;
+	struct list_head *qp_list =
+		&tracker->slave_list[work->slave].res_list[RES_QP];
+	struct res_qp *qp;
+	struct res_qp *tmp;
+	u64 qp_mask = ((1ULL << MLX4_UPD_QP_PATH_MASK_ETH_TX_BLOCK_UNTAGGED) |
+		       (1ULL << MLX4_UPD_QP_PATH_MASK_ETH_TX_BLOCK_1P) |
+		       (1ULL << MLX4_UPD_QP_PATH_MASK_ETH_TX_BLOCK_TAGGED) |
+		       (1ULL << MLX4_UPD_QP_PATH_MASK_ETH_RX_BLOCK_UNTAGGED) |
+		       (1ULL << MLX4_UPD_QP_PATH_MASK_ETH_RX_BLOCK_1P) |
+		       (1ULL << MLX4_UPD_QP_PATH_MASK_ETH_RX_BLOCK_TAGGED) |
+		       (1ULL << MLX4_UPD_QP_PATH_MASK_VLAN_INDEX) |
+		       (1ULL << MLX4_UPD_QP_PATH_MASK_SCHED_QUEUE));
+
+	int err;
+	int port, errors = 0;
+	u8 vlan_control;
+
+	if (mlx4_is_slave(dev)) {
+		mlx4_warn(dev, "Trying to update-qp in slave %d\n",
+			  work->slave);
+		goto out;
+	}
+
+	mailbox = mlx4_alloc_cmd_mailbox(dev);
+	if (IS_ERR(mailbox))
+		goto out;
+	if (work->flags & MLX4_VF_IMMED_VLAN_FLAG_LINK_DISABLE) /* block all */
+		vlan_control = MLX4_VLAN_CTRL_ETH_TX_BLOCK_TAGGED |
+			MLX4_VLAN_CTRL_ETH_TX_BLOCK_PRIO_TAGGED |
+			MLX4_VLAN_CTRL_ETH_TX_BLOCK_UNTAGGED |
+			MLX4_VLAN_CTRL_ETH_RX_BLOCK_PRIO_TAGGED |
+			MLX4_VLAN_CTRL_ETH_RX_BLOCK_UNTAGGED |
+			MLX4_VLAN_CTRL_ETH_RX_BLOCK_TAGGED;
+	else if (!work->vlan_id)
+		vlan_control = MLX4_VLAN_CTRL_ETH_TX_BLOCK_TAGGED |
+			MLX4_VLAN_CTRL_ETH_RX_BLOCK_TAGGED;
+	else
+		vlan_control = MLX4_VLAN_CTRL_ETH_TX_BLOCK_TAGGED |
+			MLX4_VLAN_CTRL_ETH_RX_BLOCK_PRIO_TAGGED |
+			MLX4_VLAN_CTRL_ETH_RX_BLOCK_UNTAGGED;
+
+	upd_context = mailbox->buf;
+	upd_context->primary_addr_path_mask = cpu_to_be64(qp_mask);
+	upd_context->qp_context.pri_path.vlan_control = vlan_control;
+	upd_context->qp_context.pri_path.vlan_index = work->vlan_ix;
+
+	spin_lock_irq(mlx4_tlock(dev));
+	list_for_each_entry_safe(qp, tmp, qp_list, com.list) {
+		spin_unlock_irq(mlx4_tlock(dev));
+		if (qp->com.owner == work->slave) {
+			if (qp->com.from_state != RES_QP_HW ||
+			    !qp->sched_queue ||  /* no INIT2RTR trans yet */
+			    mlx4_is_qp_reserved(dev, qp->local_qpn) ||
+			    qp->qpc_flags & (1 << MLX4_RSS_QPC_FLAG_OFFSET)) {
+				spin_lock_irq(mlx4_tlock(dev));
+				continue;
+			}
+			port = (qp->sched_queue >> 6 & 1) + 1;
+			if (port != work->port) {
+				spin_lock_irq(mlx4_tlock(dev));
+				continue;
+			}
+			upd_context->qp_context.pri_path.sched_queue =
+				qp->sched_queue & 0xC7;
+			upd_context->qp_context.pri_path.sched_queue |=
+				((work->qos & 0x7) << 3);
+
+			err = mlx4_cmd(dev, mailbox->dma,
+				       qp->local_qpn & 0xffffff,
+				       0, MLX4_CMD_UPDATE_QP,
+				       MLX4_CMD_TIME_CLASS_C, MLX4_CMD_NATIVE);
+			if (err) {
+				mlx4_info(dev, "UPDATE_QP failed for slave %d, "
+					  "port %d, qpn %d (%d)\n",
+					  work->slave, port, qp->local_qpn,
+					  err);
+				errors++;
+			}
+		}
+		spin_lock_irq(mlx4_tlock(dev));
+	}
+	spin_unlock_irq(mlx4_tlock(dev));
+	mlx4_free_cmd_mailbox(dev, mailbox);
+
+	if (errors)
+		mlx4_err(dev, "%d UPDATE_QP failures for slave %d, port %d\n",
+			 errors, work->slave, work->port);
+
+	/* unregister previous vlan_id if needed and we had no errors
+	 * while updating the QPs
+	 */
+	if (work->flags & MLX4_VF_IMMED_VLAN_FLAG_VLAN && !errors &&
+	    NO_INDX != work->orig_vlan_ix)
+		__mlx4_unregister_vlan(&work->priv->dev, work->port,
+				       work->orig_vlan_ix);
+out:
+	kfree(work);
+	return;
 }

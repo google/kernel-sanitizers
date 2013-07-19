@@ -231,9 +231,10 @@ int perf_diff__formula(struct hist_entry *he, struct hist_entry *pair,
 }
 
 static int hists__add_entry(struct hists *self,
-			    struct addr_location *al, u64 period)
+			    struct addr_location *al, u64 period,
+			    u64 weight)
 {
-	if (__hists__add_entry(self, al, NULL, period) != NULL)
+	if (__hists__add_entry(self, al, NULL, period, weight) != NULL)
 		return 0;
 	return -ENOMEM;
 }
@@ -255,7 +256,7 @@ static int diff__process_sample_event(struct perf_tool *tool __maybe_unused,
 	if (al.filtered)
 		return 0;
 
-	if (hists__add_entry(&evsel->hists, &al, sample->period)) {
+	if (hists__add_entry(&evsel->hists, &al, sample->period, sample->weight)) {
 		pr_warning("problem incrementing symbol period, skipping event\n");
 		return -1;
 	}
@@ -322,13 +323,20 @@ static void hists__baseline_only(struct hists *hists)
 
 static void hists__precompute(struct hists *hists)
 {
-	struct rb_node *next = rb_first(&hists->entries);
+	struct rb_root *root;
+	struct rb_node *next;
 
+	if (sort__need_collapse)
+		root = &hists->entries_collapsed;
+	else
+		root = hists->entries_in;
+
+	next = rb_first(root);
 	while (next != NULL) {
-		struct hist_entry *he = rb_entry(next, struct hist_entry, rb_node);
+		struct hist_entry *he = rb_entry(next, struct hist_entry, rb_node_in);
 		struct hist_entry *pair = hist_entry__next_pair(he);
 
-		next = rb_next(&he->rb_node);
+		next = rb_next(&he->rb_node_in);
 		if (!pair)
 			continue;
 
@@ -456,7 +464,7 @@ static void hists__process(struct hists *old, struct hists *new)
 		hists__output_resort(new);
 	}
 
-	hists__fprintf(new, true, 0, 0, stdout);
+	hists__fprintf(new, true, 0, 0, 0, stdout);
 }
 
 static int __cmd_diff(void)
@@ -599,7 +607,6 @@ int cmd_diff(int argc, const char **argv, const char *prefix __maybe_unused)
 		input_new = "perf.data.guest";
 	}
 
-	symbol_conf.exclude_other = false;
 	if (symbol__init() < 0)
 		return -1;
 
@@ -610,9 +617,7 @@ int cmd_diff(int argc, const char **argv, const char *prefix __maybe_unused)
 
 	setup_pager();
 
-	sort_entry__setup_elide(&sort_dso, symbol_conf.dso_list, "dso", NULL);
-	sort_entry__setup_elide(&sort_comm, symbol_conf.comm_list, "comm", NULL);
-	sort_entry__setup_elide(&sort_sym, symbol_conf.sym_list, "symbol", NULL);
+	sort__setup_elide(NULL);
 
 	return __cmd_diff();
 }

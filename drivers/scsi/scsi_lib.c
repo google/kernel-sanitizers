@@ -71,9 +71,14 @@ struct kmem_cache *scsi_sdb_cache;
 #ifdef CONFIG_ACPI
 #include <acpi/acpi_bus.h>
 
+static bool acpi_scsi_bus_match(struct device *dev)
+{
+	return dev->bus == &scsi_bus_type;
+}
+
 int scsi_register_acpi_bus_type(struct acpi_bus_type *bus)
 {
-        bus->bus = &scsi_bus_type;
+        bus->match = acpi_scsi_bus_match;
         return register_acpi_bus_type(bus);
 }
 EXPORT_SYMBOL_GPL(scsi_register_acpi_bus_type);
@@ -271,11 +276,10 @@ int scsi_execute(struct scsi_device *sdev, const unsigned char *cmd,
 }
 EXPORT_SYMBOL(scsi_execute);
 
-
-int scsi_execute_req(struct scsi_device *sdev, const unsigned char *cmd,
+int scsi_execute_req_flags(struct scsi_device *sdev, const unsigned char *cmd,
 		     int data_direction, void *buffer, unsigned bufflen,
 		     struct scsi_sense_hdr *sshdr, int timeout, int retries,
-		     int *resid)
+		     int *resid, int flags)
 {
 	char *sense = NULL;
 	int result;
@@ -286,14 +290,14 @@ int scsi_execute_req(struct scsi_device *sdev, const unsigned char *cmd,
 			return DRIVER_ERROR << 24;
 	}
 	result = scsi_execute(sdev, cmd, data_direction, buffer, bufflen,
-			      sense, timeout, retries, 0, resid);
+			      sense, timeout, retries, flags, resid);
 	if (sshdr)
 		scsi_normalize_sense(sense, SCSI_SENSE_BUFFERSIZE, sshdr);
 
 	kfree(sense);
 	return result;
 }
-EXPORT_SYMBOL(scsi_execute_req);
+EXPORT_SYMBOL(scsi_execute_req_flags);
 
 /*
  * Function:    scsi_init_cmd_errh()
@@ -430,6 +434,8 @@ static void scsi_run_queue(struct request_queue *q)
 	list_splice_init(&shost->starved_list, &starved_list);
 
 	while (!list_empty(&starved_list)) {
+		struct request_queue *slq;
+
 		/*
 		 * As long as shost is accepting commands and we have
 		 * starved queues, call blk_run_queue. scsi_request_fn
@@ -452,11 +458,25 @@ static void scsi_run_queue(struct request_queue *q)
 			continue;
 		}
 
-		spin_unlock(shost->host_lock);
-		spin_lock(sdev->request_queue->queue_lock);
-		__blk_run_queue(sdev->request_queue);
-		spin_unlock(sdev->request_queue->queue_lock);
-		spin_lock(shost->host_lock);
+		/*
+		 * Once we drop the host lock, a racing scsi_remove_device()
+		 * call may remove the sdev from the starved list and destroy
+		 * it and the queue.  Mitigate by taking a reference to the
+		 * queue and never touching the sdev again after we drop the
+		 * host lock.  Note: if __scsi_remove_device() invokes
+		 * blk_cleanup_queue() before the queue is run from this
+		 * function then blk_run_queue() will return immediately since
+		 * blk_cleanup_queue() marks the queue with QUEUE_FLAG_DYING.
+		 */
+		slq = sdev->request_queue;
+		if (!blk_get_queue(slq))
+			continue;
+		spin_unlock_irqrestore(shost->host_lock, flags);
+
+		blk_run_queue(slq);
+		blk_put_queue(slq);
+
+		spin_lock_irqsave(shost->host_lock, flags);
 	}
 	/* put any unprocessed entries back */
 	list_splice(&starved_list, &shost->starved_list);
@@ -2173,6 +2193,7 @@ scsi_device_set_state(struct scsi_device *sdev, enum scsi_device_state state)
 		case SDEV_OFFLINE:
 		case SDEV_TRANSPORT_OFFLINE:
 		case SDEV_CANCEL:
+		case SDEV_CREATED_BLOCK:
 			break;
 		default:
 			goto illegal;

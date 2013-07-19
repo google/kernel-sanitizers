@@ -1,5 +1,5 @@
 /*
- * Copyright 2011 Freescale Semiconductor, Inc.
+ * Copyright 2011-2013 Freescale Semiconductor, Inc.
  * Copyright 2011 Linaro Ltd.
  *
  * The code contained herein is licensed under the GNU General Public
@@ -11,7 +11,9 @@
  */
 
 #include <linux/clk.h>
+#include <linux/clk-provider.h>
 #include <linux/clkdev.h>
+#include <linux/clocksource.h>
 #include <linux/cpu.h>
 #include <linux/delay.h>
 #include <linux/export.h>
@@ -25,55 +27,48 @@
 #include <linux/of_platform.h>
 #include <linux/opp.h>
 #include <linux/phy.h>
+#include <linux/reboot.h>
 #include <linux/regmap.h>
 #include <linux/micrel_phy.h>
 #include <linux/mfd/syscon.h>
-#include <asm/smp_twd.h>
 #include <asm/hardware/cache-l2x0.h>
 #include <asm/mach/arch.h>
 #include <asm/mach/map.h>
-#include <asm/mach/time.h>
 #include <asm/system_misc.h>
 
 #include "common.h"
 #include "cpuidle.h"
 #include "hardware.h"
 
-#define IMX6Q_ANALOG_DIGPROG	0x260
+static u32 chip_revision;
 
-static int imx6q_revision(void)
+int imx6q_revision(void)
 {
-	struct device_node *np;
-	void __iomem *base;
-	static u32 rev;
+	return chip_revision;
+}
 
-	if (!rev) {
-		np = of_find_compatible_node(NULL, NULL, "fsl,imx6q-anatop");
-		if (!np)
-			return IMX_CHIP_REVISION_UNKNOWN;
-		base = of_iomap(np, 0);
-		if (!base) {
-			of_node_put(np);
-			return IMX_CHIP_REVISION_UNKNOWN;
-		}
-		rev =  readl_relaxed(base + IMX6Q_ANALOG_DIGPROG);
-		iounmap(base);
-		of_node_put(np);
-	}
+static void __init imx6q_init_revision(void)
+{
+	u32 rev = imx_anatop_get_digprog();
 
 	switch (rev & 0xff) {
 	case 0:
-		return IMX_CHIP_REVISION_1_0;
+		chip_revision = IMX_CHIP_REVISION_1_0;
+		break;
 	case 1:
-		return IMX_CHIP_REVISION_1_1;
+		chip_revision = IMX_CHIP_REVISION_1_1;
+		break;
 	case 2:
-		return IMX_CHIP_REVISION_1_2;
+		chip_revision = IMX_CHIP_REVISION_1_2;
+		break;
 	default:
-		return IMX_CHIP_REVISION_UNKNOWN;
+		chip_revision = IMX_CHIP_REVISION_UNKNOWN;
 	}
+
+	mxc_set_cpu_type(rev >> 16 & 0xff);
 }
 
-void imx6q_restart(char mode, const char *cmd)
+static void imx6q_restart(enum reboot_mode mode, const char *cmd)
 {
 	struct device_node *np;
 	void __iomem *wdog_base;
@@ -152,6 +147,45 @@ static void __init imx6q_sabrelite_init(void)
 	imx6q_sabrelite_cko1_setup();
 }
 
+static void __init imx6q_sabresd_cko1_setup(void)
+{
+	struct clk *cko1_sel, *pll4, *pll4_post, *cko1;
+	unsigned long rate;
+
+	cko1_sel = clk_get_sys(NULL, "cko1_sel");
+	pll4 = clk_get_sys(NULL, "pll4_audio");
+	pll4_post = clk_get_sys(NULL, "pll4_post_div");
+	cko1 = clk_get_sys(NULL, "cko1");
+	if (IS_ERR(cko1_sel) || IS_ERR(pll4)
+			|| IS_ERR(pll4_post) || IS_ERR(cko1)) {
+		pr_err("cko1 setup failed!\n");
+		goto put_clk;
+	}
+	/*
+	 * Setting pll4 at 768MHz (24MHz * 32)
+	 * So its child clock can get 24MHz easily
+	 */
+	clk_set_rate(pll4, 768000000);
+
+	clk_set_parent(cko1_sel, pll4_post);
+	rate = clk_round_rate(cko1, 24000000);
+	clk_set_rate(cko1, rate);
+put_clk:
+	if (!IS_ERR(cko1_sel))
+		clk_put(cko1_sel);
+	if (!IS_ERR(pll4_post))
+		clk_put(pll4_post);
+	if (!IS_ERR(pll4))
+		clk_put(pll4);
+	if (!IS_ERR(cko1))
+		clk_put(cko1);
+}
+
+static void __init imx6q_sabresd_init(void)
+{
+	imx6q_sabresd_cko1_setup();
+}
+
 static void __init imx6q_1588_init(void)
 {
 	struct regmap *gpr;
@@ -165,38 +199,20 @@ static void __init imx6q_1588_init(void)
 }
 static void __init imx6q_usb_init(void)
 {
-	struct regmap *anatop;
-
-#define HW_ANADIG_USB1_CHRG_DETECT		0x000001b0
-#define HW_ANADIG_USB2_CHRG_DETECT		0x00000210
-
-#define BM_ANADIG_USB_CHRG_DETECT_EN_B		0x00100000
-#define BM_ANADIG_USB_CHRG_DETECT_CHK_CHRG_B	0x00080000
-
-	anatop = syscon_regmap_lookup_by_compatible("fsl,imx6q-anatop");
-	if (!IS_ERR(anatop)) {
-		/*
-		 * The external charger detector needs to be disabled,
-		 * or the signal at DP will be poor
-		 */
-		regmap_write(anatop, HW_ANADIG_USB1_CHRG_DETECT,
-				BM_ANADIG_USB_CHRG_DETECT_EN_B
-				| BM_ANADIG_USB_CHRG_DETECT_CHK_CHRG_B);
-		regmap_write(anatop, HW_ANADIG_USB2_CHRG_DETECT,
-				BM_ANADIG_USB_CHRG_DETECT_EN_B |
-				BM_ANADIG_USB_CHRG_DETECT_CHK_CHRG_B);
-	} else {
-		pr_warn("failed to find fsl,imx6q-anatop regmap\n");
-	}
+	imx_anatop_usb_chrg_detect_disable();
 }
 
 static void __init imx6q_init_machine(void)
 {
 	if (of_machine_is_compatible("fsl,imx6q-sabrelite"))
 		imx6q_sabrelite_init();
+	else if (of_machine_is_compatible("fsl,imx6q-sabresd") ||
+			of_machine_is_compatible("fsl,imx6dl-sabresd"))
+		imx6q_sabresd_init();
 
 	of_platform_populate(NULL, of_default_bus_match_table, NULL, NULL);
 
+	imx_anatop_init();
 	imx6q_pm_init();
 	imx6q_usb_init();
 	imx6q_1588_init();
@@ -256,7 +272,7 @@ put_node:
 	of_node_put(np);
 }
 
-struct platform_device imx6q_cpufreq_pdev = {
+static struct platform_device imx6q_cpufreq_pdev = {
 	.name = "imx6q-cpufreq",
 };
 
@@ -281,9 +297,44 @@ static void __init imx6q_map_io(void)
 	imx_scu_map_io();
 }
 
+#ifdef CONFIG_CACHE_L2X0
+static void __init imx6q_init_l2cache(void)
+{
+	void __iomem *l2x0_base;
+	struct device_node *np;
+	unsigned int val;
+
+	np = of_find_compatible_node(NULL, NULL, "arm,pl310-cache");
+	if (!np)
+		goto out;
+
+	l2x0_base = of_iomap(np, 0);
+	if (!l2x0_base) {
+		of_node_put(np);
+		goto out;
+	}
+
+	/* Configure the L2 PREFETCH and POWER registers */
+	val = readl_relaxed(l2x0_base + L2X0_PREFETCH_CTRL);
+	val |= 0x70800000;
+	writel_relaxed(val, l2x0_base + L2X0_PREFETCH_CTRL);
+	val = L2X0_DYNAMIC_CLK_GATING_EN | L2X0_STNDBY_MODE_EN;
+	writel_relaxed(val, l2x0_base + L2X0_POWER_CTRL);
+
+	iounmap(l2x0_base);
+	of_node_put(np);
+
+out:
+	l2x0_of_init(0, ~0UL);
+}
+#else
+static inline void imx6q_init_l2cache(void) {}
+#endif
+
 static void __init imx6q_init_irq(void)
 {
-	l2x0_of_init(0, ~0UL);
+	imx6q_init_revision();
+	imx6q_init_l2cache();
 	imx_src_init();
 	imx_gpc_init();
 	irqchip_init();
@@ -291,17 +342,19 @@ static void __init imx6q_init_irq(void)
 
 static void __init imx6q_timer_init(void)
 {
-	mx6q_clocks_init();
-	twd_local_timer_of_register();
-	imx_print_silicon_rev("i.MX6Q", imx6q_revision());
+	of_clk_init(NULL);
+	clocksource_of_init();
+	imx_print_silicon_rev(cpu_is_imx6dl() ? "i.MX6DL" : "i.MX6Q",
+			      imx6q_revision());
 }
 
 static const char *imx6q_dt_compat[] __initdata = {
+	"fsl,imx6dl",
 	"fsl,imx6q",
 	NULL,
 };
 
-DT_MACHINE_START(IMX6Q, "Freescale i.MX6 Quad (Device Tree)")
+DT_MACHINE_START(IMX6Q, "Freescale i.MX6 Quad/DualLite (Device Tree)")
 	.smp		= smp_ops(imx_smp_ops),
 	.map_io		= imx6q_map_io,
 	.init_irq	= imx6q_init_irq,

@@ -27,7 +27,7 @@ static void *real_vmalloc_addr(void *x)
 	unsigned long addr = (unsigned long) x;
 	pte_t *p;
 
-	p = find_linux_pte(swapper_pg_dir, addr);
+	p = find_linux_pte_or_hugepte(swapper_pg_dir, addr, NULL);
 	if (!p || !pte_present(*p))
 		return NULL;
 	/* assume we don't have huge pages in vmalloc space... */
@@ -97,17 +97,6 @@ void kvmppc_add_revmap_chain(struct kvm *kvm, struct revmap_entry *rev,
 }
 EXPORT_SYMBOL_GPL(kvmppc_add_revmap_chain);
 
-/*
- * Note modification of an HPTE; set the HPTE modified bit
- * if anyone is interested.
- */
-static inline void note_hpte_modification(struct kvm *kvm,
-					  struct revmap_entry *rev)
-{
-	if (atomic_read(&kvm->arch.hpte_mod_interest))
-		rev->guest_rpte |= HPTE_GR_MODIFIED;
-}
-
 /* Remove this HPTE from the chain for a real page */
 static void remove_revmap_chain(struct kvm *kvm, long pte_index,
 				struct revmap_entry *rev,
@@ -150,20 +139,18 @@ static pte_t lookup_linux_pte(pgd_t *pgdir, unsigned long hva,
 {
 	pte_t *ptep;
 	unsigned long ps = *pte_sizep;
-	unsigned int shift;
+	unsigned int hugepage_shift;
 
-	ptep = find_linux_pte_or_hugepte(pgdir, hva, &shift);
+	ptep = find_linux_pte_or_hugepte(pgdir, hva, &hugepage_shift);
 	if (!ptep)
 		return __pte(0);
-	if (shift)
-		*pte_sizep = 1ul << shift;
+	if (hugepage_shift)
+		*pte_sizep = 1ul << hugepage_shift;
 	else
 		*pte_sizep = PAGE_SIZE;
 	if (ps > *pte_sizep)
 		return __pte(0);
-	if (!pte_present(*ptep))
-		return __pte(0);
-	return kvmppc_read_update_linux_pte(ptep, writing);
+	return kvmppc_read_update_linux_pte(ptep, writing, hugepage_shift);
 }
 
 static inline void unlock_hpte(unsigned long *hpte, unsigned long hpte_v)

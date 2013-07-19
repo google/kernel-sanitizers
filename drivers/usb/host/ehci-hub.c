@@ -42,6 +42,12 @@ static int ehci_hub_control(
 	u16		wLength
 );
 
+static int persist_enabled_on_companion(struct usb_device *udev, void *unused)
+{
+	return !udev->maxchild && udev->persist_enabled &&
+		udev->bus->root_hub->speed < USB_SPEED_HIGH;
+}
+
 /* After a power loss, ports that were owned by the companion must be
  * reset so that the companion can still own them.
  */
@@ -54,6 +60,16 @@ static void ehci_handover_companion_ports(struct ehci_hcd *ehci)
 	struct usb_hcd	*hcd = ehci_to_hcd(ehci);
 
 	if (!ehci->owned_ports)
+		return;
+
+	/*
+	 * USB 1.1 devices are mostly HIDs, which don't need to persist across
+	 * suspends. If we ensure that none of our companion's devices have
+	 * persist_enabled (by looking through all USB 1.1 buses in the system),
+	 * we can skip this and avoid slowing resume down. Devices without
+	 * persist will just get reenumerated shortly after resume anyway.
+	 */
+	if (!usb_for_each_dev(NULL, persist_enabled_on_companion))
 		return;
 
 	/* Make sure the ports are powered */
@@ -328,7 +344,7 @@ static int ehci_bus_suspend (struct usb_hcd *hcd)
 	ehci->rh_state = EHCI_RH_SUSPENDED;
 
 	end_unlink_async(ehci);
-	unlink_empty_async(ehci);
+	unlink_empty_async_suspended(ehci);
 	ehci_handle_intr_unlinks(ehci);
 	end_free_itds(ehci);
 
@@ -464,7 +480,7 @@ static int ehci_bus_resume (struct usb_hcd *hcd)
 	while (i--) {
 		temp = ehci_readl(ehci, &ehci->regs->port_status [i]);
 		if (test_bit(i, &resume_needed)) {
-			temp &= ~(PORT_RWC_BITS | PORT_RESUME);
+			temp &= ~(PORT_RWC_BITS | PORT_SUSPEND | PORT_RESUME);
 			ehci_writel(ehci, temp, &ehci->regs->port_status [i]);
 			ehci_vdbg (ehci, "resumed port %d\n", i + 1);
 		}
@@ -590,7 +606,7 @@ ehci_hub_status_data (struct usb_hcd *hcd, char *buf)
 	u32		mask;
 	int		ports, i, retval = 1;
 	unsigned long	flags;
-	u32		ppcd = 0;
+	u32		ppcd = ~0;
 
 	/* init status to no-changes */
 	buf [0] = 0;
@@ -628,9 +644,10 @@ ehci_hub_status_data (struct usb_hcd *hcd, char *buf)
 
 	for (i = 0; i < ports; i++) {
 		/* leverage per-port change bits feature */
-		if (ehci->has_ppcd && !(ppcd & (1 << i)))
-			continue;
-		temp = ehci_readl(ehci, &ehci->regs->port_status [i]);
+		if (ppcd & (1 << i))
+			temp = ehci_readl(ehci, &ehci->regs->port_status[i]);
+		else
+			temp = 0;
 
 		/*
 		 * Return status information even for ports with OWNER set.
@@ -839,7 +856,8 @@ static int ehci_hub_control (
 			 * power switching; they're allowed to just limit the
 			 * current.  khubd will turn the power back on.
 			 */
-			if ((temp & PORT_OC) && HCS_PPC(ehci->hcs_params)) {
+			if (((temp & PORT_OC) || (ehci->need_oc_pp_cycle))
+					&& HCS_PPC(ehci->hcs_params)) {
 				ehci_writel(ehci,
 					temp & ~(PORT_RWC_BITS | PORT_POWER),
 					status_reg);
@@ -870,12 +888,11 @@ static int ehci_hub_control (
 				usb_hcd_end_port_resume(&hcd->self, wIndex);
 
 				/* stop resume signaling */
-				temp = ehci_readl(ehci, status_reg);
-				ehci_writel(ehci,
-					temp & ~(PORT_RWC_BITS | PORT_RESUME),
-					status_reg);
+				temp &= ~(PORT_RWC_BITS |
+						PORT_SUSPEND | PORT_RESUME);
+				ehci_writel(ehci, temp, status_reg);
 				clear_bit(wIndex, &ehci->resuming_ports);
-				retval = handshake(ehci, status_reg,
+				retval = ehci_handshake(ehci, status_reg,
 					   PORT_RESUME, 0, 2000 /* 2msec */);
 				if (retval != 0) {
 					ehci_err(ehci,
@@ -883,7 +900,7 @@ static int ehci_hub_control (
 						wIndex + 1, retval);
 					goto error;
 				}
-				temp &= ~(PORT_SUSPEND|PORT_RESUME|(3<<10));
+				temp = ehci_readl(ehci, status_reg);
 			}
 		}
 
@@ -901,7 +918,7 @@ static int ehci_hub_control (
 			/* REVISIT:  some hardware needs 550+ usec to clear
 			 * this bit; seems too long to spin routinely...
 			 */
-			retval = handshake(ehci, status_reg,
+			retval = ehci_handshake(ehci, status_reg,
 					PORT_RESET, 0, 1000);
 			if (retval != 0) {
 				ehci_err (ehci, "port %d reset error %d\n",

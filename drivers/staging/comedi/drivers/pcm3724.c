@@ -226,29 +226,16 @@ static int pcm3724_attach(struct comedi_device *dev,
 {
 	struct priv_pcm3724 *priv;
 	struct comedi_subdevice *s;
-	unsigned long iobase;
-	unsigned int iorange;
 	int ret, i;
-
-	dev->board_name = dev->driver->driver_name;
-
-	iobase = it->options[0];
-	iorange = PCM3724_SIZE;
 
 	priv = kzalloc(sizeof(*priv), GFP_KERNEL);
 	if (!priv)
 		return -ENOMEM;
 	dev->private = priv;
 
-	printk(KERN_INFO "comedi%d: pcm3724: board=%s, 0x%03lx ", dev->minor,
-	       dev->board_name, iobase);
-	if (!iobase || !request_region(iobase, iorange, "pcm3724")) {
-		printk("I/O port conflict\n");
-		return -EIO;
-	}
-
-	dev->iobase = iobase;
-	printk(KERN_INFO "\n");
+	ret = comedi_request_region(dev, it->options[0], PCM3724_SIZE);
+	if (ret)
+		return ret;
 
 	ret = comedi_alloc_subdevices(dev, 2);
 	if (ret)
@@ -263,26 +250,11 @@ static int pcm3724_attach(struct comedi_device *dev,
 	return 0;
 }
 
-static void pcm3724_detach(struct comedi_device *dev)
-{
-	struct comedi_subdevice *s;
-	int i;
-
-	if (dev->subdevices) {
-		for (i = 0; i < dev->n_subdevices; i++) {
-			s = &dev->subdevices[i];
-			subdev_8255_cleanup(dev, s);
-		}
-	}
-	if (dev->iobase)
-		release_region(dev->iobase, PCM3724_SIZE);
-}
-
 static struct comedi_driver pcm3724_driver = {
 	.driver_name	= "pcm3724",
 	.module		= THIS_MODULE,
 	.attach		= pcm3724_attach,
-	.detach		= pcm3724_detach,
+	.detach		= comedi_legacy_detach,
 };
 module_comedi_driver(pcm3724_driver);
 

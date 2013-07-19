@@ -16,11 +16,6 @@
     but WITHOUT ANY WARRANTY; without even the implied warranty of
     MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
     GNU General Public License for more details.
-
-    You should have received a copy of the GNU General Public License
-    along with this program; if not, write to the Free Software
-    Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
-
 */
 /*
 Driver: amplc_pci224
@@ -1280,13 +1275,10 @@ static int pci224_attach_common(struct comedi_device *dev,
 
 	comedi_set_hw_dev(dev, &pci_dev->dev);
 
-	ret = comedi_pci_enable(pci_dev, DRIVER_NAME);
-	if (ret < 0) {
-		dev_err(dev->class_dev,
-			"error! cannot enable PCI device and request regions!\n"
-			);
+	ret = comedi_pci_enable(dev);
+	if (ret)
 		return ret;
-	}
+
 	spin_lock_init(&devpriv->ao_spinlock);
 
 	devpriv->iobase1 = pci_resource_start(pci_dev, 2);
@@ -1488,11 +1480,9 @@ static void pci224_detach(struct comedi_device *dev)
 		kfree(devpriv->ao_scan_vals);
 		kfree(devpriv->ao_scan_order);
 	}
-	if (pcidev) {
-		if (dev->iobase)
-			comedi_pci_disable(pcidev);
+	comedi_pci_disable(dev);
+	if (pcidev)
 		pci_dev_put(pcidev);
-	}
 }
 
 static struct comedi_driver amplc_pci224_driver = {
@@ -1507,10 +1497,10 @@ static struct comedi_driver amplc_pci224_driver = {
 };
 
 static int amplc_pci224_pci_probe(struct pci_dev *dev,
-						   const struct pci_device_id
-						   *ent)
+				  const struct pci_device_id *id)
 {
-	return comedi_pci_auto_config(dev, &amplc_pci224_driver);
+	return comedi_pci_auto_config(dev, &amplc_pci224_driver,
+				      id->driver_data);
 }
 
 static DEFINE_PCI_DEVICE_TABLE(amplc_pci224_pci_table) = {

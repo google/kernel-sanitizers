@@ -23,6 +23,7 @@
 #include <linux/msg.h>
 #include <linux/vmalloc.h>
 #include <linux/slab.h>
+#include <linux/notifier.h>
 #include <linux/capability.h>
 #include <linux/highuid.h>
 #include <linux/security.h>
@@ -47,19 +48,16 @@ struct ipc_proc_iface {
 	int (*show)(struct seq_file *, void *);
 };
 
-#ifdef CONFIG_MEMORY_HOTPLUG
-
 static void ipc_memory_notifier(struct work_struct *work)
 {
 	ipcns_notify(IPCNS_MEMCHANGED);
 }
 
-static DECLARE_WORK(ipc_memory_wq, ipc_memory_notifier);
-
-
 static int ipc_memory_callback(struct notifier_block *self,
 				unsigned long action, void *arg)
 {
+	static DECLARE_WORK(ipc_memory_wq, ipc_memory_notifier);
+
 	switch (action) {
 	case MEM_ONLINE:    /* memory successfully brought online */
 	case MEM_OFFLINE:   /* or offline: it's time to recompute msgmni */
@@ -85,7 +83,10 @@ static int ipc_memory_callback(struct notifier_block *self,
 	return NOTIFY_OK;
 }
 
-#endif /* CONFIG_MEMORY_HOTPLUG */
+static struct notifier_block ipc_memory_nb = {
+	.notifier_call = ipc_memory_callback,
+	.priority = IPC_CALLBACK_PRI,
+};
 
 /**
  *	ipc_init	-	initialise IPC subsystem
@@ -102,7 +103,7 @@ static int __init ipc_init(void)
 	sem_init();
 	msg_init();
 	shm_init();
-	hotplug_memory_notifier(ipc_memory_callback, IPC_CALLBACK_PRI);
+	register_hotmemory_notifier(&ipc_memory_nb);
 	register_ipcns_notifier(&init_ipc_ns);
 	return 0;
 }
@@ -245,9 +246,8 @@ int ipc_get_maxid(struct ipc_ids *ids)
  *	is returned. The 'new' entry is returned in a locked state on success.
  *	On failure the entry is not locked and a negative err-code is returned.
  *
- *	Called with ipc_ids.rw_mutex held as a writer.
+ *	Called with writer ipc_ids.rw_mutex held.
  */
- 
 int ipc_addid(struct ipc_ids* ids, struct kern_ipc_perm* new, int size)
 {
 	kuid_t euid;
@@ -438,9 +438,9 @@ void ipc_rmid(struct ipc_ids *ids, struct kern_ipc_perm *ipcp)
  *	NULL is returned if the allocation fails
  */
  
-void* ipc_alloc(int size)
+void *ipc_alloc(int size)
 {
-	void* out;
+	void *out;
 	if(size > PAGE_SIZE)
 		out = vmalloc(size);
 	else
@@ -465,126 +465,57 @@ void ipc_free(void* ptr, int size)
 		kfree(ptr);
 }
 
-/*
- * rcu allocations:
- * There are three headers that are prepended to the actual allocation:
- * - during use: ipc_rcu_hdr.
- * - during the rcu grace period: ipc_rcu_grace.
- * - [only if vmalloc]: ipc_rcu_sched.
- * Their lifetime doesn't overlap, thus the headers share the same memory.
- * Unlike a normal union, they are right-aligned, thus some container_of
- * forward/backward casting is necessary:
- */
-struct ipc_rcu_hdr
-{
-	int refcount;
-	int is_vmalloc;
-	void *data[0];
-};
-
-
-struct ipc_rcu_grace
-{
+struct ipc_rcu {
 	struct rcu_head rcu;
-	/* "void *" makes sure alignment of following data is sane. */
-	void *data[0];
-};
-
-struct ipc_rcu_sched
-{
-	struct work_struct work;
-	/* "void *" makes sure alignment of following data is sane. */
-	void *data[0];
-};
-
-#define HDRLEN_KMALLOC		(sizeof(struct ipc_rcu_grace) > sizeof(struct ipc_rcu_hdr) ? \
-					sizeof(struct ipc_rcu_grace) : sizeof(struct ipc_rcu_hdr))
-#define HDRLEN_VMALLOC		(sizeof(struct ipc_rcu_sched) > HDRLEN_KMALLOC ? \
-					sizeof(struct ipc_rcu_sched) : HDRLEN_KMALLOC)
-
-static inline int rcu_use_vmalloc(int size)
-{
-	/* Too big for a single page? */
-	if (HDRLEN_KMALLOC + size > PAGE_SIZE)
-		return 1;
-	return 0;
-}
+	atomic_t refcount;
+} ____cacheline_aligned_in_smp;
 
 /**
  *	ipc_rcu_alloc	-	allocate ipc and rcu space 
  *	@size: size desired
  *
  *	Allocate memory for the rcu header structure +  the object.
- *	Returns the pointer to the object.
- *	NULL is returned if the allocation fails. 
+ *	Returns the pointer to the object or NULL upon failure.
  */
- 
-void* ipc_rcu_alloc(int size)
+void *ipc_rcu_alloc(int size)
 {
-	void* out;
-	/* 
-	 * We prepend the allocation with the rcu struct, and
-	 * workqueue if necessary (for vmalloc). 
+	/*
+	 * We prepend the allocation with the rcu struct
 	 */
-	if (rcu_use_vmalloc(size)) {
-		out = vmalloc(HDRLEN_VMALLOC + size);
-		if (out) {
-			out += HDRLEN_VMALLOC;
-			container_of(out, struct ipc_rcu_hdr, data)->is_vmalloc = 1;
-			container_of(out, struct ipc_rcu_hdr, data)->refcount = 1;
-		}
-	} else {
-		out = kmalloc(HDRLEN_KMALLOC + size, GFP_KERNEL);
-		if (out) {
-			out += HDRLEN_KMALLOC;
-			container_of(out, struct ipc_rcu_hdr, data)->is_vmalloc = 0;
-			container_of(out, struct ipc_rcu_hdr, data)->refcount = 1;
-		}
-	}
-
-	return out;
+	struct ipc_rcu *out = ipc_alloc(sizeof(struct ipc_rcu) + size);
+	if (unlikely(!out))
+		return NULL;
+	atomic_set(&out->refcount, 1);
+	return out + 1;
 }
 
-void ipc_rcu_getref(void *ptr)
+int ipc_rcu_getref(void *ptr)
 {
-	container_of(ptr, struct ipc_rcu_hdr, data)->refcount++;
-}
+	struct ipc_rcu *p = ((struct ipc_rcu *)ptr) - 1;
 
-static void ipc_do_vfree(struct work_struct *work)
-{
-	vfree(container_of(work, struct ipc_rcu_sched, work));
+	return atomic_inc_not_zero(&p->refcount);
 }
 
 /**
  * ipc_schedule_free - free ipc + rcu space
  * @head: RCU callback structure for queued work
- * 
- * Since RCU callback function is called in bh,
- * we need to defer the vfree to schedule_work().
  */
 static void ipc_schedule_free(struct rcu_head *head)
 {
-	struct ipc_rcu_grace *grace;
-	struct ipc_rcu_sched *sched;
-
-	grace = container_of(head, struct ipc_rcu_grace, rcu);
-	sched = container_of(&(grace->data[0]), struct ipc_rcu_sched,
-				data[0]);
-
-	INIT_WORK(&sched->work, ipc_do_vfree);
-	schedule_work(&sched->work);
+	vfree(container_of(head, struct ipc_rcu, rcu));
 }
 
 void ipc_rcu_putref(void *ptr)
 {
-	if (--container_of(ptr, struct ipc_rcu_hdr, data)->refcount > 0)
+	struct ipc_rcu *p = ((struct ipc_rcu *)ptr) - 1;
+
+	if (!atomic_dec_and_test(&p->refcount))
 		return;
 
-	if (container_of(ptr, struct ipc_rcu_hdr, data)->is_vmalloc) {
-		call_rcu(&container_of(ptr, struct ipc_rcu_grace, data)->rcu,
-				ipc_schedule_free);
+	if (is_vmalloc_addr(ptr)) {
+		call_rcu(&p->rcu, ipc_schedule_free);
 	} else {
-		kfree_rcu(container_of(ptr, struct ipc_rcu_grace, data), rcu);
+		kfree_rcu(p, rcu);
 	}
 }
 
@@ -668,38 +599,81 @@ void ipc64_perm_to_ipc_perm (struct ipc64_perm *in, struct ipc_perm *out)
 }
 
 /**
+ * ipc_obtain_object
+ * @ids: ipc identifier set
+ * @id: ipc id to look for
+ *
+ * Look for an id in the ipc ids idr and return associated ipc object.
+ *
+ * Call inside the RCU critical section.
+ * The ipc object is *not* locked on exit.
+ */
+struct kern_ipc_perm *ipc_obtain_object(struct ipc_ids *ids, int id)
+{
+	struct kern_ipc_perm *out;
+	int lid = ipcid_to_idx(id);
+
+	out = idr_find(&ids->ipcs_idr, lid);
+	if (!out)
+		return ERR_PTR(-EINVAL);
+
+	return out;
+}
+
+/**
  * ipc_lock - Lock an ipc structure without rw_mutex held
  * @ids: IPC identifier set
  * @id: ipc id to look for
  *
  * Look for an id in the ipc ids idr and lock the associated ipc object.
  *
- * The ipc object is locked on exit.
+ * The ipc object is locked on successful exit.
  */
-
 struct kern_ipc_perm *ipc_lock(struct ipc_ids *ids, int id)
 {
 	struct kern_ipc_perm *out;
-	int lid = ipcid_to_idx(id);
 
 	rcu_read_lock();
-	out = idr_find(&ids->ipcs_idr, lid);
-	if (out == NULL) {
-		rcu_read_unlock();
-		return ERR_PTR(-EINVAL);
-	}
+	out = ipc_obtain_object(ids, id);
+	if (IS_ERR(out))
+		goto err1;
 
 	spin_lock(&out->lock);
-	
+
 	/* ipc_rmid() may have already freed the ID while ipc_lock
 	 * was spinning: here verify that the structure is still valid
 	 */
-	if (out->deleted) {
-		spin_unlock(&out->lock);
-		rcu_read_unlock();
-		return ERR_PTR(-EINVAL);
-	}
+	if (!out->deleted)
+		return out;
 
+	spin_unlock(&out->lock);
+	out = ERR_PTR(-EINVAL);
+err1:
+	rcu_read_unlock();
+	return out;
+}
+
+/**
+ * ipc_obtain_object_check
+ * @ids: ipc identifier set
+ * @id: ipc id to look for
+ *
+ * Similar to ipc_obtain_object() but also checks
+ * the ipc object reference counter.
+ *
+ * Call inside the RCU critical section.
+ * The ipc object is *not* locked on exit.
+ */
+struct kern_ipc_perm *ipc_obtain_object_check(struct ipc_ids *ids, int id)
+{
+	struct kern_ipc_perm *out = ipc_obtain_object(ids, id);
+
+	if (IS_ERR(out))
+		goto out;
+
+	if (ipc_checkid(out, id))
+		return ERR_PTR(-EIDRM);
+out:
 	return out;
 }
 
@@ -772,38 +746,50 @@ int ipc_update_perm(struct ipc64_perm *in, struct kern_ipc_perm *out)
  * It must be called without any lock held and
  *  - retrieves the ipc with the given id in the given table.
  *  - performs some audit and permission check, depending on the given cmd
- *  - returns the ipc with both ipc and rw_mutex locks held in case of success
+ *  - returns the ipc with the ipc lock held in case of success
  *    or an err-code without any lock held otherwise.
+ *
+ * Call holding the both the rw_mutex and the rcu read lock.
  */
 struct kern_ipc_perm *ipcctl_pre_down(struct ipc_namespace *ns,
 				      struct ipc_ids *ids, int id, int cmd,
 				      struct ipc64_perm *perm, int extra_perm)
 {
 	struct kern_ipc_perm *ipcp;
-	kuid_t euid;
-	int err;
 
-	down_write(&ids->rw_mutex);
-	ipcp = ipc_lock_check(ids, id);
+	ipcp = ipcctl_pre_down_nolock(ns, ids, id, cmd, perm, extra_perm);
+	if (IS_ERR(ipcp))
+		goto out;
+
+	spin_lock(&ipcp->lock);
+out:
+	return ipcp;
+}
+
+struct kern_ipc_perm *ipcctl_pre_down_nolock(struct ipc_namespace *ns,
+					     struct ipc_ids *ids, int id, int cmd,
+					     struct ipc64_perm *perm, int extra_perm)
+{
+	kuid_t euid;
+	int err = -EPERM;
+	struct kern_ipc_perm *ipcp;
+
+	ipcp = ipc_obtain_object_check(ids, id);
 	if (IS_ERR(ipcp)) {
 		err = PTR_ERR(ipcp);
-		goto out_up;
+		goto err;
 	}
 
 	audit_ipc_obj(ipcp);
 	if (cmd == IPC_SET)
 		audit_ipc_set_perm(extra_perm, perm->uid,
-					 perm->gid, perm->mode);
+				   perm->gid, perm->mode);
 
 	euid = current_euid();
 	if (uid_eq(euid, ipcp->cuid) || uid_eq(euid, ipcp->uid)  ||
 	    ns_capable(ns->user_ns, CAP_SYS_ADMIN))
-		return ipcp;
-
-	err = -EPERM;
-	ipc_unlock(ipcp);
-out_up:
-	up_write(&ids->rw_mutex);
+		return ipcp; /* successful lookup */
+err:
 	return ERR_PTR(err);
 }
 
@@ -964,7 +950,7 @@ static int sysvipc_proc_open(struct inode *inode, struct file *file)
 	seq = file->private_data;
 	seq->private = iter;
 
-	iter->iface = PDE(inode)->data;
+	iter->iface = PDE_DATA(inode);
 	iter->ns    = get_ipc_ns(current->nsproxy->ipc_ns);
 out:
 	return ret;

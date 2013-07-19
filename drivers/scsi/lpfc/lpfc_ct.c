@@ -1,7 +1,7 @@
 /*******************************************************************
  * This file is part of the Emulex Linux Device Driver for         *
  * Fibre Channel Host Bus Adapters.                                *
- * Copyright (C) 2004-2010 Emulex.  All rights reserved.           *
+ * Copyright (C) 2004-2013 Emulex.  All rights reserved.           *
  * EMULEX and SLI are trademarks of Emulex.                        *
  * www.emulex.com                                                  *
  *                                                                 *
@@ -1811,7 +1811,8 @@ lpfc_fdmi_timeout_handler(struct lpfc_vport *vport)
 		if (init_utsname()->nodename[0] != '\0')
 			lpfc_fdmi_cmd(vport, ndlp, SLI_MGMT_DHBA);
 		else
-			mod_timer(&vport->fc_fdmitmo, jiffies + HZ * 60);
+			mod_timer(&vport->fc_fdmitmo, jiffies +
+				  msecs_to_jiffies(1000 * 60));
 	}
 	return;
 }

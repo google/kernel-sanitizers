@@ -29,9 +29,6 @@
 /* For automatically allocated device IDs */
 static DEFINE_IDA(platform_devid_ida);
 
-#define to_platform_driver(drv)	(container_of((drv), struct platform_driver, \
-				 driver))
-
 struct device platform_bus = {
 	.init_name	= "platform",
 };
@@ -46,8 +43,8 @@ EXPORT_SYMBOL_GPL(platform_bus);
  * manipulate any relevant information in the pdev_archdata they can do:
  *
  *	platform_device_alloc()
- * 	... manipulate ...
- * 	platform_device_add()
+ *	... manipulate ...
+ *	platform_device_add()
  *
  * And if they don't care they can just call platform_device_register() and
  * everything will just work out.
@@ -326,9 +323,7 @@ int platform_device_add(struct platform_device *pdev)
 		}
 
 		if (p && insert_resource(p, r)) {
-			printk(KERN_ERR
-			       "%s: failed to claim resource %d\n",
-			       dev_name(&pdev->dev), i);
+			dev_err(&pdev->dev, "failed to claim resource %d\n", i);
 			ret = -EBUSY;
 			goto failed;
 		}
@@ -525,11 +520,13 @@ static void platform_drv_shutdown(struct device *_dev)
 }
 
 /**
- * platform_driver_register - register a driver for platform-level devices
+ * __platform_driver_register - register a driver for platform-level devices
  * @drv: platform driver structure
  */
-int platform_driver_register(struct platform_driver *drv)
+int __platform_driver_register(struct platform_driver *drv,
+				struct module *owner)
 {
+	drv->driver.owner = owner;
 	drv->driver.bus = &platform_bus_type;
 	if (drv->probe)
 		drv->driver.probe = platform_drv_probe;
@@ -540,7 +537,7 @@ int platform_driver_register(struct platform_driver *drv)
 
 	return driver_register(&drv->driver);
 }
-EXPORT_SYMBOL_GPL(platform_driver_register);
+EXPORT_SYMBOL_GPL(__platform_driver_register);
 
 /**
  * platform_driver_unregister - unregister a driver for platform-level devices
@@ -555,7 +552,8 @@ EXPORT_SYMBOL_GPL(platform_driver_unregister);
 /**
  * platform_driver_probe - register driver for non-hotpluggable device
  * @drv: platform driver structure
- * @probe: the driver probe routine, probably from an __init section
+ * @probe: the driver probe routine, probably from an __init section,
+ *         must not return -EPROBE_DEFER.
  *
  * Use this instead of platform_driver_register() when you know the device
  * is not hotpluggable and has already been registered, and you want to
@@ -565,6 +563,9 @@ EXPORT_SYMBOL_GPL(platform_driver_unregister);
  * One typical use for this would be with drivers for controllers integrated
  * into system-on-chip processors, where the controller devices have been
  * configured as part of board setup.
+ *
+ * This is incompatible with deferred probing so probe() must not
+ * return -EPROBE_DEFER.
  *
  * Returns zero if the driver registered and bound to a device, else returns
  * a negative error code and with the driver not registered.
@@ -682,7 +683,7 @@ static int platform_uevent(struct device *dev, struct kobj_uevent_env *env)
 	int rc;
 
 	/* Some devices have extra OF data and an OF-style MODALIAS */
-	rc = of_device_uevent_modalias(dev,env);
+	rc = of_device_uevent_modalias(dev, env);
 	if (rc != -ENODEV)
 		return rc;
 
@@ -886,7 +887,6 @@ int platform_pm_restore(struct device *dev)
 static const struct dev_pm_ops platform_dev_pm_ops = {
 	.runtime_suspend = pm_generic_runtime_suspend,
 	.runtime_resume = pm_generic_runtime_resume,
-	.runtime_idle = pm_generic_runtime_idle,
 	USE_PLATFORM_PM_SLEEP_OPS
 };
 
@@ -1126,8 +1126,8 @@ static int __init early_platform_driver_probe_id(char *class_str,
 
 		switch (match_id) {
 		case EARLY_PLATFORM_ID_ERROR:
-			pr_warning("%s: unable to parse %s parameter\n",
-				   class_str, epdrv->pdrv->driver.name);
+			pr_warn("%s: unable to parse %s parameter\n",
+				class_str, epdrv->pdrv->driver.name);
 			/* fall-through */
 		case EARLY_PLATFORM_ID_UNSET:
 			match = NULL;
@@ -1158,8 +1158,8 @@ static int __init early_platform_driver_probe_id(char *class_str,
 			}
 
 			if (epdrv->pdrv->probe(match))
-				pr_warning("%s: unable to probe %s early.\n",
-					   class_str, match->name);
+				pr_warn("%s: unable to probe %s early.\n",
+					class_str, match->name);
 			else
 				n++;
 		}

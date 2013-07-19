@@ -55,11 +55,7 @@ static void asix_status(struct usbnet *dev, struct urb *urb)
 	event = urb->transfer_buffer;
 	link = event->link & 0x01;
 	if (netif_carrier_ok(dev->net) != link) {
-		if (link) {
-			netif_carrier_on(dev->net);
-			usbnet_defer_kevent (dev, EVENT_LINK_RESET );
-		} else
-			netif_carrier_off(dev->net);
+		usbnet_link_change(dev, link, 1);
 		netdev_dbg(dev->net, "Link Status is: %d\n", link);
 	}
 }
@@ -924,6 +920,29 @@ static const struct driver_info ax88178_info = {
 	.tx_fixup = asix_tx_fixup,
 };
 
+/*
+ * USBLINK 20F9 "USB 2.0 LAN" USB ethernet adapter, typically found in
+ * no-name packaging.
+ * USB device strings are:
+ *   1: Manufacturer: USBLINK
+ *   2: Product: HG20F9 USB2.0
+ *   3: Serial: 000003
+ * Appears to be compatible with Asix 88772B.
+ */
+static const struct driver_info hg20f9_info = {
+	.description = "HG20F9 USB 2.0 Ethernet",
+	.bind = ax88772_bind,
+	.unbind = ax88772_unbind,
+	.status = asix_status,
+	.link_reset = ax88772_link_reset,
+	.reset = ax88772_reset,
+	.flags = FLAG_ETHER | FLAG_FRAMING_AX | FLAG_LINK_INTR |
+	         FLAG_MULTI_PACKET,
+	.rx_fixup = asix_rx_fixup_common,
+	.tx_fixup = asix_tx_fixup,
+	.data = FLAG_EEPROM_MAC,
+};
+
 extern const struct driver_info ax88172a_info;
 
 static const struct usb_device_id	products [] = {
@@ -1063,6 +1082,14 @@ static const struct usb_device_id	products [] = {
 	/* ASIX 88172a demo board */
 	USB_DEVICE(0x0b95, 0x172a),
 	.driver_info = (unsigned long) &ax88172a_info,
+}, {
+	/*
+	 * USBLINK HG20F9 "USB 2.0 LAN"
+	 * Appears to have gazumped Linksys's manufacturer ID but
+	 * doesn't (yet) conflict with any known Linksys product.
+	 */
+	USB_DEVICE(0x066b, 0x20f9),
+	.driver_info = (unsigned long) &hg20f9_info,
 },
 	{ },		// END
 };

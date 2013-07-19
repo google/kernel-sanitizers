@@ -610,8 +610,6 @@ void ndisc_send_rs(struct net_device *dev, const struct in6_addr *saddr,
 		}
 	}
 #endif
-	if (!dev->addr_len)
-		send_sllao = 0;
 	if (send_sllao)
 		optlen += ndisc_opt_addr_space(dev);
 
@@ -695,7 +693,7 @@ static void ndisc_recv_ns(struct sk_buff *skb)
 	const struct in6_addr *saddr = &ipv6_hdr(skb)->saddr;
 	const struct in6_addr *daddr = &ipv6_hdr(skb)->daddr;
 	u8 *lladdr = NULL;
-	u32 ndoptlen = skb->tail - (skb->transport_header +
+	u32 ndoptlen = skb_tail_pointer(skb) - (skb_transport_header(skb) +
 				    offsetof(struct nd_msg, opt));
 	struct ndisc_options ndopts;
 	struct net_device *dev = skb->dev;
@@ -855,7 +853,7 @@ static void ndisc_recv_na(struct sk_buff *skb)
 	const struct in6_addr *saddr = &ipv6_hdr(skb)->saddr;
 	const struct in6_addr *daddr = &ipv6_hdr(skb)->daddr;
 	u8 *lladdr = NULL;
-	u32 ndoptlen = skb->tail - (skb->transport_header +
+	u32 ndoptlen = skb_tail_pointer(skb) - (skb_transport_header(skb) +
 				    offsetof(struct nd_msg, opt));
 	struct ndisc_options ndopts;
 	struct net_device *dev = skb->dev;
@@ -1071,7 +1069,8 @@ static void ndisc_router_discovery(struct sk_buff *skb)
 
 	__u8 * opt = (__u8 *)(ra_msg + 1);
 
-	optlen = (skb->tail - skb->transport_header) - sizeof(struct ra_msg);
+	optlen = (skb_tail_pointer(skb) - skb_transport_header(skb)) -
+		sizeof(struct ra_msg);
 
 	if (!(ipv6_addr_type(&ipv6_hdr(skb)->saddr) & IPV6_ADDR_LINKLOCAL)) {
 		ND_PRINTK(2, warn, "RA: source address is not link-local\n");
@@ -1348,7 +1347,7 @@ static void ndisc_redirect_rcv(struct sk_buff *skb)
 	u8 *hdr;
 	struct ndisc_options ndopts;
 	struct rd_msg *msg = (struct rd_msg *)skb_transport_header(skb);
-	u32 ndoptlen = skb->tail - (skb->transport_header +
+	u32 ndoptlen = skb_tail_pointer(skb) - (skb_transport_header(skb) +
 				    offsetof(struct rd_msg, opt));
 
 #ifdef CONFIG_IPV6_NDISC_NODETYPE
@@ -1495,7 +1494,7 @@ void ndisc_send_redirect(struct sk_buff *skb, const struct in6_addr *target)
 	 */
 
 	if (ha)
-		ndisc_fill_addr_option(skb, ND_OPT_TARGET_LL_ADDR, ha);
+		ndisc_fill_addr_option(buff, ND_OPT_TARGET_LL_ADDR, ha);
 
 	/*
 	 *	build redirect option and copy skb over to the new packet.
@@ -1570,7 +1569,7 @@ int ndisc_rcv(struct sk_buff *skb)
 
 static int ndisc_netdev_event(struct notifier_block *this, unsigned long event, void *ptr)
 {
-	struct net_device *dev = ptr;
+	struct net_device *dev = netdev_notifier_info_to_dev(ptr);
 	struct net *net = dev_net(dev);
 	struct inet6_dev *idev;
 

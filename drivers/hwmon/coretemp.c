@@ -411,8 +411,7 @@ static int __cpuinit chk_ucode_version(unsigned int cpu)
 	 * fixed for stepping D0 (6EC).
 	 */
 	if (c->x86_model == 0xe && c->x86_mask < 0xc && c->microcode < 0x39) {
-		pr_err("Errata AE18 not fixed, update BIOS or "
-		       "microcode of the CPU!\n");
+		pr_err("Errata AE18 not fixed, update BIOS or microcode of the CPU!\n");
 		return -ENODEV;
 	}
 	return 0;
@@ -579,7 +578,6 @@ static int coretemp_probe(struct platform_device *pdev)
 
 exit_name:
 	device_remove_file(&pdev->dev, &pdata->name_attr);
-	platform_set_drvdata(pdev, NULL);
 exit_free:
 	kfree(pdata);
 	return err;
@@ -596,7 +594,6 @@ static int coretemp_remove(struct platform_device *pdev)
 
 	device_remove_file(&pdev->dev, &pdata->name_attr);
 	hwmon_device_unregister(pdata->hwmon_dev);
-	platform_set_drvdata(pdev, NULL);
 	kfree(pdata);
 	return 0;
 }

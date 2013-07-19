@@ -22,11 +22,6 @@
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
    GNU General Public License for more details.
-
-   You should have received a copy of the GNU General Public License
-   along with this program; if not, write to the Free Software
-   Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
-
  */
 /*
 Driver: das6402
@@ -284,23 +279,12 @@ static int das6402_attach(struct comedi_device *dev,
 {
 	struct das6402_private *devpriv;
 	unsigned int irq;
-	unsigned long iobase;
 	int ret;
 	struct comedi_subdevice *s;
 
-	dev->board_name = "das6402";
-
-	iobase = it->options[0];
-	if (iobase == 0)
-		iobase = 0x300;
-
-	if (!request_region(iobase, DAS6402_SIZE, "das6402")) {
-		dev_err(dev->class_dev, "I/O port conflict\n");
-		return -EIO;
-	}
-	dev->iobase = iobase;
-
-	/* should do a probe here */
+	ret = comedi_request_region(dev, it->options[0], DAS6402_SIZE);
+	if (ret)
+		return ret;
 
 	irq = it->options[0];
 	dev_dbg(dev->class_dev, "( irq = %u )\n", irq);
@@ -335,19 +319,11 @@ static int das6402_attach(struct comedi_device *dev,
 	return 0;
 }
 
-static void das6402_detach(struct comedi_device *dev)
-{
-	if (dev->irq)
-		free_irq(dev->irq, dev);
-	if (dev->iobase)
-		release_region(dev->iobase, DAS6402_SIZE);
-}
-
 static struct comedi_driver das6402_driver = {
 	.driver_name	= "das6402",
 	.module		= THIS_MODULE,
 	.attach		= das6402_attach,
-	.detach		= das6402_detach,
+	.detach		= comedi_legacy_detach,
 };
 module_comedi_driver(das6402_driver)
 

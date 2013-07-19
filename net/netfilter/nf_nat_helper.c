@@ -2,6 +2,7 @@
  *
  * (C) 2000-2002 Harald Welte <laforge@netfilter.org>
  * (C) 2003-2006 Netfilter Core Team <coreteam@netfilter.org>
+ * (C) 2007-2012 Patrick McHardy <kaber@trash.net>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -103,7 +104,7 @@ static void mangle_contents(struct sk_buff *skb,
 	/* move post-replacement */
 	memmove(data + match_offset + rep_len,
 		data + match_offset + match_len,
-		skb->tail - (skb->network_header + dataoff +
+		skb_tail_pointer(skb) - (skb_network_header(skb) + dataoff +
 			     match_offset + match_len));
 
 	/* insert data from buffer */

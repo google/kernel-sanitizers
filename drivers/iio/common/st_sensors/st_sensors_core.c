@@ -20,6 +20,11 @@
 
 #define ST_SENSORS_WAI_ADDRESS		0x0f
 
+static inline u32 st_sensors_get_unaligned_le24(const u8 *p)
+{
+	return ((s32)((p[0] | p[1] << 8 | p[2] << 16) << 8) >> 8);
+}
+
 static int st_sensors_write_data_with_mask(struct iio_dev *indio_dev,
 						u8 reg_addr, u8 mask, u8 data)
 {
@@ -62,7 +67,7 @@ st_sensors_match_odr_error:
 int st_sensors_set_odr(struct iio_dev *indio_dev, unsigned int odr)
 {
 	int err;
-	struct st_sensor_odr_avl odr_out;
+	struct st_sensor_odr_avl odr_out = {0, 0};
 	struct st_sensor_data *sdata = iio_priv(indio_dev);
 
 	err = st_sensors_match_odr(sdata->sensor, odr, &odr_out);
@@ -112,9 +117,10 @@ st_sensors_match_odr_error:
 	return ret;
 }
 
-static int st_sensors_set_fullscale(struct iio_dev *indio_dev, unsigned int fs)
+static int st_sensors_set_fullscale(struct iio_dev *indio_dev,
+							unsigned int fs)
 {
-	int err, i;
+	int err, i = 0;
 	struct st_sensor_data *sdata = iio_priv(indio_dev);
 
 	err = st_sensors_match_fs(sdata->sensor, fs, &i);
@@ -139,14 +145,13 @@ st_accel_set_fullscale_error:
 
 int st_sensors_set_enable(struct iio_dev *indio_dev, bool enable)
 {
-	bool found;
 	u8 tmp_value;
 	int err = -EINVAL;
-	struct st_sensor_odr_avl odr_out;
+	bool found = false;
+	struct st_sensor_odr_avl odr_out = {0, 0};
 	struct st_sensor_data *sdata = iio_priv(indio_dev);
 
 	if (enable) {
-		found = false;
 		tmp_value = sdata->sensor->pw.value_on;
 		if ((sdata->sensor->odr.addr == sdata->sensor->pw.addr) &&
 			(sdata->sensor->odr.mask == sdata->sensor->pw.mask)) {
@@ -274,21 +279,33 @@ st_sensors_match_scale_error:
 EXPORT_SYMBOL(st_sensors_set_fullscale_by_gain);
 
 static int st_sensors_read_axis_data(struct iio_dev *indio_dev,
-							u8 ch_addr, int *data)
+				struct iio_chan_spec const *ch, int *data)
 {
 	int err;
-	u8 outdata[ST_SENSORS_BYTE_FOR_CHANNEL];
+	u8 *outdata;
 	struct st_sensor_data *sdata = iio_priv(indio_dev);
+	unsigned int byte_for_channel = ch->scan_type.storagebits >> 3;
+
+	outdata = kmalloc(byte_for_channel, GFP_KERNEL);
+	if (!outdata) {
+		err = -EINVAL;
+		goto st_sensors_read_axis_data_error;
+	}
 
 	err = sdata->tf->read_multiple_byte(&sdata->tb, sdata->dev,
-				ch_addr, ST_SENSORS_BYTE_FOR_CHANNEL,
+				ch->address, byte_for_channel,
 				outdata, sdata->multiread_bit);
 	if (err < 0)
-		goto read_error;
+		goto st_sensors_free_memory;
 
-	*data = (s16)get_unaligned_le16(outdata);
+	if (byte_for_channel == 2)
+		*data = (s16)get_unaligned_le16(outdata);
+	else if (byte_for_channel == 3)
+		*data = (s32)st_sensors_get_unaligned_le24(outdata);
 
-read_error:
+st_sensors_free_memory:
+	kfree(outdata);
+st_sensors_read_axis_data_error:
 	return err;
 }
 
@@ -308,11 +325,13 @@ int st_sensors_read_info_raw(struct iio_dev *indio_dev,
 			goto read_error;
 
 		msleep((sdata->sensor->bootime * 1000) / sdata->odr);
-		err = st_sensors_read_axis_data(indio_dev, ch->address, val);
+		err = st_sensors_read_axis_data(indio_dev, ch, val);
 		if (err < 0)
 			goto read_error;
 
 		*val = *val >> ch->scan_type.shift;
+
+		err = st_sensors_set_enable(indio_dev, false);
 	}
 	mutex_unlock(&indio_dev->mlock);
 

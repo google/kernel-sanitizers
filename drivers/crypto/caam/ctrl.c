@@ -66,7 +66,7 @@ static void build_instantiation_desc(u32 *desc)
 
 	/*
 	 * load 1 to clear written reg:
-	 * resets the done interrrupt and returns the RNG to idle.
+	 * resets the done interrupt and returns the RNG to idle.
 	 */
 	append_load_imm_u32(desc, 1, LDST_SRCDST_WORD_CLRW);
 
@@ -202,6 +202,7 @@ static int caam_probe(struct platform_device *pdev)
 #ifdef CONFIG_DEBUG_FS
 	struct caam_perfmon *perfmon;
 #endif
+	u64 cha_vid;
 
 	ctrlpriv = kzalloc(sizeof(struct caam_drv_private), GFP_KERNEL);
 	if (!ctrlpriv)
@@ -293,17 +294,23 @@ static int caam_probe(struct platform_device *pdev)
 		return -ENOMEM;
 	}
 
+	cha_vid = rd_reg64(&topregs->ctrl.perfmon.cha_id);
+
 	/*
-	 * RNG4 based SECs (v5+) need special initialization prior
-	 * to executing any descriptors
+	 * If SEC has RNG version >= 4 and RNG state handle has not been
+	 * already instantiated ,do RNG instantiation
 	 */
-	if (of_device_is_compatible(nprop, "fsl,sec-v5.0")) {
+	if ((cha_vid & CHA_ID_RNG_MASK) >> CHA_ID_RNG_SHIFT >= 4 &&
+	    !(rd_reg32(&topregs->ctrl.r4tst[0].rdsta) & RDSTA_IF0)) {
 		kick_trng(pdev);
 		ret = instantiate_rng(ctrlpriv->jrdev[0]);
 		if (ret) {
 			caam_remove(pdev);
 			return ret;
 		}
+
+		/* Enable RDB bit so that RNG works faster */
+		setbits32(&topregs->ctrl.scfgr, SCFGR_RDBENABLE);
 	}
 
 	/* NOTE: RTIC detection ought to go here, around Si time */

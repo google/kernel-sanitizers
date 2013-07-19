@@ -55,7 +55,7 @@ uf_sme_deinit(unifi_priv_t *priv)
 
 int sme_mgt_wifi_on(unifi_priv_t *priv)
 {
-    int r,i;
+    int r, i;
     s32 csrResult;
 
     if (priv == NULL) {
@@ -273,7 +273,7 @@ sme_native_log_event(ul_client_t *pcli,
     }
 
     /* Allocate log structure plus actual signal. */
-    logptr = (udi_log_t *)kmalloc(sizeof(udi_log_t) + total_len, GFP_KERNEL);
+    logptr = kmalloc(sizeof(udi_log_t) + total_len, GFP_KERNEL);
 
     if (logptr == NULL) {
         unifi_error(priv,

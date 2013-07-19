@@ -370,6 +370,15 @@ static int ehci_fsl_setup(struct usb_hcd *hcd)
 	/* EHCI registers start at offset 0x100 */
 	ehci->caps = hcd->regs + 0x100;
 
+#ifdef CONFIG_PPC_83xx
+	/*
+	 * Deal with MPC834X that need port power to be cycled after the power
+	 * fault condition is removed. Otherwise the state machine does not
+	 * reflect PORTSC[CSC] correctly.
+	 */
+	ehci->need_oc_pp_cycle = 1;
+#endif
+
 	hcd->has_tt = 1;
 
 	retval = ehci_setup(hcd);
@@ -723,6 +732,7 @@ static struct platform_driver ehci_fsl_driver = {
 	.shutdown = usb_hcd_platform_shutdown,
 	.driver = {
 		.name = "fsl-ehci",
+		.owner	= THIS_MODULE,
 		.pm = EHCI_FSL_PM_OPS,
 	},
 };

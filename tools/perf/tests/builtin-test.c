@@ -70,12 +70,28 @@ static struct test {
 		.func = test__attr,
 	},
 	{
-		.desc = "Test matching and linking mutliple hists",
+		.desc = "Test matching and linking multiple hists",
 		.func = test__hists_link,
 	},
 	{
 		.desc = "Try 'use perf' in python, checking link problems",
 		.func = test__python_use,
+	},
+	{
+		.desc = "Test breakpoint overflow signal handler",
+		.func = test__bp_signal,
+	},
+	{
+		.desc = "Test breakpoint overflow sampling",
+		.func = test__bp_signal_overflow,
+	},
+	{
+		.desc = "Test number of exit event of a simple workload",
+		.func = test__task_exit,
+	},
+	{
+		.desc = "Test software clock events have valid period values",
+		.func = test__sw_clock_freq,
 	},
 	{
 		.func = NULL,

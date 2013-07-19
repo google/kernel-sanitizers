@@ -148,8 +148,9 @@ static int w1_ds2760_add_slave(struct w1_slave *sl)
 	goto success;
 
 bin_attr_failed:
+	platform_device_del(pdev);
 pdev_add_failed:
-	platform_device_unregister(pdev);
+	platform_device_put(pdev);
 pdev_alloc_failed:
 	ida_simple_remove(&bat_ida, id);
 noid:
@@ -202,3 +203,4 @@ module_exit(w1_ds2760_exit);
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Szabolcs Gyurko <szabolcs.gyurko@tlt.hu>");
 MODULE_DESCRIPTION("1-wire Driver Dallas 2760 battery monitor chip");
+MODULE_ALIAS("w1-family-" __stringify(W1_FAMILY_DS2760));

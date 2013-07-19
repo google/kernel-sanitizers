@@ -287,6 +287,10 @@ struct iscsi_session {
 	char			*targetalias;
 	char			*ifacename;
 	char			*initiatorname;
+	char			*boot_root;
+	char			*boot_nic;
+	char			*boot_target;
+
 	/* control data */
 	struct iscsi_transport	*tt;
 	struct Scsi_Host	*host;
@@ -427,6 +431,7 @@ extern void iscsi_complete_scsi_task(struct iscsi_task *task,
  */
 extern void iscsi_pool_free(struct iscsi_pool *);
 extern int iscsi_pool_init(struct iscsi_pool *, int, void ***, int);
+extern int iscsi_switch_str_param(char **, char *);
 
 /*
  * inline functions to deal with padding.

@@ -14,11 +14,6 @@
     but WITHOUT ANY WARRANTY; without even the implied warranty of
     MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
     GNU General Public License for more details.
-
-    You should have received a copy of the GNU General Public License
-    along with this program; if not, write to the Free Software
-    Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
-
 */
 /*
 Driver: dmm32at
@@ -695,25 +690,13 @@ static int dmm32at_attach(struct comedi_device *dev,
 	int ret;
 	struct comedi_subdevice *s;
 	unsigned char aihi, ailo, fifostat, aistat, intstat, airback;
-	unsigned long iobase;
 	unsigned int irq;
 
-	dev->board_name = dev->driver->driver_name;
-
-	iobase = it->options[0];
 	irq = it->options[1];
 
-	printk(KERN_INFO "comedi%d: dmm32at: attaching\n", dev->minor);
-	printk(KERN_DEBUG "dmm32at: probing at address 0x%04lx, irq %u\n",
-	       iobase, irq);
-
-	/* register address space */
-	if (!request_region(iobase, DMM32AT_MEMSIZE, dev->board_name)) {
-		printk(KERN_ERR "comedi%d: dmm32at: I/O port conflict\n",
-		       dev->minor);
-		return -EIO;
-	}
-	dev->iobase = iobase;
+	ret = comedi_request_region(dev, it->options[0], DMM32AT_MEMSIZE);
+	if (ret)
+		return ret;
 
 	/* the following just makes sure the board is there and gets
 	   it to a known state */
@@ -832,19 +815,11 @@ static int dmm32at_attach(struct comedi_device *dev,
 
 }
 
-static void dmm32at_detach(struct comedi_device *dev)
-{
-	if (dev->irq)
-		free_irq(dev->irq, dev);
-	if (dev->iobase)
-		release_region(dev->iobase, DMM32AT_MEMSIZE);
-}
-
 static struct comedi_driver dmm32at_driver = {
 	.driver_name	= "dmm32at",
 	.module		= THIS_MODULE,
 	.attach		= dmm32at_attach,
-	.detach		= dmm32at_detach,
+	.detach		= comedi_legacy_detach,
 };
 module_comedi_driver(dmm32at_driver);
 

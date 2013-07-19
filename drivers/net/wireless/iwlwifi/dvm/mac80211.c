@@ -208,20 +208,21 @@ int iwlagn_mac_setup_register(struct iwl_priv *priv,
 	    priv->trans->ops->d3_suspend &&
 	    priv->trans->ops->d3_resume &&
 	    device_can_wakeup(priv->trans->dev)) {
-		hw->wiphy->wowlan.flags = WIPHY_WOWLAN_MAGIC_PKT |
-					  WIPHY_WOWLAN_DISCONNECT |
-					  WIPHY_WOWLAN_EAP_IDENTITY_REQ |
-					  WIPHY_WOWLAN_RFKILL_RELEASE;
+		priv->wowlan_support.flags = WIPHY_WOWLAN_MAGIC_PKT |
+					     WIPHY_WOWLAN_DISCONNECT |
+					     WIPHY_WOWLAN_EAP_IDENTITY_REQ |
+					     WIPHY_WOWLAN_RFKILL_RELEASE;
 		if (!iwlwifi_mod_params.sw_crypto)
-			hw->wiphy->wowlan.flags |=
+			priv->wowlan_support.flags |=
 				WIPHY_WOWLAN_SUPPORTS_GTK_REKEY |
 				WIPHY_WOWLAN_GTK_REKEY_FAILURE;
 
-		hw->wiphy->wowlan.n_patterns = IWLAGN_WOWLAN_MAX_PATTERNS;
-		hw->wiphy->wowlan.pattern_min_len =
+		priv->wowlan_support.n_patterns = IWLAGN_WOWLAN_MAX_PATTERNS;
+		priv->wowlan_support.pattern_min_len =
 					IWLAGN_WOWLAN_MIN_PATTERN_LEN;
-		hw->wiphy->wowlan.pattern_max_len =
+		priv->wowlan_support.pattern_max_len =
 					IWLAGN_WOWLAN_MAX_PATTERN_LEN;
+		hw->wiphy->wowlan = &priv->wowlan_support;
 	}
 #endif
 
@@ -426,7 +427,11 @@ static int iwlagn_mac_suspend(struct ieee80211_hw *hw,
 	if (ret)
 		goto error;
 
-	iwl_trans_d3_suspend(priv->trans);
+	/* let the ucode operate on its own */
+	iwl_write32(priv->trans, CSR_UCODE_DRV_GP1_SET,
+		    CSR_UCODE_DRV_GP1_BIT_D3_CFG_COMPLETE);
+
+	iwl_trans_d3_suspend(priv->trans, false);
 
 	goto out;
 
@@ -500,7 +505,7 @@ static int iwlagn_mac_resume(struct ieee80211_hw *hw)
 	/* we'll clear ctx->vif during iwlagn_prepare_restart() */
 	vif = ctx->vif;
 
-	ret = iwl_trans_d3_resume(priv->trans, &d3_status);
+	ret = iwl_trans_d3_resume(priv->trans, &d3_status, false);
 	if (ret)
 		goto out_unlock;
 
@@ -508,6 +513,10 @@ static int iwlagn_mac_resume(struct ieee80211_hw *hw)
 		IWL_INFO(priv, "Device was reset during suspend\n");
 		goto out_unlock;
 	}
+
+	/* uCode is no longer operating by itself */
+	iwl_write32(priv->trans, CSR_UCODE_DRV_GP1_CLR,
+		    CSR_UCODE_DRV_GP1_BIT_D3_CFG_COMPLETE);
 
 	base = priv->device_pointers.error_event_table;
 	if (!iwlagn_hw_valid_rtc_data_addr(base)) {
@@ -777,9 +786,12 @@ static int iwlagn_mac_ampdu_action(struct ieee80211_hw *hw,
 		IWL_DEBUG_HT(priv, "start Tx\n");
 		ret = iwlagn_tx_agg_start(priv, vif, sta, tid, ssn);
 		break;
-	case IEEE80211_AMPDU_TX_STOP_CONT:
 	case IEEE80211_AMPDU_TX_STOP_FLUSH:
 	case IEEE80211_AMPDU_TX_STOP_FLUSH_CONT:
+		IWL_DEBUG_HT(priv, "Flush Tx\n");
+		ret = iwlagn_tx_agg_flush(priv, vif, sta, tid);
+		break;
+	case IEEE80211_AMPDU_TX_STOP_CONT:
 		IWL_DEBUG_HT(priv, "stop Tx\n");
 		ret = iwlagn_tx_agg_stop(priv, vif, sta, tid);
 		if ((ret == 0) && (priv->agg_tids_count > 0)) {
@@ -967,7 +979,7 @@ static void iwlagn_mac_channel_switch(struct ieee80211_hw *hw,
 {
 	struct iwl_priv *priv = IWL_MAC80211_GET_DVM(hw);
 	struct ieee80211_conf *conf = &hw->conf;
-	struct ieee80211_channel *channel = ch_switch->channel;
+	struct ieee80211_channel *channel = ch_switch->chandef.chan;
 	struct iwl_ht_config *ht_conf = &priv->current_ht_config;
 	/*
 	 * MULTI-FIXME
@@ -1005,11 +1017,21 @@ static void iwlagn_mac_channel_switch(struct ieee80211_hw *hw,
 	priv->current_ht_config.smps = conf->smps_mode;
 
 	/* Configure HT40 channels */
-	ctx->ht.enabled = conf_is_ht(conf);
-	if (ctx->ht.enabled)
-		iwlagn_config_ht40(conf, ctx);
-	else
+	switch (cfg80211_get_chandef_type(&ch_switch->chandef)) {
+	case NL80211_CHAN_NO_HT:
+	case NL80211_CHAN_HT20:
 		ctx->ht.is_40mhz = false;
+		ctx->ht.extension_chan_offset = IEEE80211_HT_PARAM_CHA_SEC_NONE;
+		break;
+	case NL80211_CHAN_HT40MINUS:
+		ctx->ht.extension_chan_offset = IEEE80211_HT_PARAM_CHA_SEC_BELOW;
+		ctx->ht.is_40mhz = true;
+		break;
+	case NL80211_CHAN_HT40PLUS:
+		ctx->ht.extension_chan_offset = IEEE80211_HT_PARAM_CHA_SEC_ABOVE;
+		ctx->ht.is_40mhz = true;
+		break;
+	}
 
 	if ((le16_to_cpu(ctx->staging.channel) != ch))
 		ctx->staging.flags = 0;
@@ -1100,7 +1122,7 @@ static void iwlagn_configure_filter(struct ieee80211_hw *hw,
 			FIF_BCN_PRBRESP_PROMISC | FIF_CONTROL;
 }
 
-static void iwlagn_mac_flush(struct ieee80211_hw *hw, bool drop)
+static void iwlagn_mac_flush(struct ieee80211_hw *hw, u32 queues, bool drop)
 {
 	struct iwl_priv *priv = IWL_MAC80211_GET_DVM(hw);
 
@@ -1122,7 +1144,7 @@ static void iwlagn_mac_flush(struct ieee80211_hw *hw, bool drop)
 	 */
 	if (drop) {
 		IWL_DEBUG_MAC80211(priv, "send flush command\n");
-		if (iwlagn_txfifo_flush(priv)) {
+		if (iwlagn_txfifo_flush(priv, 0)) {
 			IWL_ERR(priv, "flush request fail\n");
 			goto done;
 		}
@@ -1137,7 +1159,8 @@ done:
 static int iwlagn_mac_remain_on_channel(struct ieee80211_hw *hw,
 				     struct ieee80211_vif *vif,
 				     struct ieee80211_channel *channel,
-				     int duration)
+				     int duration,
+				     enum ieee80211_roc_type type)
 {
 	struct iwl_priv *priv = IWL_MAC80211_GET_DVM(hw);
 	struct iwl_rxon_context *ctx = &priv->contexts[IWL_RXON_CTX_PAN];
@@ -1262,8 +1285,8 @@ static void iwlagn_mac_rssi_callback(struct ieee80211_hw *hw,
 	IWL_DEBUG_MAC80211(priv, "enter\n");
 	mutex_lock(&priv->mutex);
 
-	if (priv->cfg->bt_params &&
-			priv->cfg->bt_params->advanced_bt_coexist) {
+	if (priv->lib->bt_params &&
+	    priv->lib->bt_params->advanced_bt_coexist) {
 		if (rssi_event == RSSI_EVENT_LOW)
 			priv->bt_enable_pspoll = true;
 		else if (rssi_event == RSSI_EVENT_HIGH)
@@ -1373,7 +1396,7 @@ static int iwl_setup_interface(struct iwl_priv *priv,
 		return err;
 	}
 
-	if (priv->cfg->bt_params && priv->cfg->bt_params->advanced_bt_coexist &&
+	if (priv->lib->bt_params && priv->lib->bt_params->advanced_bt_coexist &&
 	    vif->type == NL80211_IFTYPE_ADHOC) {
 		/*
 		 * pretend to have high BT traffic as long as we
@@ -1743,8 +1766,6 @@ struct ieee80211_ops iwlagn_hw_ops = {
 	.remain_on_channel = iwlagn_mac_remain_on_channel,
 	.cancel_remain_on_channel = iwlagn_mac_cancel_remain_on_channel,
 	.rssi_callback = iwlagn_mac_rssi_callback,
-	CFG80211_TESTMODE_CMD(iwlagn_mac_testmode_cmd)
-	CFG80211_TESTMODE_DUMP(iwlagn_mac_testmode_dump)
 	.set_tim = iwlagn_mac_set_tim,
 };
 

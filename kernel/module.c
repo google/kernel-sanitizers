@@ -455,7 +455,7 @@ const struct kernel_symbol *find_symbol(const char *name,
 EXPORT_SYMBOL_GPL(find_symbol);
 
 /* Search for module by name: must hold module_mutex. */
-static struct module *find_module_all(const char *name,
+static struct module *find_module_all(const char *name, size_t len,
 				      bool even_unformed)
 {
 	struct module *mod;
@@ -463,7 +463,7 @@ static struct module *find_module_all(const char *name,
 	list_for_each_entry(mod, &modules, list) {
 		if (!even_unformed && mod->state == MODULE_STATE_UNFORMED)
 			continue;
-		if (strcmp(mod->name, name) == 0)
+		if (strlen(mod->name) == len && !memcmp(mod->name, name, len))
 			return mod;
 	}
 	return NULL;
@@ -471,7 +471,7 @@ static struct module *find_module_all(const char *name,
 
 struct module *find_module(const char *name)
 {
-	return find_module_all(name, false);
+	return find_module_all(name, strlen(name), false);
 }
 EXPORT_SYMBOL_GPL(find_module);
 
@@ -482,23 +482,28 @@ static inline void __percpu *mod_percpu(struct module *mod)
 	return mod->percpu;
 }
 
-static int percpu_modalloc(struct module *mod,
-			   unsigned long size, unsigned long align)
+static int percpu_modalloc(struct module *mod, struct load_info *info)
 {
+	Elf_Shdr *pcpusec = &info->sechdrs[info->index.pcpu];
+	unsigned long align = pcpusec->sh_addralign;
+
+	if (!pcpusec->sh_size)
+		return 0;
+
 	if (align > PAGE_SIZE) {
 		printk(KERN_WARNING "%s: per-cpu alignment %li > %li\n",
 		       mod->name, align, PAGE_SIZE);
 		align = PAGE_SIZE;
 	}
 
-	mod->percpu = __alloc_reserved_percpu(size, align);
+	mod->percpu = __alloc_reserved_percpu(pcpusec->sh_size, align);
 	if (!mod->percpu) {
 		printk(KERN_WARNING
 		       "%s: Could not allocate %lu bytes percpu data\n",
-		       mod->name, size);
+		       mod->name, (unsigned long)pcpusec->sh_size);
 		return -ENOMEM;
 	}
-	mod->percpu_size = size;
+	mod->percpu_size = pcpusec->sh_size;
 	return 0;
 }
 
@@ -563,10 +568,12 @@ static inline void __percpu *mod_percpu(struct module *mod)
 {
 	return NULL;
 }
-static inline int percpu_modalloc(struct module *mod,
-				  unsigned long size, unsigned long align)
+static int percpu_modalloc(struct module *mod, struct load_info *info)
 {
-	return -ENOMEM;
+	/* UP modules shouldn't have this section: ENOMEM isn't quite right */
+	if (info->sechdrs[info->index.pcpu].sh_size != 0)
+		return -ENOMEM;
+	return 0;
 }
 static inline void percpu_modfree(struct module *mod)
 {
@@ -1209,10 +1216,11 @@ static inline int check_modstruct_version(Elf_Shdr *sechdrs,
 
 	/* Since this should be found in kernel (which can't be removed),
 	 * no locking is necessary. */
-	if (!find_symbol(MODULE_SYMBOL_PREFIX "module_layout", NULL,
+	if (!find_symbol(VMLINUX_SYMBOL_STR(module_layout), NULL,
 			 &crc, true, false))
 		BUG();
-	return check_version(sechdrs, versindex, "module_layout", mod, crc,
+	return check_version(sechdrs, versindex,
+			     VMLINUX_SYMBOL_STR(module_layout), mod, crc,
 			     NULL);
 }
 
@@ -1861,11 +1869,11 @@ static void free_module(struct module *mod)
 {
 	trace_module_free(mod);
 
-	/* Delete from various lists */
-	mutex_lock(&module_mutex);
-	stop_machine(__unlink_module, mod, NULL);
-	mutex_unlock(&module_mutex);
 	mod_sysfs_teardown(mod);
+
+	/* We leave it in list to prevent duplicate loads, but make sure
+	 * that noone uses it while it's being deconstructed. */
+	mod->state = MODULE_STATE_UNFORMED;
 
 	/* Remove dynamic debug info */
 	ddebug_remove_module(mod->name);
@@ -1878,6 +1886,11 @@ static void free_module(struct module *mod)
 
 	/* Free any allocated parameters. */
 	destroy_params(mod->kp, mod->num_kp);
+
+	/* Now we can delete it from the lists */
+	mutex_lock(&module_mutex);
+	stop_machine(__unlink_module, mod, NULL);
+	mutex_unlock(&module_mutex);
 
 	/* This may be NULL, but that's OK */
 	unset_module_init_ro_nx(mod);
@@ -2425,10 +2438,10 @@ static void kmemleak_load_module(const struct module *mod,
 	kmemleak_scan_area(mod, sizeof(struct module), GFP_KERNEL);
 
 	for (i = 1; i < info->hdr->e_shnum; i++) {
-		const char *name = info->secstrings + info->sechdrs[i].sh_name;
-		if (!(info->sechdrs[i].sh_flags & SHF_ALLOC))
-			continue;
-		if (!strstarts(name, ".data") && !strstarts(name, ".bss"))
+		/* Scan all writable sections that's not executable */
+		if (!(info->sechdrs[i].sh_flags & SHF_ALLOC) ||
+		    !(info->sechdrs[i].sh_flags & SHF_WRITE) ||
+		    (info->sechdrs[i].sh_flags & SHF_EXECINSTR))
 			continue;
 
 		kmemleak_scan_area((void *)info->sechdrs[i].sh_addr,
@@ -2763,24 +2776,11 @@ static void find_module_sections(struct module *mod, struct load_info *info)
 	mod->trace_events = section_objs(info, "_ftrace_events",
 					 sizeof(*mod->trace_events),
 					 &mod->num_trace_events);
-	/*
-	 * This section contains pointers to allocated objects in the trace
-	 * code and not scanning it leads to false positives.
-	 */
-	kmemleak_scan_area(mod->trace_events, sizeof(*mod->trace_events) *
-			   mod->num_trace_events, GFP_KERNEL);
 #endif
 #ifdef CONFIG_TRACING
 	mod->trace_bprintk_fmt_start = section_objs(info, "__trace_printk_fmt",
 					 sizeof(*mod->trace_bprintk_fmt_start),
 					 &mod->num_trace_bprintk_fmt);
-	/*
-	 * This section contains pointers to allocated objects in the trace
-	 * code and not scanning it leads to false positives.
-	 */
-	kmemleak_scan_area(mod->trace_bprintk_fmt_start,
-			   sizeof(*mod->trace_bprintk_fmt_start) *
-			   mod->num_trace_bprintk_fmt, GFP_KERNEL);
 #endif
 #ifdef CONFIG_FTRACE_MCOUNT_RECORD
 	/* sechdrs[0].sh_size is always zero */
@@ -2934,7 +2934,6 @@ static struct module *layout_and_allocate(struct load_info *info, int flags)
 {
 	/* Module within temporary copy. */
 	struct module *mod;
-	Elf_Shdr *pcpusec;
 	int err;
 
 	mod = setup_load_info(info, flags);
@@ -2949,17 +2948,10 @@ static struct module *layout_and_allocate(struct load_info *info, int flags)
 	err = module_frob_arch_sections(info->hdr, info->sechdrs,
 					info->secstrings, mod);
 	if (err < 0)
-		goto out;
+		return ERR_PTR(err);
 
-	pcpusec = &info->sechdrs[info->index.pcpu];
-	if (pcpusec->sh_size) {
-		/* We have a special allocation for this section. */
-		err = percpu_modalloc(mod,
-				      pcpusec->sh_size, pcpusec->sh_addralign);
-		if (err)
-			goto out;
-		pcpusec->sh_flags &= ~(unsigned long)SHF_ALLOC;
-	}
+	/* We will do a special allocation for per-cpu sections later. */
+	info->sechdrs[info->index.pcpu].sh_flags &= ~(unsigned long)SHF_ALLOC;
 
 	/* Determine total sizes, and put offsets in sh_entsize.  For now
 	   this is done generically; there doesn't appear to be any
@@ -2970,17 +2962,12 @@ static struct module *layout_and_allocate(struct load_info *info, int flags)
 	/* Allocate and move to the final place */
 	err = move_module(mod, info);
 	if (err)
-		goto free_percpu;
+		return ERR_PTR(err);
 
 	/* Module has been copied to its final place now: return it. */
 	mod = (void *)info->sechdrs[info->index.mod].sh_addr;
 	kmemleak_load_module(mod, info);
 	return mod;
-
-free_percpu:
-	percpu_modfree(mod);
-out:
-	return ERR_PTR(err);
 }
 
 /* mod is no longer valid after this! */
@@ -3021,7 +3008,7 @@ static bool finished_loading(const char *name)
 	bool ret;
 
 	mutex_lock(&module_mutex);
-	mod = find_module_all(name, true);
+	mod = find_module_all(name, strlen(name), true);
 	ret = !mod || mod->state == MODULE_STATE_LIVE
 		|| mod->state == MODULE_STATE_GOING;
 	mutex_unlock(&module_mutex);
@@ -3159,7 +3146,8 @@ static int add_unformed_module(struct module *mod)
 
 again:
 	mutex_lock(&module_mutex);
-	if ((old = find_module_all(mod->name, true)) != NULL) {
+	old = find_module_all(mod->name, strlen(mod->name), true);
+	if (old != NULL) {
 		if (old->state == MODULE_STATE_COMING
 		    || old->state == MODULE_STATE_UNFORMED) {
 			/* Wait in case it fails to load. */
@@ -3205,6 +3193,17 @@ out:
 	return err;
 }
 
+static int unknown_module_param_cb(char *param, char *val, const char *modname)
+{
+	/* Check for magic 'dyndbg' arg */ 
+	int ret = ddebug_dyndbg_module_param_cb(param, val, modname);
+	if (ret != 0) {
+		printk(KERN_WARNING "%s: unknown parameter '%s' ignored\n",
+		       modname, param);
+	}
+	return 0;
+}
+
 /* Allocate and load the module: note that size of section 0 is always
    zero, and we rely on this for optional sections. */
 static int load_module(struct load_info *info, const char __user *uargs,
@@ -3243,6 +3242,11 @@ static int load_module(struct load_info *info, const char __user *uargs,
 		add_taint_module(mod, TAINT_FORCED_MODULE, LOCKDEP_STILL_OK);
 	}
 #endif
+
+	/* To avoid stressing percpu allocator, do this once we're unique. */
+	err = percpu_modalloc(mod, info);
+	if (err)
+		goto unlink_mod;
 
 	/* Now module is in final location, initialize linked lists, etc. */
 	err = module_unload_init(mod);
@@ -3291,7 +3295,7 @@ static int load_module(struct load_info *info, const char __user *uargs,
 
 	/* Module is ready to execute: parsing args may do that. */
 	err = parse_args(mod->name, mod->args, mod->kp, mod->num_kp,
-			 -32768, 32767, &ddebug_dyndbg_module_param_cb);
+			 -32768, 32767, unknown_module_param_cb);
 	if (err < 0)
 		goto bug_cleanup;
 
@@ -3570,10 +3574,8 @@ unsigned long module_kallsyms_lookup_name(const char *name)
 	/* Don't lock: we're in enough trouble already. */
 	preempt_disable();
 	if ((colon = strchr(name, ':')) != NULL) {
-		*colon = '\0';
-		if ((mod = find_module(name)) != NULL)
+		if ((mod = find_module_all(name, colon - name, false)) != NULL)
 			ret = mod_find_symname(mod, colon+1);
-		*colon = ':';
 	} else {
 		list_for_each_entry_rcu(mod, &modules, list) {
 			if (mod->state == MODULE_STATE_UNFORMED)

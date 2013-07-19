@@ -1,6 +1,8 @@
 #ifndef __ARCH_ORION5X_COMMON_H
 #define __ARCH_ORION5X_COMMON_H
 
+#include <linux/reboot.h>
+
 struct dsa_platform_data;
 struct mv643xx_eth_platform_data;
 struct mv_sata_platform_data;
@@ -17,18 +19,7 @@ void clk_init(void);
 extern int orion5x_tclk;
 extern void orion5x_timer_init(void);
 
-/*
- * Enumerations and functions for Orion windows mapping. Used by Orion core
- * functions to map its interfaces and by the machine-setup to map its on-
- * board devices. Details in /mach-orion/addr-map.c
- */
-void orion5x_setup_cpu_mbus_bridge(void);
-void orion5x_setup_dev_boot_win(u32 base, u32 size);
-void orion5x_setup_dev0_win(u32 base, u32 size);
-void orion5x_setup_dev1_win(u32 base, u32 size);
-void orion5x_setup_dev2_win(u32 base, u32 size);
-void orion5x_setup_pcie_wa_win(u32 base, u32 size);
-void orion5x_setup_sram_win(void);
+void orion5x_setup_wins(void);
 
 void orion5x_ehci0_init(void);
 void orion5x_ehci1_init(void);
@@ -40,7 +31,7 @@ void orion5x_spi_init(void);
 void orion5x_uart0_init(void);
 void orion5x_uart1_init(void);
 void orion5x_xor_init(void);
-void orion5x_restart(char, const char *);
+void orion5x_restart(enum reboot_mode, const char *);
 
 /*
  * PCIe/PCI functions.

@@ -190,6 +190,17 @@ config MMC_SDHCI_S3C
 
 	  If unsure, say N.
 
+config MMC_SDHCI_SIRF
+	tristate "SDHCI support on CSR SiRFprimaII and SiRFmarco SoCs"
+	depends on ARCH_SIRF
+	depends on MMC_SDHCI_PLTFM
+	help
+	  This selects the SDHCI support for SiRF System-on-Chip devices.
+
+	  If you have a controller with this interface, say Y or M here.
+
+	  If unsure, say N.
+
 config MMC_SDHCI_PXAV3
 	tristate "Marvell MMP2 SD Host Controller support (PXAV3)"
 	depends on CLKDEV_LOOKUP
@@ -237,6 +248,17 @@ config MMC_SDHCI_S3C_DMA
 	  certain errors, and thus should be treated with care.
 
 	  YMMV.
+
+config MMC_SDHCI_BCM_KONA
+	tristate "SDHCI support on Broadcom KONA platform"
+	depends on ARCH_BCM
+	select MMC_SDHCI_PLTFM
+	help
+	  This selects the Broadcom Kona Secure Digital Host Controller
+	  Interface(SDHCI) support.
+	  This is used in Broadcom mobile SoCs.
+
+	  If you have a controller with this interface, say Y or M here.
 
 config MMC_SDHCI_BCM2835
 	tristate "SDHCI platform support for the BCM2835 SD/MMC Controller"
@@ -300,16 +322,6 @@ config MMC_ATMELMCI
 
 	  If unsure, say N.
 
-config MMC_ATMELMCI_DMA
-	bool "Atmel MCI DMA support"
-	depends on MMC_ATMELMCI && (AVR32 || ARCH_AT91SAM9G45) && DMA_ENGINE
-	help
-	  Say Y here to have the Atmel MCI driver use a DMA engine to
-	  do data transfers and thus increase the throughput and
-	  reduce the CPU utilization.
-
-	  If unsure, say N.
-
 config MMC_MSM
 	tristate "Qualcomm SDCC Controller Support"
 	depends on MMC && ARCH_MSM
@@ -319,12 +331,12 @@ config MMC_MSM
 	  support for SDIO devices.
 
 config MMC_MXC
-	tristate "Freescale i.MX21/27/31 Multimedia Card Interface support"
-	depends on ARCH_MXC
+	tristate "Freescale i.MX21/27/31 or MPC512x Multimedia Card support"
+	depends on ARCH_MXC || PPC_MPC512x
 	help
-	  This selects the Freescale i.MX21, i.MX27 and i.MX31 Multimedia card
-	  Interface. If you have a i.MX platform with a Multimedia Card slot,
-	  say Y or M here.
+	  This selects the Freescale i.MX21, i.MX27, i.MX31 or MPC512x
+	  Multimedia Card Interface. If you have an i.MX or MPC512x platform
+	  with a Multimedia Card slot, say Y or M here.
 
 	  If unsure, say N.
 
@@ -554,6 +566,14 @@ config MMC_DW_EXYNOS
 	  This selects support for Samsung Exynos SoC specific extensions to the
 	  Synopsys DesignWare Memory Card Interface driver. Select this option
 	  for platforms based on Exynos4 and Exynos5 SoC's.
+
+config MMC_DW_SOCFPGA
+	tristate "SOCFPGA specific extensions for Synopsys DW Memory Card Interface"
+	depends on MMC_DW
+	select MMC_DW_PLTFM
+	help
+	  This selects support for Altera SoCFPGA specific extensions to the
+	  Synopsys DesignWare Memory Card Interface driver.
 
 config MMC_DW_PCI
 	tristate "Synopsys Designware MCI support on PCI bus"

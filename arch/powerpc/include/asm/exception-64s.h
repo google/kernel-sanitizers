@@ -358,12 +358,12 @@ label##_relon_pSeries:					\
 	/* No guest interrupts come through here */	\
 	SET_SCRATCH0(r13);		/* save r13 */	\
 	EXCEPTION_RELON_PROLOG_PSERIES(PACA_EXGEN, label##_common, \
-				       EXC_STD, KVMTEST_PR, vec)
+				       EXC_STD, NOTEST, vec)
 
 #define STD_RELON_EXCEPTION_PSERIES_OOL(vec, label)		\
 	.globl label##_relon_pSeries;				\
 label##_relon_pSeries:						\
-	EXCEPTION_PROLOG_1(PACA_EXGEN, KVMTEST_PR, vec);	\
+	EXCEPTION_PROLOG_1(PACA_EXGEN, NOTEST, vec);		\
 	EXCEPTION_RELON_PROLOG_PSERIES_1(label##_common, EXC_STD)
 
 #define STD_RELON_EXCEPTION_HV(loc, vec, label)		\
@@ -374,12 +374,12 @@ label##_relon_hv:					\
 	/* No guest interrupts come through here */	\
 	SET_SCRATCH0(r13);	/* save r13 */		\
 	EXCEPTION_RELON_PROLOG_PSERIES(PACA_EXGEN, label##_common, \
-				       EXC_HV, KVMTEST, vec)
+				       EXC_HV, NOTEST, vec)
 
 #define STD_RELON_EXCEPTION_HV_OOL(vec, label)			\
 	.globl label##_relon_hv;				\
 label##_relon_hv:						\
-	EXCEPTION_PROLOG_1(PACA_EXGEN, KVMTEST, vec);		\
+	EXCEPTION_PROLOG_1(PACA_EXGEN, NOTEST, vec);		\
 	EXCEPTION_RELON_PROLOG_PSERIES_1(label##_common, EXC_HV)
 
 /* This associate vector numbers with bits in paca->irq_happened */
@@ -414,7 +414,6 @@ label##_relon_hv:						\
 #define SOFTEN_NOTEST_HV(vec)		_SOFTEN_TEST(EXC_HV, vec)
 
 #define __MASKABLE_EXCEPTION_PSERIES(vec, label, h, extra)		\
-	HMT_MEDIUM_PPR_DISCARD;						\
 	SET_SCRATCH0(r13);    /* save r13 */				\
 	EXCEPTION_PROLOG_0(PACA_EXGEN);					\
 	__EXCEPTION_PROLOG_1(PACA_EXGEN, extra, vec);			\
@@ -427,6 +426,7 @@ label##_relon_hv:						\
 	. = loc;							\
 	.globl label##_pSeries;						\
 label##_pSeries:							\
+	HMT_MEDIUM_PPR_DISCARD;						\
 	_MASKABLE_EXCEPTION_PSERIES(vec, label,				\
 				    EXC_STD, SOFTEN_TEST_PR)
 
@@ -513,7 +513,7 @@ label##_common:							\
  */
 #define STD_EXCEPTION_COMMON_ASYNC(trap, label, hdlr)		  \
 	EXCEPTION_COMMON(trap, label, hdlr, ret_from_except_lite, \
-			 FINISH_NAP;RUNLATCH_ON;DISABLE_INTS)
+			 FINISH_NAP;DISABLE_INTS;RUNLATCH_ON)
 
 /*
  * When the idle code in power4_idle puts the CPU into NAP mode,

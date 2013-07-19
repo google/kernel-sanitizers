@@ -500,6 +500,8 @@
 #define BPP_POWER_15_PERCENT_ON		0x08
 #define BPP_POWER_ON			0x00
 #define BPP_POWER_MASK			0x0F
+#define SD_VCC_PARTIAL_POWER_ON		0x02
+#define SD_VCC_POWER_ON			0x00
 
 /* PWR_GATE_CTRL */
 #define PWR_GATE_EN			0x01
@@ -573,6 +575,7 @@
 
 #define CARD_PWR_CTL			0xFD50
 #define CARD_CLK_SWITCH			0xFD51
+#define RTL8411B_PACKAGE_MODE		0xFD51
 #define CARD_SHARE_MODE			0xFD52
 #define CARD_DRIVE_SEL			0xFD53
 #define CARD_STOP			0xFD54
@@ -688,6 +691,40 @@
 #define PPBUF_BASE2			0xFA00
 #define IMAGE_FLAG_ADDR0		0xCE80
 #define IMAGE_FLAG_ADDR1		0xCE81
+
+/* Phy register */
+#define PHY_PCR				0x00
+#define PHY_RCR0			0x01
+#define PHY_RCR1			0x02
+#define PHY_RCR2			0x03
+#define PHY_RTCR			0x04
+#define PHY_RDR				0x05
+#define PHY_TCR0			0x06
+#define PHY_TCR1			0x07
+#define PHY_TUNE			0x08
+#define PHY_IMR				0x09
+#define PHY_BPCR			0x0A
+#define PHY_BIST			0x0B
+#define PHY_RAW_L			0x0C
+#define PHY_RAW_H			0x0D
+#define PHY_RAW_DATA			0x0E
+#define PHY_HOST_CLK_CTRL		0x0F
+#define PHY_DMR				0x10
+#define PHY_BACR			0x11
+#define PHY_IER				0x12
+#define PHY_BCSR			0x13
+#define PHY_BPR				0x14
+#define PHY_BPNR2			0x15
+#define PHY_BPNR			0x16
+#define PHY_BRNR2			0x17
+#define PHY_BENR			0x18
+#define PHY_REG_REV			0x19
+#define PHY_FLD0			0x1A
+#define PHY_FLD1			0x1B
+#define PHY_FLD2			0x1C
+#define PHY_FLD3			0x1D
+#define PHY_FLD4			0x1E
+#define PHY_DUM_REG			0x1F
 
 #define rtsx_pci_init_cmd(pcr)		((pcr)->ci = 0)
 

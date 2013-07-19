@@ -67,8 +67,12 @@
 #define DW_IC_STATUS		0x70
 #define DW_IC_TXFLR		0x74
 #define DW_IC_RXFLR		0x78
+#define DW_IC_SDA_HOLD		0x7c
 #define DW_IC_TX_ABRT_SOURCE	0x80
+#define DW_IC_ENABLE_STATUS	0x9c
 #define DW_IC_COMP_PARAM_1	0xf4
+#define DW_IC_COMP_VERSION	0xf8
+#define DW_IC_SDA_HOLD_MIN_VERS	0x3131312A
 #define DW_IC_COMP_TYPE		0xfc
 #define DW_IC_COMP_TYPE_VALUE	0x44570140
 
@@ -248,6 +252,27 @@ static u32 i2c_dw_scl_lcnt(u32 ic_clk, u32 tLOW, u32 tf, int offset)
 	return ((ic_clk * (tLOW + tf) + 5000) / 10000) - 1 + offset;
 }
 
+static void __i2c_dw_enable(struct dw_i2c_dev *dev, bool enable)
+{
+	int timeout = 100;
+
+	do {
+		dw_writel(dev, enable, DW_IC_ENABLE);
+		if ((dw_readl(dev, DW_IC_ENABLE_STATUS) & 1) == enable)
+			return;
+
+		/*
+		 * Wait 10 times the signaling period of the highest I2C
+		 * transfer supported by the driver (for 400KHz this is
+		 * 25us) as described in the DesignWare I2C databook.
+		 */
+		usleep_range(25, 250);
+	} while (timeout--);
+
+	dev_warn(dev->dev, "timeout in %sabling adapter\n",
+		 enable ? "en" : "dis");
+}
+
 /**
  * i2c_dw_init() - initialize the designware i2c master hardware
  * @dev: device private data
@@ -278,7 +303,7 @@ int i2c_dw_init(struct dw_i2c_dev *dev)
 	}
 
 	/* Disable the adapter */
-	dw_writel(dev, 0, DW_IC_ENABLE);
+	__i2c_dw_enable(dev, false);
 
 	/* set standard and fast speed deviders for high/low periods */
 
@@ -310,6 +335,16 @@ int i2c_dw_init(struct dw_i2c_dev *dev)
 	dw_writel(dev, lcnt, DW_IC_FS_SCL_LCNT);
 	dev_dbg(dev->dev, "Fast-mode HCNT:LCNT = %d:%d\n", hcnt, lcnt);
 
+	/* Configure SDA Hold Time if required */
+	if (dev->sda_hold_time) {
+		reg = dw_readl(dev, DW_IC_COMP_VERSION);
+		if (reg >= DW_IC_SDA_HOLD_MIN_VERS)
+			dw_writel(dev, dev->sda_hold_time, DW_IC_SDA_HOLD);
+		else
+			dev_warn(dev->dev,
+				"Hardware too old to adjust SDA hold time.");
+	}
+
 	/* Configure Tx/Rx FIFO threshold levels */
 	dw_writel(dev, dev->tx_fifo_depth - 1, DW_IC_TX_TL);
 	dw_writel(dev, 0, DW_IC_RX_TL);
@@ -333,7 +368,7 @@ static int i2c_dw_wait_bus_not_busy(struct dw_i2c_dev *dev)
 			return -ETIMEDOUT;
 		}
 		timeout--;
-		mdelay(1);
+		usleep_range(1000, 1100);
 	}
 
 	return 0;
@@ -345,7 +380,7 @@ static void i2c_dw_xfer_init(struct dw_i2c_dev *dev)
 	u32 ic_con;
 
 	/* Disable the adapter */
-	dw_writel(dev, 0, DW_IC_ENABLE);
+	__i2c_dw_enable(dev, false);
 
 	/* set the slave (target) address */
 	dw_writel(dev, msgs[dev->msg_write_idx].addr, DW_IC_TAR);
@@ -359,9 +394,10 @@ static void i2c_dw_xfer_init(struct dw_i2c_dev *dev)
 	dw_writel(dev, ic_con, DW_IC_CON);
 
 	/* Enable the adapter */
-	dw_writel(dev, 1, DW_IC_ENABLE);
+	__i2c_dw_enable(dev, true);
 
-	/* Enable interrupts */
+	/* Clear and enable interrupts */
+	i2c_dw_clear_int(dev);
 	dw_writel(dev, DW_IC_INTR_DEFAULT_MASK, DW_IC_INTR_MASK);
 }
 
@@ -426,8 +462,14 @@ i2c_dw_xfer_msg(struct dw_i2c_dev *dev)
 				cmd |= BIT(9);
 
 			if (msgs[dev->msg_write_idx].flags & I2C_M_RD) {
+
+				/* avoid rx buffer overrun */
+				if (rx_limit - dev->rx_outstanding <= 0)
+					break;
+
 				dw_writel(dev, cmd | 0x100, DW_IC_DATA_CMD);
 				rx_limit--;
+				dev->rx_outstanding++;
 			} else
 				dw_writel(dev, cmd | *buf++, DW_IC_DATA_CMD);
 			tx_limit--; buf_len--;
@@ -480,8 +522,10 @@ i2c_dw_read(struct dw_i2c_dev *dev)
 
 		rx_valid = dw_readl(dev, DW_IC_RXFLR);
 
-		for (; len > 0 && rx_valid > 0; len--, rx_valid--)
+		for (; len > 0 && rx_valid > 0; len--, rx_valid--) {
 			*buf++ = dw_readl(dev, DW_IC_DATA_CMD);
+			dev->rx_outstanding--;
+		}
 
 		if (len > 0) {
 			dev->status |= STATUS_READ_IN_PROGRESS;
@@ -539,6 +583,7 @@ i2c_dw_xfer(struct i2c_adapter *adap, struct i2c_msg msgs[], int num)
 	dev->msg_err = 0;
 	dev->status = STATUS_IDLE;
 	dev->abort_source = 0;
+	dev->rx_outstanding = 0;
 
 	ret = i2c_dw_wait_bus_not_busy(dev);
 	if (ret < 0)
@@ -548,14 +593,23 @@ i2c_dw_xfer(struct i2c_adapter *adap, struct i2c_msg msgs[], int num)
 	i2c_dw_xfer_init(dev);
 
 	/* wait for tx to complete */
-	ret = wait_for_completion_interruptible_timeout(&dev->cmd_complete, HZ);
+	ret = wait_for_completion_timeout(&dev->cmd_complete, HZ);
 	if (ret == 0) {
 		dev_err(dev->dev, "controller timed out\n");
+		/* i2c_dw_init implicitly disables the adapter */
 		i2c_dw_init(dev);
 		ret = -ETIMEDOUT;
 		goto done;
-	} else if (ret < 0)
-		goto done;
+	}
+
+	/*
+	 * We must disable the adapter before unlocking the &dev->lock mutex
+	 * below. Otherwise the hardware might continue generating interrupts
+	 * which in turn causes a race condition with the following transfer.
+	 * Needs some more investigation if the additional interrupts are
+	 * a hardware bug or this driver doesn't handle them correctly yet.
+	 */
+	__i2c_dw_enable(dev, false);
 
 	if (dev->msg_err) {
 		ret = dev->msg_err;
@@ -564,8 +618,6 @@ i2c_dw_xfer(struct i2c_adapter *adap, struct i2c_msg msgs[], int num)
 
 	/* no error */
 	if (likely(!dev->cmd_err)) {
-		/* Disable the adapter */
-		dw_writel(dev, 0, DW_IC_ENABLE);
 		ret = num;
 		goto done;
 	}
@@ -578,7 +630,8 @@ i2c_dw_xfer(struct i2c_adapter *adap, struct i2c_msg msgs[], int num)
 	ret = -EIO;
 
 done:
-	pm_runtime_put(dev->dev);
+	pm_runtime_mark_last_busy(dev->dev);
+	pm_runtime_put_autosuspend(dev->dev);
 	mutex_unlock(&dev->lock);
 
 	return ret;
@@ -700,7 +753,7 @@ EXPORT_SYMBOL_GPL(i2c_dw_isr);
 void i2c_dw_enable(struct dw_i2c_dev *dev)
 {
        /* Enable the adapter */
-	dw_writel(dev, 1, DW_IC_ENABLE);
+	__i2c_dw_enable(dev, true);
 }
 EXPORT_SYMBOL_GPL(i2c_dw_enable);
 
@@ -713,7 +766,7 @@ EXPORT_SYMBOL_GPL(i2c_dw_is_enabled);
 void i2c_dw_disable(struct dw_i2c_dev *dev)
 {
 	/* Disable controller */
-	dw_writel(dev, 0, DW_IC_ENABLE);
+	__i2c_dw_enable(dev, false);
 
 	/* Disable all interupts */
 	dw_writel(dev, 0, DW_IC_INTR_MASK);

@@ -12,6 +12,15 @@
 #include <linux/notifier.h>
 #include <linux/usb.h>
 
+enum usb_phy_interface {
+	USBPHY_INTERFACE_MODE_UNKNOWN,
+	USBPHY_INTERFACE_MODE_UTMI,
+	USBPHY_INTERFACE_MODE_UTMIW,
+	USBPHY_INTERFACE_MODE_ULPI,
+	USBPHY_INTERFACE_MODE_SERIAL,
+	USBPHY_INTERFACE_MODE_HSIC,
+};
+
 enum usb_phy_events {
 	USB_EVENT_NONE,         /* no events or cable disconnected */
 	USB_EVENT_VBUS,         /* vbus valid event */
@@ -91,6 +100,9 @@ struct usb_phy {
 	int	(*init)(struct usb_phy *x);
 	void	(*shutdown)(struct usb_phy *x);
 
+	/* enable/disable VBUS */
+	int	(*set_vbus)(struct usb_phy *x, int on);
+
 	/* effective for B devices, ignored for A-peripheral */
 	int	(*set_power)(struct usb_phy *x,
 				unsigned mA);
@@ -160,8 +172,26 @@ usb_phy_shutdown(struct usb_phy *x)
 		x->shutdown(x);
 }
 
+static inline int
+usb_phy_vbus_on(struct usb_phy *x)
+{
+	if (!x->set_vbus)
+		return 0;
+
+	return x->set_vbus(x, true);
+}
+
+static inline int
+usb_phy_vbus_off(struct usb_phy *x)
+{
+	if (!x->set_vbus)
+		return 0;
+
+	return x->set_vbus(x, false);
+}
+
 /* for usb host and peripheral controller drivers */
-#ifdef CONFIG_USB_OTG_UTILS
+#if IS_ENABLED(CONFIG_USB_PHY)
 extern struct usb_phy *usb_get_phy(enum usb_phy_type type);
 extern struct usb_phy *devm_usb_get_phy(struct device *dev,
 	enum usb_phy_type type);
@@ -176,29 +206,29 @@ extern int usb_bind_phy(const char *dev_name, u8 index,
 #else
 static inline struct usb_phy *usb_get_phy(enum usb_phy_type type)
 {
-	return NULL;
+	return ERR_PTR(-ENXIO);
 }
 
 static inline struct usb_phy *devm_usb_get_phy(struct device *dev,
 	enum usb_phy_type type)
 {
-	return NULL;
+	return ERR_PTR(-ENXIO);
 }
 
 static inline struct usb_phy *usb_get_phy_dev(struct device *dev, u8 index)
 {
-	return NULL;
+	return ERR_PTR(-ENXIO);
 }
 
 static inline struct usb_phy *devm_usb_get_phy_dev(struct device *dev, u8 index)
 {
-	return NULL;
+	return ERR_PTR(-ENXIO);
 }
 
 static inline struct usb_phy *devm_usb_get_phy_by_phandle(struct device *dev,
 	const char *phandle, u8 index)
 {
-	return NULL;
+	return ERR_PTR(-ENXIO);
 }
 
 static inline void usb_put_phy(struct usb_phy *x)

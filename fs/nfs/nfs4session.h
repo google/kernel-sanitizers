@@ -25,6 +25,10 @@ struct nfs4_slot {
 };
 
 /* Sessions */
+enum nfs4_slot_tbl_state {
+	NFS4_SLOT_TBL_DRAINING,
+};
+
 #define SLOT_TABLE_SZ DIV_ROUND_UP(NFS4_MAX_SLOT_TABLE, 8*sizeof(long))
 struct nfs4_slot_table {
 	struct nfs4_session *session;		/* Parent session */
@@ -43,6 +47,7 @@ struct nfs4_slot_table {
 	unsigned long	generation;		/* Generation counter for
 						   target_highest_slotid */
 	struct completion complete;
+	unsigned long	slot_tbl_state;
 };
 
 /*
@@ -61,14 +66,10 @@ struct nfs4_session {
 	struct nfs4_channel_attrs	bc_attrs;
 	struct nfs4_slot_table		bc_slot_table;
 	struct nfs_client		*clp;
-	/* Create session arguments */
-	unsigned int			fc_target_max_rqst_sz;
-	unsigned int			fc_target_max_resp_sz;
 };
 
 enum nfs4_session_state {
 	NFS4_SESSION_INITING,
-	NFS4_SESSION_DRAINING,
 };
 
 #if defined(CONFIG_NFS_V4_1)
@@ -85,15 +86,14 @@ extern int nfs4_setup_session_slot_tables(struct nfs4_session *ses);
 
 extern struct nfs4_session *nfs4_alloc_session(struct nfs_client *clp);
 extern void nfs4_destroy_session(struct nfs4_session *session);
-extern int nfs4_init_session(struct nfs_server *server);
+extern int nfs4_init_session(struct nfs_client *clp);
 extern int nfs4_init_ds_session(struct nfs_client *, unsigned long);
 
-extern void nfs4_session_drain_complete(struct nfs4_session *session,
-		struct nfs4_slot_table *tbl);
+extern void nfs4_slot_tbl_drain_complete(struct nfs4_slot_table *tbl);
 
-static inline bool nfs4_session_draining(struct nfs4_session *session)
+static inline bool nfs4_slot_tbl_draining(struct nfs4_slot_table *tbl)
 {
-	return !!test_bit(NFS4_SESSION_DRAINING, &session->session_state);
+	return !!test_bit(NFS4_SLOT_TBL_DRAINING, &tbl->slot_tbl_state);
 }
 
 bool nfs41_wake_and_assign_slot(struct nfs4_slot_table *tbl,
@@ -119,7 +119,7 @@ static inline int nfs4_has_persistent_session(const struct nfs_client *clp)
 
 #else /* defined(CONFIG_NFS_V4_1) */
 
-static inline int nfs4_init_session(struct nfs_server *server)
+static inline int nfs4_init_session(struct nfs_client *clp)
 {
 	return 0;
 }

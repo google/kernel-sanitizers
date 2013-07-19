@@ -391,6 +391,12 @@ mwifiex_is_network_compatible(struct mwifiex_private *priv,
 		return 0;
 	}
 
+	if (bss_desc->chan_sw_ie_present) {
+		dev_err(adapter->dev,
+			"Don't connect to AP with WLAN_EID_CHANNEL_SWITCH\n");
+		return -1;
+	}
+
 	if (mwifiex_is_bss_wapi(priv, bss_desc)) {
 		dev_dbg(adapter->dev, "info: return success for WAPI AP\n");
 		return 0;
@@ -569,6 +575,9 @@ mwifiex_scan_channel_list(struct mwifiex_private *priv,
 		return -1;
 	}
 
+	/* Check csa channel expiry before preparing scan list */
+	mwifiex_11h_get_csa_closed_channel(priv);
+
 	chan_tlv_out->header.type = cpu_to_le16(TLV_TYPE_CHANLIST);
 
 	/* Set the temp channel struct pointer to the start of the desired
@@ -597,6 +606,11 @@ mwifiex_scan_channel_list(struct mwifiex_private *priv,
 		 */
 		while (tlv_idx < max_chan_per_scan &&
 		       tmp_chan_list->chan_number && !done_early) {
+
+			if (tmp_chan_list->chan_number == priv->csa_chan) {
+				tmp_chan_list++;
+				continue;
+			}
 
 			dev_dbg(priv->adapter->dev,
 				"info: Scan: Chan(%3d), Radio(%d),"
@@ -1169,6 +1183,19 @@ int mwifiex_update_bss_desc_with_ie(struct mwifiex_adapter *adapter,
 			bss_entry->erp_flags = *(current_ptr + 2);
 			break;
 
+		case WLAN_EID_PWR_CONSTRAINT:
+			bss_entry->local_constraint = *(current_ptr + 2);
+			bss_entry->sensed_11h = true;
+			break;
+
+		case WLAN_EID_CHANNEL_SWITCH:
+			bss_entry->chan_sw_ie_present = true;
+		case WLAN_EID_PWR_CAPABILITY:
+		case WLAN_EID_TPC_REPORT:
+		case WLAN_EID_QUIET:
+			bss_entry->sensed_11h = true;
+		    break;
+
 		case WLAN_EID_EXT_SUPP_RATES:
 			/*
 			 * Only process extended supported rate
@@ -1388,10 +1415,15 @@ int mwifiex_scan_networks(struct mwifiex_private *priv,
 			list_del(&cmd_node->list);
 			spin_unlock_irqrestore(&adapter->scan_pending_q_lock,
 					       flags);
-			adapter->cmd_queued = cmd_node;
 			mwifiex_insert_cmd_to_pending_q(adapter, cmd_node,
 							true);
 			queue_work(adapter->workqueue, &adapter->main_work);
+
+			/* Perform internal scan synchronously */
+			if (!priv->scan_request) {
+				dev_dbg(adapter->dev, "wait internal scan\n");
+				mwifiex_wait_queue_complete(adapter, cmd_node);
+			}
 		} else {
 			spin_unlock_irqrestore(&adapter->scan_pending_q_lock,
 					       flags);
@@ -1495,43 +1527,22 @@ static int mwifiex_update_curr_bss_params(struct mwifiex_private *priv,
 	if (ret)
 		goto done;
 
-	/* Update current bss descriptor parameters */
 	spin_lock_irqsave(&priv->curr_bcn_buf_lock, flags);
-	priv->curr_bss_params.bss_descriptor.bcn_wpa_ie = NULL;
-	priv->curr_bss_params.bss_descriptor.wpa_offset = 0;
-	priv->curr_bss_params.bss_descriptor.bcn_rsn_ie = NULL;
-	priv->curr_bss_params.bss_descriptor.rsn_offset = 0;
-	priv->curr_bss_params.bss_descriptor.bcn_wapi_ie = NULL;
-	priv->curr_bss_params.bss_descriptor.wapi_offset = 0;
-	priv->curr_bss_params.bss_descriptor.bcn_ht_cap = NULL;
-	priv->curr_bss_params.bss_descriptor.ht_cap_offset = 0;
-	priv->curr_bss_params.bss_descriptor.bcn_ht_oper = NULL;
-	priv->curr_bss_params.bss_descriptor.ht_info_offset = 0;
-	priv->curr_bss_params.bss_descriptor.bcn_bss_co_2040 = NULL;
-	priv->curr_bss_params.bss_descriptor.bss_co_2040_offset = 0;
-	priv->curr_bss_params.bss_descriptor.bcn_ext_cap = NULL;
-	priv->curr_bss_params.bss_descriptor.ext_cap_offset = 0;
-	priv->curr_bss_params.bss_descriptor.beacon_buf = NULL;
-	priv->curr_bss_params.bss_descriptor.beacon_buf_size = 0;
-	priv->curr_bss_params.bss_descriptor.bcn_vht_cap = NULL;
-	priv->curr_bss_params.bss_descriptor.vht_cap_offset = 0;
-	priv->curr_bss_params.bss_descriptor.bcn_vht_oper = NULL;
-	priv->curr_bss_params.bss_descriptor.vht_info_offset = 0;
-	priv->curr_bss_params.bss_descriptor.oper_mode = NULL;
-	priv->curr_bss_params.bss_descriptor.oper_mode_offset = 0;
-
-	/* Disable 11ac by default. Enable it only where there
-	 * exist VHT_CAP IE in AP beacon
-	 */
-	priv->curr_bss_params.bss_descriptor.disable_11ac = true;
-
 	/* Make a copy of current BSSID descriptor */
 	memcpy(&priv->curr_bss_params.bss_descriptor, bss_desc,
 	       sizeof(priv->curr_bss_params.bss_descriptor));
+
+	/* The contents of beacon_ie will be copied to its own buffer
+	 * in mwifiex_save_curr_bcn()
+	 */
 	mwifiex_save_curr_bcn(priv);
 	spin_unlock_irqrestore(&priv->curr_bcn_buf_lock, flags);
 
 done:
+	/* beacon_ie buffer was allocated in function
+	 * mwifiex_fill_new_bss_desc(). Free it now.
+	 */
+	kfree(bss_desc->beacon_buf);
 	kfree(bss_desc);
 	return 0;
 }
@@ -1590,6 +1601,9 @@ int mwifiex_ret_802_11_scan(struct mwifiex_private *priv,
 		ret = -1;
 		goto check_next_scan;
 	}
+
+	/* Check csa channel expiry before parsing scan response */
+	mwifiex_11h_get_csa_closed_channel(priv);
 
 	bytes_left = le16_to_cpu(scan_rsp->bss_descript_size);
 	dev_dbg(adapter->dev, "info: SCAN_RESP: bss_descript_size %d\n",
@@ -1743,6 +1757,13 @@ int mwifiex_ret_802_11_scan(struct mwifiex_private *priv,
 			struct ieee80211_channel *chan;
 			u8 band;
 
+			/* Skip entry if on csa closed channel */
+			if (channel == priv->csa_chan) {
+				dev_dbg(adapter->dev,
+					"Dropping entry on csa closed channel\n");
+				continue;
+			}
+
 			band = BAND_G;
 			if (chan_band_tlv) {
 				chan_band =
@@ -1790,27 +1811,27 @@ check_next_scan:
 		/* Need to indicate IOCTL complete */
 		if (adapter->curr_cmd->wait_q_enabled) {
 			adapter->cmd_wait_q.status = 0;
-			mwifiex_complete_cmd(adapter, adapter->curr_cmd);
+			if (!priv->scan_request) {
+				dev_dbg(adapter->dev,
+					"complete internal scan\n");
+				mwifiex_complete_cmd(adapter,
+						     adapter->curr_cmd);
+			}
 		}
 		if (priv->report_scan_result)
 			priv->report_scan_result = false;
 
-		if (priv->user_scan_cfg) {
-			if (priv->scan_request) {
-				dev_dbg(priv->adapter->dev,
-					"info: notifying scan done\n");
-				cfg80211_scan_done(priv->scan_request, 0);
-				priv->scan_request = NULL;
-			} else {
-				dev_dbg(priv->adapter->dev,
-					"info: scan already aborted\n");
-			}
-
-			kfree(priv->user_scan_cfg);
-			priv->user_scan_cfg = NULL;
+		if (priv->scan_request) {
+			dev_dbg(adapter->dev, "info: notifying scan done\n");
+			cfg80211_scan_done(priv->scan_request, 0);
+			priv->scan_request = NULL;
+		} else {
+			priv->scan_aborting = false;
+			dev_dbg(adapter->dev, "info: scan already aborted\n");
 		}
 	} else {
-		if (priv->user_scan_cfg && !priv->scan_request) {
+		if ((priv->scan_aborting && !priv->scan_request) ||
+		    priv->scan_block) {
 			spin_unlock_irqrestore(&adapter->scan_pending_q_lock,
 					       flags);
 			adapter->scan_delay_cnt = MWIFIEX_MAX_SCAN_DELAY_CNT;
@@ -1945,9 +1966,6 @@ int mwifiex_request_scan(struct mwifiex_private *priv,
 	else
 		/* Normal scan */
 		ret = mwifiex_scan_networks(priv, NULL);
-
-	if (!ret)
-		ret = mwifiex_wait_queue_complete(priv->adapter);
 
 	up(&priv->async_sem);
 

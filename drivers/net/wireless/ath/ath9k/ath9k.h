@@ -234,6 +234,7 @@ struct ath_buf {
 	dma_addr_t bf_daddr;		/* physical addr of desc */
 	dma_addr_t bf_buf_addr;	/* physical addr of data buffer, for DMA */
 	bool bf_stale;
+	struct ieee80211_tx_rate rates[4];
 	struct ath_buf_state bf_state;
 };
 
@@ -250,9 +251,9 @@ struct ath_atx_tid {
 	int tidno;
 	int baw_head;   /* first un-acked tx buffer */
 	int baw_tail;   /* next unused tx buffer slot */
-	int sched;
-	int paused;
-	u8 state;
+	bool sched;
+	bool paused;
+	bool active;
 };
 
 struct ath_node {
@@ -272,10 +273,6 @@ struct ath_node {
 	struct dentry *node_stat;
 #endif
 };
-
-#define AGGR_CLEANUP         BIT(1)
-#define AGGR_ADDBA_COMPLETE  BIT(2)
-#define AGGR_ADDBA_PROGRESS  BIT(3)
 
 struct ath_tx_control {
 	struct ath_txq *txq;
@@ -299,6 +296,7 @@ struct ath_tx {
 	struct ath_txq txq[ATH9K_NUM_TX_QUEUES];
 	struct ath_descdma txdma;
 	struct ath_txq *txq_map[IEEE80211_NUM_ACS];
+	struct ath_txq *uapsdq;
 	u32 txq_max_pending[IEEE80211_NUM_ACS];
 	u16 max_aggr_framelen[IEEE80211_NUM_ACS][4][32];
 };
@@ -311,6 +309,7 @@ struct ath_rx_edma {
 struct ath_rx {
 	u8 defant;
 	u8 rxotherant;
+	bool discard_next;
 	u32 *rxlink;
 	u32 num_pkts;
 	unsigned int rxfilter;
@@ -345,6 +344,8 @@ int ath_txq_update(struct ath_softc *sc, int qnum,
 void ath_update_max_aggr_framelen(struct ath_softc *sc, int queue, int txop);
 int ath_tx_start(struct ieee80211_hw *hw, struct sk_buff *skb,
 		 struct ath_tx_control *txctl);
+void ath_tx_cabq(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
+		 struct sk_buff *skb);
 void ath_tx_tasklet(struct ath_softc *sc);
 void ath_tx_edma_tasklet(struct ath_softc *sc);
 int ath_tx_aggr_start(struct ath_softc *sc, struct ieee80211_sta *sta,
@@ -355,6 +356,11 @@ void ath_tx_aggr_resume(struct ath_softc *sc, struct ieee80211_sta *sta, u16 tid
 void ath_tx_aggr_wakeup(struct ath_softc *sc, struct ath_node *an);
 void ath_tx_aggr_sleep(struct ieee80211_sta *sta, struct ath_softc *sc,
 		       struct ath_node *an);
+void ath9k_release_buffered_frames(struct ieee80211_hw *hw,
+				   struct ieee80211_sta *sta,
+				   u16 tids, int nframes,
+				   enum ieee80211_frame_release_type reason,
+				   bool more_data);
 
 /********/
 /* VIFs */
@@ -625,6 +631,11 @@ void ath_ant_comb_update(struct ath_softc *sc);
 /* Main driver core */
 /********************/
 
+#define ATH9K_PCI_CUS198 0x0001
+#define ATH9K_PCI_CUS230 0x0002
+#define ATH9K_PCI_CUS217 0x0004
+#define ATH9K_PCI_WOW    0x0008
+
 /*
  * Default cache line size, in bytes.
  * Used when PCI device not fully initialized by bootrom/BIOS
@@ -644,6 +655,7 @@ enum sc_op_flags {
 	SC_OP_ANI_RUN,
 	SC_OP_PRIM_STA_VIF,
 	SC_OP_HW_RESET,
+	SC_OP_SCANNING,
 };
 
 /* Powersave flags */
@@ -657,11 +669,10 @@ enum sc_op_flags {
 struct ath_rate_table;
 
 struct ath9k_vif_iter_data {
-	const u8 *hw_macaddr; /* phy's hardware address, set
-			       * before starting iteration for
-			       * valid bssid mask.
-			       */
+	u8 hw_macaddr[ETH_ALEN]; /* address of the first vif */
 	u8 mask[ETH_ALEN]; /* bssid mask */
+	bool has_hw_macaddr;
+
 	int naps;      /* number of AP vifs */
 	int nmeshes;   /* number of mesh vifs */
 	int nstations; /* number of station vifs */
@@ -709,6 +720,7 @@ struct ath_softc {
 
 	unsigned int hw_busy_count;
 	unsigned long sc_flags;
+	unsigned long driver_data;
 
 	u32 intrstatus;
 	u16 ps_flags; /* PS_* */
@@ -758,7 +770,6 @@ struct ath_softc {
 	struct rchan *rfs_chan_spec_scan;
 	enum spectral_mode spectral_mode;
 	struct ath_spec_scan spec_config;
-	int scanning;
 
 #ifdef CONFIG_PM_SLEEP
 	atomic_t wow_got_bmiss_intr;

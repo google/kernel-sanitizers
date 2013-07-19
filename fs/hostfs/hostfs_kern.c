@@ -7,6 +7,7 @@
  */
 
 #include <linux/fs.h>
+#include <linux/magic.h>
 #include <linux/module.h>
 #include <linux/mm.h>
 #include <linux/pagemap.h>
@@ -44,8 +45,6 @@ static const struct dentry_operations hostfs_dentry_ops = {
 /* Changed in hostfs_args before the kernel starts running */
 static char *root_ino = "";
 static int append = 0;
-
-#define HOSTFS_SUPER_MAGIC 0x00c0ffee
 
 static const struct inode_operations hostfs_iops;
 static const struct inode_operations hostfs_dir_iops;
@@ -121,7 +120,7 @@ static char *dentry_name(struct dentry *dentry)
 	if (!name)
 		return NULL;
 
-	return __dentry_name(dentry, name); /* will unlock */
+	return __dentry_name(dentry, name);
 }
 
 static char *inode_name(struct inode *ino)
@@ -229,10 +228,11 @@ static struct inode *hostfs_alloc_inode(struct super_block *sb)
 {
 	struct hostfs_inode_info *hi;
 
-	hi = kzalloc(sizeof(*hi), GFP_KERNEL);
+	hi = kmalloc(sizeof(*hi), GFP_KERNEL);
 	if (hi == NULL)
 		return NULL;
 	hi->fd = -1;
+	hi->mode = 0;
 	inode_init_once(&hi->vfs_inode);
 	return &hi->vfs_inode;
 }
@@ -277,7 +277,7 @@ static const struct super_operations hostfs_sbops = {
 	.show_options	= hostfs_show_options,
 };
 
-int hostfs_readdir(struct file *file, void *ent, filldir_t filldir)
+int hostfs_readdir(struct file *file, struct dir_context *ctx)
 {
 	void *dir;
 	char *name;
@@ -292,12 +292,11 @@ int hostfs_readdir(struct file *file, void *ent, filldir_t filldir)
 	__putname(name);
 	if (dir == NULL)
 		return -error;
-	next = file->f_pos;
+	next = ctx->pos;
 	while ((name = read_dir(dir, &next, &ino, &len, &type)) != NULL) {
-		error = (*filldir)(ent, name, len, file->f_pos,
-				   ino, type);
-		if (error) break;
-		file->f_pos = next;
+		if (!dir_emit(ctx, name, len, ino, type))
+			break;
+		ctx->pos = next;
 	}
 	close_dir(dir);
 	return 0;
@@ -393,7 +392,7 @@ static const struct file_operations hostfs_file_fops = {
 
 static const struct file_operations hostfs_dir_fops = {
 	.llseek		= generic_file_llseek,
-	.readdir	= hostfs_readdir,
+	.iterate	= hostfs_readdir,
 	.read		= generic_read_dir,
 };
 
@@ -845,15 +844,8 @@ int hostfs_setattr(struct dentry *dentry, struct iattr *attr)
 		return err;
 
 	if ((attr->ia_valid & ATTR_SIZE) &&
-	    attr->ia_size != i_size_read(inode)) {
-		int error;
-
-		error = inode_newsize_ok(inode, attr->ia_size);
-		if (error)
-			return error;
-
+	    attr->ia_size != i_size_read(inode))
 		truncate_setsize(inode, attr->ia_size);
-	}
 
 	setattr_copy(inode, attr);
 	mark_inode_dirty(inode);
@@ -993,6 +985,7 @@ static struct file_system_type hostfs_type = {
 	.kill_sb	= hostfs_kill_sb,
 	.fs_flags 	= 0,
 };
+MODULE_ALIAS_FS("hostfs");
 
 static int __init init_hostfs(void)
 {

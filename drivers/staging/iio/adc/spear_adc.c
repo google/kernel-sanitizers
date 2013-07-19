@@ -180,8 +180,8 @@ static int spear_read_raw(struct iio_dev *indio_dev,
 #define SPEAR_ADC_CHAN(idx) {				\
 	.type = IIO_VOLTAGE,				\
 	.indexed = 1,					\
-	.info_mask = IIO_CHAN_INFO_RAW_SEPARATE_BIT |	\
-	IIO_CHAN_INFO_SCALE_SHARED_BIT,			\
+	.info_mask_separate = BIT(IIO_CHAN_INFO_RAW),	\
+	.info_mask_shared_by_type = BIT(IIO_CHAN_INFO_SCALE),	\
 	.channel = idx,					\
 	.scan_type = {					\
 		.sign = 'u',				\
@@ -407,7 +407,6 @@ static int spear_adc_remove(struct platform_device *pdev)
 	struct spear_adc_info *info = iio_priv(iodev);
 
 	iio_device_unregister(iodev);
-	platform_set_drvdata(pdev, NULL);
 	clk_disable_unprepare(info->clk);
 	clk_put(info->clk);
 	iounmap(info->adc_base_spear6xx);
@@ -416,11 +415,13 @@ static int spear_adc_remove(struct platform_device *pdev)
 	return 0;
 }
 
+#ifdef CONFIG_OF
 static const struct of_device_id spear_adc_dt_ids[] = {
 	{ .compatible = "st,spear600-adc", },
 	{ /* sentinel */ }
 };
 MODULE_DEVICE_TABLE(of, spear_adc_dt_ids);
+#endif
 
 static struct platform_driver spear_adc_driver = {
 	.probe		= spear_adc_probe,

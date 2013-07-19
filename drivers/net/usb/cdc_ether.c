@@ -215,6 +215,10 @@ int usbnet_generic_cdc_bind(struct usbnet *dev, struct usb_interface *intf)
 					goto bad_desc;
 			}
 
+			/* some devices merge these - skip class check */
+			if (info->control == info->data)
+				goto next_desc;
+
 			/* a data interface altsetting does the real i/o */
 			d = &info->data->cur_altsetting->desc;
 			if (d->bInterfaceClass != USB_CLASS_CDC_DATA) {
@@ -304,19 +308,23 @@ next_desc:
 	/* claim data interface and set it up ... with side effects.
 	 * network traffic can't flow until an altsetting is enabled.
 	 */
-	status = usb_driver_claim_interface(driver, info->data, dev);
-	if (status < 0)
-		return status;
+	if (info->data != info->control) {
+		status = usb_driver_claim_interface(driver, info->data, dev);
+		if (status < 0)
+			return status;
+	}
 	status = usbnet_get_endpoints(dev, info->data);
 	if (status < 0) {
 		/* ensure immediate exit from usbnet_disconnect */
 		usb_set_intfdata(info->data, NULL);
-		usb_driver_release_interface(driver, info->data);
+		if (info->data != info->control)
+			usb_driver_release_interface(driver, info->data);
 		return status;
 	}
 
 	/* status endpoint: optional for CDC Ethernet, not RNDIS (or ACM) */
-	dev->status = NULL;
+	if (info->data != info->control)
+		dev->status = NULL;
 	if (info->control->cur_altsetting->desc.bNumEndpoints == 1) {
 		struct usb_endpoint_descriptor	*desc;
 
@@ -348,6 +356,10 @@ void usbnet_cdc_unbind(struct usbnet *dev, struct usb_interface *intf)
 {
 	struct cdc_state		*info = (void *) &dev->data;
 	struct usb_driver		*driver = driver_of(intf);
+
+	/* combined interface - nothing  to do */
+	if (info->data == info->control)
+		return;
 
 	/* disconnect master --> disconnect slave */
 	if (intf == info->control && info->data) {
@@ -406,10 +418,7 @@ void usbnet_cdc_status(struct usbnet *dev, struct urb *urb)
 	case USB_CDC_NOTIFY_NETWORK_CONNECTION:
 		netif_dbg(dev, timer, dev->net, "CDC: carrier %s\n",
 			  event->wValue ? "on" : "off");
-		if (event->wValue)
-			netif_carrier_on(dev->net);
-		else
-			netif_carrier_off(dev->net);
+		usbnet_link_change(dev, !!event->wValue, 0);
 		break;
 	case USB_CDC_NOTIFY_SPEED_CHANGE:	/* tx/rx rates */
 		netif_dbg(dev, timer, dev->net, "CDC: speed change (len %d)\n",
@@ -482,6 +491,7 @@ static const struct driver_info wwan_info = {
 #define NOVATEL_VENDOR_ID	0x1410
 #define ZTE_VENDOR_ID		0x19D2
 #define DELL_VENDOR_ID		0x413C
+#define REALTEK_VENDOR_ID	0x0bda
 
 static const struct usb_device_id	products [] = {
 /*
@@ -615,9 +625,36 @@ static const struct usb_device_id	products [] = {
 	.driver_info = 0,
 },
 
+/* Dell Wireless 5804 (Novatel E371) - handled by qmi_wwan */
+{
+	USB_DEVICE_AND_INTERFACE_INFO(DELL_VENDOR_ID, 0x819b, USB_CLASS_COMM,
+			USB_CDC_SUBCLASS_ETHERNET, USB_CDC_PROTO_NONE),
+	.driver_info = 0,
+},
+
 /* AnyDATA ADU960S - handled by qmi_wwan */
 {
 	USB_DEVICE_AND_INTERFACE_INFO(0x16d5, 0x650a, USB_CLASS_COMM,
+			USB_CDC_SUBCLASS_ETHERNET, USB_CDC_PROTO_NONE),
+	.driver_info = 0,
+},
+
+/* Huawei E1820 - handled by qmi_wwan */
+{
+	USB_DEVICE_INTERFACE_NUMBER(HUAWEI_VENDOR_ID, 0x14ac, 1),
+	.driver_info = 0,
+},
+
+/* Realtek RTL8152 Based USB 2.0 Ethernet Adapters */
+{
+	USB_DEVICE_AND_INTERFACE_INFO(REALTEK_VENDOR_ID, 0x8152, USB_CLASS_COMM,
+			USB_CDC_SUBCLASS_ETHERNET, USB_CDC_PROTO_NONE),
+	.driver_info = 0,
+},
+
+/* Realtek RTL8153 Based USB 3.0 Ethernet Adapters */
+{
+	USB_DEVICE_AND_INTERFACE_INFO(REALTEK_VENDOR_ID, 0x8153, USB_CLASS_COMM,
 			USB_CDC_SUBCLASS_ETHERNET, USB_CDC_PROTO_NONE),
 	.driver_info = 0,
 },
