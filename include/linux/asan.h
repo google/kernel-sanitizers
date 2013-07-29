@@ -11,7 +11,7 @@
 #define SHADOW_OFFSET 0x36600000
 #define SHADOW_GRANULARITY (1 << SHADOW_SCALE)
 
-#define ASAN_REDZONE_SIZE 32
+#define ASAN_REDZONE_SIZE 64
 
 extern int asan_enabled;
 

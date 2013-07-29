@@ -70,7 +70,7 @@ static void print_shadow_for_address(unsigned long addr)
 
 #include <asm/stacktrace.h>
 
-static void print_call_trace(void)
+void asan_print_call_trace(void)
 {
 	show_stack_log_lvl(NULL, NULL, NULL, 0, KERN_ERR);
 }
@@ -85,7 +85,7 @@ void asan_report_error(unsigned long poisoned_addr)
 
 	printk(KERN_ERR "====================================================================\n");
 	printk(KERN_ERR "Error: address %lx is poisoned!\n", poisoned_addr);
-	print_call_trace();
+	asan_print_call_trace();
 	print_shadow_for_address(poisoned_addr);
 	print_shadow_legend();
 	printk(KERN_ERR "====================================================================\n");

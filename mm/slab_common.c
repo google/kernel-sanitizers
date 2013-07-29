@@ -195,7 +195,7 @@ kmem_cache_create_memcg(struct mem_cgroup *memcg, const char *name, size_t size,
 		s->object_size = s->size = size;
 		s->align = calculate_alignment(flags, align, size);
 		s->ctor = ctor;
-		s->asan_right_redzone = 0;
+		s->asan_redzones = 0;
 
 		if (memcg_register_cache(memcg, s, parent_cache)) {
 			kmem_cache_free(kmem_cache, s);
@@ -299,7 +299,7 @@ void __init create_boot_cache(struct kmem_cache *s, const char *name, size_t siz
 	s->name = name;
 	s->size = s->object_size = size;
 	s->align = calculate_alignment(flags, ARCH_KMALLOC_MINALIGN, size);
-	s->asan_right_redzone = 0;
+	s->asan_redzones = 0;
 	err = __kmem_cache_create(s, flags);
 
 	if (err)

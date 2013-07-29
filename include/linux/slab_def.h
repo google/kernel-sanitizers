@@ -83,7 +83,7 @@ struct kmem_cache {
 	struct memcg_cache_params *memcg_params;
 #endif
 
-	int asan_right_redzone;
+	int asan_redzones;
 
 /* 6) per-cpu/per-node data, touched during every alloc/free */
 	/*

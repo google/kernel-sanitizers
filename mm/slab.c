@@ -2285,11 +2285,12 @@ __kmem_cache_create (struct kmem_cache *cachep, unsigned long flags)
 
 	setup_node_pointer(cachep);
 
-	if (size < 4096 || fls(size - 1) == fls(size - 1 + ASAN_REDZONE_SIZE)) {
+	/* FIXME: no redzones in 4MB cache. */
+	if (size < 4 * 1024 * 1024) {
 		size += ASAN_REDZONE_SIZE;
-		cachep->asan_right_redzone = 1;
+		cachep->asan_redzones = 1;
 	} else {
-		printk(KERN_ERR "Warning: unable to add right redzone "
+		printk(KERN_ERR "Warning: unable to add redzones "
 			"for cache with size: %lu.\n", size);
 	}
 
@@ -3416,11 +3417,10 @@ slab_alloc_node(struct kmem_cache *cachep, gfp_t flags, int nodeid,
 
 	if (likely(ptr)) {
 		kmemcheck_slab_alloc(cachep, flags, ptr, cachep->object_size);
-		if (cachep->asan_right_redzone)
+		if (cachep->asan_redzones)
 			asan_poison_shadow(ptr + cachep->object_size,
 				ASAN_REDZONE_SIZE, ASAN_HEAP_REDZONE);
 		asan_unpoison_shadow(ptr, cachep->object_size);
-		//ptr += ASAN_REDZONE_SIZE;
 	}
 
 	if (unlikely((flags & __GFP_ZERO) && ptr))
@@ -3487,11 +3487,10 @@ slab_alloc(struct kmem_cache *cachep, gfp_t flags, unsigned long caller)
 
 	if (likely(objp)) {
 		kmemcheck_slab_alloc(cachep, flags, objp, cachep->object_size);
-		if (cachep->asan_right_redzone)
+		if (cachep->asan_redzones)
 			asan_poison_shadow(objp + cachep->object_size,
 				ASAN_REDZONE_SIZE, ASAN_HEAP_REDZONE);
 		asan_unpoison_shadow(objp, cachep->object_size);
-		//objp += ASAN_REDZONE_SIZE;
 	}
 
 	if (unlikely((flags & __GFP_ZERO) && objp))
@@ -3616,7 +3615,6 @@ static inline void __cache_free(struct kmem_cache *cachep, void *objp,
 
 	kmemcheck_slab_free(cachep, objp, cachep->object_size);
 	if (!(cachep->flags & SLAB_DESTROY_BY_RCU)) {
-		//objp -= ASAN_REDZONE_SIZE;
 		asan_poison_shadow(objp, cachep->object_size, ASAN_HEAP_FREE);
 	}
 
