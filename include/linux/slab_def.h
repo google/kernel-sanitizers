@@ -83,6 +83,8 @@ struct kmem_cache {
 	struct memcg_cache_params *memcg_params;
 #endif
 
+	int asan_right_redzone;
+
 /* 6) per-cpu/per-node data, touched during every alloc/free */
 	/*
 	 * We put array[] at the end of kmem_cache, because we want to size

@@ -24,6 +24,7 @@ def should_exclude(filename):
     return True
 
   if filename.startswith('mm/slab'):
+    # slab_common.c slab.c
     return True
   return False
 

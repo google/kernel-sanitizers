@@ -2,6 +2,7 @@
 
 #include <linux/kernel.h>
 #include <linux/printk.h>
+#include <linux/string.h>
 #include <linux/types.h>
 
 #include <linux/asan.h>
@@ -42,7 +43,7 @@ static void print_shadow_bytes(u8 *shadow, u8 *guilty, char *output)
 	for (i = 0; i < SHADOW_BYTES_PER_ROW; i++) {
 		current = shadow + i;
 		before = (current == guilty) ? "[" :
-			(current - 1 == guilty) ? "" : " ";
+			(i != 0 && current - 1 == guilty) ? "" : " ";
 		after = (current == guilty) ? "]" : "";
 		output += print_shadow_byte(before, *current, after, output);
 	}
@@ -69,7 +70,7 @@ static void print_shadow_for_address(unsigned long addr)
 
 #include <asm/stacktrace.h>
 
-static void print_stack_trace(void)
+static void print_call_trace(void)
 {
 	show_stack_log_lvl(NULL, NULL, NULL, 0, KERN_ERR);
 }
@@ -84,7 +85,7 @@ void asan_report_error(unsigned long poisoned_addr)
 
 	printk(KERN_ERR "====================================================================\n");
 	printk(KERN_ERR "Error: address %lx is poisoned!\n", poisoned_addr);
-	print_stack_trace();
+	print_call_trace();
 	print_shadow_for_address(poisoned_addr);
 	print_shadow_legend();
 	printk(KERN_ERR "====================================================================\n");

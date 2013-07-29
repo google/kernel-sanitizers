@@ -32,7 +32,7 @@ static __always_inline void *__inline_memcpy(void *to, const void *from, size_t 
    function. */
 
 #define __HAVE_ARCH_MEMCPY 1
-#if 0 /* #ifndef CONFIG_KMEMCHECK */
+#ifndef CONFIG_KMEMCHECK /* #if 0 */
 #if (__GNUC__ == 4 && __GNUC_MINOR__ >= 3) || __GNUC__ > 4
 extern void *memcpy(void *to, const void *from, size_t len);
 #else

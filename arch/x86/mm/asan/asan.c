@@ -246,15 +246,7 @@ static void run_tests(void)
 void asan_on_kernel_init(void)
 {
 	run_tests();
-
-	/*void *ptr = kmalloc(10, GFP_KERNEL);
-	printk(KERN_ERR "kmalloc: %lx\n", (uptr)ptr);
-	kfree(ptr);
-	char tmp;
-	memcpy(ptr, &tmp, 1);*/
 	do_use_after_free();
-
-	//asan_enabled = 0;
 }
 
 void asan_on_memcpy(const void *to, const void *from, uptr n)
