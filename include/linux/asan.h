@@ -1,6 +1,10 @@
 #ifndef LINUX_ASAN_H
 #define LINUX_ASAN_H
 
+/* FIXME: no redzones in 4MB cache. */
+/* TODO: use likely/unlikely. */
+/* FIXME: optimize asan_kmalloc and asan_krealloc. */
+
 /* FIXME: use include insted of forward declaration. */
 struct kmem_cache;
 /* #include <linux/slab.h> */
@@ -34,8 +38,12 @@ void asan_check_region(const void *addr, unsigned long size);
  */
 void asan_slab_create(const struct kmem_cache *cache, const void *slab);
 void asan_slab_destroy(const struct kmem_cache *cache, const void *slab);
-void asan_slab_alloc(const struct kmem_cache *cache, const void *ptr);
-void asan_slab_free(const struct kmem_cache *cache, const void *ptr);
+void asan_slab_alloc(const struct kmem_cache *cache, const void *object);
+void asan_slab_free(const struct kmem_cache *cache, const void *object);
+
+void asan_kmalloc(const struct kmem_cache *cache, const void *object,
+		  unsigned long size);
+void asan_krealloc(const void *object, unsigned long new_size);
 
 void asan_on_kernel_init(void);
 

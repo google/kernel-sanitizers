@@ -9,6 +9,8 @@
 #include <linux/swapops.h>
 #include <asm/uaccess.h>
 
+#include <linux/asan.h>
+
 #include "internal.h"
 
 #define CREATE_TRACE_POINTS
@@ -116,8 +118,10 @@ static __always_inline void *__do_krealloc(const void *p, size_t new_size,
 	if (p)
 		ks = ksize(p);
 
-	if (ks >= new_size)
+	if (ks >= new_size) {
+		asan_krealloc(p, new_size);
 		return (void *)p;
+	}
 
 	ret = kmalloc_track_caller(new_size, flags);
 	if (ret && p)

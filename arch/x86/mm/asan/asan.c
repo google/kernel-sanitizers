@@ -44,9 +44,10 @@ void asan_check_region(const void *addr, unsigned long size)
 
 void asan_slab_create(const struct kmem_cache *cache, const void *slab)
 {
-	if (!(cache->flags & SLAB_DESTROY_BY_RCU))
-		asan_poison_shadow(slab, (1 << cache->gfporder) << PAGE_SHIFT,
-				   ASAN_HEAP_FREE);
+	if (cache->flags & SLAB_DESTROY_BY_RCU)
+		return;
+	asan_poison_shadow(slab, (1 << cache->gfporder) << PAGE_SHIFT,
+			   ASAN_HEAP_REDZONE);
 }
 
 void asan_slab_destroy(const struct kmem_cache *cache, const void *slab)
@@ -56,18 +57,55 @@ void asan_slab_destroy(const struct kmem_cache *cache, const void *slab)
 
 void asan_slab_alloc(const struct kmem_cache *cache, const void *object)
 {
-	if (cache->asan_redzones)
-		asan_poison_shadow(object + cache->object_size,
-				   ASAN_REDZONE_SIZE, ASAN_HEAP_REDZONE);
-	asan_unpoison_shadow(object, cache->object_size);
+	unsigned long addr = (unsigned long)object;
+	unsigned long size = cache->object_size;
+	unsigned long rounded_size = round_down_to(size, SHADOW_GRANULARITY);
+	u8* shadow;
+
+	asan_unpoison_shadow(object, rounded_size);
+	if (rounded_size != size) {
+		shadow = (u8 *)mem_to_shadow(addr + rounded_size);
+		*shadow = size & (SHADOW_GRANULARITY - 1);
+	}
 }
 
 void asan_slab_free(const struct kmem_cache *cache, const void *object)
 {
-	if (!(cache->flags & SLAB_DESTROY_BY_RCU))
-		asan_poison_shadow(object, cache->object_size, ASAN_HEAP_FREE);
+	unsigned long size;
+	if (cache->flags & SLAB_DESTROY_BY_RCU)
+		return;
+	size = round_up_to(cache->object_size, SHADOW_GRANULARITY);
+	asan_poison_shadow(object, size, ASAN_HEAP_FREE);
 }
 
+/* FIXME: optimize. */
+void asan_kmalloc(const struct kmem_cache *cache, const void *object,
+		  unsigned long size)
+{
+	unsigned long addr = (unsigned long)object;
+	unsigned long object_size = cache->object_size;
+	unsigned long rounded_up_object_size = round_up_to(object_size, SHADOW_GRANULARITY);
+	unsigned long rounded_down_size = round_down_to(size, SHADOW_GRANULARITY);
+	u8* shadow;
+
+	asan_poison_shadow(object, rounded_up_object_size, ASAN_HEAP_REDZONE);
+	asan_unpoison_shadow(object, rounded_down_size);
+	if (rounded_down_size != size) {
+		shadow = (u8 *)mem_to_shadow(addr + rounded_down_size);
+		*shadow = size & (SHADOW_GRANULARITY - 1);
+	}
+}
+
+#include <linux/mm.h>
+
+/* FIXME: optimize. */
+void asan_krealloc(const void *object, unsigned long new_size)
+{
+	struct page *page = virt_to_head_page(object);
+	struct kmem_cache *cache = page->slab_cache;
+	asan_kmalloc(cache, object, new_size);
+}
+/*
 static void run_tests(void)
 {
 	unsigned long i;
@@ -121,10 +159,10 @@ static void run_tests(void)
 
 	pr_err("Passed all the tests.\n");
 }
-
+*/
 void asan_on_kernel_init(void)
 {
-	run_tests();
+	// run_tests();
 	do_use_after_free();
 	do_access_redzone();
 }

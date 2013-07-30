@@ -3748,7 +3748,7 @@ static __always_inline void *__do_kmalloc(size_t size, gfp_t flags,
 		return cachep;
 	ret = slab_alloc(cachep, flags, caller);
 
-	/* TODO: ASAN */
+	asan_kmalloc(cachep, ret, size);
 
 	trace_kmalloc(caller, ret,
 		      size, cachep->size, flags);
