@@ -1,1 +1,1 @@
-obj-y := asan.o rtl.o error.o report.o
+obj-y := asan.o error.o mapping.o poisoning.o report.o rtl.o

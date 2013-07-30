@@ -1798,7 +1798,7 @@ static void kmem_freepages(struct kmem_cache *cachep, void *addr)
 	const unsigned long nr_freed = i;
 
 	kmemcheck_free_shadow(page, cachep->gfporder);
-	asan_unpoison_shadow(addr, (1 << cachep->gfporder) << PAGE_SHIFT);
+	asan_slab_destroy(cachep, addr);
 
 	if (cachep->flags & SLAB_RECLAIM_ACCOUNT)
 		sub_zone_page_state(page_zone(page),
@@ -2290,8 +2290,8 @@ __kmem_cache_create (struct kmem_cache *cachep, unsigned long flags)
 		size += ASAN_REDZONE_SIZE;
 		cachep->asan_redzones = 1;
 	} else {
-		printk(KERN_ERR "Warning: unable to add redzones "
-			"for cache with size: %lu.\n", size);
+		pr_err("Warning: unable to add redzones for cache with size: %lu.\n",
+		       size);
 	}
 
 #if DEBUG
@@ -2827,9 +2827,7 @@ static int cache_grow(struct kmem_cache *cachep,
 
 	cache_init_objs(cachep, slabp);
 
-	if (!(cachep->flags & SLAB_DESTROY_BY_RCU))
-		asan_poison_shadow(objp, (1 << cachep->gfporder) << PAGE_SHIFT,
-				   ASAN_HEAP_FREE);
+	asan_slab_create(cachep, objp);
 
 	if (local_flags & __GFP_WAIT)
 		local_irq_disable();
@@ -3417,10 +3415,7 @@ slab_alloc_node(struct kmem_cache *cachep, gfp_t flags, int nodeid,
 
 	if (likely(ptr)) {
 		kmemcheck_slab_alloc(cachep, flags, ptr, cachep->object_size);
-		if (cachep->asan_redzones)
-			asan_poison_shadow(ptr + cachep->object_size,
-				ASAN_REDZONE_SIZE, ASAN_HEAP_REDZONE);
-		asan_unpoison_shadow(ptr, cachep->object_size);
+		asan_slab_alloc(cachep, ptr);
 	}
 
 	if (unlikely((flags & __GFP_ZERO) && ptr))
@@ -3487,10 +3482,7 @@ slab_alloc(struct kmem_cache *cachep, gfp_t flags, unsigned long caller)
 
 	if (likely(objp)) {
 		kmemcheck_slab_alloc(cachep, flags, objp, cachep->object_size);
-		if (cachep->asan_redzones)
-			asan_poison_shadow(objp + cachep->object_size,
-				ASAN_REDZONE_SIZE, ASAN_HEAP_REDZONE);
-		asan_unpoison_shadow(objp, cachep->object_size);
+		asan_slab_alloc(cachep, objp);
 	}
 
 	if (unlikely((flags & __GFP_ZERO) && objp))
@@ -3614,9 +3606,7 @@ static inline void __cache_free(struct kmem_cache *cachep, void *objp,
 	objp = cache_free_debugcheck(cachep, objp, caller);
 
 	kmemcheck_slab_free(cachep, objp, cachep->object_size);
-	if (!(cachep->flags & SLAB_DESTROY_BY_RCU)) {
-		asan_poison_shadow(objp, cachep->object_size, ASAN_HEAP_FREE);
-	}
+	asan_slab_free(cachep, objp);
 
 	/*
 	 * Skip calling cache_free_alien() when the platform is not numa.
@@ -3757,6 +3747,8 @@ static __always_inline void *__do_kmalloc(size_t size, gfp_t flags,
 	if (unlikely(ZERO_OR_NULL_PTR(cachep)))
 		return cachep;
 	ret = slab_alloc(cachep, flags, caller);
+
+	/* TODO: ASAN */
 
 	trace_kmalloc(caller, ret,
 		      size, cachep->size, flags);

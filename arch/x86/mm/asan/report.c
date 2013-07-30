@@ -16,15 +16,14 @@ static void print_shadow_legend(void)
 	int i;
 	char buffer[64];
 
-	printk(KERN_ERR "Shadow byte legend (one shadow byte represents %d "
-		"application bytes):\n", (int)SHADOW_GRANULARITY);
-	printk(KERN_ERR "  Addressable:           %02x\n", 0);
+	pr_err("Shadow byte legend (one shadow byte represents %d application bytes):\n",
+	      (int)SHADOW_GRANULARITY);
+	pr_err("  Addressable:           %02x\n", 0);
 	for (i = 1; i < SHADOW_GRANULARITY; i++)
 		sprintf(buffer + (i - 1) * 3, "%02x ", i);
-	printk(KERN_ERR "  Partially addressable: %s\n", buffer);
-	printk(KERN_ERR "  Heap redzone:          %02x\n", ASAN_HEAP_REDZONE);
-	printk(KERN_ERR "  Freed heap region:     %02x\n", ASAN_HEAP_FREE);
-	//printk(KERN_ERR "  Poisoned by user:      %02x\n", ASAN_USER_POISONED_MEMORY);
+	pr_err("  Partially addressable: %s\n", buffer);
+	pr_err("  Heap redzone:          %02x\n", ASAN_HEAP_REDZONE);
+	pr_err("  Freed heap region:     %02x\n", ASAN_HEAP_FREE);
 }
 
 static int print_shadow_byte(const char *before, u8 shadow,
@@ -57,13 +56,13 @@ static void print_shadow_for_address(unsigned long addr)
 	unsigned long shadow = mem_to_shadow(addr);
 	unsigned long aligned_shadow = shadow & ~(SHADOW_BYTES_PER_ROW - 1);
 
-	printk(KERN_ERR "Shadow bytes around the buggy address:\n");
-        for (j = -5; j <= 5; j++) {
+	pr_err("Shadow bytes around the buggy address:\n");
+	for (j = -5; j <= 5; j++) {
 		print_shadow_bytes((u8 *)aligned_shadow +
 				   j * SHADOW_BYTES_PER_ROW,
 				   (u8 *)shadow, buffer);
 		prefix = (j == 0) ? "=>" : "  ";
-		printk(KERN_ERR "%s%lx:%s\n", prefix,
+		pr_err("%s%lx:%s\n", prefix,
 			aligned_shadow + j * 0x10, buffer);
 	}
 }
@@ -75,7 +74,7 @@ void asan_print_call_trace(void)
 	show_stack_log_lvl(NULL, NULL, NULL, 0, KERN_ERR);
 }
 
-static int counter = 0;
+static int counter; /* = 0 */
 
 void asan_report_error(unsigned long poisoned_addr)
 {
@@ -83,10 +82,10 @@ void asan_report_error(unsigned long poisoned_addr)
 	if (counter > 100)
 		return;
 
-	printk(KERN_ERR "====================================================================\n");
-	printk(KERN_ERR "Error: address %lx is poisoned!\n", poisoned_addr);
+	pr_err("====================================================================\n");
+	pr_err("Error: address %lx is poisoned!\n", poisoned_addr);
 	asan_print_call_trace();
 	print_shadow_for_address(poisoned_addr);
 	print_shadow_legend();
-	printk(KERN_ERR "====================================================================\n");
+	pr_err("====================================================================\n");
 }

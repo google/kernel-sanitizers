@@ -1,27 +1,31 @@
 #include <linux/log2.h>
 #include <linux/types.h>
 
-typedef unsigned long uptr;
-
-static uptr round_up_to(uptr size, uptr granularity)
+static unsigned long
+round_up_to(unsigned long size, unsigned long granularity)
 {
 	BUG_ON(!is_power_of_2(granularity));
 	return (size + granularity - 1) & ~(granularity - 1);
 }
 
-static uptr round_down_to(uptr size, uptr granularity)
+static unsigned long
+round_down_to(unsigned long size, unsigned long granularity)
 {
 	BUG_ON(!is_power_of_2(granularity));
 	return size & ~(granularity - 1);
 }
 
-static int mem_is_zero(const u8 *beg, uptr size)
+static int mem_is_zero(const u8 *beg, unsigned long size)
 {
 	/* XXX: Check size? */
 	const u8 *end = beg + size;
-	uptr *aligned_beg = (uptr *)round_up_to((uptr)beg, sizeof(uptr));
-	uptr *aligned_end = (uptr *)round_down_to((uptr)end, sizeof(uptr));
-	uptr all = 0;
+	unsigned long beg_addr = (unsigned long)beg;
+	unsigned long end_addr = (unsigned long)end;
+	unsigned long *aligned_beg =
+		(unsigned long *)round_up_to(beg_addr, sizeof(unsigned long));
+	unsigned long *aligned_end =
+		(unsigned long *)round_down_to(end_addr, sizeof(unsigned long));
+	unsigned long all = 0;
 	const u8 *mem;
 	for (mem = beg; mem < (u8 *)aligned_beg && mem < end; mem++)
 		all |= *mem;
@@ -33,7 +37,7 @@ static int mem_is_zero(const u8 *beg, uptr size)
 	return all == 0 ? 1 : 0;
 }
 
-static inline int addr_is_aligned(uptr addr, uptr granularity)
+static inline int addr_is_aligned(unsigned long addr, unsigned long granularity)
 {
 	return (addr & (granularity - 1)) == 0;
 }
