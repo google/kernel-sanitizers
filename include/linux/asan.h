@@ -1,11 +1,7 @@
 #ifndef LINUX_ASAN_H
 #define LINUX_ASAN_H
 
-/* FIXME: no redzones in 4MB cache. */
-/* TODO: use likely/unlikely. */
-/* FIXME: optimize asan_kmalloc and asan_krealloc. */
-
-/* FIXME: use include insted of forward declaration. */
+/* FIXME: use include instead of forward declaration. */
 struct kmem_cache;
 /* #include <linux/slab.h> */
 #include <linux/types.h>

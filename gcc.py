@@ -9,23 +9,17 @@ gcc = '../gcc/install/bin/gcc'
 def should_exclude(filename):
   if filename.startswith('arch/x86/mm/asan/error'):
     return False
-#  return True
-
-  if filename.startswith('arch'):
-    return True
-  if filename.startswith('drivers'):
-    return True
-    # a- b- c- d+ v.+
-  if filename.startswith('fs'):
-    return True
-  if filename.startswith('net'):
-    return True
-  if filename.startswith('security'):
-    return True
-
+  if filename.startswith('arch/x86/mm/asan'):
+    return True #loop?
   if filename.startswith('mm/slab'):
-    # slab_common.c slab.c
-    return True
+    return True #slab.c slab_common.c
+  if filename.startswith('fs/dcache.c'):
+    return True #dentry_string_cmp()
+  if filename.startswith('net/ipv4/fib_trie.c'):
+    return True #leaf_walk_rcu()
+  if filename.startswith('arch/x86/vdso'):
+    return True #asan_dummies? (not ssh'able)
+
   return False
 
 args = sys.argv[1:]
