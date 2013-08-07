@@ -1,0 +1,9 @@
+config HAVE_ASAN
+	bool
+
+if HAVE_ASAN
+
+config ASAN
+	bool "asan"
+
+endif

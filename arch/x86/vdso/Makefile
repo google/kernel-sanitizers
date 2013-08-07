@@ -13,7 +13,7 @@ vdso-install-$(VDSO32-y)	+= $(vdso32-images)
 
 
 # files to link into the vdso
-vobjs-y := vdso-note.o vclock_gettime.o vgetcpu.o asan_dummies.o
+vobjs-y := vdso-note.o vclock_gettime.o vgetcpu.o
 
 vobjs-$(VDSOX32-y) += $(vobjx32s-compat)
 

@@ -41,8 +41,9 @@ void asan_kmalloc(const struct kmem_cache *cache, const void *object,
 		  unsigned long size);
 void asan_krealloc(const void *object, unsigned long new_size);
 
+/*
+ * Called when kernel is initialized.
+ */
 void asan_on_kernel_init(void);
-
-void asan_on_memcpy(const void *to, const void *from, unsigned long n);
 
 #endif /* LINUX_ASAN_H */

@@ -116,13 +116,3 @@ void asan_on_kernel_init(void)
 	do_use_after_free();
 	do_access_redzone();
 }
-
-void asan_on_memcpy(const void *to, const void *from, unsigned long n)
-{
-	if (!asan_enabled)
-		return;
-
-	/* asan_check_region(to, n);
-	   asan_check_region(from, n); */
-}
-EXPORT_SYMBOL_GPL(asan_on_memcpy);

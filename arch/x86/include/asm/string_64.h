@@ -3,16 +3,12 @@
 
 #ifdef __KERNEL__
 
-#include <linux/asan.h>
-
 /* Written 2002 by Andi Kleen */
 
 /* Only used for special circumstances. Stolen from i386/string.h */
 static __always_inline void *__inline_memcpy(void *to, const void *from, size_t n)
 {
 	unsigned long d0, d1, d2;
-
-	asan_on_memcpy(to, from, n);
 
 	asm volatile("rep ; movsl\n\t"
 		     "testb $2,%b4\n\t"
@@ -32,7 +28,8 @@ static __always_inline void *__inline_memcpy(void *to, const void *from, size_t 
    function. */
 
 #define __HAVE_ARCH_MEMCPY 1
-#ifndef CONFIG_KMEMCHECK /* #if 0 */
+#if !defined(CONFIG_KMEMCHECK) && !defined(CONFIG_ASAN)
+
 #if (__GNUC__ == 4 && __GNUC_MINOR__ >= 3) || __GNUC__ > 4
 extern void *memcpy(void *to, const void *from, size_t len);
 #else
@@ -48,12 +45,22 @@ extern void *__memcpy(void *to, const void *from, size_t len);
 	__ret;							\
 })
 #endif
+
 #else
+
+#ifdef CONFIG_KMEMCHECK
 /*
  * kmemcheck becomes very happy if we use the REP instructions unconditionally,
  * because it means that we know both memory operands in advance.
  */
 #define memcpy(dst, src, len) __inline_memcpy((dst), (src), (len))
+#endif
+
+#ifdef CONFIG_ASAN
+void *asan_memcpy(void *dst, const void *src, size_t len);
+#define memcpy(dst, src, len) asan_memcpy((dst), (src), (len))
+#endif
+
 #endif
 
 #define __HAVE_ARCH_MEMSET
