@@ -13,12 +13,10 @@ def should_exclude(filename):
     return True #loop?
   if filename.startswith('mm/slab'):
     return True #slab.c slab_common.c
-  if filename.startswith('mm/util.c'):
-    return True #memcpy in krealloc
   if filename.startswith('fs/dcache.c'):
     return True #dentry_string_cmp()
   if filename.startswith('net/ipv4/fib_trie.c'):
-    return True #leaf_walk_rcu()
+    return False #leaf_walk_rcu()
   if filename.startswith('arch/x86/vdso'):
     return True #user-space
 

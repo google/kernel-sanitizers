@@ -113,6 +113,5 @@ void asan_krealloc(const void *object, unsigned long new_size)
 
 void asan_on_kernel_init(void)
 {
-	do_use_after_free();
-	do_access_redzone();
+	do_uaf_memcpy();
 }

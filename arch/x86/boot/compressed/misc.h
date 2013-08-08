@@ -1,6 +1,8 @@
 #ifndef BOOT_COMPRESSED_MISC_H
 #define BOOT_COMPRESSED_MISC_H
 
+#undef CONFIG_ASAN
+
 /*
  * we have to be careful, because no indirections are allowed here, and
  * paravirt_ops is a kind of one. As it will only run in baremetal anyway,

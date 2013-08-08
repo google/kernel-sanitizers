@@ -28,8 +28,7 @@ static __always_inline void *__inline_memcpy(void *to, const void *from, size_t 
    function. */
 
 #define __HAVE_ARCH_MEMCPY 1
-#if !defined(CONFIG_KMEMCHECK) && !defined(CONFIG_ASAN)
-
+#ifndef CONFIG_KMEMCHECK
 #if (__GNUC__ == 4 && __GNUC_MINOR__ >= 3) || __GNUC__ > 4
 extern void *memcpy(void *to, const void *from, size_t len);
 #else
@@ -45,22 +44,12 @@ extern void *__memcpy(void *to, const void *from, size_t len);
 	__ret;							\
 })
 #endif
-
 #else
-
-#ifdef CONFIG_KMEMCHECK
 /*
  * kmemcheck becomes very happy if we use the REP instructions unconditionally,
  * because it means that we know both memory operands in advance.
  */
 #define memcpy(dst, src, len) __inline_memcpy((dst), (src), (len))
-#endif
-
-#ifdef CONFIG_ASAN
-void *asan_memcpy(void *dst, const void *src, size_t len);
-#define memcpy(dst, src, len) asan_memcpy((dst), (src), (len))
-#endif
-
 #endif
 
 #define __HAVE_ARCH_MEMSET
@@ -74,6 +63,28 @@ size_t strlen(const char *s);
 char *strcpy(char *dest, const char *src);
 char *strcat(char *dest, const char *src);
 int strcmp(const char *cs, const char *ct);
+
+#ifdef CONFIG_ASAN
+
+void *asan_memcpy(void *dst, const void *src, size_t len);
+#define memcpy(dst, src, len) asan_memcpy((dst), (src), (len))
+#define safe_memcpy(dst, src, len) __inline_memcpy((dst), (src), (len))
+
+void *asan_memset(void *ptr, int val, size_t len);
+#define memset(ptr, val, len) asan_memset((ptr), (val), (len))
+
+/*
+ * FIXME: doesn't boot.
+ * void *asan_memmove(void *dst, const void *src, size_t len);
+ * #define memmove(dst, src, len) asan_memmove((dst), (src), (len))
+*/
+
+/*
+ * memcmp, strlen, strcpy, strcat, strcmp, etc. are in lib/string.c
+ * and instrumented as they are.
+ */
+
+#endif /* CONFIG_ASAN */
 
 #endif /* __KERNEL__ */
 

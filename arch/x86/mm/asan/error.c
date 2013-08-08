@@ -1,18 +1,30 @@
 #include <linux/printk.h>
 #include <linux/slab.h>
+#include <linux/string.h>
 
 void do_use_after_free(void)
 {
-	pr_err("Trying 'use after free'...\n");
-	char *ptr = kmalloc(128, GFP_KERNEL);
+	char *ptr;
+	pr_err("Trying UAF...\n");
+	ptr = kmalloc(128, GFP_KERNEL);
 	kfree(ptr);
 	*(ptr + 126 - 64) = 'x';
 }
 
 void do_access_redzone(void)
 {
+	char *ptr;
 	pr_err("Trying to access redzone...\n");
-	char *ptr = kmalloc(17, GFP_KERNEL);
+	ptr = kmalloc(17, GFP_KERNEL);
 	*(ptr + 18) = 'x';
 	kfree(ptr);
+}
+
+void do_uaf_memcpy(void)
+{
+	char *ptr;
+	pr_err("Trying UAF in memcpy...\n");
+	ptr = kmalloc(33, GFP_KERNEL);
+	kfree(ptr);
+	memcpy(ptr, ptr, 30);
 }
