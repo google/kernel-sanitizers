@@ -3595,12 +3595,14 @@ static inline void __cache_free(struct kmem_cache *cachep, void *objp,
 {
 	struct array_cache *ac = cpu_cache_get(cachep);
 
+	if (!asan_slab_free(cachep, objp))
+		return;
+
 	check_irq_off();
 	kmemleak_free_recursive(objp, cachep->flags);
 	objp = cache_free_debugcheck(cachep, objp, caller);
 
 	kmemcheck_slab_free(cachep, objp, cachep->object_size);
-	asan_slab_free(cachep, objp);
 
 	/*
 	 * Skip calling cache_free_alien() when the platform is not numa.

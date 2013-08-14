@@ -9,6 +9,7 @@
 #include "error.h"
 #include "mapping.h"
 #include "poisoning.h"
+#include "quarantine.h"
 #include "report.h"
 #include "utils.h"
 
@@ -61,21 +62,39 @@ void asan_slab_alloc(const struct kmem_cache *cache, const void *object)
 	unsigned long size = cache->object_size;
 	unsigned long rounded_size = round_down_to(size, SHADOW_GRANULARITY);
 	u8 *shadow;
+	u8 *quarantine_flag = (u8 *)(object + size);
 
 	asan_unpoison_shadow(object, rounded_size);
 	if (rounded_size != size) {
 		shadow = (u8 *)mem_to_shadow(addr + rounded_size);
 		*shadow = size & (SHADOW_GRANULARITY - 1);
 	}
+
+	*quarantine_flag = 0;
 }
 
-void asan_slab_free(const struct kmem_cache *cache, const void *object)
+bool asan_slab_free(struct kmem_cache *cache, void *object)
 {
 	unsigned long size;
+	u8 *quarantine_flag;
+
 	if (cache->flags & SLAB_DESTROY_BY_RCU)
-		return;
+		return true;
+
 	size = round_up_to(cache->object_size, SHADOW_GRANULARITY);
-	asan_poison_shadow(object, size, ASAN_HEAP_FREE);
+	quarantine_flag = (u8 *)(object + size);
+
+	if (*quarantine_flag == 0) {
+		asan_poison_shadow(object, size, ASAN_HEAP_FREE);
+
+		*quarantine_flag = 1;
+		asan_quarantine_put(cache, object);
+		asan_quarantine_check();
+
+		return false;
+	}
+
+	return true;
 }
 
 /* FIXME: optimize. */
