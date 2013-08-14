@@ -35,7 +35,7 @@ void *asan_memmove(void *dst, const void *src, size_t len)
 {
 	char *d = (char *)dst;
 	const char *s = (const char *)src;
-	size_t i;
+	long i;
 
 	asan_check_region(dst, len);
 	asan_check_region(src, len);

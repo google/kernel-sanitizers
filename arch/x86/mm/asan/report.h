@@ -1,7 +1,6 @@
 #ifndef ASAN_REPORT_H_
 #define ASAN_REPORT_H_
 
-void asan_print_call_trace(void);
 void asan_report_error(unsigned long poisoned_addr);
 
 #endif /* ASAN_REPORT_H_ */

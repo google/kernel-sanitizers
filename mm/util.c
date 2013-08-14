@@ -124,13 +124,8 @@ static __always_inline void *__do_krealloc(const void *p, size_t new_size,
 	}
 
 	ret = kmalloc_track_caller(new_size, flags);
-	if (ret && p) {
-		#ifdef CONFIG_ASAN
-		safe_memcpy(ret, p, ks);
-		#else
-		memcpy(ret, p, ks);
-		#endif
-	}
+	if (ret && p)
+		(memcpy)(ret, p, ks);
 
 	return ret;
 }

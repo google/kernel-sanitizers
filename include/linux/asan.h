@@ -15,7 +15,7 @@ struct kmem_cache;
 #define SHADOW_GRANULARITY (1 << SHADOW_SCALE)
 
 #define ASAN_REDZONE_SIZE 64
-#define ASAN_QUARANTINE_SIZE (1 << 20)
+#define ASAN_QUARANTINE_SIZE (16 << 20)
 
 extern int asan_enabled;
 

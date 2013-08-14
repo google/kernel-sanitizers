@@ -17,12 +17,12 @@ static void print_shadow_legend(void)
 	char buffer[64];
 
 	pr_err("Shadow byte legend (one shadow byte represents %d application bytes):\n",
-	      (int)SHADOW_GRANULARITY);
-	pr_err("  Addressable:           %02x\n", 0);
+	       (int)SHADOW_GRANULARITY);
+	pr_err("  Addressable:		   %02x\n", 0);
 	for (i = 1; i < SHADOW_GRANULARITY; i++)
 		sprintf(buffer + (i - 1) * 3, "%02x ", i);
 	pr_err("  Partially addressable: %s\n", buffer);
-	pr_err("  Heap redzone:          %02x\n", ASAN_HEAP_REDZONE);
+	pr_err("  Heap redzone:	         %02x\n", ASAN_HEAP_REDZONE);
 	pr_err("  Freed heap region:     %02x\n", ASAN_HEAP_FREE);
 }
 
@@ -69,7 +69,7 @@ static void print_shadow_for_address(unsigned long addr)
 
 #include <asm/stacktrace.h>
 
-void asan_print_call_trace(void)
+void print_call_trace(void)
 {
 	show_stack_log_lvl(NULL, NULL, NULL, 0, KERN_ERR);
 }
@@ -84,7 +84,7 @@ void asan_report_error(unsigned long poisoned_addr)
 
 	pr_err("====================================================================\n");
 	pr_err("Error: address %lx is poisoned!\n", poisoned_addr);
-	asan_print_call_trace();
+	print_call_trace();
 	print_shadow_for_address(poisoned_addr);
 	print_shadow_legend();
 	pr_err("====================================================================\n");

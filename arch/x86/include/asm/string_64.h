@@ -73,11 +73,8 @@ void *asan_memcpy(void *dst, const void *src, size_t len);
 void *asan_memset(void *ptr, int val, size_t len);
 #define memset(ptr, val, len) asan_memset((ptr), (val), (len))
 
-/*
- * FIXME: doesn't boot.
- * void *asan_memmove(void *dst, const void *src, size_t len);
- * #define memmove(dst, src, len) asan_memmove((dst), (src), (len))
-*/
+void *asan_memmove(void *dst, const void *src, size_t len);
+#define memmove(dst, src, len) asan_memmove((dst), (src), (len))
 
 /*
  * memcmp, strlen, strcpy, strcat, strcmp, etc. are in lib/string.c
