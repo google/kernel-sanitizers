@@ -1,3 +1,6 @@
+#ifndef ASAN_UTILS_H_
+#define ASAN_UTILS_H_
+
 #include <linux/log2.h>
 #include <linux/types.h>
 
@@ -41,3 +44,5 @@ static inline int addr_is_aligned(unsigned long addr, unsigned long granularity)
 {
 	return (addr & (granularity - 1)) == 0;
 }
+
+#endif

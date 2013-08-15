@@ -1,5 +1,6 @@
 #include "report.h"
 
+#include <asm-generic/bug.h>
 #include <linux/kernel.h>
 #include <linux/printk.h>
 #include <linux/string.h>
@@ -8,22 +9,35 @@
 #include <linux/asan.h>
 
 #include "mapping.h"
+#include "stack.h"
 
 #define SHADOW_BYTES_PER_ROW 16
 
-static void print_shadow_legend(void)
+static void print_error_description(unsigned long addr)
 {
-	int i;
-	char buffer[64];
+	char error_type[64];
+	u8 *shadow = (u8 *)mem_to_shadow(addr);
 
-	pr_err("Shadow byte legend (one shadow byte represents %d application bytes):\n",
-	       (int)SHADOW_GRANULARITY);
-	pr_err("  Addressable:		   %02x\n", 0);
-	for (i = 1; i < SHADOW_GRANULARITY; i++)
-		sprintf(buffer + (i - 1) * 3, "%02x ", i);
-	pr_err("  Partially addressable: %s\n", buffer);
-	pr_err("  Heap redzone:	         %02x\n", ASAN_HEAP_REDZONE);
-	pr_err("  Freed heap region:     %02x\n", ASAN_HEAP_FREE);
+	BUG_ON(*shadow == 0);
+	switch (*shadow) {
+		case ASAN_HEAP_REDZONE:
+			sprintf(error_type, "heap-buffer-overflow");
+			break;
+		case ASAN_HEAP_FREE:
+			sprintf(error_type, "heap-use-after-free");
+			break;
+		default:
+			BUG(); /* Unreachable. */
+	}
+ 
+	pr_err("ERROR: AddressSanitizer: %s on address %lx\n", error_type, addr);
+}
+
+static void print_stack_traces(unsigned long addr)
+{
+	asan_print_current_stack();
+	/* TODO: print alloc stack
+	   TODO: print free stack */
 }
 
 static int print_shadow_byte(const char *before, u8 shadow,
@@ -67,11 +81,20 @@ static void print_shadow_for_address(unsigned long addr)
 	}
 }
 
-#include <asm/stacktrace.h>
-
-void print_call_trace(void)
+static void print_shadow_legend(void)
 {
-	show_stack_log_lvl(NULL, NULL, NULL, 0, KERN_ERR);
+	int i;
+	char buffer[64];
+
+	for (i = 1; i < SHADOW_GRANULARITY; i++)
+		sprintf(buffer + (i - 1) * 3, "%02x ", i);
+
+	pr_err("Shadow byte legend (one shadow byte represents %d application bytes):\n",
+	       (int)SHADOW_GRANULARITY);
+	pr_err("  Addressable:           %02x\n", 0);
+	pr_err("  Partially addressable: %s\n", buffer);
+	pr_err("  Heap redzone:          %02x\n", ASAN_HEAP_REDZONE);
+	pr_err("  Freed heap region:     %02x\n", ASAN_HEAP_FREE);
 }
 
 static int counter; /* = 0 */
@@ -82,10 +105,10 @@ void asan_report_error(unsigned long poisoned_addr)
 	if (counter > 100)
 		return;
 
-	pr_err("====================================================================\n");
-	pr_err("Error: address %lx is poisoned!\n", poisoned_addr);
-	print_call_trace();
+	pr_err("=========================================================================\n");
+	print_error_description(poisoned_addr);
+	print_stack_traces(poisoned_addr);
 	print_shadow_for_address(poisoned_addr);
 	print_shadow_legend();
-	pr_err("====================================================================\n");
+	pr_err("=========================================================================\n");
 }

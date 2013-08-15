@@ -86,7 +86,7 @@ bool asan_slab_free(struct kmem_cache *cache, void *object)
 
 	if (*quarantine_flag == 0) {
 		asan_poison_shadow(object, size, ASAN_HEAP_FREE);
-
+		return true; // tmp
 		*quarantine_flag = 1;
 		asan_quarantine_put(cache, object);
 		asan_quarantine_check();
@@ -132,5 +132,5 @@ void asan_krealloc(const void *object, unsigned long new_size)
 
 void asan_on_kernel_init(void)
 {
-	do_uaf_memcpy();
+	do_uaf_memset();
 }

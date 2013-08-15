@@ -6,7 +6,6 @@ struct kmem_cache;
 /* #include <linux/slab.h> */
 #include <linux/types.h>
 
-#define ASAN_USER_POISONED_MEMORY 0xF7
 #define ASAN_HEAP_REDZONE 0xFA
 #define ASAN_HEAP_FREE 0xFD
 

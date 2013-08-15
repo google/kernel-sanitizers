@@ -20,11 +20,11 @@ void do_access_redzone(void)
 	kfree(ptr);
 }
 
-void do_uaf_memcpy(void)
+void do_uaf_memset(void)
 {
 	char *ptr;
 	pr_err("Trying UAF in memcpy...\n");
 	ptr = kmalloc(33, GFP_KERNEL);
 	kfree(ptr);
-	memcpy(ptr, ptr, 30);
+	memset(ptr, 0, 30);
 }
