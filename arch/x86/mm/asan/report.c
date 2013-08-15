@@ -15,19 +15,19 @@
 
 static void print_error_description(unsigned long addr)
 {
-	char error_type[64];
 	u8 *shadow = (u8 *)mem_to_shadow(addr);
+	const char *error_type = "unknown-crash";
 
-	BUG_ON(*shadow == 0);
+	/* TODO: handle 16 bytes accesses. */
+
 	switch (*shadow) {
+		case 0 ... SHADOW_GRANULARITY - 1:
 		case ASAN_HEAP_REDZONE:
-			sprintf(error_type, "heap-buffer-overflow");
+			error_type = "heap-buffer-overflow";
 			break;
 		case ASAN_HEAP_FREE:
-			sprintf(error_type, "heap-use-after-free");
+			error_type = "heap-use-after-free";
 			break;
-		default:
-			BUG(); /* Unreachable. */
 	}
  
 	pr_err("ERROR: AddressSanitizer: %s on address %lx\n", error_type, addr);
