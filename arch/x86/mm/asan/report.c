@@ -35,9 +35,21 @@ static void print_error_description(unsigned long addr)
 
 static void print_stack_traces(unsigned long addr)
 {
+	u8 *shadow = (u8 *)mem_to_shadow(addr);
+	unsigned long alloc_stack_addr;
+
 	asan_print_current_stack();
-	/* TODO: print alloc stack
-	   TODO: print free stack */
+
+	if (*shadow != ASAN_HEAP_FREE)
+		return;
+
+	while (*shadow == ASAN_HEAP_FREE)
+		shadow++;
+
+	alloc_stack_addr = shadow_to_mem((unsigned long)shadow);
+	pr_err("Free stack trace:\n");
+	asan_print_stack((unsigned long *)alloc_stack_addr,
+			 ASAN_REDZONE_SIZE / sizeof(unsigned long));
 }
 
 static int print_shadow_byte(const char *before, u8 shadow,

@@ -8,9 +8,9 @@
 #include <linux/asan.h>
 
 struct chunk {
-	struct list_head list;
 	struct kmem_cache *cache;
 	void *object;
+	struct list_head list;
 };
 
 static LIST_HEAD(chunk_list);

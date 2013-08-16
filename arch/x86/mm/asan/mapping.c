@@ -17,3 +17,9 @@ unsigned long mem_to_shadow(unsigned long addr)
 	return ((addr - PAGE_OFFSET) >> SHADOW_SCALE)
 		+ PAGE_OFFSET + SHADOW_OFFSET;
 }
+
+unsigned long shadow_to_mem(unsigned long shadow_addr)
+{
+	return ((shadow_addr - SHADOW_OFFSET - PAGE_OFFSET) << SHADOW_SCALE) +
+	       PAGE_OFFSET;
+}

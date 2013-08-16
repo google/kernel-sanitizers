@@ -56,43 +56,54 @@ void asan_slab_destroy(const struct kmem_cache *cache, const void *slab)
 	asan_unpoison_shadow(slab, (1 << cache->gfporder) << PAGE_SHIFT);
 }
 
-void asan_slab_alloc(const struct kmem_cache *cache, const void *object)
+#include "stack.h"
+
+void asan_slab_alloc(struct kmem_cache *cache, void *object)
 {
 	unsigned long addr = (unsigned long)object;
 	unsigned long size = cache->object_size;
-	unsigned long rounded_size = round_down_to(size, SHADOW_GRANULARITY);
+	unsigned long rounded_down_size =
+		round_down_to(size, SHADOW_GRANULARITY);
+	//unsigned long rounded_up_size = 
+	//	round_up_to(size, SHADOW_GRANULARITY);
 	u8 *shadow;
-	u8 *quarantine_flag = (u8 *)(object + size);
 
-	asan_unpoison_shadow(object, rounded_size);
-	if (rounded_size != size) {
-		shadow = (u8 *)mem_to_shadow(addr + rounded_size);
+	asan_unpoison_shadow(object, rounded_down_size);
+	if (rounded_down_size != size) {
+		shadow = (u8 *)mem_to_shadow(addr + rounded_down_size);
 		*shadow = size & (SHADOW_GRANULARITY - 1);
 	}
 
-	*quarantine_flag = 0;
+	/*u8 *quarantine_flag = (u8 *)(object + size);
+	*quarantine_flag = 0;*/
 }
 
 bool asan_slab_free(struct kmem_cache *cache, void *object)
 {
-	unsigned long size;
-	u8 *quarantine_flag;
+	unsigned long size = cache->object_size;
+	unsigned long rounded_up_size = round_up_to(size, SHADOW_GRANULARITY);
 
 	if (cache->flags & SLAB_DESTROY_BY_RCU)
 		return true;
 
-	size = round_up_to(cache->object_size, SHADOW_GRANULARITY);
-	quarantine_flag = (u8 *)(object + size);
+	asan_poison_shadow(object, rounded_up_size, ASAN_HEAP_FREE);
 
+	asan_unpoison_shadow(object + rounded_up_size, ASAN_REDZONE_SIZE);
+	asan_save_stack((unsigned long *)(object + rounded_up_size),
+			ASAN_REDZONE_SIZE / sizeof(unsigned long));
+	asan_poison_shadow(object + rounded_up_size, ASAN_REDZONE_SIZE,
+			   ASAN_HEAP_REDZONE);
+
+	/*u8 *quarantine_flag = (u8 *)(object + size);
 	if (*quarantine_flag == 0) {
-		asan_poison_shadow(object, size, ASAN_HEAP_FREE);
-		return true; // tmp
+		asan_poison_shadow(object, rounded_up_size, ASAN_HEAP_FREE);
+
 		*quarantine_flag = 1;
 		asan_quarantine_put(cache, object);
 		asan_quarantine_check();
 
 		return false;
-	}
+	}*/
 
 	return true;
 }

@@ -13,8 +13,8 @@ struct kmem_cache;
 #define SHADOW_OFFSET 0x36600000
 #define SHADOW_GRANULARITY (1 << SHADOW_SCALE)
 
-#define ASAN_REDZONE_SIZE 64
-#define ASAN_QUARANTINE_SIZE (16 << 20)
+#define ASAN_REDZONE_SIZE 128
+#define ASAN_QUARANTINE_SIZE (1 << 20)
 
 extern int asan_enabled;
 
@@ -34,7 +34,7 @@ void asan_check_region(const void *addr, unsigned long size);
  */
 void asan_slab_create(const struct kmem_cache *cache, const void *slab);
 void asan_slab_destroy(const struct kmem_cache *cache, const void *slab);
-void asan_slab_alloc(const struct kmem_cache *cache, const void *object);
+void asan_slab_alloc(struct kmem_cache *cache, void *object);
 bool asan_slab_free(struct kmem_cache *cache, void *object);
 
 void asan_kmalloc(const struct kmem_cache *cache, const void *object,
