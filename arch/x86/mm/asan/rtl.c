@@ -6,7 +6,7 @@ void __tsan_##type##size(unsigned long addr)		\
 {							\
 	asan_check_region((void *)addr, (size));	\
 }							\
-EXPORT_SYMBOL_GPL(__tsan_##type##size);
+EXPORT_SYMBOL(__tsan_##type##size);
 
 TSAN_REPORT(read, 1)
 TSAN_REPORT(read, 2)
@@ -23,14 +23,14 @@ TSAN_REPORT(write, 16)
 void __tsan_init(void)
 {
 }
-EXPORT_SYMBOL_GPL(__tsan_init);
+EXPORT_SYMBOL(__tsan_init);
 
 void __tsan_func_entry(unsigned long addr)
 {
 }
-EXPORT_SYMBOL_GPL(__tsan_func_entry);
+EXPORT_SYMBOL(__tsan_func_entry);
 
 void __tsan_func_exit(unsigned long addr)
 {
 }
-EXPORT_SYMBOL_GPL(__tsan_func_exit);
+EXPORT_SYMBOL(__tsan_func_exit);

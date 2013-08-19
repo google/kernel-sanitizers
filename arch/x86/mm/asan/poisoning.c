@@ -29,7 +29,7 @@ void asan_unpoison_shadow(const void *address, unsigned long size)
 	asan_poison_shadow(address, size, 0);
 }
 
-static int asan_memory_is_poisoned(unsigned long addr)
+static bool asan_memory_is_poisoned(unsigned long addr)
 {
 	const unsigned long ACCESS_SIZE = 1;
 	u8 *shadow_addr = (u8 *)mem_to_shadow(addr);
@@ -37,9 +37,30 @@ static int asan_memory_is_poisoned(unsigned long addr)
 	if (shadow_value != 0) {
 		u8 last_accessed_byte = (addr & (SHADOW_GRANULARITY - 1))
 					+ ACCESS_SIZE - 1;
-		return (last_accessed_byte >= shadow_value) ? 1 : 0;
+		return last_accessed_byte >= shadow_value;
 	}
-	return 0;
+	return false;
+}
+
+static bool mem_is_zero(const u8 *beg, unsigned long size)
+{
+	const u8 *end = beg + size;
+	unsigned long beg_addr = (unsigned long)beg;
+	unsigned long end_addr = (unsigned long)end;
+	unsigned long *aligned_beg =
+		(unsigned long *)round_up_to(beg_addr, sizeof(unsigned long));
+	unsigned long *aligned_end =
+		(unsigned long *)round_down_to(end_addr, sizeof(unsigned long));
+	unsigned long all = 0;
+	const u8 *mem;
+	for (mem = beg; mem < (u8 *)aligned_beg && mem < end; mem++)
+		all |= *mem;
+	for (; aligned_beg < aligned_end; aligned_beg++)
+		all |= *aligned_beg;
+	if ((u8 *)aligned_end >= beg)
+		for (mem = (u8 *)aligned_end; mem < end; mem++)
+			all |= *mem;
+	return all == 0;
 }
 
 const void *asan_region_is_poisoned(const void *addr, unsigned long size)

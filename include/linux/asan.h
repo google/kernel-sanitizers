@@ -1,10 +1,9 @@
 #ifndef LINUX_ASAN_H
 #define LINUX_ASAN_H
 
-/* FIXME: use include instead of forward declaration. */
-struct kmem_cache;
-/* #include <linux/slab.h> */
 #include <linux/types.h>
+
+struct kmem_cache;
 
 #define ASAN_HEAP_REDZONE 0xFA
 #define ASAN_HEAP_FREE 0xFD
@@ -32,12 +31,12 @@ void asan_check_region(const void *addr, unsigned long size);
 /*
  * Used in mm/slab.c
  */
-void asan_slab_create(const struct kmem_cache *cache, const void *slab);
-void asan_slab_destroy(const struct kmem_cache *cache, const void *slab);
+void asan_slab_create(struct kmem_cache *cache, void *slab);
+void asan_slab_destroy(struct kmem_cache *cache, void *slab);
 void asan_slab_alloc(struct kmem_cache *cache, void *object);
 bool asan_slab_free(struct kmem_cache *cache, void *object);
 
-void asan_kmalloc(const struct kmem_cache *cache, const void *object,
+void asan_kmalloc(struct kmem_cache *cache, const void *object,
 		  unsigned long size);
 void asan_krealloc(const void *object, unsigned long new_size);
 

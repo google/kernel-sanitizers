@@ -29,4 +29,4 @@ obj-$(CONFIG_NUMA_EMU)		+= numa_emulation.o
 
 obj-$(CONFIG_MEMTEST)		+= memtest.o
 
-obj-y				+= asan/
+obj-$(CONFIG_ASAN)		+= asan/

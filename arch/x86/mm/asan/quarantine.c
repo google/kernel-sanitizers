@@ -26,7 +26,7 @@ void asan_quarantine_put(struct kmem_cache *cache, void *object)
 	if (!asan_enabled)
 		return;
 
-	current_chunk = (struct chunk *)kmalloc(sizeof(struct chunk), GFP_KERNEL);
+	current_chunk = kmalloc(sizeof(struct chunk), GFP_KERNEL);
 	BUG_ON(!current_chunk);
 	current_chunk->cache = cache;
 	current_chunk->object = object;

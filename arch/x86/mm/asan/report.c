@@ -9,28 +9,28 @@
 #include <linux/asan.h>
 
 #include "mapping.h"
-#include "stack.h"
+#include "stack_trace.h"
 
 #define SHADOW_BYTES_PER_ROW 16
 
 static void print_error_description(unsigned long addr)
 {
 	u8 *shadow = (u8 *)mem_to_shadow(addr);
-	const char *error_type = "unknown-crash";
+	const char *bug_type = "unknown-crash";
 
 	/* TODO: handle 16 bytes accesses. */
 
 	switch (*shadow) {
-		case 0 ... SHADOW_GRANULARITY - 1:
-		case ASAN_HEAP_REDZONE:
-			error_type = "heap-buffer-overflow";
-			break;
-		case ASAN_HEAP_FREE:
-			error_type = "heap-use-after-free";
-			break;
+	case 0 ... SHADOW_GRANULARITY - 1:
+	case ASAN_HEAP_REDZONE:
+		bug_type = "heap-buffer-overflow";
+		break;
+	case ASAN_HEAP_FREE:
+		bug_type = "heap-use-after-free";
+		break;
 	}
- 
-	pr_err("ERROR: AddressSanitizer: %s on address %lx\n", error_type, addr);
+
+	pr_err("ERROR: AddressSanitizer: %s on address %lx\n", bug_type, addr);
 }
 
 static void print_stack_traces(unsigned long addr)
@@ -38,7 +38,7 @@ static void print_stack_traces(unsigned long addr)
 	u8 *shadow = (u8 *)mem_to_shadow(addr);
 	unsigned long alloc_stack_addr;
 
-	asan_print_current_stack();
+	asan_print_current_stack_trace();
 
 	if (*shadow != ASAN_HEAP_FREE)
 		return;
@@ -48,7 +48,7 @@ static void print_stack_traces(unsigned long addr)
 
 	alloc_stack_addr = shadow_to_mem((unsigned long)shadow);
 	pr_err("Free stack trace:\n");
-	asan_print_stack((unsigned long *)alloc_stack_addr,
+	asan_print_stack_trace((unsigned long *)alloc_stack_addr,
 			 ASAN_REDZONE_SIZE / sizeof(unsigned long));
 }
 

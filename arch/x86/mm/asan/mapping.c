@@ -1,10 +1,11 @@
 #include "mapping.h"
 
 #include <asm/page.h>
+#include <linux/types.h>
 
 #include <linux/asan.h>
 
-int addr_is_in_mem(unsigned long addr)
+bool addr_is_in_mem(unsigned long addr)
 {
 	return (addr >= (unsigned long)(__va(0)) &&
 		addr < (unsigned long)(__va(max_pfn << PAGE_SHIFT)));
