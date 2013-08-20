@@ -65,9 +65,16 @@ void asan_slab_alloc(struct kmem_cache *cache, void *object)
 	unsigned long size = cache->object_size;
 	unsigned long rounded_down_size =
 		round_down_to(size, SHADOW_GRANULARITY);
-	/*unsigned long rounded_up_size =
-		round_up_to(size, SHADOW_GRANULARITY);*/
+	unsigned long rounded_up_size =
+		round_up_to(size, SHADOW_GRANULARITY);
+	unsigned long *alloc_stack = object + rounded_up_size;
 	u8 *shadow;
+
+	/* FIXME: unpoison / poison. */
+	asan_unpoison_shadow(alloc_stack, ASAN_STACK_TRACE_SIZE);
+	asan_save_stack_trace(alloc_stack, ASAN_FRAMES_IN_STACK_TRACE);
+	asan_poison_shadow(alloc_stack, ASAN_STACK_TRACE_SIZE,
+			   ASAN_HEAP_REDZONE);
 
 	asan_unpoison_shadow(object, rounded_down_size);
 	if (rounded_down_size != size) {
@@ -83,17 +90,19 @@ bool asan_slab_free(struct kmem_cache *cache, void *object)
 {
 	unsigned long size = cache->object_size;
 	unsigned long rounded_up_size = round_up_to(size, SHADOW_GRANULARITY);
+	unsigned long *free_stack = object + rounded_up_size +
+				    ASAN_STACK_TRACE_SIZE;
 
 	if (cache->flags & SLAB_DESTROY_BY_RCU)
 		return true;
 
-	asan_poison_shadow(object, rounded_up_size, ASAN_HEAP_FREE);
-
-	asan_unpoison_shadow(object + rounded_up_size, ASAN_REDZONE_SIZE);
-	asan_save_stack_trace((unsigned long *)(object + rounded_up_size),
-			ASAN_REDZONE_SIZE / sizeof(unsigned long));
-	asan_poison_shadow(object + rounded_up_size, ASAN_REDZONE_SIZE,
+	/* FIXME: unpoison / poison. */
+	asan_unpoison_shadow(free_stack, ASAN_STACK_TRACE_SIZE);
+	asan_save_stack_trace(free_stack, ASAN_FRAMES_IN_STACK_TRACE);
+	asan_poison_shadow(free_stack, ASAN_STACK_TRACE_SIZE,
 			   ASAN_HEAP_REDZONE);
+
+	asan_poison_shadow(object, rounded_up_size, ASAN_HEAP_FREE);
 
 	/*u8 *quarantine_flag = (u8 *)(object + size);
 	if (*quarantine_flag == 0) {
@@ -136,6 +145,26 @@ void asan_krealloc(const void *object, unsigned long new_size)
 	struct page *page = virt_to_head_page(object);
 	struct kmem_cache *cache = page->slab_cache;
 	asan_kmalloc(cache, object, new_size);
+}
+
+void asan_add_redzone(struct kmem_cache *cache, size_t *cache_size)
+{
+	unsigned long object_size = cache->object_size;
+	unsigned long rounded_up_object_size =
+		round_up_to(object_size, sizeof(unsigned long));
+
+	/* FIXME: no redzones in 4MB cache. */
+	if (*cache_size >= 4 * 1024 * 1024) {
+		pr_err("Warning: unable to add redzones for cache with size: %lu.\n",
+		       *cache_size);
+		return;
+	}
+
+	*cache_size += ASAN_REDZONE_SIZE;
+	cache->asan_redzones = 1;
+
+	/* Ensure that the cache is large enough. */
+	BUG_ON(*cache_size < rounded_up_object_size + ASAN_REDZONE_SIZE);
 }
 
 void asan_on_kernel_init(void)

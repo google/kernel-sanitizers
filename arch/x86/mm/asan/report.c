@@ -36,20 +36,37 @@ static void print_error_description(unsigned long addr)
 static void print_stack_traces(unsigned long addr)
 {
 	u8 *shadow = (u8 *)mem_to_shadow(addr);
+	u8 *shadow_beg, *shadow_end;
+	unsigned long object_size;
+	unsigned long object_addr;
 	unsigned long alloc_stack_addr;
+	unsigned long free_stack_addr;
 
 	asan_print_current_stack_trace();
 
 	if (*shadow != ASAN_HEAP_FREE)
 		return;
 
-	while (*shadow == ASAN_HEAP_FREE)
-		shadow++;
+	shadow_beg = shadow_end = shadow;
+	while (*(shadow_beg - 1) == ASAN_HEAP_FREE)
+		shadow_beg--;
+	while (*shadow_end == ASAN_HEAP_FREE)
+		shadow_end++;
 
-	alloc_stack_addr = shadow_to_mem((unsigned long)shadow);
-	pr_err("Free stack trace:\n");
+	object_addr = shadow_to_mem((unsigned long)shadow_beg);
+	object_size = shadow_to_mem((unsigned long)shadow_end) -
+		      object_addr;
+
+	alloc_stack_addr = object_addr + object_size;
+	free_stack_addr = alloc_stack_addr + ASAN_STACK_TRACE_SIZE;
+
+	pr_err("Alloc stack trace:\n");
 	asan_print_stack_trace((unsigned long *)alloc_stack_addr,
-			 ASAN_REDZONE_SIZE / sizeof(unsigned long));
+			       ASAN_FRAMES_IN_STACK_TRACE);
+
+	pr_err("Free stack trace:\n");
+	asan_print_stack_trace((unsigned long *)free_stack_addr,
+			       ASAN_FRAMES_IN_STACK_TRACE);
 }
 
 static int print_shadow_byte(const char *before, u8 shadow,

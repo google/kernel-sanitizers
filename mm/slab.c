@@ -2291,14 +2291,7 @@ __kmem_cache_create (struct kmem_cache *cachep, unsigned long flags)
 
 	setup_node_pointer(cachep);
 
-	/* FIXME: no redzones in 4MB cache. */
-	if (size < 4 * 1024 * 1024) {
-		size += ASAN_REDZONE_SIZE;
-		cachep->asan_redzones = 1;
-	} else {
-		pr_err("Warning: unable to add redzones for cache with size: %lu.\n",
-		       size);
-	}
+	asan_add_redzone(cachep, &size);
 
 #if DEBUG
 

@@ -12,9 +12,16 @@ struct kmem_cache;
 #define SHADOW_OFFSET 0x36600000
 #define SHADOW_GRANULARITY (1 << SHADOW_SCALE)
 
-#define ASAN_REDZONE_SIZE 128
-#define ASAN_QUARANTINE_SIZE (1 << 20)
+/* Redzone should be sizeof(unsigned long) aligned. */
+#define ASAN_REDZONE_SIZE 256
+#define ASAN_QUARANTINE_SIZE (16 << 20)
 
+/* XXX: move to internal header? */
+#define ASAN_STACK_TRACE_SIZE (ASAN_REDZONE_SIZE / 2)
+#define ASAN_FRAMES_IN_STACK_TRACE \
+	(ASAN_STACK_TRACE_SIZE / sizeof(unsigned long))
+
+/* XXX: move to internal header? */
 extern int asan_enabled;
 
 /*
@@ -39,6 +46,8 @@ bool asan_slab_free(struct kmem_cache *cache, void *object);
 void asan_kmalloc(struct kmem_cache *cache, const void *object,
 		  unsigned long size);
 void asan_krealloc(const void *object, unsigned long new_size);
+
+void asan_add_redzone(struct kmem_cache *cache, size_t *cache_size);
 
 /*
  * Called when the kernel is initialized.
