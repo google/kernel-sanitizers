@@ -5,7 +5,6 @@
 #include <linux/slab.h>
 
 void asan_quarantine_put(struct kmem_cache *cache, void *object);
-void asan_quarantine_get(struct kmem_cache **cache, void **object);
 void asan_quarantine_check(void);
 
 #endif

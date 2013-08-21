@@ -82,8 +82,10 @@ void asan_slab_alloc(struct kmem_cache *cache, void *object)
 		*shadow = size & (SHADOW_GRANULARITY - 1);
 	}
 
-	/*u8 *quarantine_flag = (u8 *)(object + size);
-	*quarantine_flag = 0;*/
+	// FIXME: 32 (== sizeof(struct chunk)).
+	unsigned long *quarantine_flag = object + rounded_up_size +
+					 ASAN_REDZONE_SIZE - 32;
+	*quarantine_flag = 0;
 }
 
 bool asan_slab_free(struct kmem_cache *cache, void *object)
@@ -104,16 +106,17 @@ bool asan_slab_free(struct kmem_cache *cache, void *object)
 
 	asan_poison_shadow(object, rounded_up_size, ASAN_HEAP_FREE);
 
-	/*u8 *quarantine_flag = (u8 *)(object + size);
+	// FIXME: 32 (== sizeof(struct chunk)).
+	unsigned long *quarantine_flag = object + rounded_up_size +
+					 ASAN_REDZONE_SIZE - 32;
 	if (*quarantine_flag == 0) {
 		asan_poison_shadow(object, rounded_up_size, ASAN_HEAP_FREE);
 
-		*quarantine_flag = 1;
 		asan_quarantine_put(cache, object);
 		asan_quarantine_check();
 
 		return false;
-	}*/
+	}
 
 	return true;
 }

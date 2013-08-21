@@ -13,11 +13,12 @@ struct kmem_cache;
 #define SHADOW_GRANULARITY (1 << SHADOW_SCALE)
 
 /* Redzone should be sizeof(unsigned long) aligned. */
-#define ASAN_REDZONE_SIZE 256
-#define ASAN_QUARANTINE_SIZE (16 << 20)
+/* FIXME: 32 == sizeof(struct chunk), for quarantine. */
+#define ASAN_REDZONE_SIZE (256)
+#define ASAN_QUARANTINE_SIZE (64 << 20)
 
 /* XXX: move to internal header? */
-#define ASAN_STACK_TRACE_SIZE (ASAN_REDZONE_SIZE / 2)
+#define ASAN_STACK_TRACE_SIZE 128
 #define ASAN_FRAMES_IN_STACK_TRACE \
 	(ASAN_STACK_TRACE_SIZE / sizeof(unsigned long))
 
