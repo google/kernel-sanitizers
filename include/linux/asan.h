@@ -12,6 +12,7 @@ void asan_init_shadow(void);
 
 /*
  * Used in mm/slab.c
+ * FIXME: comment each.
  */
 void asan_slab_create(struct kmem_cache *cache, void *slab);
 void asan_slab_destroy(struct kmem_cache *cache, void *slab);

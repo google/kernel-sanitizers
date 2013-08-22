@@ -19,41 +19,28 @@ void asan_quarantine_put(struct kmem_cache *cache, void *object)
 {
 	unsigned long size = cache->object_size;
 	unsigned long rounded_up_size = round_up_to(size, SHADOW_GRANULARITY);
-	struct chunk *current_chunk = object + rounded_up_size +
-				      ASAN_REDZONE_SIZE - sizeof(struct chunk);
+	struct asan_redzone *redzone = object + rounded_up_size;
+	struct chunk *current_chunk = &redzone->chunk;
 
 	if (!asan_enabled)
 		return;
 
-	BUG_ON(!current_chunk);
 	current_chunk->cache = cache;
 	current_chunk->object = object;
 
 	spin_lock_irqsave(&lock, flags);
 
-	list_add(&(current_chunk->list), &chunk_list);
+	list_add(&current_chunk->list, &chunk_list);
 	quarantine_size += cache->object_size;
 
 	spin_unlock_irqrestore(&lock, flags);
 }
 
-static void asan_quarantine_get(struct kmem_cache **cache, void **object)
-{
-	struct chunk *current_chunk;
-
-	BUG_ON(list_empty(&chunk_list));
-
-	current_chunk = list_entry(chunk_list.prev, struct chunk, list);
-	*cache = current_chunk->cache;
-	*object = current_chunk->object;
-	quarantine_size -= current_chunk->cache->object_size;
-	list_del(chunk_list.prev);
-}
-
-int quarantine_check_in_progress; /* = 0; */
+static int quarantine_check_in_progress; /* = 0; */
 
 void asan_quarantine_check(void)
 {
+	struct chunk *chunk;
 	struct kmem_cache *cache;
 	void *object;
 
@@ -64,7 +51,14 @@ void asan_quarantine_check(void)
 	spin_lock_irqsave(&lock, flags);
 
 	while (quarantine_size > ASAN_QUARANTINE_SIZE) {
-		asan_quarantine_get(&cache, &object);
+		BUG_ON(list_empty(&chunk_list));
+
+		chunk = list_entry(chunk_list.prev, struct chunk, list);
+		list_del(chunk_list.prev);
+
+		cache = chunk->cache;
+		object = chunk->object;
+		quarantine_size -= cache->object_size;
 
 		/* XXX: unlock / lock. */
 		spin_unlock_irqrestore(&lock, flags);
