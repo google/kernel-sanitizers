@@ -40,6 +40,5 @@ void asan_print_current_stack_trace(void)
 	unsigned long stack[MAX_STACK_TRACE_ENTRIES];
 	unsigned int entries =
 		asan_save_stack_trace(&stack[0], MAX_STACK_TRACE_ENTRIES);
-	pr_err("Stack trace:\n");
 	asan_print_stack_trace(&stack[0], entries);
 }

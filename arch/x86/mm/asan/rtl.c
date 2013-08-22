@@ -1,5 +1,6 @@
-#include <linux/asan.h>
 #include <linux/export.h>
+
+#include "internal.h"
 
 #define TSAN_REPORT(type, size)				\
 void __tsan_##type##size(unsigned long addr)		\

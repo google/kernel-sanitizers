@@ -4,8 +4,7 @@
 #include <linux/string.h>
 #include <linux/types.h>
 
-#include <linux/asan.h>
-
+#include "internal.h"
 #include "mapping.h"
 #include "utils.h"
 

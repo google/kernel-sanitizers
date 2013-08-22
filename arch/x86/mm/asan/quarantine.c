@@ -5,16 +5,10 @@
 #include <linux/slab.h>
 #include <linux/spinlock.h>
 
-#include <linux/asan.h>
-
+#include "internal.h"
 #include "utils.h"
 
-struct chunk {
-	struct kmem_cache *cache;
-	void *object;
-	struct list_head list;
-};
-
+/* FIXME: chunks_list. */
 static LIST_HEAD(chunk_list);
 static unsigned long quarantine_size; /* = 0; */
 

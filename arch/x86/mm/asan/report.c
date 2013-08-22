@@ -1,15 +1,15 @@
 #include "report.h"
 
-#include <asm-generic/bug.h>
 #include <linux/kernel.h>
 #include <linux/printk.h>
+#include <linux/sched.h>
 #include <linux/string.h>
 #include <linux/types.h>
 
-#include <linux/asan.h>
-
+#include "internal.h"
 #include "mapping.h"
 #include "stack_trace.h"
+#include "thread.h"
 
 #define SHADOW_BYTES_PER_ROW 16
 
@@ -37,17 +37,18 @@ static void print_stack_traces(unsigned long addr)
 {
 	u8 *shadow = (u8 *)mem_to_shadow(addr);
 	u8 *shadow_beg, *shadow_end;
-	unsigned long object_size;
-	unsigned long object_addr;
-	unsigned long alloc_stack_addr;
-	unsigned long free_stack_addr;
+	unsigned long object_addr, object_size;
+	unsigned long *alloc_stack, *free_stack;
+	struct asan_redzone *redzone;
 
+	pr_err("Accessed by thread #%d:\n", get_current_thread_id());
 	asan_print_current_stack_trace();
 
 	if (*shadow != ASAN_HEAP_FREE)
 		return;
 
 	shadow_beg = shadow_end = shadow;
+	/* FIXME: check bounds. */
 	while (*(shadow_beg - 1) == ASAN_HEAP_FREE)
 		shadow_beg--;
 	while (*shadow_end == ASAN_HEAP_FREE)
@@ -57,16 +58,15 @@ static void print_stack_traces(unsigned long addr)
 	object_size = shadow_to_mem((unsigned long)shadow_end) -
 		      object_addr;
 
-	alloc_stack_addr = object_addr + object_size;
-	free_stack_addr = alloc_stack_addr + ASAN_STACK_TRACE_SIZE;
+	redzone = (struct asan_redzone *)(object_addr + object_size);
+	alloc_stack = redzone->alloc_stack;
+	free_stack = redzone->free_stack;
 
-	pr_err("Alloc stack trace:\n");
-	asan_print_stack_trace((unsigned long *)alloc_stack_addr,
-			       ASAN_FRAMES_IN_STACK_TRACE);
+	pr_err("Allocated by thread #%d:\n", redzone->alloc_thread_id);
+	asan_print_stack_trace(alloc_stack, ASAN_FRAMES_IN_STACK_TRACE);
 
-	pr_err("Free stack trace:\n");
-	asan_print_stack_trace((unsigned long *)free_stack_addr,
-			       ASAN_FRAMES_IN_STACK_TRACE);
+	pr_err("Freed by thread #%d:\n", redzone->free_thread_id);
+	asan_print_stack_trace(free_stack, ASAN_FRAMES_IN_STACK_TRACE);
 }
 
 static int print_shadow_byte(const char *before, u8 shadow,
@@ -80,14 +80,13 @@ static void print_shadow_bytes(u8 *shadow, u8 *guilty, char *output)
 {
 	int i;
 	const char *before, *after;
-	u8 *current;
 
 	for (i = 0; i < SHADOW_BYTES_PER_ROW; i++) {
-		current = shadow + i;
-		before = (current == guilty) ? "[" :
-			(i != 0 && current - 1 == guilty) ? "" : " ";
-		after = (current == guilty) ? "]" : "";
-		output += print_shadow_byte(before, *current, after, output);
+		before = (shadow == guilty) ? "[" :
+			(i != 0 && shadow - 1 == guilty) ? "" : " ";
+		after = (shadow == guilty) ? "]" : "";
+		output += print_shadow_byte(before, *shadow, after, output);
+		shadow++;
 	}
 }
 

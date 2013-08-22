@@ -3,7 +3,7 @@
 #include <asm/page.h>
 #include <linux/types.h>
 
-#include <linux/asan.h>
+#include "internal.h"
 
 bool addr_is_in_mem(unsigned long addr)
 {

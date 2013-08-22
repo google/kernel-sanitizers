@@ -1,7 +1,7 @@
 #include <linux/export.h>
 #include <linux/types.h>
 
-#include <linux/asan.h>
+#include "internal.h"
 
 void *asan_memcpy(void *dst, const void *src, size_t len)
 {
