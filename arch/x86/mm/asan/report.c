@@ -13,6 +13,20 @@
 
 #define SHADOW_BYTES_PER_ROW 16
 
+#if ASAN_COLORED_OUTPUT_ENABLE
+	#define ASAN_NORMAL  "\x1B[0m"
+	#define ASAN_RED     "\x1B[1;31m"
+	#define ASAN_BLUE    "\x1B[1;34m"
+	#define ASAN_MAGENTA "\x1B[1;35m"
+	#define ASAN_WHITE   "\x1B[1;37m"
+#else
+	#define ASAN_NORMAL  ""
+	#define ASAN_RED     ""
+	#define ASAN_BLUE     ""
+	#define ASAN_MAGENTA ""
+	#define ASAN_WHITE   ""
+#endif
+
 static void print_error_description(unsigned long addr)
 {
 	u8 *shadow = (u8 *)mem_to_shadow(addr);
@@ -30,7 +44,8 @@ static void print_error_description(unsigned long addr)
 		break;
 	}
 
-	pr_err("ERROR: AddressSanitizer: %s on address %lx\n", bug_type, addr);
+	pr_err("%sERROR: AddressSanitizer: %s on address %lx%s\n",
+	       ASAN_RED, bug_type, addr, ASAN_NORMAL);
 }
 
 static void print_stack_traces(unsigned long addr)
@@ -41,7 +56,8 @@ static void print_stack_traces(unsigned long addr)
 	unsigned long *alloc_stack, *free_stack;
 	struct asan_redzone *redzone;
 
-	pr_err("Accessed by thread #%d:\n", get_current_thread_id());
+	pr_err("%sAccessed by thread T%d:%s\n", ASAN_BLUE,
+	       get_current_thread_id(), ASAN_NORMAL);
 	asan_print_current_stack_trace();
 
 	if (*shadow != ASAN_HEAP_FREE)
@@ -62,18 +78,37 @@ static void print_stack_traces(unsigned long addr)
 	alloc_stack = redzone->alloc_stack;
 	free_stack = redzone->free_stack;
 
-	pr_err("Allocated by thread #%d:\n", redzone->alloc_thread_id);
+	pr_err("%sAllocated by thread T%d:%s\n", ASAN_MAGENTA,
+	       redzone->alloc_thread_id, ASAN_NORMAL);
 	asan_print_stack_trace(alloc_stack, ASAN_FRAMES_IN_STACK_TRACE);
 
-	pr_err("Freed by thread #%d:\n", redzone->free_thread_id);
+	pr_err("%sFreed by thread T%d:%s\n", ASAN_MAGENTA,
+	       redzone->free_thread_id, ASAN_NORMAL);
 	asan_print_stack_trace(free_stack, ASAN_FRAMES_IN_STACK_TRACE);
 }
 
 static int print_shadow_byte(const char *before, u8 shadow,
 			     const char *after, char *output)
 {
-	sprintf(output, "%s%02x%s", before, shadow, after);
-	return strlen(before) + 2 + strlen(after);
+	const char *color_prefix = ASAN_NORMAL;
+	const char *color_postfix = ASAN_NORMAL;
+
+	switch (shadow) {
+	case 0 ... SHADOW_GRANULARITY - 1:
+		color_prefix = ASAN_WHITE;
+		break;
+	case ASAN_HEAP_REDZONE:
+		color_prefix = ASAN_RED;
+		break;
+	case ASAN_HEAP_FREE:
+		color_prefix = ASAN_MAGENTA;
+		break;
+	}
+
+	sprintf(output, "%s%s%02x%s%s", before, color_prefix, shadow,
+					color_postfix, after);
+	return strlen(before) + strlen(color_prefix) + 2 +
+		+ strlen(color_postfix) + strlen(after);
 }
 
 static void print_shadow_bytes(u8 *shadow, u8 *guilty, char *output)
@@ -93,7 +128,7 @@ static void print_shadow_bytes(u8 *shadow, u8 *guilty, char *output)
 static void print_shadow_for_address(unsigned long addr)
 {
 	int j;
-	char buffer[64];
+	char buffer[512];
 	const char *prefix;
 	unsigned long shadow = mem_to_shadow(addr);
 	unsigned long aligned_shadow = shadow & ~(SHADOW_BYTES_PER_ROW - 1);
@@ -119,10 +154,14 @@ static void print_shadow_legend(void)
 
 	pr_err("Shadow byte legend (one shadow byte represents %d application bytes):\n",
 	       (int)SHADOW_GRANULARITY);
-	pr_err("  Addressable:           %02x\n", 0);
-	pr_err("  Partially addressable: %s\n", buffer);
-	pr_err("  Heap redzone:          %02x\n", ASAN_HEAP_REDZONE);
-	pr_err("  Freed heap region:     %02x\n", ASAN_HEAP_FREE);
+	pr_err("  Addressable:           %s%02x%s\n",
+	       ASAN_WHITE, 0, ASAN_NORMAL);
+	pr_err("  Partially addressable: %s%s%s\n",
+	       ASAN_WHITE, buffer, ASAN_NORMAL);
+	pr_err("  Heap redzone:          %s%02x%s\n",
+	       ASAN_RED, ASAN_HEAP_REDZONE, ASAN_NORMAL);
+	pr_err("  Freed heap region:     %s%02x%s\n",
+	       ASAN_MAGENTA, ASAN_HEAP_FREE, ASAN_NORMAL);
 }
 
 static int counter; /* = 0 */

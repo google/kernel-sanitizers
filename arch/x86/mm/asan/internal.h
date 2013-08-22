@@ -30,6 +30,8 @@ struct asan_redzone {
 #define ASAN_QUARANTINE_ENABLE 0
 #define ASAN_QUARANTINE_SIZE (1 << 10)
 
+#define ASAN_COLORED_OUTPUT_ENABLE 1
+
 extern int asan_enabled;
 
 /*
