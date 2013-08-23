@@ -4,7 +4,7 @@ import os
 import subprocess
 import sys
 
-gcc = '../gcc/install/bin/gcc'
+gcc = '$KASAN_GCC_PATH/gcc'
 
 def should_exclude(filename):
   if filename.startswith('arch/x86/mm/asan/error'):
