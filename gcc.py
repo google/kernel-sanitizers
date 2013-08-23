@@ -15,8 +15,6 @@ def should_instrument(filename):
     return False #slab.c slab_common.c
   if filename.startswith('fs/dcache.c'):
     return False #dentry_string_cmp()
-  if filename.startswith('net/ipv4/fib_trie.c'):
-    return True #leaf_walk_rcu()
   if filename.startswith('arch/x86/vdso'):
     return False #user-space
 
