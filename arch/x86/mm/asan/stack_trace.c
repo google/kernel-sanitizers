@@ -22,11 +22,17 @@ unsigned int asan_save_stack_trace(unsigned long *stack,
 	return trace_info.nr_entries;
 }
 
-void asan_print_stack_trace(unsigned long *stack, unsigned int entries)
+void asan_print_stack_trace(unsigned long *stack, unsigned int max_entries)
 {
 	unsigned int i;
-	for (i = 0; i < entries; i++)
-		pr_err("  [<%p>] %pS\n", (void *)stack[i], (void *)stack[i]);
+	void *frame;
+
+	for (i = 0; i < max_entries; i++) {
+		if (stack[i] == ULONG_MAX || stack[i] == 0)
+			break;
+		frame = (void *)stack[i];
+		pr_err("  #%u %p (%pS)\n", i, frame, frame);
+	}
 }
 
 void asan_print_current_stack_trace(void)
@@ -34,6 +40,5 @@ void asan_print_current_stack_trace(void)
 	unsigned long stack[MAX_STACK_TRACE_ENTRIES];
 	unsigned int entries =
 		asan_save_stack_trace(&stack[0], MAX_STACK_TRACE_ENTRIES);
-	pr_err("Stack trace:\n");
 	asan_print_stack_trace(&stack[0], entries);
 }

@@ -5,31 +5,14 @@
 
 struct kmem_cache;
 
-#define ASAN_HEAP_REDZONE 0xFA
-#define ASAN_HEAP_FREE 0xFD
-
-#define SHADOW_SCALE 3
-#define SHADOW_OFFSET 0x36600000
-#define SHADOW_GRANULARITY (1 << SHADOW_SCALE)
-
-#define ASAN_REDZONE_SIZE 128
-#define ASAN_QUARANTINE_SIZE (1 << 20)
-
-extern int asan_enabled;
-
 /*
  * Reserves shadow memory.
  */
 void asan_init_shadow(void);
 
 /*
- * Checks region for poisoned bytes.
- * Reports poisoned bytes if found.
- */
-void asan_check_region(const void *addr, unsigned long size);
-
-/*
  * Used in mm/slab.c
+ * FIXME: comment each.
  */
 void asan_slab_create(struct kmem_cache *cache, void *slab);
 void asan_slab_destroy(struct kmem_cache *cache, void *slab);
@@ -39,6 +22,8 @@ bool asan_slab_free(struct kmem_cache *cache, void *object);
 void asan_kmalloc(struct kmem_cache *cache, const void *object,
 		  unsigned long size);
 void asan_krealloc(const void *object, unsigned long new_size);
+
+void asan_add_redzone(struct kmem_cache *cache, size_t *cache_size);
 
 /*
  * Called when the kernel is initialized.

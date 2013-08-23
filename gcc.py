@@ -6,21 +6,24 @@ import sys
 
 gcc = '$KASAN_GCC_PATH/gcc'
 
-def should_exclude(filename):
+def should_instrument(filename):
   if filename.startswith('arch/x86/mm/asan/error'):
-    return False
+    return True
   if filename.startswith('arch/x86/mm/asan'):
-    return True #loop?
+    return False #loop?
   if filename.startswith('mm/slab'):
-    return True #slab.c slab_common.c
+    return False #slab.c slab_common.c
   if filename.startswith('fs/dcache.c'):
-    return True #dentry_string_cmp()
-  if filename.startswith('net/ipv4/fib_trie.c'):
-    return False #leaf_walk_rcu()
+    return False #dentry_string_cmp()
   if filename.startswith('arch/x86/vdso'):
-    return True #user-space
+    return False #user-space
 
-  return False
+  if filename.startswith('arch/x86/realmode'):
+    return False
+  if filename.startswith('arch/x86/boot'):
+    return False
+
+  return True
 
 args = sys.argv[1:]
 
@@ -28,12 +31,8 @@ files = [arg for arg in args if arg[0] != '-' and arg[0] != '@']
 if len(files) > 0:
   filename = files[-1]
   #sys.stderr.write(str(filename) + '\n')
+  if should_instrument(filename):
+    args.append('-fsanitize=thread')
 
-new_args = []
-for arg in args:
-  if arg == '-fsanitize=thread' and should_exclude(filename):
-    continue
-  new_args.append(arg)
-
-gcc_args = [gcc] + new_args
+gcc_args = [gcc] + args
 subprocess.call(gcc_args)
