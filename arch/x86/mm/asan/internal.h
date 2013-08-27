@@ -4,6 +4,7 @@
 #include "quarantine.h"
 
 #define ASAN_HEAP_REDZONE 0xFA
+#define ASAN_HEAP_KMALLOC_REDZONE 0xFB
 #define ASAN_HEAP_FREE 0xFD
 
 /* XXX: add UL? */
@@ -27,8 +28,8 @@ struct asan_redzone {
 
 #define ASAN_REDZONE_SIZE sizeof(struct asan_redzone)
 
-#define ASAN_QUARANTINE_ENABLE 0
-#define ASAN_QUARANTINE_SIZE (1 << 10)
+#define ASAN_QUARANTINE_ENABLE 1
+#define ASAN_QUARANTINE_SIZE (1 << 20)
 
 #define ASAN_COLORED_OUTPUT_ENABLE 1
 

@@ -1,8 +1,11 @@
 #ifndef ASAN_ERROR_H_
 #define ASAN_ERROR_H_
 
-void do_use_after_free(void);
-void do_access_redzone(void);
+void do_bo(void);
+void do_bo_left(void);
+void do_bo_kmalloc(void);
+void do_uaf(void);
 void do_uaf_memset(void);
+void do_uaf_quarantine(void);
 
 #endif /* ASAN_ERROR_H_ */

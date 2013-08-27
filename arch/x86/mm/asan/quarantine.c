@@ -25,9 +25,6 @@ void asan_quarantine_put(struct kmem_cache *cache, void *object)
 	if (!asan_enabled)
 		return;
 
-	current_chunk->cache = cache;
-	current_chunk->object = object;
-
 	spin_lock_irqsave(&lock, flags);
 
 	list_add(&current_chunk->list, &chunk_list);
@@ -64,6 +61,10 @@ void asan_quarantine_check(void)
 		spin_unlock_irqrestore(&lock, flags);
 		kmem_cache_free(cache, object);
 		spin_lock_irqsave(&lock, flags);
+
+		chunk->cache = NULL;
+		chunk->list.prev = NULL;
+		chunk->list.next = NULL;
 	}
 
 	spin_unlock_irqrestore(&lock, flags);

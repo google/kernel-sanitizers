@@ -87,10 +87,12 @@ void asan_slab_alloc(struct kmem_cache *cache, void *object)
 		*shadow = size & (SHADOW_GRANULARITY - 1);
 	}
 
+	redzone->chunk.cache = cache;
+	redzone->chunk.object = object;
 	redzone->alloc_thread_id = get_current_thread_id();
 
 	#if ASAN_QUARANTINE_ENABLE
-	redzone->chunk.cache = NULL;
+	redzone->chunk.list.next = NULL;
 	#endif
 }
 
@@ -109,7 +111,7 @@ bool asan_slab_free(struct kmem_cache *cache, void *object)
 
 	#if ASAN_QUARANTINE_ENABLE
 	/* Check if the object is in the quarantine. */
-	if (redzone->chunk.cache != NULL)
+	if (redzone->chunk.list.next != NULL)
 		return true;
 	#endif
 
@@ -144,7 +146,8 @@ void asan_kmalloc(struct kmem_cache *cache, const void *object,
 	if (object == NULL)
 		return;
 
-	asan_poison_shadow(object, rounded_up_object_size, ASAN_HEAP_REDZONE);
+	asan_poison_shadow(object, rounded_up_object_size,
+			   ASAN_HEAP_KMALLOC_REDZONE);
 	asan_unpoison_shadow(object, rounded_down_size);
 	if (rounded_down_size != size) {
 		shadow = (u8 *)mem_to_shadow(addr + rounded_down_size);
@@ -181,5 +184,10 @@ void asan_add_redzone(struct kmem_cache *cache, size_t *cache_size)
 
 void asan_on_kernel_init(void)
 {
+	/*do_bo();
+	do_bo_left();
+	do_bo_kmalloc();
+	do_uaf();*/
 	do_uaf_memset();
+	/*do_uaf_quarantine();*/
 }
