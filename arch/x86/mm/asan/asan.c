@@ -42,6 +42,7 @@ void __init asan_init_shadow(void)
 	unsigned long shadow_size = (max_pfn << PAGE_SHIFT) >> SHADOW_SCALE;
 	unsigned long found_free_range = memblock_find_in_range(SHADOW_OFFSET,
 		SHADOW_OFFSET + shadow_size, shadow_size, SHADOW_GRANULARITY);
+	void *shadow_beg = (void *)(PAGE_OFFSET + SHADOW_OFFSET);
 
 	pr_err("Shadow offset: %x\n", SHADOW_OFFSET);
 	pr_err("Shadow size: %lx\n", shadow_size);
@@ -52,7 +53,10 @@ void __init asan_init_shadow(void)
 		return;
 	}
 
-	memset((void *)(PAGE_OFFSET + SHADOW_OFFSET), 0, shadow_size);
+	/* XXX: use asan_unpoison_shadow()? */
+	(memset)(shadow_beg, 0, shadow_size);
+	asan_poison_shadow(shadow_beg, shadow_size, ASAN_SHADOW_GAP);
+
 	asan_enabled = 1;
 }
 

@@ -48,6 +48,9 @@ static void print_error_description(unsigned long addr)
 	case ASAN_HEAP_FREE:
 		bug_type = "heap-use-after-free";
 		break;
+	case ASAN_SHADOW_GAP:
+		bug_type = "shadow-gap-access";
+		break;
 	}
 
 	pr_err("%sERROR: AddressSanitizer: %s on address %lx%s\n",
@@ -94,6 +97,14 @@ static void describe_heap_address(unsigned long addr)
 	unsigned long object_size = 0;
 	unsigned long *alloc_stack = NULL;
 	unsigned long *free_stack = NULL;
+
+	if (*shadow == ASAN_SHADOW_GAP) {
+		pr_err("%sAccessed by thread T%d:%s\n", ASAN_BLUE,
+		       get_current_thread_id(), ASAN_NORMAL);
+		asan_print_current_stack_trace();
+		pr_err("\n");
+		return;
+	}
 
 	switch (*shadow) {
 	case ASAN_HEAP_REDZONE:
@@ -181,6 +192,9 @@ static int print_shadow_byte(const char *before, u8 shadow,
 	case ASAN_HEAP_FREE:
 		color_prefix = ASAN_MAGENTA;
 		break;
+	case ASAN_SHADOW_GAP:
+		color_prefix = ASAN_BLUE;
+		break;
 	}
 
 	sprintf(output, "%s%s%02x%s%s", before, color_prefix, shadow,
@@ -242,6 +256,8 @@ static void print_shadow_legend(void)
 	       ASAN_YELLOW, ASAN_HEAP_KMALLOC_REDZONE, ASAN_NORMAL);
 	pr_err("  Freed heap region:     %s%02x%s\n",
 	       ASAN_MAGENTA, ASAN_HEAP_FREE, ASAN_NORMAL);
+	pr_err("  Shadow gap:            %s%02x%s\n",
+	       ASAN_BLUE, ASAN_SHADOW_GAP, ASAN_NORMAL);
 }
 
 static int counter; /* = 0 */

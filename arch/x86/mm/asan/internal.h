@@ -3,9 +3,10 @@
 
 #include "quarantine.h"
 
-#define ASAN_HEAP_REDZONE 0xFA
-#define ASAN_HEAP_KMALLOC_REDZONE 0xFB
-#define ASAN_HEAP_FREE 0xFD
+#define ASAN_HEAP_REDZONE 0xfa
+#define ASAN_HEAP_KMALLOC_REDZONE 0xfb
+#define ASAN_HEAP_FREE 0xfd
+#define ASAN_SHADOW_GAP 0xfe
 
 /* XXX: add UL? */
 #define SHADOW_SCALE 3

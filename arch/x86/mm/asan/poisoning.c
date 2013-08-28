@@ -20,7 +20,7 @@ void asan_poison_shadow(const void *address, unsigned long size, u8 value)
 
 	shadow_beg = mem_to_shadow(addr);
 	shadow_end = mem_to_shadow(addr + size - SHADOW_GRANULARITY) + 1;
-	memset((void *)shadow_beg, value, shadow_end - shadow_beg);
+	(memset)((void *)shadow_beg, value, shadow_end - shadow_beg);
 }
 
 void asan_unpoison_shadow(const void *address, unsigned long size)
