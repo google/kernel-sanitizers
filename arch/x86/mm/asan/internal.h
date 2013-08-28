@@ -9,7 +9,7 @@
 
 /* XXX: add UL? */
 #define SHADOW_SCALE 3
-#define SHADOW_OFFSET 0x36600000
+#define SHADOW_OFFSET 0x36400600
 #define SHADOW_GRANULARITY (1 << SHADOW_SCALE)
 
 /* The number of frames that will be saved for alloc and free stacks. */

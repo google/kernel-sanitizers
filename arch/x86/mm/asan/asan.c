@@ -40,12 +40,18 @@ void asan_check_region(const void *addr, unsigned long size)
 void __init asan_init_shadow(void)
 {
 	unsigned long shadow_size = (max_pfn << PAGE_SHIFT) >> SHADOW_SCALE;
+	unsigned long found_free_range = memblock_find_in_range(SHADOW_OFFSET,
+		SHADOW_OFFSET + shadow_size, shadow_size, SHADOW_GRANULARITY);
+
 	pr_err("Shadow offset: %x\n", SHADOW_OFFSET);
 	pr_err("Shadow size: %lx\n", shadow_size);
-	if (memblock_reserve(SHADOW_OFFSET, shadow_size) != 0) {
+
+	if (found_free_range != SHADOW_OFFSET ||
+	    memblock_reserve(SHADOW_OFFSET, shadow_size) != 0) {
 		pr_err("Error: unable to reserve shadow!\n");
 		return;
 	}
+
 	memset((void *)(PAGE_OFFSET + SHADOW_OFFSET), 0, shadow_size);
 	asan_enabled = 1;
 }
@@ -106,14 +112,13 @@ bool asan_slab_free(struct kmem_cache *cache, void *object)
 	if (cache->flags & SLAB_DESTROY_BY_RCU)
 		return true;
 
-	/* FIXME: poisoning twice with quarantine. */
-	asan_poison_shadow(object, rounded_up_size, ASAN_HEAP_FREE);
-
 	#if ASAN_QUARANTINE_ENABLE
 	/* Check if the object is in the quarantine. */
 	if (redzone->chunk.list.next != NULL)
 		return true;
 	#endif
+
+	asan_poison_shadow(object, rounded_up_size, ASAN_HEAP_FREE);
 
 	/* FIXME: unpoison / poison. */
 	asan_unpoison_shadow(free_stack, ASAN_STACK_TRACE_SIZE);
@@ -187,7 +192,7 @@ void asan_on_kernel_init(void)
 	/*do_bo();
 	do_bo_left();
 	do_bo_kmalloc();
-	do_uaf();*/
+	do_uaf();
+	do_uaf_quarantine();*/
 	do_uaf_memset();
-	/*do_uaf_quarantine();*/
 }
