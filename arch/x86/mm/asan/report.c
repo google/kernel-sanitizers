@@ -12,6 +12,7 @@
 #include "thread.h"
 
 #define SHADOW_BYTES_PER_ROW 16
+#define MAX_OBJECT_SIZE (2 << 20)
 
 #if ASAN_COLORED_OUTPUT_ENABLE
 	#define ASAN_NORMAL  "\x1B[0m"
@@ -106,8 +107,13 @@ static void describe_heap_address(unsigned long addr)
 			shadow = shadow_left;
 		} else {
 			shadow = shadow_right;
-			while (*shadow != ASAN_HEAP_REDZONE)
+			while (*shadow != ASAN_HEAP_REDZONE) {
 				shadow++;
+				if (shadow == shadow_right + MAX_OBJECT_SIZE) {
+					shadow = shadow_left;
+					break;
+				}
+			}
 		}
 
 		break;
