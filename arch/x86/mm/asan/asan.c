@@ -102,7 +102,7 @@ void asan_slab_alloc(struct kmem_cache *cache, void *object)
 	redzone->alloc_thread_id = get_current_thread_id();
 
 	#if ASAN_QUARANTINE_ENABLE
-	redzone->chunk.list.next = NULL;
+	redzone->quarantine_flag = 0;
 	#endif
 }
 
@@ -118,7 +118,7 @@ bool asan_slab_free(struct kmem_cache *cache, void *object)
 
 	#if ASAN_QUARANTINE_ENABLE
 	/* Check if the object is in the quarantine. */
-	if (redzone->chunk.list.next != NULL)
+	if (redzone->quarantine_flag == 1)
 		return true;
 	#endif
 
@@ -134,6 +134,7 @@ bool asan_slab_free(struct kmem_cache *cache, void *object)
 
 	#if ASAN_QUARANTINE_ENABLE
 	asan_quarantine_put(cache, object);
+	redzone->quarantine_flag = 1;
 	asan_quarantine_check();
 	return false;
 	#endif
@@ -196,6 +197,7 @@ void asan_on_kernel_init(void)
 	/*do_bo();
 	do_bo_left();
 	do_bo_kmalloc();
+	do_bo_krealloc();
 	do_uaf();
 	do_uaf_quarantine();*/
 	do_uaf_memset();

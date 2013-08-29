@@ -144,6 +144,11 @@ static void describe_heap_address(unsigned long addr)
 	redzone = (struct asan_redzone *)redzone_addr;
 
 	object_addr = (unsigned long)redzone->chunk.object;
+
+	/*
+         * XXX: Checking for NULL is a temporary workaround for
+         * false positives in slab allocator for debug build.
+         */
 	if (redzone->chunk.cache != NULL)
 		object_size = redzone->chunk.cache->object_size;
 

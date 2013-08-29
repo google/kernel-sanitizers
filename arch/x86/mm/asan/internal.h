@@ -25,6 +25,7 @@ struct asan_redzone {
 	int alloc_thread_id;
 	int free_thread_id;
 	struct chunk chunk;
+	unsigned long quarantine_flag;
 };
 
 #define ASAN_REDZONE_SIZE sizeof(struct asan_redzone)
