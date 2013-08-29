@@ -9,15 +9,14 @@
 
 #include <asm/page.h>
 
-#include "error.h"
 #include "internal.h"
 #include "mapping.h"
 #include "poisoning.h"
 #include "quarantine.h"
 #include "report.h"
+#include "sample_errors.h"
 #include "stack_trace.h"
 #include "thread.h"
-#include "utils.h"
 
 int asan_enabled; /* = 0 */
 
@@ -78,9 +77,9 @@ void asan_slab_alloc(struct kmem_cache *cache, void *object)
 	unsigned long addr = (unsigned long)object;
 	unsigned long size = cache->object_size;
 	unsigned long rounded_down_size =
-		round_down_to(size, SHADOW_GRANULARITY);
+		ROUND_DOWN_TO(size, SHADOW_GRANULARITY);
 	unsigned long rounded_up_size =
-		round_up_to(size, SHADOW_GRANULARITY);
+		ROUND_UP_TO(size, SHADOW_GRANULARITY);
 	struct asan_redzone *redzone = object + rounded_up_size;
 	unsigned long *alloc_stack = redzone->alloc_stack;
 	u8 *shadow;
@@ -109,7 +108,7 @@ void asan_slab_alloc(struct kmem_cache *cache, void *object)
 bool asan_slab_free(struct kmem_cache *cache, void *object)
 {
 	unsigned long size = cache->object_size;
-	unsigned long rounded_up_size = round_up_to(size, SHADOW_GRANULARITY);
+	unsigned long rounded_up_size = ROUND_UP_TO(size, SHADOW_GRANULARITY);
 	struct asan_redzone *redzone = object + rounded_up_size;
 	unsigned long *free_stack = redzone->free_stack;
 
@@ -148,9 +147,9 @@ void asan_kmalloc(struct kmem_cache *cache, const void *object,
 	unsigned long addr = (unsigned long)object;
 	unsigned long object_size = cache->object_size;
 	unsigned long rounded_up_object_size =
-		round_up_to(object_size, SHADOW_GRANULARITY);
+		ROUND_UP_TO(object_size, SHADOW_GRANULARITY);
 	unsigned long rounded_down_size =
-		round_down_to(size, SHADOW_GRANULARITY);
+		ROUND_DOWN_TO(size, SHADOW_GRANULARITY);
 	u8 *shadow;
 
 	if (object == NULL)
@@ -176,7 +175,7 @@ void asan_add_redzone(struct kmem_cache *cache, size_t *cache_size)
 {
 	unsigned long object_size = cache->object_size;
 	unsigned long rounded_up_object_size =
-		round_up_to(object_size, sizeof(unsigned long));
+		ROUND_UP_TO(object_size, sizeof(unsigned long));
 
 	/* FIXME: no redzones in 4MB cache. */
 	if (*cache_size >= 4 * 1024 * 1024) {

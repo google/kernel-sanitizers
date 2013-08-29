@@ -24,12 +24,12 @@ void do_bo_kmalloc(void)
 
 void do_bo_krealloc(void)
 {
-	char* ptr;
+	char *ptr, *ptr2;
 	pr_err("Trying buffer-overflow after krealloc...\n");
 	ptr = kmalloc(17, GFP_KERNEL);
-	ptr = krealloc(ptr, 19, GFP_KERNEL);
-	ptr[20] = 'x';
-	kfree(ptr);
+	ptr2 = krealloc(ptr, 19, GFP_KERNEL);
+	ptr2[20] = 'x';
+	kfree(ptr2);
 }
 
 void do_bo_left(void)

@@ -15,21 +15,21 @@
 #define MAX_OBJECT_SIZE (2 << 20)
 
 #if ASAN_COLORED_OUTPUT_ENABLE
-	#define ASAN_NORMAL  "\x1B[0m"
-	#define ASAN_RED     "\x1B[1;31m"
-	#define ASAN_GREEN   "\x1B[1;32m"
-	#define ASAN_YELLOW  "\x1B[1;33m"
-	#define ASAN_BLUE    "\x1B[1;34m"
-	#define ASAN_MAGENTA "\x1B[1;35m"
-	#define ASAN_WHITE   "\x1B[1;37m"
+	#define COLOR_NORMAL  "\x1B[0m"
+	#define COLOR_RED     "\x1B[1;31m"
+	#define COLOR_GREEN   "\x1B[1;32m"
+	#define COLOR_YELLOW  "\x1B[1;33m"
+	#define COLOR_BLUE    "\x1B[1;34m"
+	#define COLOR_MAGENTA "\x1B[1;35m"
+	#define COLOR_WHITE   "\x1B[1;37m"
 #else
-	#define ASAN_NORMAL  ""
-	#define ASAN_RED     ""
-	#define ASAN_GREEN   ""
-	#define ASAN_YELLOW  ""
-	#define ASAN_BLUE    ""
-	#define ASAN_MAGENTA ""
-	#define ASAN_WHITE   ""
+	#define COLOR_NORMAL  ""
+	#define COLOR_RED     ""
+	#define COLOR_GREEN   ""
+	#define COLOR_YELLOW  ""
+	#define COLOR_BLUE    ""
+	#define COLOR_MAGENTA ""
+	#define COLOR_WHITE   ""
 #endif
 
 static void print_error_description(unsigned long addr)
@@ -54,7 +54,7 @@ static void print_error_description(unsigned long addr)
 	}
 
 	pr_err("%sERROR: AddressSanitizer: %s on address %lx%s\n",
-	       ASAN_RED, bug_type, addr, ASAN_NORMAL);
+	       COLOR_RED, bug_type, addr, COLOR_NORMAL);
 }
 
 static void describe_access_to_heap(unsigned long addr,
@@ -81,8 +81,8 @@ static void describe_access_to_heap(unsigned long addr,
 	}
 
 	pr_err("%s%lx is located %lu bytes %s of %lu-byte region [%lx, %lx)%s\n",
-	       ASAN_GREEN, addr, rel_bytes, rel_type, object_size, object_addr,
-	       object_addr + object_size, ASAN_NORMAL);
+	       COLOR_GREEN, addr, rel_bytes, rel_type, object_size, object_addr,
+	       object_addr + object_size, COLOR_NORMAL);
 }
 
 static void describe_heap_address(unsigned long addr)
@@ -99,8 +99,8 @@ static void describe_heap_address(unsigned long addr)
 	unsigned long *free_stack = NULL;
 
 	if (*shadow == ASAN_SHADOW_GAP) {
-		pr_err("%sAccessed by thread T%d:%s\n", ASAN_BLUE,
-		       get_current_thread_id(), ASAN_NORMAL);
+		pr_err("%sAccessed by thread T%d:%s\n", COLOR_BLUE,
+		       get_current_thread_id(), COLOR_NORMAL);
 		asan_print_current_stack_trace();
 		pr_err("\n");
 		return;
@@ -146,9 +146,9 @@ static void describe_heap_address(unsigned long addr)
 	object_addr = (unsigned long)redzone->chunk.object;
 
 	/*
-         * XXX: Checking for NULL is a temporary workaround for
-         * false positives in slab allocator for debug build.
-         */
+	 * XXX: Checking for NULL is a temporary workaround for
+	 * false positives in slab allocator in debug build.
+	 */
 	if (redzone->chunk.cache != NULL)
 		object_size = redzone->chunk.cache->object_size;
 
@@ -158,21 +158,21 @@ static void describe_heap_address(unsigned long addr)
 
 	describe_access_to_heap(addr, object_addr, object_size);
 
-	pr_err("%sAccessed by thread T%d:%s\n", ASAN_BLUE,
-	       get_current_thread_id(), ASAN_NORMAL);
+	pr_err("%sAccessed by thread T%d:%s\n", COLOR_BLUE,
+	       get_current_thread_id(), COLOR_NORMAL);
 	asan_print_current_stack_trace();
 	pr_err("\n");
 
 	if (free_stack != NULL) {
-		pr_err("%sFreed by thread T%d:%s\n", ASAN_MAGENTA,
-		       redzone->free_thread_id, ASAN_NORMAL);
+		pr_err("%sFreed by thread T%d:%s\n", COLOR_MAGENTA,
+		       redzone->free_thread_id, COLOR_NORMAL);
 		asan_print_stack_trace(free_stack, ASAN_FRAMES_IN_STACK_TRACE);
 		pr_err("\n");
 	}
 
 	if (alloc_stack != NULL) {
-		pr_err("%sAllocated by thread T%d:%s\n", ASAN_MAGENTA,
-		       redzone->alloc_thread_id, ASAN_NORMAL);
+		pr_err("%sAllocated by thread T%d:%s\n", COLOR_MAGENTA,
+		       redzone->alloc_thread_id, COLOR_NORMAL);
 		asan_print_stack_trace(alloc_stack, ASAN_FRAMES_IN_STACK_TRACE);
 		pr_err("\n");
 	}
@@ -181,24 +181,24 @@ static void describe_heap_address(unsigned long addr)
 static int print_shadow_byte(const char *before, u8 shadow,
 			     const char *after, char *output)
 {
-	const char *color_prefix = ASAN_NORMAL;
-	const char *color_postfix = ASAN_NORMAL;
+	const char *color_prefix = COLOR_NORMAL;
+	const char *color_postfix = COLOR_NORMAL;
 
 	switch (shadow) {
 	case ASAN_HEAP_REDZONE:
-		color_prefix = ASAN_RED;
+		color_prefix = COLOR_RED;
 		break;
 	case ASAN_HEAP_KMALLOC_REDZONE:
-		color_prefix = ASAN_YELLOW;
+		color_prefix = COLOR_YELLOW;
 		break;
 	case 0 ... SHADOW_GRANULARITY - 1:
-		color_prefix = ASAN_WHITE;
+		color_prefix = COLOR_WHITE;
 		break;
 	case ASAN_HEAP_FREE:
-		color_prefix = ASAN_MAGENTA;
+		color_prefix = COLOR_MAGENTA;
 		break;
 	case ASAN_SHADOW_GAP:
-		color_prefix = ASAN_BLUE;
+		color_prefix = COLOR_BLUE;
 		break;
 	}
 
@@ -252,17 +252,17 @@ static void print_shadow_legend(void)
 	pr_err("Shadow byte legend (one shadow byte represents %d application bytes):\n",
 	       (int)SHADOW_GRANULARITY);
 	pr_err("  Addressable:           %s%02x%s\n",
-	       ASAN_WHITE, 0, ASAN_NORMAL);
+	       COLOR_WHITE, 0, COLOR_NORMAL);
 	pr_err("  Partially addressable: %s%s%s\n",
-	       ASAN_WHITE, partially_addressable, ASAN_NORMAL);
+	       COLOR_WHITE, partially_addressable, COLOR_NORMAL);
 	pr_err("  Heap redzone:          %s%02x%s\n",
-	       ASAN_RED, ASAN_HEAP_REDZONE, ASAN_NORMAL);
+	       COLOR_RED, ASAN_HEAP_REDZONE, COLOR_NORMAL);
 	pr_err("  Heap kmalloc redzone:  %s%02x%s\n",
-	       ASAN_YELLOW, ASAN_HEAP_KMALLOC_REDZONE, ASAN_NORMAL);
+	       COLOR_YELLOW, ASAN_HEAP_KMALLOC_REDZONE, COLOR_NORMAL);
 	pr_err("  Freed heap region:     %s%02x%s\n",
-	       ASAN_MAGENTA, ASAN_HEAP_FREE, ASAN_NORMAL);
+	       COLOR_MAGENTA, ASAN_HEAP_FREE, COLOR_NORMAL);
 	pr_err("  Shadow gap:            %s%02x%s\n",
-	       ASAN_BLUE, ASAN_SHADOW_GAP, ASAN_NORMAL);
+	       COLOR_BLUE, ASAN_SHADOW_GAP, COLOR_NORMAL);
 }
 
 static int counter; /* = 0 */

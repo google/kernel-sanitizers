@@ -1,7 +1,8 @@
 #include "mapping.h"
 
-#include <asm/page.h>
 #include <linux/types.h>
+
+#include <asm/page.h>
 
 #include "internal.h"
 

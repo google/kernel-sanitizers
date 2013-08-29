@@ -37,6 +37,14 @@ struct asan_redzone {
 
 extern int asan_enabled;
 
+/* granularity should be a power of 2. */
+#define ROUND_UP_TO(size, granularity) \
+	(((size) + (granularity) - 1) & ~((granularity) - 1))
+#define ROUND_DOWN_TO(size, granularity) \
+	((size) & ~((granularity) - 1))
+#define ADDR_IS_ALIGNED(addr, granularity) \
+	(((addr) & ((granularity) - 1)) == 0)
+
 /*
  * Checks region for poisoned bytes.
  * Reports poisoned bytes if found.

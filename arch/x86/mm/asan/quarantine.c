@@ -6,7 +6,6 @@
 #include <linux/spinlock.h>
 
 #include "internal.h"
-#include "utils.h"
 
 static LIST_HEAD(chunk_list);
 static unsigned long quarantine_size; /* = 0; */
@@ -17,7 +16,7 @@ static unsigned long flags;
 void asan_quarantine_put(struct kmem_cache *cache, void *object)
 {
 	unsigned long size = cache->object_size;
-	unsigned long rounded_up_size = round_up_to(size, SHADOW_GRANULARITY);
+	unsigned long rounded_up_size = ROUND_UP_TO(size, SHADOW_GRANULARITY);
 	struct asan_redzone *redzone = object + rounded_up_size;
 	struct chunk *chunk = &redzone->chunk;
 

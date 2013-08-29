@@ -1,10 +1,11 @@
 #include "stack_trace.h"
 
-#include <asm-generic/bug.h>
 #include <linux/printk.h>
 #include <linux/stacktrace.h>
 #include <linux/string.h>
 #include <linux/types.h>
+
+#include <asm-generic/bug.h>
 
 #define MAX_STACK_TRACE_ENTRIES 64
 
