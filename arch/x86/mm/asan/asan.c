@@ -65,6 +65,7 @@ void asan_slab_create(struct kmem_cache *cache, void *slab)
 		return;
 	asan_poison_shadow(slab, (1 << cache->gfporder) << PAGE_SHIFT,
 			   ASAN_HEAP_REDZONE);
+	asan_quarantine_check();
 }
 
 void asan_slab_destroy(struct kmem_cache *cache, void *slab)
@@ -134,7 +135,6 @@ bool asan_slab_free(struct kmem_cache *cache, void *object)
 	#if ASAN_QUARANTINE_ENABLE
 	asan_quarantine_put(cache, object);
 	redzone->quarantine_flag = 1;
-	asan_quarantine_check();
 	return false;
 	#endif
 
