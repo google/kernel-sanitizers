@@ -59,13 +59,18 @@ static void print_error_description(unsigned long addr)
 
 static void describe_access_to_heap(unsigned long addr,
 				    unsigned long object_addr,
-				    unsigned long object_size)
+				    unsigned long object_size,
+				    unsigned long kmalloc_size)
 {
 	const char *rel_type;
 	unsigned long rel_bytes;
 
 	if (object_addr == 0 || object_size == 0)
 		return;
+
+	/* XXX: describe kmalloc memory block separately? */
+	if (kmalloc_size != 0)
+		object_size = kmalloc_size;
 
 	if (addr >= object_addr && addr < object_addr + object_size) {
 		rel_type = "inside";
@@ -156,7 +161,8 @@ static void describe_heap_address(unsigned long addr)
 	if (use_after_free)
 		free_stack = redzone->free_stack;
 
-	describe_access_to_heap(addr, object_addr, object_size);
+	describe_access_to_heap(addr, object_addr, object_size,
+				redzone->kmalloc_size);
 
 	pr_err("%sAccessed by thread T%d:%s\n", COLOR_BLUE,
 	       get_current_thread_id(), COLOR_NORMAL);

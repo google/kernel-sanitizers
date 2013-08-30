@@ -119,7 +119,7 @@ static __always_inline void *__do_krealloc(const void *p, size_t new_size,
 		ks = ksize(p);
 
 	if (ks >= new_size) {
-		asan_krealloc(p, new_size);
+		asan_krealloc((void *)p, new_size);
 		return (void *)p;
 	}
 

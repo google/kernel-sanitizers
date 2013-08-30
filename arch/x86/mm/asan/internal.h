@@ -21,11 +21,19 @@
 struct asan_redzone {
 	unsigned long alloc_stack[ASAN_FRAMES_IN_STACK_TRACE];
 	unsigned long free_stack[ASAN_FRAMES_IN_STACK_TRACE];
+
 	/* XXX: use pid_t? */
 	int alloc_thread_id;
 	int free_thread_id;
+
 	struct chunk chunk;
 	unsigned long quarantine_flag;
+
+	/*
+	 * Size of the kmalloc or krealloc.
+	 * 0 if the object was allocated another way.
+	 */
+	unsigned long kmalloc_size;
 };
 
 #define ASAN_REDZONE_SIZE sizeof(struct asan_redzone)

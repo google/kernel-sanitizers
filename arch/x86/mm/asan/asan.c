@@ -97,13 +97,17 @@ void asan_slab_alloc(struct kmem_cache *cache, void *object)
 		*shadow = size & (SHADOW_GRANULARITY - 1);
 	}
 
+	redzone->alloc_thread_id = get_current_thread_id();
+	redzone->free_thread_id = -1;
+
 	redzone->chunk.cache = cache;
 	redzone->chunk.object = object;
-	redzone->alloc_thread_id = get_current_thread_id();
 
 	#if ASAN_QUARANTINE_ENABLE
 	redzone->quarantine_flag = 0;
 	#endif
+
+	redzone->kmalloc_size = 0;
 }
 
 bool asan_slab_free(struct kmem_cache *cache, void *object)
@@ -141,15 +145,15 @@ bool asan_slab_free(struct kmem_cache *cache, void *object)
 	return true;
 }
 
-void asan_kmalloc(struct kmem_cache *cache, const void *object,
-		  unsigned long size)
+void asan_kmalloc(struct kmem_cache *cache, void *object, unsigned long size)
 {
 	unsigned long addr = (unsigned long)object;
 	unsigned long object_size = cache->object_size;
 	unsigned long rounded_up_object_size =
 		ROUND_UP_TO(object_size, SHADOW_GRANULARITY);
-	unsigned long rounded_down_size =
+	unsigned long rounded_down_kmalloc_size =
 		ROUND_DOWN_TO(size, SHADOW_GRANULARITY);
+	struct asan_redzone *redzone = object + rounded_up_object_size;
 	u8 *shadow;
 
 	if (object == NULL)
@@ -157,14 +161,16 @@ void asan_kmalloc(struct kmem_cache *cache, const void *object,
 
 	asan_poison_shadow(object, rounded_up_object_size,
 			   ASAN_HEAP_KMALLOC_REDZONE);
-	asan_unpoison_shadow(object, rounded_down_size);
-	if (rounded_down_size != size) {
-		shadow = (u8 *)mem_to_shadow(addr + rounded_down_size);
+	asan_unpoison_shadow(object, rounded_down_kmalloc_size);
+	if (rounded_down_kmalloc_size != size) {
+		shadow = (u8 *)mem_to_shadow(addr + rounded_down_kmalloc_size);
 		*shadow = size & (SHADOW_GRANULARITY - 1);
 	}
+
+	redzone->kmalloc_size = size;
 }
 
-void asan_krealloc(const void *object, unsigned long new_size)
+void asan_krealloc(void *object, unsigned long new_size)
 {
 	struct page *page = virt_to_head_page(object);
 	struct kmem_cache *cache = page->slab_cache;
@@ -193,11 +199,11 @@ void asan_add_redzone(struct kmem_cache *cache, size_t *cache_size)
 
 void asan_on_kernel_init(void)
 {
-	/*do_bo();
+	do_bo();
 	do_bo_left();
 	do_bo_kmalloc();
 	do_bo_krealloc();
 	do_uaf();
-	do_uaf_quarantine();*/
+	do_uaf_quarantine();
 	do_uaf_memset();
 }

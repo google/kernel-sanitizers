@@ -19,9 +19,8 @@ void asan_slab_destroy(struct kmem_cache *cache, void *slab);
 void asan_slab_alloc(struct kmem_cache *cache, void *object);
 bool asan_slab_free(struct kmem_cache *cache, void *object);
 
-void asan_kmalloc(struct kmem_cache *cache, const void *object,
-		  unsigned long size);
-void asan_krealloc(const void *object, unsigned long new_size);
+void asan_kmalloc(struct kmem_cache *cache, void *object, unsigned long size);
+void asan_krealloc(void *object, unsigned long new_size);
 
 void asan_add_redzone(struct kmem_cache *cache, size_t *cache_size);
 
