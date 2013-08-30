@@ -4,7 +4,7 @@ import os
 import subprocess
 import sys
 
-gcc = '$KASAN_GCC_PATH/gcc'
+gcc = '/usr/local/google/home/dvyukov/src/gccinstall/bin/gcc'
 
 def should_instrument(filename):
   if filename.startswith('arch/x86/mm/asan/error'):
@@ -26,6 +26,7 @@ def should_instrument(filename):
   return True
 
 args = sys.argv[1:]
+args = [arg for arg in args if arg != '-Wa,--allow-incbin']
 
 files = [arg for arg in args if arg[0] != '-' and arg[0] != '@']
 if len(files) > 0:
