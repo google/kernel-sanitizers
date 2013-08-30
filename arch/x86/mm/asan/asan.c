@@ -199,11 +199,11 @@ void asan_add_redzone(struct kmem_cache *cache, size_t *cache_size)
 
 void asan_on_kernel_init(void)
 {
-	do_bo();
+	/*do_bo();
 	do_bo_left();
 	do_bo_kmalloc();
 	do_bo_krealloc();
 	do_uaf();
-	do_uaf_quarantine();
+	do_uaf_quarantine();*/
 	do_uaf_memset();
 }

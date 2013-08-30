@@ -4,11 +4,12 @@ import os
 import subprocess
 import sys
 
-gcc = '/usr/local/google/home/dvyukov/src/gccinstall/bin/gcc'
+gcc = '$KASAN_GCC_PATH/gcc'
 
 def should_instrument(filename):
-  if filename.startswith('arch/x86/mm/asan/error'):
+  if filename.startswith('arch/x86/mm/asan/sample_error'):
     return True
+
   if filename.startswith('arch/x86/mm/asan'):
     return False #loop?
   if filename.startswith('mm/slab'):
