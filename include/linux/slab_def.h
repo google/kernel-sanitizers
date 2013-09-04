@@ -12,6 +12,7 @@
 
 #include <linux/init.h>
 #include <linux/compiler.h>
+#include <linux/asan.h>
 
 /*
  * struct kmem_cache
@@ -83,7 +84,13 @@ struct kmem_cache {
 	struct memcg_cache_params *memcg_params;
 #endif
 
-	int asan_redzones;
+#ifdef CONFIG_ASAN
+	/*
+	 * Indicates whether AddressSanitizer adds a redzone
+	 * to the objects in this cache.
+	 */
+	int asan_has_redzone;
+#endif
 
 /* 6) per-cpu/per-node data, touched during every alloc/free */
 	/*
@@ -122,7 +129,7 @@ static __always_inline void *kmalloc(size_t size, gfp_t flags)
 	struct kmem_cache *cachep;
 	void *ret;
 
-	if (0 /* asan */ && __builtin_constant_p(size)) {
+	if (0 && __builtin_constant_p(size)) {
 		int i;
 
 		if (!size)
@@ -141,6 +148,8 @@ static __always_inline void *kmalloc(size_t size, gfp_t flags)
 			cachep = kmalloc_caches[i];
 
 		ret = kmem_cache_alloc_trace(cachep, flags, size);
+
+		asan_kmalloc(cachep, ret, size);
 
 		return ret;
 	}

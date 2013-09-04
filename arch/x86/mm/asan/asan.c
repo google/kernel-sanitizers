@@ -136,6 +136,8 @@ bool asan_slab_free(struct kmem_cache *cache, void *object)
 
 	redzone->free_thread_id = get_current_thread_id();
 
+	*((unsigned long *)object + 0) = 1;
+
 	#if ASAN_QUARANTINE_ENABLE
 	asan_quarantine_put(cache, object);
 	redzone->quarantine_flag = 1;
@@ -191,7 +193,7 @@ void asan_add_redzone(struct kmem_cache *cache, size_t *cache_size)
 	}
 
 	*cache_size += ASAN_REDZONE_SIZE;
-	cache->asan_redzones = 1;
+	cache->asan_has_redzone = 1;
 
 	/* Ensure that the cache is large enough. */
 	BUG_ON(*cache_size < rounded_up_object_size + ASAN_REDZONE_SIZE);
@@ -199,11 +201,13 @@ void asan_add_redzone(struct kmem_cache *cache, size_t *cache_size)
 
 void asan_on_kernel_init(void)
 {
-	/*do_bo();
+	do_bo();
 	do_bo_left();
 	do_bo_kmalloc();
 	do_bo_krealloc();
+	do_bo_krealloc_less();
+	do_krealloc_more();
 	do_uaf();
-	do_uaf_quarantine();*/
+	do_uaf_quarantine();
 	do_uaf_memset();
 }

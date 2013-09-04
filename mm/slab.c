@@ -114,10 +114,9 @@
 #include	<linux/reciprocal_div.h>
 #include	<linux/debugobjects.h>
 #include	<linux/kmemcheck.h>
+#include	<linux/asan.h>
 #include	<linux/memory.h>
 #include	<linux/prefetch.h>
-
-#include	<linux/asan.h>
 
 #include	<net/sock.h>
 

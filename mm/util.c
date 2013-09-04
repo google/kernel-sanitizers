@@ -7,9 +7,8 @@
 #include <linux/security.h>
 #include <linux/swap.h>
 #include <linux/swapops.h>
-#include <asm/uaccess.h>
-
 #include <linux/asan.h>
+#include <asm/uaccess.h>
 
 #include "internal.h"
 

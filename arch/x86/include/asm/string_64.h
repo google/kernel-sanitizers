@@ -9,7 +9,6 @@
 static __always_inline void *__inline_memcpy(void *to, const void *from, size_t n)
 {
 	unsigned long d0, d1, d2;
-
 	asm volatile("rep ; movsl\n\t"
 		     "testb $2,%b4\n\t"
 		     "je 1f\n\t"

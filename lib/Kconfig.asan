@@ -4,6 +4,9 @@ config HAVE_ASAN
 if HAVE_ASAN
 
 config ASAN
-	bool "asan"
+	bool "AddressSanitizer: dynamic memory error detector"
+	help
+	  Enables AddressSanitizer - dynamic memory error detector,
+	  that finds heap-buffer-overflow and heap-use-after-free bugs.
 
 endif

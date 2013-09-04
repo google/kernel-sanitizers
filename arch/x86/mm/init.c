@@ -4,6 +4,7 @@
 #include <linux/swap.h>
 #include <linux/memblock.h>
 #include <linux/bootmem.h>	/* for max_low_pfn */
+#include <linux/asan.h>
 
 #include <asm/cacheflush.h>
 #include <asm/e820.h>
@@ -562,8 +563,6 @@ void __init free_initrd_mem(unsigned long start, unsigned long end)
 }
 #endif
 
-#include <linux/asan.h>
-
 void __init zone_sizes_init(void)
 {
 	unsigned long max_zone_pfns[MAX_NR_ZONES];
@@ -583,7 +582,11 @@ void __init zone_sizes_init(void)
 
 	free_area_init_nodes(max_zone_pfns);
 
-	/* Reserve shadow memory.*/
+	/*
+	 * Reserve physical shadow memory for AddressSanitizer,
+	 * this must be done as early as possible,
+	 * so that the memory range is not occupied
+	 */
 	asan_init_shadow();
 }
 

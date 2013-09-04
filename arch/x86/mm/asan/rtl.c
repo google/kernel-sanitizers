@@ -20,18 +20,3 @@ TSAN_REPORT(write, 2)
 TSAN_REPORT(write, 4)
 TSAN_REPORT(write, 8)
 TSAN_REPORT(write, 16)
-
-void __tsan_init(void)
-{
-}
-EXPORT_SYMBOL(__tsan_init);
-
-void __tsan_func_entry(unsigned long addr)
-{
-}
-EXPORT_SYMBOL(__tsan_func_entry);
-
-void __tsan_func_exit(unsigned long addr)
-{
-}
-EXPORT_SYMBOL(__tsan_func_exit);

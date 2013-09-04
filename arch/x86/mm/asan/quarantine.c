@@ -11,7 +11,6 @@ static LIST_HEAD(chunk_list);
 static unsigned long quarantine_size; /* = 0; */
 
 static DEFINE_SPINLOCK(lock);
-static unsigned long flags;
 
 void asan_quarantine_put(struct kmem_cache *cache, void *object)
 {
@@ -19,6 +18,7 @@ void asan_quarantine_put(struct kmem_cache *cache, void *object)
 	unsigned long rounded_up_size = ROUND_UP_TO(size, SHADOW_GRANULARITY);
 	struct asan_redzone *redzone = object + rounded_up_size;
 	struct chunk *chunk = &redzone->chunk;
+	unsigned long flags;
 
 	if (!asan_enabled)
 		return;
@@ -31,17 +31,12 @@ void asan_quarantine_put(struct kmem_cache *cache, void *object)
 	spin_unlock_irqrestore(&lock, flags);
 }
 
-static int quarantine_check_in_progress; /* = 0; */
-
 void asan_quarantine_check(void)
 {
 	struct chunk *chunk;
 	struct kmem_cache *cache;
 	void *object;
-
-	if (quarantine_check_in_progress)
-		return;
-	quarantine_check_in_progress = 1;
+	unsigned long flags;
 
 	spin_lock_irqsave(&lock, flags);
 
@@ -62,6 +57,4 @@ void asan_quarantine_check(void)
 	}
 
 	spin_unlock_irqrestore(&lock, flags);
-
-	quarantine_check_in_progress = 0;
 }
