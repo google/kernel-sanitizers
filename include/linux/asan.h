@@ -5,15 +5,10 @@
 
 struct kmem_cache;
 
-/*
- * Reserves shadow memory.
- */
+/* Reserves shadow memory. */
 void asan_init_shadow(void);
 
-/*
- * Used in mm/slab.c
- * FIXME: comment each.
- */
+/* FIXME: write comments. */
 void asan_slab_create(struct kmem_cache *cache, void *slab);
 void asan_slab_destroy(struct kmem_cache *cache, void *slab);
 void asan_slab_alloc(struct kmem_cache *cache, void *object);
@@ -24,9 +19,7 @@ void asan_krealloc(void *object, unsigned long new_size);
 
 void asan_add_redzone(struct kmem_cache *cache, size_t *cache_size);
 
-/*
- * Called when the kernel is initialized.
- */
+/* Called when the kernel is initialized. */
 void asan_on_kernel_init(void);
 
 #endif /* LINUX_ASAN_H */

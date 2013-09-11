@@ -7,7 +7,7 @@ import sys
 gcc = '$KASAN_GCC_PATH/gcc'
 
 def should_instrument(filename):
-  if filename.startswith('arch/x86/mm/asan/sample_error'):
+  if filename.startswith('arch/x86/mm/asan/test'):
     return True
 
   if filename.startswith('arch/x86/mm/asan'):

@@ -2,8 +2,6 @@
 #include <linux/slab.h>
 #include <linux/string.h>
 
-#include "internal.h"
-
 void asan_do_bo(void)
 {
 	char *ptr;

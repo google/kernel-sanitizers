@@ -1,27 +1,233 @@
 #include <linux/asan.h>
 
+#include <linux/export.h>
 #include <linux/init.h>
 #include <linux/kernel.h>
+#include <linux/list.h>
 #include <linux/memblock.h>
 #include <linux/mm.h>
 #include <linux/printk.h>
+#include <linux/sched.h>
 #include <linux/slab.h>
+#include <linux/stacktrace.h>
+#include <linux/string.h>
 #include <linux/types.h>
 
+#include <asm/bug.h>
 #include <asm/page.h>
+#include <asm/thread_info.h>
 
-#include "internal.h"
-#include "mapping.h"
-#include "poisoning.h"
-#include "quarantine.h"
+#include "asan.h"
 #include "report.h"
-#include "sample_errors.h"
-#include "stack_trace.h"
-#include "thread.h"
+#include "test.h"
 
-int asan_enabled; /* = 0 */
+static int asan_enabled; /* = 0 */
 
-/* XXX: move to another file? */
+static unsigned long quarantine_size; /* = 0; */
+static LIST_HEAD(quarantine_chunk_list);
+static DEFINE_SPINLOCK(quarantine_lock);
+
+pid_t asan_get_current_thread_id(void)
+{
+	return current_thread_info()->task->pid;
+}
+
+static unsigned int asan_save_stack_trace(unsigned long *stack,
+					  unsigned int max_entries)
+{
+	struct stack_trace trace_info = {
+		.nr_entries = 0,
+		.entries = stack,
+		.max_entries = max_entries,
+		/* Skip save_stack_trace() and asan_save_stack_trace(). */
+		.skip = 2
+	};
+	save_stack_trace(&trace_info);
+	return trace_info.nr_entries;
+}
+
+void asan_print_stack_trace(unsigned long *stack, unsigned int max_entries)
+{
+	unsigned int i;
+	void *frame;
+
+	for (i = 0; i < max_entries; i++) {
+		if (stack[i] == ULONG_MAX || stack[i] == 0)
+			break;
+		frame = (void *)stack[i];
+		pr_err("  #%u %p (%pS)\n", i, frame, frame);
+	}
+}
+
+void asan_print_current_stack_trace(void)
+{
+	unsigned long stack[ASAN_MAX_STACK_TRACE_FRAMES];
+	unsigned int entries =
+		asan_save_stack_trace(&stack[0], ASAN_MAX_STACK_TRACE_FRAMES);
+	asan_print_stack_trace(&stack[0], entries);
+}
+
+static void asan_quarantine_put(struct kmem_cache *cache, void *object)
+{
+	unsigned long size = cache->object_size;
+	unsigned long rounded_up_size = round_up(size, SHADOW_GRANULARITY);
+	struct asan_redzone *redzone = object + rounded_up_size;
+	struct chunk *chunk = &redzone->chunk;
+	unsigned long flags;
+
+	if (!asan_enabled)
+		return;
+
+	spin_lock_irqsave(&quarantine_lock, flags);
+
+	list_add(&chunk->list, &quarantine_chunk_list);
+	quarantine_size += cache->object_size;
+
+	spin_unlock_irqrestore(&quarantine_lock, flags);
+}
+
+static void asan_quarantine_check(void)
+{
+	struct chunk *chunk;
+	struct kmem_cache *cache;
+	void *object;
+	unsigned long flags;
+
+	spin_lock_irqsave(&quarantine_lock, flags);
+
+	while (quarantine_size > ASAN_QUARANTINE_SIZE) {
+		BUG_ON(list_empty(&quarantine_chunk_list));
+
+		chunk = list_entry(quarantine_chunk_list.prev,
+				   struct chunk, list);
+		list_del(quarantine_chunk_list.prev);
+
+		cache = chunk->cache;
+		object = chunk->object;
+		quarantine_size -= cache->object_size;
+
+		/* XXX: unlock / lock. */
+		spin_unlock_irqrestore(&quarantine_lock, flags);
+		kmem_cache_free(cache, object);
+		spin_lock_irqsave(&quarantine_lock, flags);
+	}
+
+	spin_unlock_irqrestore(&quarantine_lock, flags);
+}
+
+static bool asan_addr_is_in_mem(unsigned long addr)
+{
+	return (addr >= (unsigned long)(__va(0)) &&
+		addr < (unsigned long)(__va(max_pfn << PAGE_SHIFT)));
+}
+
+unsigned long asan_mem_to_shadow(unsigned long addr)
+{
+	if (!asan_addr_is_in_mem(addr))
+		return 0;
+	return ((addr - PAGE_OFFSET) >> SHADOW_SCALE)
+		+ PAGE_OFFSET + SHADOW_OFFSET;
+}
+
+unsigned long asan_shadow_to_mem(unsigned long shadow_addr)
+{
+	return ((shadow_addr - SHADOW_OFFSET - PAGE_OFFSET) << SHADOW_SCALE) +
+	       PAGE_OFFSET;
+}
+
+/*
+ * Poisons the shadow memory for 'size' bytes starting from 'addr'.
+ * Memory addresses should be aligned to SHADOW_GRANULARITY.
+ */
+static void asan_poison_shadow(const void *address, unsigned long size, u8 value)
+{
+	unsigned long shadow_beg, shadow_end;
+	unsigned long addr = (unsigned long)address;
+
+	BUG_ON(!IS_ALIGNED(addr, SHADOW_GRANULARITY));
+	BUG_ON(!IS_ALIGNED(addr + size, SHADOW_GRANULARITY));
+	BUG_ON(!asan_addr_is_in_mem(addr));
+	BUG_ON(!asan_addr_is_in_mem(addr + size - SHADOW_GRANULARITY));
+
+	shadow_beg = asan_mem_to_shadow(addr);
+	shadow_end = asan_mem_to_shadow(addr + size - SHADOW_GRANULARITY) + 1;
+	(memset)((void *)shadow_beg, value, shadow_end - shadow_beg);
+}
+
+static void asan_unpoison_shadow(const void *address, unsigned long size)
+{
+	asan_poison_shadow(address, size, 0);
+}
+
+static bool asan_memory_is_poisoned(unsigned long addr)
+{
+	const unsigned long ACCESS_SIZE = 1;
+	u8 *shadow_addr = (u8 *)asan_mem_to_shadow(addr);
+	s8 shadow_value = *shadow_addr;
+	if (shadow_value != 0) {
+		u8 last_accessed_byte = (addr & (SHADOW_GRANULARITY - 1))
+					+ ACCESS_SIZE - 1;
+		return last_accessed_byte >= shadow_value;
+	}
+	return false;
+}
+
+static bool asan_mem_is_zero(const u8 *beg, unsigned long size)
+{
+	const u8 *end = beg + size;
+	unsigned long beg_addr = (unsigned long)beg;
+	unsigned long end_addr = (unsigned long)end;
+	unsigned long *aligned_beg =
+		(unsigned long *)round_up(beg_addr, sizeof(unsigned long));
+	unsigned long *aligned_end =
+		(unsigned long *)round_down(end_addr, sizeof(unsigned long));
+	unsigned long all = 0;
+	const u8 *mem;
+	for (mem = beg; mem < (u8 *)aligned_beg && mem < end; mem++)
+		all |= *mem;
+	for (; aligned_beg < aligned_end; aligned_beg++)
+		all |= *aligned_beg;
+	if ((u8 *)aligned_end >= beg)
+		for (mem = (u8 *)aligned_end; mem < end; mem++)
+			all |= *mem;
+	return all == 0;
+}
+
+/*
+ * Returns pointer to the first poisoned byte if the region is in memory
+ * and poisoned, returns NULL otherwise.
+ */
+static const void *asan_region_is_poisoned(const void *addr, unsigned long size)
+{
+	unsigned long beg, end;
+	unsigned long aligned_beg, aligned_end;
+	unsigned long shadow_beg, shadow_end;
+
+	if (size == 0)
+		return NULL;
+
+	beg = (unsigned long)addr;
+	end = beg + size;
+	if (!asan_addr_is_in_mem(beg) || !asan_addr_is_in_mem(end))
+		return NULL;
+
+	aligned_beg = round_up(beg, SHADOW_GRANULARITY);
+	aligned_end = round_down(end, SHADOW_GRANULARITY);
+	shadow_beg = asan_mem_to_shadow(aligned_beg);
+	shadow_end = asan_mem_to_shadow(aligned_end);
+	if (!asan_memory_is_poisoned(beg) &&
+	    !asan_memory_is_poisoned(end - 1) &&
+	    (shadow_end <= shadow_beg ||
+	     asan_mem_is_zero((const u8 *)shadow_beg, shadow_end - shadow_beg)))
+		return NULL;
+	for (; beg < end; beg++)
+		if (asan_memory_is_poisoned(beg))
+			return (const void *)beg;
+
+	BUG(); /* Unreachable. */
+	return NULL;
+}
+
 void asan_check_region(const void *addr, unsigned long size)
 {
 	unsigned long poisoned_addr;
@@ -66,7 +272,9 @@ void asan_slab_create(struct kmem_cache *cache, void *slab)
 		return;
 	asan_poison_shadow(slab, (1 << cache->gfporder) << PAGE_SHIFT,
 			   ASAN_HEAP_REDZONE);
+#if ASAN_QUARANTINE_ENABLE
 	asan_quarantine_check();
+#endif
 }
 
 void asan_slab_destroy(struct kmem_cache *cache, void *slab)
@@ -88,7 +296,7 @@ void asan_slab_alloc(struct kmem_cache *cache, void *object)
 
 	/* FIXME: unpoison / poison. */
 	asan_unpoison_shadow(alloc_stack, ASAN_STACK_TRACE_SIZE);
-	asan_save_stack_trace(alloc_stack, ASAN_FRAMES_IN_STACK_TRACE);
+	asan_save_stack_trace(alloc_stack, ASAN_STACK_TRACE_FRAMES);
 	asan_poison_shadow(alloc_stack, ASAN_STACK_TRACE_SIZE,
 			   ASAN_HEAP_REDZONE);
 
@@ -104,9 +312,9 @@ void asan_slab_alloc(struct kmem_cache *cache, void *object)
 	redzone->chunk.cache = cache;
 	redzone->chunk.object = object;
 
-	#if ASAN_QUARANTINE_ENABLE
+#if ASAN_QUARANTINE_ENABLE
 	redzone->quarantine_flag = 0;
-	#endif
+#endif
 
 	redzone->kmalloc_size = 0;
 }
@@ -121,27 +329,27 @@ bool asan_slab_free(struct kmem_cache *cache, void *object)
 	if (cache->flags & SLAB_DESTROY_BY_RCU)
 		return true;
 
-	#if ASAN_QUARANTINE_ENABLE
+#if ASAN_QUARANTINE_ENABLE
 	/* Check if the object is in the quarantine. */
 	if (redzone->quarantine_flag == 1)
 		return true;
-	#endif
+#endif
 
 	asan_poison_shadow(object, rounded_up_size, ASAN_HEAP_FREE);
 
 	/* FIXME: unpoison / poison. */
 	asan_unpoison_shadow(free_stack, ASAN_STACK_TRACE_SIZE);
-	asan_save_stack_trace(free_stack, ASAN_FRAMES_IN_STACK_TRACE);
+	asan_save_stack_trace(free_stack, ASAN_STACK_TRACE_FRAMES);
 	asan_poison_shadow(free_stack, ASAN_STACK_TRACE_SIZE,
 			   ASAN_HEAP_REDZONE);
 
 	redzone->free_thread_id = asan_get_current_thread_id();
 
-	#if ASAN_QUARANTINE_ENABLE
+#if ASAN_QUARANTINE_ENABLE
 	asan_quarantine_put(cache, object);
 	redzone->quarantine_flag = 1;
 	return false;
-	#endif
+#endif
 
 	return true;
 }
@@ -202,13 +410,32 @@ void asan_add_redzone(struct kmem_cache *cache, size_t *cache_size)
 
 void asan_on_kernel_init(void)
 {
-	/*asan_do_bo();
+	asan_do_bo();
 	asan_do_bo_left();
 	asan_do_bo_kmalloc();
 	asan_do_bo_krealloc();
 	asan_do_bo_krealloc_less();
 	asan_do_krealloc_more();
 	asan_do_uaf();
-	asan_do_uaf_quarantine();*/
+	asan_do_uaf_quarantine();
 	asan_do_uaf_memset();
 }
+
+#define TSAN_REPORT(type, size)				\
+void __tsan_##type##size(unsigned long addr)		\
+{							\
+	asan_check_region((void *)addr, (size));	\
+}							\
+EXPORT_SYMBOL(__tsan_##type##size);
+
+TSAN_REPORT(read, 1)
+TSAN_REPORT(read, 2)
+TSAN_REPORT(read, 4)
+TSAN_REPORT(read, 8)
+TSAN_REPORT(read, 16)
+
+TSAN_REPORT(write, 1)
+TSAN_REPORT(write, 2)
+TSAN_REPORT(write, 4)
+TSAN_REPORT(write, 8)
+TSAN_REPORT(write, 16)

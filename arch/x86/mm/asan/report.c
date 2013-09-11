@@ -1,15 +1,13 @@
 #include "report.h"
 
+#include <linux/fs_struct.h>
 #include <linux/kernel.h>
 #include <linux/printk.h>
 #include <linux/sched.h>
 #include <linux/string.h>
 #include <linux/types.h>
 
-#include "internal.h"
-#include "mapping.h"
-#include "stack_trace.h"
-#include "thread.h"
+#include "asan.h"
 
 #define SHADOW_BYTES_PER_ROW 16
 #define MAX_OBJECT_SIZE (2 << 20)
@@ -172,14 +170,14 @@ static void asan_describe_heap_address(unsigned long addr)
 	if (free_stack != NULL) {
 		pr_err("%sFreed by thread T%d:%s\n", COLOR_MAGENTA,
 		       redzone->free_thread_id, COLOR_NORMAL);
-		asan_print_stack_trace(free_stack, ASAN_FRAMES_IN_STACK_TRACE);
+		asan_print_stack_trace(free_stack, ASAN_STACK_TRACE_FRAMES);
 		pr_err("\n");
 	}
 
 	if (alloc_stack != NULL) {
 		pr_err("%sAllocated by thread T%d:%s\n", COLOR_MAGENTA,
 		       redzone->alloc_thread_id, COLOR_NORMAL);
-		asan_print_stack_trace(alloc_stack, ASAN_FRAMES_IN_STACK_TRACE);
+		asan_print_stack_trace(alloc_stack, ASAN_STACK_TRACE_FRAMES);
 		pr_err("\n");
 	}
 }

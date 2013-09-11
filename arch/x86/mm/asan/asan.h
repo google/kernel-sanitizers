@@ -1,7 +1,7 @@
-#ifndef ASAN_INTERNAL_H_
-#define ASAN_INTERNAL_H_
+#ifndef __X86_MM_ASAN_ASAN_H
+#define __X86_MM_ASAN_ASAN_H
 
-#include "quarantine.h"
+#include <linux/slab.h>
 
 #define ASAN_HEAP_REDZONE 0xfa
 #define ASAN_HEAP_KMALLOC_REDZONE 0xfb
@@ -9,18 +9,26 @@
 #define ASAN_SHADOW_GAP 0xfe
 
 /* XXX: add UL? */
+/* XXX: add ASAN_? */
 #define SHADOW_SCALE 3
 #define SHADOW_OFFSET 0x36400600
 #define SHADOW_GRANULARITY (1 << SHADOW_SCALE)
 
 /* The number of frames that will be saved for alloc and free stacks. */
-#define ASAN_FRAMES_IN_STACK_TRACE 16
-#define ASAN_STACK_TRACE_SIZE \
-	(ASAN_FRAMES_IN_STACK_TRACE * sizeof(unsigned long))
+#define ASAN_STACK_TRACE_FRAMES 16
+#define ASAN_STACK_TRACE_SIZE (ASAN_STACK_TRACE_FRAMES * sizeof(unsigned long))
+
+#define ASAN_MAX_STACK_TRACE_FRAMES 64
+
+struct chunk {
+	struct kmem_cache *cache;
+	void *object;
+	struct list_head list;
+};
 
 struct asan_redzone {
-	unsigned long alloc_stack[ASAN_FRAMES_IN_STACK_TRACE];
-	unsigned long free_stack[ASAN_FRAMES_IN_STACK_TRACE];
+	unsigned long alloc_stack[ASAN_STACK_TRACE_FRAMES];
+	unsigned long free_stack[ASAN_STACK_TRACE_FRAMES];
 
 	/* XXX: use pid_t? */
 	int alloc_thread_id;
@@ -43,12 +51,17 @@ struct asan_redzone {
 
 #define ASAN_COLORED_OUTPUT_ENABLE 1
 
-extern int asan_enabled;
+extern unsigned long max_pfn;
 
-/*
- * Checks region for poisoned bytes.
- * Reports poisoned bytes if found.
- */
+pid_t asan_get_current_thread_id(void);
+
+void asan_print_stack_trace(unsigned long *stack, unsigned int max_entries);
+void asan_print_current_stack_trace(void);
+
+unsigned long asan_mem_to_shadow(unsigned long addr);
+unsigned long asan_shadow_to_mem(unsigned long shadow_addr);
+
+/* Checks region for poisoned bytes. Reports poisoned bytes if found. */
 void asan_check_region(const void *addr, unsigned long size);
 
 #endif
