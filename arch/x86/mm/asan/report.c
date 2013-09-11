@@ -58,7 +58,7 @@ static void asan_print_error_description(unsigned long addr)
 static void asan_describe_access_to_heap(unsigned long addr,
 					 unsigned long object_addr,
 					 unsigned long object_size,
-				    unsigned long kmalloc_size)
+					 unsigned long kmalloc_size)
 {
 	const char *rel_type;
 	unsigned long rel_bytes;
@@ -88,7 +88,8 @@ static void asan_describe_access_to_heap(unsigned long addr,
 	       object_addr + object_size, COLOR_NORMAL);
 }
 
-static void asan_describe_heap_address(unsigned long addr)
+static void asan_describe_heap_address(unsigned long addr,
+				       unsigned long size, bool write)
 {
 	u8 *shadow = (u8 *)asan_mem_to_shadow(addr);
 	u8 *shadow_left, *shadow_right;
@@ -102,7 +103,8 @@ static void asan_describe_heap_address(unsigned long addr)
 	unsigned long *free_stack = NULL;
 
 	if (*shadow == ASAN_SHADOW_GAP) {
-		pr_err("%sAccessed by thread T%d:%s\n", COLOR_BLUE,
+		pr_err("%s%s of size %lu at %lx thread T%d:%s\n",
+		       COLOR_BLUE, write ? "WRITE" : "READ", size, addr,
 		       asan_get_current_thread_id(), COLOR_NORMAL);
 		asan_print_current_stack_trace();
 		pr_err("\n");
@@ -162,20 +164,22 @@ static void asan_describe_heap_address(unsigned long addr)
 	asan_describe_access_to_heap(addr, object_addr, object_size,
 				     redzone->kmalloc_size);
 
-	pr_err("%sAccessed by thread T%d:%s\n", COLOR_BLUE,
+	pr_err("%s%s of size %lu at %lx by thread T%d:%s\n",
+	       COLOR_BLUE, write ? "WRITE" : "READ", size, addr,
 	       asan_get_current_thread_id(), COLOR_NORMAL);
 	asan_print_current_stack_trace();
 	pr_err("\n");
 
 	if (free_stack != NULL) {
-		pr_err("%sFreed by thread T%d:%s\n", COLOR_MAGENTA,
+		pr_err("%sfreed by thread T%d here:%s\n", COLOR_MAGENTA,
 		       redzone->free_thread_id, COLOR_NORMAL);
 		asan_print_stack_trace(free_stack, ASAN_STACK_TRACE_FRAMES);
 		pr_err("\n");
 	}
 
 	if (alloc_stack != NULL) {
-		pr_err("%sAllocated by thread T%d:%s\n", COLOR_MAGENTA,
+		pr_err("%s%sallocated by thread T%d here:%s\n", COLOR_MAGENTA,
+		       free_stack == NULL ? "" : "previously ",
 		       redzone->alloc_thread_id, COLOR_NORMAL);
 		asan_print_stack_trace(alloc_stack, ASAN_STACK_TRACE_FRAMES);
 		pr_err("\n");
@@ -272,7 +276,8 @@ static void asan_print_shadow_legend(void)
 
 static int counter; /* = 0 */
 
-void asan_report_error(unsigned long poisoned_addr)
+void asan_report_error(unsigned long poisoned_addr,
+		       unsigned long size, bool write)
 {
 	counter++;
 	if (counter > 100)
@@ -280,7 +285,7 @@ void asan_report_error(unsigned long poisoned_addr)
 
 	pr_err("=========================================================================\n");
 	asan_print_error_description(poisoned_addr);
-	asan_describe_heap_address(poisoned_addr);
+	asan_describe_heap_address(poisoned_addr, size, write);
 	asan_print_shadow_for_address(poisoned_addr);
 	asan_print_shadow_legend();
 	pr_err("=========================================================================\n");

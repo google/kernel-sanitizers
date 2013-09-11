@@ -228,7 +228,7 @@ static const void *asan_region_is_poisoned(const void *addr, unsigned long size)
 	return NULL;
 }
 
-void asan_check_region(const void *addr, unsigned long size)
+void asan_check_region(const void *addr, unsigned long size, bool write)
 {
 	unsigned long poisoned_addr;
 
@@ -240,7 +240,7 @@ void asan_check_region(const void *addr, unsigned long size)
 	if (poisoned_addr == 0)
 		return;
 
-	asan_report_error(poisoned_addr);
+	asan_report_error(poisoned_addr, size, write);
 }
 
 void __init asan_init_shadow(void)
@@ -421,21 +421,21 @@ void asan_on_kernel_init(void)
 	asan_do_uaf_memset();
 }
 
-#define TSAN_REPORT(type, size)				\
-void __tsan_##type##size(unsigned long addr)		\
-{							\
-	asan_check_region((void *)addr, (size));	\
-}							\
+#define TSAN_REPORT(type, size, write)				\
+void __tsan_##type##size(unsigned long addr)			\
+{								\
+	asan_check_region((void *)addr, (size), (write));	\
+}								\
 EXPORT_SYMBOL(__tsan_##type##size);
 
-TSAN_REPORT(read, 1)
-TSAN_REPORT(read, 2)
-TSAN_REPORT(read, 4)
-TSAN_REPORT(read, 8)
-TSAN_REPORT(read, 16)
+TSAN_REPORT(read, 1, false)
+TSAN_REPORT(read, 2, false)
+TSAN_REPORT(read, 4, false)
+TSAN_REPORT(read, 8, false)
+TSAN_REPORT(read, 16, false)
 
-TSAN_REPORT(write, 1)
-TSAN_REPORT(write, 2)
-TSAN_REPORT(write, 4)
-TSAN_REPORT(write, 8)
-TSAN_REPORT(write, 16)
+TSAN_REPORT(write, 1, true)
+TSAN_REPORT(write, 2, true)
+TSAN_REPORT(write, 4, true)
+TSAN_REPORT(write, 8, true)
+TSAN_REPORT(write, 16, true)
