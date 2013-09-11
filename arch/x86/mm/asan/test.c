@@ -48,7 +48,7 @@ void asan_do_krealloc_more(void)
 {
 	char *ptr1, *ptr2;
 
-	pr_err("Trying access addressable memory after krealloc...\n");
+	pr_err("Trying to access addressable memory after krealloc...\n");
 	ptr1 = kmalloc(17, GFP_KERNEL);
 	ptr2 = krealloc(ptr1, 19, GFP_KERNEL);
 	ptr2[18] = 'x';
@@ -63,6 +63,20 @@ void asan_do_bo_left(void)
 	ptr = kmalloc(17, GFP_KERNEL);
 	*(ptr - 1) = 'x';
 	kfree(ptr);
+}
+
+void asan_do_bo_16(void)
+{
+	struct {
+		unsigned long words[2];
+	} *ptr1, *ptr2;
+
+	pr_err("Trying buffer-overflow for 16 bytes access...\n");
+	ptr1 = kmalloc(10, GFP_KERNEL);
+        ptr2 = kmalloc(16, GFP_KERNEL);
+	*ptr1 = *ptr2;
+	kfree(ptr1);
+	kfree(ptr2);
 }
 
 void asan_do_uaf(void)

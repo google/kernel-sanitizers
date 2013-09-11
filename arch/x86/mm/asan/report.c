@@ -30,12 +30,15 @@
 	#define COLOR_WHITE   ""
 #endif
 
-static void asan_print_error_description(unsigned long addr)
+static void asan_print_error_description(unsigned long addr,
+					 unsigned long access_size)
 {
 	u8 *shadow = (u8 *)asan_mem_to_shadow(addr);
 	const char *bug_type = "unknown-crash";
 
-	/* TODO: handle 16 bytes accesses. */
+	/* If we are accessing 16 bytes, look at the second shadow byte. */
+	if (*shadow == 0 && access_size > SHADOW_GRANULARITY)
+		shadow++;
 
 	switch (*shadow) {
 	case ASAN_HEAP_REDZONE:
@@ -89,7 +92,8 @@ static void asan_describe_access_to_heap(unsigned long addr,
 }
 
 static void asan_describe_heap_address(unsigned long addr,
-				       unsigned long size, bool write)
+				       unsigned long access_size,
+				       bool is_write)
 {
 	u8 *shadow = (u8 *)asan_mem_to_shadow(addr);
 	u8 *shadow_left, *shadow_right;
@@ -104,8 +108,8 @@ static void asan_describe_heap_address(unsigned long addr,
 
 	if (*shadow == ASAN_SHADOW_GAP) {
 		pr_err("%s%s of size %lu at %lx thread T%d:%s\n",
-		       COLOR_BLUE, write ? "WRITE" : "READ", size, addr,
-		       asan_get_current_thread_id(), COLOR_NORMAL);
+		       COLOR_BLUE, is_write ? "WRITE" : "READ", access_size,
+		       addr, asan_get_current_thread_id(), COLOR_NORMAL);
 		asan_print_current_stack_trace();
 		pr_err("\n");
 		return;
@@ -165,8 +169,8 @@ static void asan_describe_heap_address(unsigned long addr,
 				     redzone->kmalloc_size);
 
 	pr_err("%s%s of size %lu at %lx by thread T%d:%s\n",
-	       COLOR_BLUE, write ? "WRITE" : "READ", size, addr,
-	       asan_get_current_thread_id(), COLOR_NORMAL);
+	       COLOR_BLUE, is_write ? "WRITE" : "READ", access_size,
+	       addr, asan_get_current_thread_id(), COLOR_NORMAL);
 	asan_print_current_stack_trace();
 	pr_err("\n");
 
@@ -277,15 +281,15 @@ static void asan_print_shadow_legend(void)
 static int counter; /* = 0 */
 
 void asan_report_error(unsigned long poisoned_addr,
-		       unsigned long size, bool write)
+		       unsigned long access_size, bool is_write)
 {
 	counter++;
 	if (counter > 100)
 		return;
 
 	pr_err("=========================================================================\n");
-	asan_print_error_description(poisoned_addr);
-	asan_describe_heap_address(poisoned_addr, size, write);
+	asan_print_error_description(poisoned_addr, access_size);
+	asan_describe_heap_address(poisoned_addr, access_size, is_write);
 	asan_print_shadow_for_address(poisoned_addr);
 	asan_print_shadow_legend();
 	pr_err("=========================================================================\n");

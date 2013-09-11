@@ -4,6 +4,6 @@
 #include <linux/types.h>
 
 void asan_report_error(unsigned long poisoned_addr,
-		       unsigned long size, bool write);
+		       unsigned long access_size, bool is_write);
 
 #endif
