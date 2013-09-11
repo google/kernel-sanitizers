@@ -1,6 +1,7 @@
 #include <linux/asan.h>
 
 #include <linux/init.h>
+#include <linux/kernel.h>
 #include <linux/memblock.h>
 #include <linux/mm.h>
 #include <linux/printk.h>
@@ -78,9 +79,9 @@ void asan_slab_alloc(struct kmem_cache *cache, void *object)
 	unsigned long addr = (unsigned long)object;
 	unsigned long size = cache->object_size;
 	unsigned long rounded_down_size =
-		ROUND_DOWN_TO(size, SHADOW_GRANULARITY);
+		round_down(size, SHADOW_GRANULARITY);
 	unsigned long rounded_up_size =
-		ROUND_UP_TO(size, SHADOW_GRANULARITY);
+		round_up(size, SHADOW_GRANULARITY);
 	struct asan_redzone *redzone = object + rounded_up_size;
 	unsigned long *alloc_stack = redzone->alloc_stack;
 	u8 *shadow;
@@ -93,11 +94,11 @@ void asan_slab_alloc(struct kmem_cache *cache, void *object)
 
 	asan_unpoison_shadow(object, rounded_down_size);
 	if (rounded_down_size != size) {
-		shadow = (u8 *)mem_to_shadow(addr + rounded_down_size);
+		shadow = (u8 *)asan_mem_to_shadow(addr + rounded_down_size);
 		*shadow = size & (SHADOW_GRANULARITY - 1);
 	}
 
-	redzone->alloc_thread_id = get_current_thread_id();
+	redzone->alloc_thread_id = asan_get_current_thread_id();
 	redzone->free_thread_id = -1;
 
 	redzone->chunk.cache = cache;
@@ -113,7 +114,7 @@ void asan_slab_alloc(struct kmem_cache *cache, void *object)
 bool asan_slab_free(struct kmem_cache *cache, void *object)
 {
 	unsigned long size = cache->object_size;
-	unsigned long rounded_up_size = ROUND_UP_TO(size, SHADOW_GRANULARITY);
+	unsigned long rounded_up_size = round_up(size, SHADOW_GRANULARITY);
 	struct asan_redzone *redzone = object + rounded_up_size;
 	unsigned long *free_stack = redzone->free_stack;
 
@@ -134,9 +135,7 @@ bool asan_slab_free(struct kmem_cache *cache, void *object)
 	asan_poison_shadow(free_stack, ASAN_STACK_TRACE_SIZE,
 			   ASAN_HEAP_REDZONE);
 
-	redzone->free_thread_id = get_current_thread_id();
-
-	*((unsigned long *)object + 0) = 1;
+	redzone->free_thread_id = asan_get_current_thread_id();
 
 	#if ASAN_QUARANTINE_ENABLE
 	asan_quarantine_put(cache, object);
@@ -152,9 +151,9 @@ void asan_kmalloc(struct kmem_cache *cache, void *object, unsigned long size)
 	unsigned long addr = (unsigned long)object;
 	unsigned long object_size = cache->object_size;
 	unsigned long rounded_up_object_size =
-		ROUND_UP_TO(object_size, SHADOW_GRANULARITY);
+		round_up(object_size, SHADOW_GRANULARITY);
 	unsigned long rounded_down_kmalloc_size =
-		ROUND_DOWN_TO(size, SHADOW_GRANULARITY);
+		round_down(size, SHADOW_GRANULARITY);
 	struct asan_redzone *redzone = object + rounded_up_object_size;
 	u8 *shadow;
 
@@ -165,12 +164,14 @@ void asan_kmalloc(struct kmem_cache *cache, void *object, unsigned long size)
 			   ASAN_HEAP_KMALLOC_REDZONE);
 	asan_unpoison_shadow(object, rounded_down_kmalloc_size);
 	if (rounded_down_kmalloc_size != size) {
-		shadow = (u8 *)mem_to_shadow(addr + rounded_down_kmalloc_size);
+		shadow = (u8 *)asan_mem_to_shadow(addr +
+						  rounded_down_kmalloc_size);
 		*shadow = size & (SHADOW_GRANULARITY - 1);
 	}
 
 	redzone->kmalloc_size = size;
 }
+EXPORT_SYMBOL(asan_kmalloc);
 
 void asan_krealloc(void *object, unsigned long new_size)
 {
@@ -183,7 +184,7 @@ void asan_add_redzone(struct kmem_cache *cache, size_t *cache_size)
 {
 	unsigned long object_size = cache->object_size;
 	unsigned long rounded_up_object_size =
-		ROUND_UP_TO(object_size, sizeof(unsigned long));
+		round_up(object_size, sizeof(unsigned long));
 
 	/* FIXME: no redzones in 4MB cache. */
 	if (*cache_size >= 4 * 1024 * 1024) {
@@ -201,13 +202,13 @@ void asan_add_redzone(struct kmem_cache *cache, size_t *cache_size)
 
 void asan_on_kernel_init(void)
 {
-	do_bo();
-	do_bo_left();
-	do_bo_kmalloc();
-	do_bo_krealloc();
-	do_bo_krealloc_less();
-	do_krealloc_more();
-	do_uaf();
-	do_uaf_quarantine();
-	do_uaf_memset();
+	/*asan_do_bo();
+	asan_do_bo_left();
+	asan_do_bo_kmalloc();
+	asan_do_bo_krealloc();
+	asan_do_bo_krealloc_less();
+	asan_do_krealloc_more();
+	asan_do_uaf();
+	asan_do_uaf_quarantine();*/
+	asan_do_uaf_memset();
 }

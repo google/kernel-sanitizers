@@ -1,5 +1,6 @@
 #include "quarantine.h"
 
+#include <linux/kernel.h>
 #include <linux/list.h>
 #include <linux/types.h>
 #include <linux/slab.h>
@@ -15,7 +16,7 @@ static DEFINE_SPINLOCK(lock);
 void asan_quarantine_put(struct kmem_cache *cache, void *object)
 {
 	unsigned long size = cache->object_size;
-	unsigned long rounded_up_size = ROUND_UP_TO(size, SHADOW_GRANULARITY);
+	unsigned long rounded_up_size = round_up(size, SHADOW_GRANULARITY);
 	struct asan_redzone *redzone = object + rounded_up_size;
 	struct chunk *chunk = &redzone->chunk;
 	unsigned long flags;

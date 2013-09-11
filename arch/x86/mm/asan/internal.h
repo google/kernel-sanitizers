@@ -39,19 +39,11 @@ struct asan_redzone {
 #define ASAN_REDZONE_SIZE sizeof(struct asan_redzone)
 
 #define ASAN_QUARANTINE_ENABLE 1
-#define ASAN_QUARANTINE_SIZE (1 << 20)
+#define ASAN_QUARANTINE_SIZE (16 << 20)
 
 #define ASAN_COLORED_OUTPUT_ENABLE 1
 
 extern int asan_enabled;
-
-/* granularity should be a power of 2. */
-#define ROUND_UP_TO(size, granularity) \
-	(((size) + (granularity) - 1) & ~((granularity) - 1))
-#define ROUND_DOWN_TO(size, granularity) \
-	((size) & ~((granularity) - 1))
-#define ADDR_IS_ALIGNED(addr, granularity) \
-	(((addr) & ((granularity) - 1)) == 0)
 
 /*
  * Checks region for poisoned bytes.

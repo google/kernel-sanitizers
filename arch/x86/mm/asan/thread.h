@@ -3,6 +3,6 @@
 
 #include <linux/types.h>
 
-pid_t get_current_thread_id(void);
+pid_t asan_get_current_thread_id(void);
 
 #endif

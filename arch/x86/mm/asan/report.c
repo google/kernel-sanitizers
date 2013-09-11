@@ -32,9 +32,9 @@
 	#define COLOR_WHITE   ""
 #endif
 
-static void print_error_description(unsigned long addr)
+static void asan_print_error_description(unsigned long addr)
 {
-	u8 *shadow = (u8 *)mem_to_shadow(addr);
+	u8 *shadow = (u8 *)asan_mem_to_shadow(addr);
 	const char *bug_type = "unknown-crash";
 
 	/* TODO: handle 16 bytes accesses. */
@@ -57,9 +57,9 @@ static void print_error_description(unsigned long addr)
 	       COLOR_RED, bug_type, addr, COLOR_NORMAL);
 }
 
-static void describe_access_to_heap(unsigned long addr,
-				    unsigned long object_addr,
-				    unsigned long object_size,
+static void asan_describe_access_to_heap(unsigned long addr,
+					 unsigned long object_addr,
+					 unsigned long object_size,
 				    unsigned long kmalloc_size)
 {
 	const char *rel_type;
@@ -90,9 +90,9 @@ static void describe_access_to_heap(unsigned long addr,
 	       object_addr + object_size, COLOR_NORMAL);
 }
 
-static void describe_heap_address(unsigned long addr)
+static void asan_describe_heap_address(unsigned long addr)
 {
-	u8 *shadow = (u8 *)mem_to_shadow(addr);
+	u8 *shadow = (u8 *)asan_mem_to_shadow(addr);
 	u8 *shadow_left, *shadow_right;
 	unsigned long redzone_addr;
 	struct asan_redzone *redzone;
@@ -105,7 +105,7 @@ static void describe_heap_address(unsigned long addr)
 
 	if (*shadow == ASAN_SHADOW_GAP) {
 		pr_err("%sAccessed by thread T%d:%s\n", COLOR_BLUE,
-		       get_current_thread_id(), COLOR_NORMAL);
+		       asan_get_current_thread_id(), COLOR_NORMAL);
 		asan_print_current_stack_trace();
 		pr_err("\n");
 		return;
@@ -145,7 +145,7 @@ static void describe_heap_address(unsigned long addr)
 	}
 
 	/* shadow now points to the beginning of the redzone. */
-	redzone_addr = shadow_to_mem((unsigned long)shadow);
+	redzone_addr = asan_shadow_to_mem((unsigned long)shadow);
 	redzone = (struct asan_redzone *)redzone_addr;
 
 	object_addr = (unsigned long)redzone->chunk.object;
@@ -161,11 +161,11 @@ static void describe_heap_address(unsigned long addr)
 	if (use_after_free)
 		free_stack = redzone->free_stack;
 
-	describe_access_to_heap(addr, object_addr, object_size,
-				redzone->kmalloc_size);
+	asan_describe_access_to_heap(addr, object_addr, object_size,
+				     redzone->kmalloc_size);
 
 	pr_err("%sAccessed by thread T%d:%s\n", COLOR_BLUE,
-	       get_current_thread_id(), COLOR_NORMAL);
+	       asan_get_current_thread_id(), COLOR_NORMAL);
 	asan_print_current_stack_trace();
 	pr_err("\n");
 
@@ -184,8 +184,8 @@ static void describe_heap_address(unsigned long addr)
 	}
 }
 
-static int print_shadow_byte(const char *before, u8 shadow,
-			     const char *after, char *output)
+static int asan_print_shadow_byte(const char *before, u8 shadow,
+				  const char *after, char *output)
 {
 	const char *color_prefix = COLOR_NORMAL;
 	const char *color_postfix = COLOR_NORMAL;
@@ -214,7 +214,7 @@ static int print_shadow_byte(const char *before, u8 shadow,
 		+ strlen(color_postfix) + strlen(after);
 }
 
-static void print_shadow_bytes(u8 *shadow, u8 *guilty, char *output)
+static void asan_print_shadow_bytes(u8 *shadow, u8 *guilty, char *output)
 {
 	int i;
 	const char *before, *after;
@@ -223,31 +223,32 @@ static void print_shadow_bytes(u8 *shadow, u8 *guilty, char *output)
 		before = (shadow == guilty) ? "[" :
 			(i != 0 && shadow - 1 == guilty) ? "" : " ";
 		after = (shadow == guilty) ? "]" : "";
-		output += print_shadow_byte(before, *shadow, after, output);
+		output += asan_print_shadow_byte(before, *shadow,
+						 after, output);
 		shadow++;
 	}
 }
 
-static void print_shadow_for_address(unsigned long addr)
+static void asan_print_shadow_for_address(unsigned long addr)
 {
 	int i;
 	char buffer[512];
 	const char *prefix;
-	unsigned long shadow = mem_to_shadow(addr);
+	unsigned long shadow = asan_mem_to_shadow(addr);
 	unsigned long aligned_shadow = shadow & ~(SHADOW_BYTES_PER_ROW - 1);
 
 	pr_err("Shadow bytes around the buggy address:\n");
 	for (i = -5; i <= 5; i++) {
-		print_shadow_bytes((u8 *)aligned_shadow +
-				   i * SHADOW_BYTES_PER_ROW,
-				   (u8 *)shadow, buffer);
+		asan_print_shadow_bytes((u8 *)aligned_shadow +
+					i * SHADOW_BYTES_PER_ROW,
+					(u8 *)shadow, buffer);
 		prefix = (i == 0) ? "=>" : "  ";
 		pr_err("%s%lx:%s\n", prefix,
-		       shadow_to_mem(aligned_shadow + i * 0x10), buffer);
+		       asan_shadow_to_mem(aligned_shadow + i * 0x10), buffer);
 	}
 }
 
-static void print_shadow_legend(void)
+static void asan_print_shadow_legend(void)
 {
 	int i;
 	char partially_addressable[64];
@@ -280,9 +281,9 @@ void asan_report_error(unsigned long poisoned_addr)
 		return;
 
 	pr_err("=========================================================================\n");
-	print_error_description(poisoned_addr);
-	describe_heap_address(poisoned_addr);
-	print_shadow_for_address(poisoned_addr);
-	print_shadow_legend();
+	asan_print_error_description(poisoned_addr);
+	asan_describe_heap_address(poisoned_addr);
+	asan_print_shadow_for_address(poisoned_addr);
+	asan_print_shadow_legend();
 	pr_err("=========================================================================\n");
 }

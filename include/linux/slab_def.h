@@ -129,7 +129,7 @@ static __always_inline void *kmalloc(size_t size, gfp_t flags)
 	struct kmem_cache *cachep;
 	void *ret;
 
-	if (0 && __builtin_constant_p(size)) {
+	if (__builtin_constant_p(size)) {
 		int i;
 
 		if (!size)

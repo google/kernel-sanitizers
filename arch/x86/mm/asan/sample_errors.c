@@ -4,7 +4,7 @@
 
 #include "internal.h"
 
-void do_bo(void)
+void asan_do_bo(void)
 {
 	char *ptr;
 
@@ -14,7 +14,7 @@ void do_bo(void)
 	kfree(ptr);
 }
 
-void do_bo_kmalloc(void)
+void asan_do_bo_kmalloc(void)
 {
 	char *ptr;
 
@@ -24,7 +24,7 @@ void do_bo_kmalloc(void)
 	kfree(ptr);
 }
 
-void do_bo_krealloc(void)
+void asan_do_bo_krealloc(void)
 {
 	char *ptr1, *ptr2;
 
@@ -35,7 +35,7 @@ void do_bo_krealloc(void)
 	kfree(ptr2);
 }
 
-void do_bo_krealloc_less(void)
+void asan_do_bo_krealloc_less(void)
 {
 	char *ptr1, *ptr2;
 
@@ -46,7 +46,7 @@ void do_bo_krealloc_less(void)
 	kfree(ptr2);
 }
 
-void do_krealloc_more(void)
+void asan_do_krealloc_more(void)
 {
 	char *ptr1, *ptr2;
 
@@ -57,7 +57,7 @@ void do_krealloc_more(void)
 	kfree(ptr2);
 }
 
-void do_bo_left(void)
+void asan_do_bo_left(void)
 {
 	char *ptr;
 
@@ -67,7 +67,7 @@ void do_bo_left(void)
 	kfree(ptr);
 }
 
-void do_uaf(void)
+void asan_do_uaf(void)
 {
 	char *ptr;
 
@@ -77,7 +77,7 @@ void do_uaf(void)
 	*(ptr + 126 - 64) = 'x';
 }
 
-void do_uaf_memset(void)
+void asan_do_uaf_memset(void)
 {
 	char *ptr;
 
@@ -87,7 +87,7 @@ void do_uaf_memset(void)
 	memset(ptr, 0, 30);
 }
 
-void do_uaf_quarantine(void)
+void asan_do_uaf_quarantine(void)
 {
 	char *ptr1, *ptr2;
 

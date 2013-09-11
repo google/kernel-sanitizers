@@ -5,7 +5,7 @@
 
 #include <asm/thread_info.h>
 
-pid_t get_current_thread_id(void)
+pid_t asan_get_current_thread_id(void)
 {
 	return current_thread_info()->task->pid;
 }
