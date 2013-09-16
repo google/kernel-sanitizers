@@ -97,6 +97,7 @@
 				(unsigned long)ZERO_SIZE_PTR)
 
 #include <linux/kmemleak.h>
+#include <linux/asan.h>
 
 struct mem_cgroup;
 /*
@@ -388,6 +389,8 @@ static __always_inline void *kmalloc_large(size_t size, gfp_t flags)
  */
 static __always_inline void *kmalloc(size_t size, gfp_t flags)
 {
+	void *ret;
+
 	if (__builtin_constant_p(size)) {
 		if (size > KMALLOC_MAX_CACHE_SIZE)
 			return kmalloc_large(size, flags);
@@ -398,8 +401,12 @@ static __always_inline void *kmalloc(size_t size, gfp_t flags)
 			if (!index)
 				return ZERO_SIZE_PTR;
 
-			return kmem_cache_alloc_trace(kmalloc_caches[index],
+			ret = kmem_cache_alloc_trace(kmalloc_caches[index],
 					flags, size);
+
+			asan_kmalloc(kmalloc_caches[index], ret, size);
+
+			return ret;
 		}
 #endif
 	}

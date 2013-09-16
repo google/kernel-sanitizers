@@ -243,6 +243,25 @@ void asan_check_region(const void *addr, unsigned long size, bool write)
 	asan_report_error(poisoned_addr, size, write);
 }
 
+#define TSAN_REPORT(type, size, write)				\
+void __tsan_##type##size(unsigned long addr)			\
+{								\
+	asan_check_region((void *)addr, (size), (write));	\
+}								\
+EXPORT_SYMBOL(__tsan_##type##size);
+
+TSAN_REPORT(read, 1, false)
+TSAN_REPORT(read, 2, false)
+TSAN_REPORT(read, 4, false)
+TSAN_REPORT(read, 8, false)
+TSAN_REPORT(read, 16, false)
+
+TSAN_REPORT(write, 1, true)
+TSAN_REPORT(write, 2, true)
+TSAN_REPORT(write, 4, true)
+TSAN_REPORT(write, 8, true)
+TSAN_REPORT(write, 16, true)
+
 void __init asan_init_shadow(void)
 {
 	unsigned long shadow_size = (max_pfn << PAGE_SHIFT) >> SHADOW_SCALE;
@@ -421,22 +440,3 @@ void asan_on_kernel_init(void)
 	asan_do_uaf_quarantine();*/
 	asan_do_uaf_memset();
 }
-
-#define TSAN_REPORT(type, size, write)				\
-void __tsan_##type##size(unsigned long addr)			\
-{								\
-	asan_check_region((void *)addr, (size), (write));	\
-}								\
-EXPORT_SYMBOL(__tsan_##type##size);
-
-TSAN_REPORT(read, 1, false)
-TSAN_REPORT(read, 2, false)
-TSAN_REPORT(read, 4, false)
-TSAN_REPORT(read, 8, false)
-TSAN_REPORT(read, 16, false)
-
-TSAN_REPORT(write, 1, true)
-TSAN_REPORT(write, 2, true)
-TSAN_REPORT(write, 4, true)
-TSAN_REPORT(write, 8, true)
-TSAN_REPORT(write, 16, true)
