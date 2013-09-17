@@ -122,7 +122,6 @@ static void asan_quarantine_drop_cache(struct kmem_cache *cache)
 		chunk = list_entry(pos, struct chunk, list);
 		if (chunk->cache == cache) {
 			list_del(pos);
-pr_err("Cache dropped!\n");
 
 			quarantine_size -= chunk->cache->object_size;
 
@@ -330,21 +329,27 @@ void asan_slab_alloc(struct kmem_cache *cache, void *object)
 		round_down(size, SHADOW_GRANULARITY);
 	unsigned long rounded_up_size =
 		round_up(size, SHADOW_GRANULARITY);
-	struct asan_redzone *redzone = object + rounded_up_size;
-	unsigned long *alloc_stack = redzone->alloc_stack;
+	struct asan_redzone *redzone;
+	unsigned long *alloc_stack;
 	u8 *shadow;
-
-	/* FIXME: unpoison / poison. */
-	asan_unpoison_shadow(alloc_stack, ASAN_STACK_TRACE_SIZE);
-	asan_save_stack_trace(alloc_stack, ASAN_STACK_TRACE_FRAMES);
-	asan_poison_shadow(alloc_stack, ASAN_STACK_TRACE_SIZE,
-			   ASAN_HEAP_REDZONE);
 
 	asan_unpoison_shadow(object, rounded_down_size);
 	if (rounded_down_size != size) {
 		shadow = (u8 *)asan_mem_to_shadow(addr + rounded_down_size);
 		*shadow = size & (SHADOW_GRANULARITY - 1);
 	}
+
+	if (!cache->asan_has_redzone)
+		return;
+
+	redzone = object + rounded_up_size;
+	alloc_stack = redzone->alloc_stack;
+
+	/* FIXME: unpoison / poison. */
+	asan_unpoison_shadow(alloc_stack, ASAN_STACK_TRACE_SIZE);
+	asan_save_stack_trace(alloc_stack, ASAN_STACK_TRACE_FRAMES);
+	asan_poison_shadow(alloc_stack, ASAN_STACK_TRACE_SIZE,
+			   ASAN_HEAP_REDZONE);
 
 	redzone->alloc_thread_id = asan_get_current_thread_id();
 	redzone->free_thread_id = -1;
@@ -363,19 +368,26 @@ bool asan_slab_free(struct kmem_cache *cache, void *object)
 {
 	unsigned long size = cache->object_size;
 	unsigned long rounded_up_size = round_up(size, SHADOW_GRANULARITY);
-	struct asan_redzone *redzone = object + rounded_up_size;
-	unsigned long *free_stack = redzone->free_stack;
+	struct asan_redzone *redzone;
+	unsigned long *free_stack;
 
 	if (cache->flags & SLAB_DESTROY_BY_RCU)
 		return true;
+
+	/* XXX: double poisoning with quarantine. */
+	asan_poison_shadow(object, rounded_up_size, ASAN_HEAP_FREE);
+
+	if (!cache->asan_has_redzone)
+		return true;
+
+	redzone = object + rounded_up_size;
+	free_stack = redzone->free_stack;
 
 #if ASAN_QUARANTINE_ENABLE
 	/* Check if the object is in the quarantine. */
 	if (redzone->quarantine_flag == 1)
 		return true;
 #endif
-
-	asan_poison_shadow(object, rounded_up_size, ASAN_HEAP_FREE);
 
 	/* FIXME: unpoison / poison. */
 	asan_unpoison_shadow(free_stack, ASAN_STACK_TRACE_SIZE);
@@ -407,7 +419,7 @@ void asan_kmalloc(struct kmem_cache *cache, void *object, unsigned long size)
 		round_up(object_size, SHADOW_GRANULARITY);
 	unsigned long rounded_down_kmalloc_size =
 		round_down(size, SHADOW_GRANULARITY);
-	struct asan_redzone *redzone = object + rounded_up_object_size;
+	struct asan_redzone *redzone;
 	u8 *shadow;
 
 	if (object == NULL)
@@ -421,6 +433,11 @@ void asan_kmalloc(struct kmem_cache *cache, void *object, unsigned long size)
 						  rounded_down_kmalloc_size);
 		*shadow = size & (SHADOW_GRANULARITY - 1);
 	}
+
+	if (!cache->asan_has_redzone)
+		return;
+
+	redzone = object + rounded_up_object_size;
 
 	redzone->kmalloc_size = size;
 }
@@ -441,7 +458,7 @@ void asan_add_redzone(struct kmem_cache *cache, size_t *cache_size)
 
 	/* FIXME: no redzones in 4MB cache. */
 	if (*cache_size >= 4 * 1024 * 1024) {
-		pr_err("Warning: unable to add redzones for cache with size: %lu.\n",
+		pr_err("Warning: unable to reserve redzone for cache with size: %lu.\n",
 		       *cache_size);
 		return;
 	}
@@ -455,14 +472,15 @@ void asan_add_redzone(struct kmem_cache *cache, size_t *cache_size)
 
 void asan_on_kernel_init(void)
 {
-	asan_do_bo();
+	/*asan_do_bo();
 	asan_do_bo_left();
 	asan_do_bo_kmalloc();
 	asan_do_bo_krealloc();
 	asan_do_bo_krealloc_less();
 	asan_do_bo_16();
+	asan_do_bo_4mb();
 	asan_do_krealloc_more();
 	asan_do_uaf();
-	asan_do_uaf_quarantine();
+	asan_do_uaf_quarantine();*/
 	asan_do_uaf_memset();
 }

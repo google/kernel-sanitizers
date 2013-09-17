@@ -2,6 +2,7 @@
 
 #include <linux/fs_struct.h>
 #include <linux/kernel.h>
+#include <linux/mm.h>
 #include <linux/printk.h>
 #include <linux/sched.h>
 #include <linux/string.h>
@@ -91,6 +92,12 @@ static void asan_describe_access_to_heap(unsigned long addr,
 	       object_addr + object_size, COLOR_NORMAL);
 }
 
+static struct kmem_cache *asan_mem_to_cache(const void *obj)
+{
+	struct page *page = virt_to_head_page(obj);
+	return page->slab_cache;
+}
+
 static void asan_describe_heap_address(unsigned long addr,
 				       unsigned long access_size,
 				       bool is_write)
@@ -106,11 +113,16 @@ static void asan_describe_heap_address(unsigned long addr,
 	unsigned long *alloc_stack = NULL;
 	unsigned long *free_stack = NULL;
 
-	if (*shadow == ASAN_SHADOW_GAP) {
+	struct kmem_cache *cache = asan_mem_to_cache((void *)addr);
+
+	if (!cache->asan_has_redzone || *shadow == ASAN_SHADOW_GAP) {
 		pr_err("%s%s of size %lu at %lx thread T%d:%s\n",
 		       COLOR_BLUE, is_write ? "WRITE" : "READ", access_size,
 		       addr, asan_get_current_thread_id(), COLOR_NORMAL);
 		asan_print_current_stack_trace();
+		pr_err("\n");
+		pr_err("%sNo metainfo is available for this access.%s\n",
+		       COLOR_BLUE, COLOR_NORMAL);
 		pr_err("\n");
 		return;
 	}
@@ -125,14 +137,19 @@ static void asan_describe_heap_address(unsigned long addr,
 
 		if (shadow - shadow_left <= shadow_right - shadow) {
 			shadow = shadow_left;
-		} else {
-			shadow = shadow_right;
-			while (*shadow != ASAN_HEAP_REDZONE) {
-				shadow++;
-				if (shadow == shadow_right + MAX_OBJECT_SIZE) {
-					shadow = shadow_left;
-					break;
-				}
+			break;
+		}
+
+		/*
+		 * FIXME: we can end up in the next page, which is not
+		 * allocated or it's cache has no redzone.
+		 */
+		shadow = shadow_right;
+		while (*shadow != ASAN_HEAP_REDZONE) {
+			shadow++;
+			if (shadow == shadow_right + MAX_OBJECT_SIZE) {
+				shadow = shadow_left;
+				break;
 			}
 		}
 

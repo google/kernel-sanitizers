@@ -79,6 +79,15 @@ void asan_do_bo_16(void)
 	kfree(ptr2);
 }
 
+void asan_do_bo_4mb(void)
+{
+	char *ptr;
+
+	pr_err("Trying buffer-overflow in 4mb cache...\n");
+	ptr = kmalloc((4 << 20) - 8 * 16 * 5, GFP_KERNEL);
+	ptr[0] = ptr[(4 << 20) - 1];
+}
+
 void asan_do_uaf(void)
 {
 	char *ptr;
