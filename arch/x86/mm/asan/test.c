@@ -73,7 +73,7 @@ void asan_do_bo_16(void)
 
 	pr_err("Trying buffer-overflow for 16 bytes access...\n");
 	ptr1 = kmalloc(10, GFP_KERNEL);
-        ptr2 = kmalloc(16, GFP_KERNEL);
+	ptr2 = kmalloc(16, GFP_KERNEL);
 	*ptr1 = *ptr2;
 	kfree(ptr1);
 	kfree(ptr2);

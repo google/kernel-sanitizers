@@ -86,11 +86,9 @@ static void asan_quarantine_put(struct kmem_cache *cache, void *object)
 	spin_unlock_irqrestore(&quarantine_lock, flags);
 }
 
-static void asan_quarantine_check(void)
+static void asan_quarantine_flush(void)
 {
 	struct chunk *chunk;
-	struct kmem_cache *cache;
-	void *object;
 	unsigned long flags;
 
 	spin_lock_irqsave(&quarantine_lock, flags);
@@ -102,14 +100,36 @@ static void asan_quarantine_check(void)
 				   struct chunk, list);
 		list_del(quarantine_chunk_list.prev);
 
-		cache = chunk->cache;
-		object = chunk->object;
-		quarantine_size -= cache->object_size;
+		quarantine_size -= chunk->cache->object_size;
 
-		/* XXX: unlock / lock. */
 		spin_unlock_irqrestore(&quarantine_lock, flags);
-		kmem_cache_free(cache, object);
+		kmem_cache_free(chunk->cache, chunk->object);
 		spin_lock_irqsave(&quarantine_lock, flags);
+	}
+
+	spin_unlock_irqrestore(&quarantine_lock, flags);
+}
+
+static void asan_quarantine_drop_cache(struct kmem_cache *cache)
+{
+	unsigned long flags;
+	struct list_head *pos, *n;
+	struct chunk *chunk;
+
+	spin_lock_irqsave(&quarantine_lock, flags);
+
+	list_for_each_safe(pos, n, &quarantine_chunk_list) {
+		chunk = list_entry(pos, struct chunk, list);
+		if (chunk->cache == cache) {
+			list_del(pos);
+pr_err("Cache dropped!\n");
+
+			quarantine_size -= chunk->cache->object_size;
+
+			spin_unlock_irqrestore(&quarantine_lock, flags);
+			kmem_cache_free(chunk->cache, chunk->object);
+			spin_lock_irqsave(&quarantine_lock, flags);
+		}
 	}
 
 	spin_unlock_irqrestore(&quarantine_lock, flags);
@@ -139,7 +159,8 @@ unsigned long asan_shadow_to_mem(unsigned long shadow_addr)
  * Poisons the shadow memory for 'size' bytes starting from 'addr'.
  * Memory addresses should be aligned to SHADOW_GRANULARITY.
  */
-static void asan_poison_shadow(const void *address, unsigned long size, u8 value)
+static void
+asan_poison_shadow(const void *address, unsigned long size, u8 value)
 {
 	unsigned long shadow_beg, shadow_end;
 	unsigned long addr = (unsigned long)address;
@@ -292,7 +313,7 @@ void asan_slab_create(struct kmem_cache *cache, void *slab)
 	asan_poison_shadow(slab, (1 << cache->gfporder) << PAGE_SHIFT,
 			   ASAN_HEAP_REDZONE);
 #if ASAN_QUARANTINE_ENABLE
-	asan_quarantine_check();
+	asan_quarantine_flush();
 #endif
 }
 
@@ -365,12 +386,17 @@ bool asan_slab_free(struct kmem_cache *cache, void *object)
 	redzone->free_thread_id = asan_get_current_thread_id();
 
 #if ASAN_QUARANTINE_ENABLE
-	asan_quarantine_put(cache, object);
 	redzone->quarantine_flag = 1;
+	asan_quarantine_put(cache, object);
 	return false;
 #endif
 
 	return true;
+}
+
+void asan_cache_destroy(struct kmem_cache *cache)
+{
+	asan_quarantine_drop_cache(cache);
 }
 
 void asan_kmalloc(struct kmem_cache *cache, void *object, unsigned long size)
@@ -429,7 +455,7 @@ void asan_add_redzone(struct kmem_cache *cache, size_t *cache_size)
 
 void asan_on_kernel_init(void)
 {
-	/*asan_do_bo();
+	asan_do_bo();
 	asan_do_bo_left();
 	asan_do_bo_kmalloc();
 	asan_do_bo_krealloc();
@@ -437,6 +463,6 @@ void asan_on_kernel_init(void)
 	asan_do_bo_16();
 	asan_do_krealloc_more();
 	asan_do_uaf();
-	asan_do_uaf_quarantine();*/
+	asan_do_uaf_quarantine();
 	asan_do_uaf_memset();
 }
