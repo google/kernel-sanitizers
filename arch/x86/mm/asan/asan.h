@@ -47,9 +47,9 @@ struct asan_redzone {
 #define ASAN_REDZONE_SIZE sizeof(struct asan_redzone)
 
 #define ASAN_QUARANTINE_ENABLE 1
-#define ASAN_QUARANTINE_SIZE (16 << 20)
+#define ASAN_QUARANTINE_SIZE (128 << 20)
 
-#define ASAN_COLORED_OUTPUT_ENABLE 1
+#define ASAN_COLORED_OUTPUT_ENABLE 0
 
 extern unsigned long max_pfn;
 
