@@ -14,8 +14,6 @@ def should_instrument(filename):
     return False #loop?
   if filename.startswith('mm/slab'):
     return False #slab.c slab_common.c
-  if filename.startswith('fs/dcache.c'):
-    return False #dentry_string_cmp()
   if filename.startswith('arch/x86/vdso'):
     return False #user-space
 
