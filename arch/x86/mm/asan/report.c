@@ -30,6 +30,9 @@
 	#define COLOR_WHITE   ""
 #endif
 
+int asan_error_counter; /* = 0 */
+DEFINE_SPINLOCK(asan_error_counter_lock);
+
 static void asan_print_stack_trace(unsigned long *stack, unsigned int max_entries)
 {
 	unsigned int i;
@@ -315,14 +318,16 @@ static void asan_print_shadow_legend(void)
 	       COLOR_BLUE, ASAN_SHADOW_GAP, COLOR_NORMAL);
 }
 
-static int counter; /* = 0 */
-
 void asan_report_error(unsigned long poisoned_addr,
 		       unsigned long access_size, bool is_write)
 {
-	counter++;
-	if (counter > 100)
+	unsigned long flags;
+
+	spin_lock_irqsave(&asan_error_counter_lock, flags);
+	asan_error_counter++;
+	if (asan_error_counter > 100)
 		return;
+	spin_unlock_irqrestore(&asan_error_counter_lock, flags);
 
 	pr_err("=========================================================================\n");
 	asan_print_error_description(poisoned_addr, access_size);

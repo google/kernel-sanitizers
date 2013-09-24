@@ -49,6 +49,9 @@ struct asan_redzone {
 
 #define ASAN_COLORED_OUTPUT_ENABLE 0
 
+extern int asan_error_counter;
+extern spinlock_t asan_error_counter_lock;
+
 pid_t asan_get_current_thread_id(void);
 
 unsigned int asan_save_stack_trace(unsigned long *stack,
