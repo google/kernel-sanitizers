@@ -1,6 +1,8 @@
 #ifndef _ASM_X86_STRING_64_H
 #define _ASM_X86_STRING_64_H
 
+#include <linux/asan.h>
+
 #ifdef __KERNEL__
 
 /* Written 2002 by Andi Kleen */
@@ -65,14 +67,8 @@ int strcmp(const char *cs, const char *ct);
 
 #ifdef CONFIG_ASAN
 
-void *asan_memcpy(void *dst, const void *src, size_t len);
 #define memcpy(dst, src, len) asan_memcpy((dst), (src), (len))
-#define safe_memcpy(dst, src, len) __inline_memcpy((dst), (src), (len))
-
-void *asan_memset(void *ptr, int val, size_t len);
 #define memset(ptr, val, len) asan_memset((ptr), (val), (len))
-
-void *asan_memmove(void *dst, const void *src, size_t len);
 #define memmove(dst, src, len) asan_memmove((dst), (src), (len))
 
 /*

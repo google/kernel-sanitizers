@@ -24,4 +24,8 @@ void asan_add_redzone(struct kmem_cache *cache, size_t *cache_size);
 /* Called when the kernel is initialized. */
 void asan_on_kernel_init(void);
 
+void *asan_memcpy(void *dst, const void *src, size_t len);
+void *asan_memset(void *ptr, int val, size_t len);
+void *asan_memmove(void *dst, const void *src, size_t len);
+
 #endif /* LINUX_ASAN_H */

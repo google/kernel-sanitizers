@@ -1,14 +1,13 @@
-#include "report.h"
+#include "asan.h"
 
 #include <linux/fs_struct.h>
 #include <linux/kernel.h>
 #include <linux/mm.h>
 #include <linux/printk.h>
 #include <linux/sched.h>
+#include <linux/stacktrace.h>
 #include <linux/string.h>
 #include <linux/types.h>
-
-#include "asan.h"
 
 #define SHADOW_BYTES_PER_ROW 16
 #define MAX_OBJECT_SIZE (2 << 20)
@@ -31,6 +30,27 @@
 	#define COLOR_WHITE   ""
 #endif
 
+static void asan_print_stack_trace(unsigned long *stack, unsigned int max_entries)
+{
+	unsigned int i;
+	void *frame;
+
+	for (i = 0; i < max_entries; i++) {
+		if (stack[i] == ULONG_MAX || stack[i] == 0)
+			break;
+		frame = (void *)stack[i];
+		pr_err("  #%u %p (%pS)\n", i, frame, frame);
+	}
+}
+
+static void asan_print_current_stack_trace(void)
+{
+	unsigned long stack[ASAN_MAX_STACK_TRACE_FRAMES];
+	unsigned int entries =
+		asan_save_stack_trace(&stack[0], ASAN_MAX_STACK_TRACE_FRAMES);
+	asan_print_stack_trace(&stack[0], entries);
+}
+
 static void asan_print_error_description(unsigned long addr,
 					 unsigned long access_size)
 {
@@ -38,20 +58,20 @@ static void asan_print_error_description(unsigned long addr,
 	const char *bug_type = "unknown-crash";
 
 	/* If we are accessing 16 bytes, look at the second shadow byte. */
-	if (*shadow == 0 && access_size > SHADOW_GRANULARITY)
+	if (*shadow == 0 && access_size > ASAN_SHADOW_GRANULARITY)
 		shadow++;
 
 	switch (*shadow) {
 	case ASAN_HEAP_REDZONE:
 	case ASAN_HEAP_KMALLOC_REDZONE:
-	case 0 ... SHADOW_GRANULARITY - 1:
+	case 0 ... ASAN_SHADOW_GRANULARITY - 1:
 		bug_type = "heap-buffer-overflow";
 		break;
 	case ASAN_HEAP_FREE:
 		bug_type = "heap-use-after-free";
 		break;
 	case ASAN_SHADOW_GAP:
-		bug_type = "shadow-gap-access";
+		bug_type = "wild-memory-access";
 		break;
 	}
 
@@ -155,7 +175,7 @@ static void asan_describe_heap_address(unsigned long addr,
 
 		break;
 	case ASAN_HEAP_KMALLOC_REDZONE:
-	case 0 ... SHADOW_GRANULARITY - 1:
+	case 0 ... ASAN_SHADOW_GRANULARITY - 1:
 		while (*shadow != ASAN_HEAP_REDZONE)
 			shadow++;
 		break;
@@ -220,7 +240,7 @@ static int asan_print_shadow_byte(const char *before, u8 shadow,
 	case ASAN_HEAP_KMALLOC_REDZONE:
 		color_prefix = COLOR_YELLOW;
 		break;
-	case 0 ... SHADOW_GRANULARITY - 1:
+	case 0 ... ASAN_SHADOW_GRANULARITY - 1:
 		color_prefix = COLOR_WHITE;
 		break;
 	case ASAN_HEAP_FREE:
@@ -276,11 +296,11 @@ static void asan_print_shadow_legend(void)
 	int i;
 	char partially_addressable[64];
 
-	for (i = 1; i < SHADOW_GRANULARITY; i++)
+	for (i = 1; i < ASAN_SHADOW_GRANULARITY; i++)
 		sprintf(partially_addressable + (i - 1) * 3, "%02x ", i);
 
 	pr_err("Shadow byte legend (one shadow byte represents %d application bytes):\n",
-	       (int)SHADOW_GRANULARITY);
+	       (int)ASAN_SHADOW_GRANULARITY);
 	pr_err("  Addressable:           %s%02x%s\n",
 	       COLOR_WHITE, 0, COLOR_NORMAL);
 	pr_err("  Partially addressable: %s%s%s\n",
