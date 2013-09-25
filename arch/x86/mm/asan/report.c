@@ -9,7 +9,11 @@
 #include <linux/string.h>
 #include <linux/types.h>
 
-#define SHADOW_BYTES_PER_ROW 16
+#define SHADOW_BYTES_PER_BLOCK 8
+#define SHADOW_BLOCKS_PER_ROW 4
+#define SHADOW_BYTES_PER_ROW (SHADOW_BLOCKS_PER_ROW * SHADOW_BYTES_PER_BLOCK)
+#define SHADOW_ROWS_AROUND_ADDR 5
+
 #define MAX_OBJECT_SIZE (2 << 20)
 
 #if ASAN_COLORED_OUTPUT_ENABLE
@@ -111,10 +115,10 @@ static void asan_describe_access_to_heap(unsigned long addr,
 		BUG(); /* Unreachable. */
 	}
 
-	pr_err("%sThe buggy address %lx is located %lu bytes %s\n"
-	       " of %lu-byte region [%lx, %lx)%s\n", COLOR_GREEN,
-	       addr, rel_bytes, rel_type, object_size, object_addr,
-	       object_addr + object_size, COLOR_NORMAL);
+	pr_err("%sThe buggy address %lx is located %lu bytes %s%s\n"
+	       "%s of %lu-byte region [%lx, %lx)%s\n", COLOR_GREEN, addr,
+	       rel_bytes, rel_type, COLOR_NORMAL, COLOR_GREEN, object_size,
+	       object_addr, object_addr + object_size, COLOR_NORMAL);
 }
 
 static struct kmem_cache *asan_mem_to_cache(const void *obj)
@@ -232,48 +236,84 @@ static void asan_describe_heap_address(unsigned long addr,
 	pr_err("\n");
 }
 
-static int asan_print_shadow_byte(const char *before, u8 shadow,
-				  const char *after, char *output)
+static char *asan_print_shadow_byte(const char *before, u8 shadow,
+				    const char *after, char *output)
 {
 	const char *color_prefix = COLOR_NORMAL;
 	const char *color_postfix = COLOR_NORMAL;
+	char marker = 'X';
 
 	switch (shadow) {
 	case ASAN_HEAP_REDZONE:
 		color_prefix = COLOR_RED;
+		marker = 'r';
 		break;
 	case ASAN_HEAP_KMALLOC_REDZONE:
 		color_prefix = COLOR_YELLOW;
+		marker = 'r';
 		break;
-	case 0 ... ASAN_SHADOW_GRANULARITY - 1:
+	case 0:
 		color_prefix = COLOR_WHITE;
+		marker = '.';
+		break;
+	case 1 ... ASAN_SHADOW_GRANULARITY - 1:
+		color_prefix = COLOR_WHITE;
+		marker = '0' + shadow;
 		break;
 	case ASAN_HEAP_FREE:
 		color_prefix = COLOR_MAGENTA;
+		marker = 'f';
 		break;
 	case ASAN_SHADOW_GAP:
 		color_prefix = COLOR_BLUE;
+		marker = 'g';
 		break;
 	}
 
-	sprintf(output, "%s%s%02x%s%s", before, color_prefix, shadow,
-					color_postfix, after);
-	return strlen(before) + strlen(color_prefix) + 2 +
-		+ strlen(color_postfix) + strlen(after);
+	sprintf(output, "%s%s%c%s%s", before, color_prefix,
+		marker, color_postfix, after);
+	return output + strlen(before) + strlen(color_prefix)
+		+ 1 + strlen(color_postfix) + strlen(after);
 }
 
-static void asan_print_shadow_bytes(u8 *shadow, u8 *guilty, char *output)
+static char *asan_print_shadow_block(u8 *shadow, u8 *guilty, char *output)
 {
 	int i;
 	const char *before, *after;
 
-	for (i = 0; i < SHADOW_BYTES_PER_ROW; i++) {
-		before = (shadow == guilty) ? "[" :
-			(i != 0 && shadow - 1 == guilty) ? "" : " ";
-		after = (shadow == guilty) ? "]" : "";
-		output += asan_print_shadow_byte(before, *shadow,
-						 after, output);
+	for (i = 0; i < SHADOW_BYTES_PER_BLOCK; i++) {
+		before = (shadow == guilty) ? ">" : "";
+		after = (shadow == guilty) ? "<" : "";
+		output = asan_print_shadow_byte(before, *shadow,
+						after, output);
 		shadow++;
+	}
+
+	return output;
+}
+
+static bool asan_block_guilty(u8 *block, u8 *guilty)
+{
+	return (block <= guilty) && (guilty < block + SHADOW_BYTES_PER_BLOCK);
+}
+
+static void asan_print_shadow_row(u8 *shadow, u8 *guilty, char *output)
+{
+	int i;
+	const char *before;
+	bool curr_guilty;
+	bool prev_guilty;
+
+	for (i = 0; i < SHADOW_BLOCKS_PER_ROW; i++) {
+		curr_guilty = asan_block_guilty(shadow, guilty);
+		prev_guilty = asan_block_guilty(shadow - SHADOW_BYTES_PER_BLOCK,
+						guilty);
+		before = curr_guilty ? " " :
+			 (prev_guilty && i != 0 ? " " : "  ");
+		sprintf(output, before);
+		output += strlen(before);
+		output = asan_print_shadow_block(shadow, guilty, output);
+		shadow += SHADOW_BYTES_PER_BLOCK;
 	}
 }
 
@@ -281,18 +321,18 @@ static void asan_print_shadow_for_address(unsigned long addr)
 {
 	int i;
 	char buffer[512];
-	const char *prefix;
 	unsigned long shadow = asan_mem_to_shadow(addr);
-	unsigned long aligned_shadow = shadow & ~(SHADOW_BYTES_PER_ROW - 1);
+	unsigned long aligned_shadow = round_down(shadow, SHADOW_BYTES_PER_ROW)
+		- SHADOW_ROWS_AROUND_ADDR * SHADOW_BYTES_PER_ROW;
 
-	pr_err("Shadow bytes around the buggy address:\n");
-	for (i = -5; i <= 5; i++) {
-		asan_print_shadow_bytes((u8 *)aligned_shadow +
-					i * SHADOW_BYTES_PER_ROW,
-					(u8 *)shadow, buffer);
-		prefix = (i == 0) ? "=>" : "  ";
-		pr_err("%s%lx:%s\n", prefix,
-		       asan_shadow_to_mem(aligned_shadow + i * 0x10), buffer);
+	pr_err("Memory state around the buggy address:\n");
+
+	for (i = -SHADOW_ROWS_AROUND_ADDR; i <= SHADOW_ROWS_AROUND_ADDR; i++) {
+		asan_print_shadow_row((u8 *)aligned_shadow,
+				      (u8 *)shadow, buffer);
+		pr_err("%s%lx:%s\n", (i == 0) ? ">" : " ",
+		       asan_shadow_to_mem(aligned_shadow), buffer);
+		aligned_shadow += SHADOW_BYTES_PER_ROW;
 	}
 }
 
@@ -304,20 +344,12 @@ static void asan_print_shadow_legend(void)
 	for (i = 1; i < ASAN_SHADOW_GRANULARITY; i++)
 		sprintf(partially_addressable + (i - 1) * 3, "%02x ", i);
 
-	pr_err("Shadow byte legend (one shadow byte represents %d application bytes):\n",
-	       (int)ASAN_SHADOW_GRANULARITY);
-	pr_err("  Addressable:           %s%02x%s\n",
-	       COLOR_WHITE, 0, COLOR_NORMAL);
-	pr_err("  Partially addressable: %s%s%s\n",
-	       COLOR_WHITE, partially_addressable, COLOR_NORMAL);
-	pr_err("  Heap redzone:          %s%02x%s\n",
-	       COLOR_RED, ASAN_HEAP_REDZONE, COLOR_NORMAL);
-	pr_err("  Heap kmalloc redzone:  %s%02x%s\n",
-	       COLOR_YELLOW, ASAN_HEAP_KMALLOC_REDZONE, COLOR_NORMAL);
-	pr_err("  Freed heap region:     %s%02x%s\n",
-	       COLOR_MAGENTA, ASAN_HEAP_FREE, COLOR_NORMAL);
-	pr_err("  Shadow gap:            %s%02x%s\n",
-	       COLOR_BLUE, ASAN_SHADOW_GAP, COLOR_NORMAL);
+	pr_err("Legend:\n");
+	pr_err(" %s.%s - 8 allocated bytes\n", COLOR_WHITE, COLOR_NORMAL);
+	pr_err(" %sf%s - freed bytes\n", COLOR_MAGENTA, COLOR_NORMAL);
+	pr_err(" %sr%s - redzone bytes\n", COLOR_RED, COLOR_NORMAL);
+	pr_err(" x=%s1%s..%s7%s - x allocated bytes + (8-x) redzone bytes\n",
+	       COLOR_WHITE, COLOR_NORMAL, COLOR_WHITE, COLOR_NORMAL);
 }
 
 void asan_report_error(unsigned long poisoned_addr,
