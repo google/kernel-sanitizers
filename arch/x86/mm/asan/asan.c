@@ -27,7 +27,7 @@ static unsigned long quarantine_size; /* = 0; */
 static LIST_HEAD(quarantine_chunk_list);
 static DEFINE_SPINLOCK(quarantine_lock);
 
-pid_t asan_get_current_thread_id(void)
+pid_t asan_current_thread_id(void)
 {
 	return current_thread_info()->task->pid;
 }
@@ -228,7 +228,7 @@ static const void *asan_region_is_poisoned(const void *addr, unsigned long size)
 	return NULL;
 }
 
-void asan_check_region(const void *addr, unsigned long size, bool write)
+void asan_check_memory_region(const void *addr, unsigned long size, bool write)
 {
 	unsigned long poisoned_addr;
 
@@ -243,24 +243,30 @@ void asan_check_region(const void *addr, unsigned long size, bool write)
 	asan_report_error(poisoned_addr, size, write);
 }
 
-#define TSAN_REPORT(type, size, write)				\
-void __tsan_##type##size(unsigned long addr)			\
-{								\
-	asan_check_region((void *)addr, (size), (write));	\
-}								\
-EXPORT_SYMBOL(__tsan_##type##size);
+static void asan_check_memory_word(unsigned long addr, unsigned long size,
+				   bool write)
+{
+	u8 *shadow_addr;
+	s8 shadow_value;
+	u8 last_accessed_byte;
 
-TSAN_REPORT(read, 1, false)
-TSAN_REPORT(read, 2, false)
-TSAN_REPORT(read, 4, false)
-TSAN_REPORT(read, 8, false)
-TSAN_REPORT(read, 16, false)
+	if (!asan_enabled)
+		return;
 
-TSAN_REPORT(write, 1, true)
-TSAN_REPORT(write, 2, true)
-TSAN_REPORT(write, 4, true)
-TSAN_REPORT(write, 8, true)
-TSAN_REPORT(write, 16, true)
+	if (!asan_addr_is_in_mem(addr) || !asan_addr_is_in_mem(addr + size))
+		return;
+
+	shadow_addr = (u8 *)asan_mem_to_shadow(addr);
+	shadow_value = *shadow_addr;
+	if (shadow_value == 0)
+		return;
+
+	last_accessed_byte = (addr & (ASAN_SHADOW_GRANULARITY - 1)) + size - 1;
+	if (last_accessed_byte < shadow_value)
+		return;
+
+	asan_report_error(addr, size, write);
+}
 
 void __init asan_init_shadow(void)
 {
@@ -331,7 +337,7 @@ void asan_slab_alloc(struct kmem_cache *cache, void *object)
 	asan_poison_shadow(alloc_stack, ASAN_STACK_TRACE_SIZE,
 			   ASAN_HEAP_REDZONE);
 
-	redzone->alloc_thread_id = asan_get_current_thread_id();
+	redzone->alloc_thread_id = asan_current_thread_id();
 	redzone->free_thread_id = -1;
 
 	redzone->chunk.cache = cache;
@@ -371,7 +377,7 @@ bool asan_slab_free(struct kmem_cache *cache, void *object)
 	asan_poison_shadow(free_stack, ASAN_STACK_TRACE_SIZE,
 			   ASAN_HEAP_REDZONE);
 
-	redzone->free_thread_id = asan_get_current_thread_id();
+	redzone->free_thread_id = asan_current_thread_id();
 
 	redzone->quarantine_flag = 1;
 	asan_quarantine_put(cache, object);
@@ -454,3 +460,63 @@ void asan_on_kernel_init(void)
 	asan_do_uaf_quarantine();*/
 	asan_do_uaf_memset();
 }
+
+void __tsan_read1(unsigned long addr)
+{
+	asan_check_memory_word(addr, 1, false);
+}
+EXPORT_SYMBOL(__tsan_read1);
+
+void __tsan_read2(unsigned long addr)
+{
+	asan_check_memory_word(addr, 2, false);
+}
+EXPORT_SYMBOL(__tsan_read2);
+
+void __tsan_read4(unsigned long addr)
+{
+	asan_check_memory_word(addr, 4, false);
+}
+EXPORT_SYMBOL(__tsan_read4);
+
+void __tsan_read8(unsigned long addr)
+{
+	asan_check_memory_word(addr, 8, false);
+}
+EXPORT_SYMBOL(__tsan_read8);
+
+void __tsan_read16(unsigned long addr)
+{
+	asan_check_memory_region((void *)addr, 16, false);
+}
+EXPORT_SYMBOL(__tsan_read16);
+
+void __tsan_write1(unsigned long addr)
+{
+	asan_check_memory_word(addr, 1, true);
+}
+EXPORT_SYMBOL(__tsan_write1);
+
+void __tsan_write2(unsigned long addr)
+{
+	asan_check_memory_word(addr, 2, true);
+}
+EXPORT_SYMBOL(__tsan_write2);
+
+void __tsan_write4(unsigned long addr)
+{
+	asan_check_memory_word(addr, 4, true);
+}
+EXPORT_SYMBOL(__tsan_write4);
+
+void __tsan_write8(unsigned long addr)
+{
+	asan_check_memory_word(addr, 8, true);
+}
+EXPORT_SYMBOL(__tsan_write8);
+
+void __tsan_write16(unsigned long addr)
+{
+	asan_check_memory_region((void *)addr, 16, true);
+}
+EXPORT_SYMBOL(__tsan_write16);

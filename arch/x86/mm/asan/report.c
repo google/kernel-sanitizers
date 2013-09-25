@@ -141,7 +141,7 @@ static void asan_describe_heap_address(unsigned long addr,
 	if (!cache->asan_has_redzone || *shadow == ASAN_SHADOW_GAP) {
 		pr_err("%s%s of size %lu at %lx thread T%d:%s\n",
 		       COLOR_BLUE, is_write ? "WRITE" : "READ", access_size,
-		       addr, asan_get_current_thread_id(), COLOR_NORMAL);
+		       addr, asan_current_thread_id(), COLOR_NORMAL);
 		asan_print_current_stack_trace();
 		pr_err("\n");
 		pr_err("%sNo metainfo is available for this access.%s\n",
@@ -210,7 +210,7 @@ static void asan_describe_heap_address(unsigned long addr,
 
 	pr_err("%s%s of size %lu at %lx by thread T%d:%s\n",
 	       COLOR_BLUE, is_write ? "WRITE" : "READ", access_size,
-	       addr, asan_get_current_thread_id(), COLOR_NORMAL);
+	       addr, asan_current_thread_id(), COLOR_NORMAL);
 	asan_print_current_stack_trace();
 	pr_err("\n");
 

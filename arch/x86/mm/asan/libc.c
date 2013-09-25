@@ -9,8 +9,8 @@ void *asan_memcpy(void *dst, const void *src, size_t len)
 	const char *s = (const char *)src;
 	size_t i;
 
-	asan_check_region(src, len, false);
-	asan_check_region(dst, len, true);
+	asan_check_memory_region(src, len, false);
+	asan_check_memory_region(dst, len, true);
 
 	for (i = 0; i < len; i++)
 		d[i] = s[i];
@@ -23,7 +23,7 @@ void *asan_memset(void *ptr, int val, size_t len)
 	char *p = (char *)ptr;
 	size_t i;
 
-	asan_check_region(ptr, len, true);
+	asan_check_memory_region(ptr, len, true);
 
 	for (i = 0; i < len; i++)
 		p[i] = val;
@@ -37,8 +37,8 @@ void *asan_memmove(void *dst, const void *src, size_t len)
 	const char *s = (const char *)src;
 	long i;
 
-	asan_check_region(src, len, false);
-	asan_check_region(dst, len, true);
+	asan_check_memory_region(src, len, false);
+	asan_check_memory_region(dst, len, true);
 
 	if (d < s) {
 		for (i = 0; i < len; i++)

@@ -2,6 +2,7 @@
 #include <linux/slab.h>
 #include <linux/string.h>
 
+/* Expected to produce report. */
 void asan_do_bo(void)
 {
 	char *ptr;
@@ -12,6 +13,7 @@ void asan_do_bo(void)
 	kfree(ptr);
 }
 
+/* Expected to produce report. */
 void asan_do_bo_kmalloc(void)
 {
 	char *ptr;
@@ -22,6 +24,7 @@ void asan_do_bo_kmalloc(void)
 	kfree(ptr);
 }
 
+/* Expected to produce report. */
 void asan_do_bo_krealloc(void)
 {
 	char *ptr1, *ptr2;
@@ -33,6 +36,7 @@ void asan_do_bo_krealloc(void)
 	kfree(ptr2);
 }
 
+/* Expected to produce report. */
 void asan_do_bo_krealloc_less(void)
 {
 	char *ptr1, *ptr2;
@@ -44,6 +48,7 @@ void asan_do_bo_krealloc_less(void)
 	kfree(ptr2);
 }
 
+/* Expected not to produce report. */
 void asan_do_krealloc_more(void)
 {
 	char *ptr1, *ptr2;
@@ -55,6 +60,7 @@ void asan_do_krealloc_more(void)
 	kfree(ptr2);
 }
 
+/* Expected to produce report. */
 void asan_do_bo_left(void)
 {
 	char *ptr;
@@ -65,6 +71,7 @@ void asan_do_bo_left(void)
 	kfree(ptr);
 }
 
+/* Expected to produce report. */
 void asan_do_bo_16(void)
 {
 	struct {
@@ -79,6 +86,7 @@ void asan_do_bo_16(void)
 	kfree(ptr2);
 }
 
+/* Expected to produce report. */
 void asan_do_bo_4mb(void)
 {
 	char *ptr;
@@ -88,6 +96,7 @@ void asan_do_bo_4mb(void)
 	ptr[0] = ptr[(4 << 20) - 1];
 }
 
+/* Expected to produce report. */
 void asan_do_uaf(void)
 {
 	char *ptr;
@@ -98,6 +107,7 @@ void asan_do_uaf(void)
 	*(ptr + 126 - 64) = 'x';
 }
 
+/* Expected to produce report. */
 void asan_do_uaf_memset(void)
 {
 	char *ptr;
@@ -108,6 +118,7 @@ void asan_do_uaf_memset(void)
 	memset(ptr, 0, 30);
 }
 
+/* Expected to produce report. */
 void asan_do_uaf_quarantine(void)
 {
 	char *ptr1, *ptr2;

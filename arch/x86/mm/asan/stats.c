@@ -9,7 +9,7 @@
 
 static int asan_stats_show(struct seq_file *m, void *v)
 {
-	seq_printf(m, "Reports: %d\n", asan_error_counter);
+	seq_printf(m, "Errors: %d\n", asan_error_counter);
 	return 0;
 }
 
