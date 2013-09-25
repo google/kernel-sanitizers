@@ -33,7 +33,8 @@
 int asan_error_counter; /* = 0 */
 DEFINE_SPINLOCK(asan_error_counter_lock);
 
-static void asan_print_stack_trace(unsigned long *stack, unsigned int max_entries)
+static void asan_print_stack_trace(unsigned long *stack,
+				   unsigned int max_entries)
 {
 	unsigned int i;
 	void *frame;
@@ -42,7 +43,7 @@ static void asan_print_stack_trace(unsigned long *stack, unsigned int max_entrie
 		if (stack[i] == ULONG_MAX || stack[i] == 0)
 			break;
 		frame = (void *)stack[i];
-		pr_err("  #%u %p (%pS)\n", i, frame, frame);
+		pr_err(" [<%p>] %pS\n", frame, frame);
 	}
 }
 
@@ -78,7 +79,7 @@ static void asan_print_error_description(unsigned long addr,
 		break;
 	}
 
-	pr_err("%sERROR: AddressSanitizer: %s on address %lx%s\n",
+	pr_err("%sAddressSanitizer: %s on address %lx%s\n",
 	       COLOR_RED, bug_type, addr, COLOR_NORMAL);
 }
 
@@ -110,8 +111,9 @@ static void asan_describe_access_to_heap(unsigned long addr,
 		BUG(); /* Unreachable. */
 	}
 
-	pr_err("%s%lx is located %lu bytes %s of %lu-byte region [%lx, %lx)%s\n",
-	       COLOR_GREEN, addr, rel_bytes, rel_type, object_size, object_addr,
+	pr_err("%sThe buggy address %lx is located %lu bytes %s\n"
+	       " of %lu-byte region [%lx, %lx)%s\n", COLOR_GREEN,
+	       addr, rel_bytes, rel_type, object_size, object_addr,
 	       object_addr + object_size, COLOR_NORMAL);
 }
 
@@ -140,7 +142,7 @@ static void asan_describe_heap_address(unsigned long addr,
 
 	if (!cache->asan_has_redzone || *shadow == ASAN_SHADOW_GAP) {
 		pr_err("%s%s of size %lu at %lx thread T%d:%s\n",
-		       COLOR_BLUE, is_write ? "WRITE" : "READ", access_size,
+		       COLOR_BLUE, is_write ? "Write" : "Read", access_size,
 		       addr, asan_current_thread_id(), COLOR_NORMAL);
 		asan_print_current_stack_trace();
 		pr_err("\n");
@@ -205,29 +207,29 @@ static void asan_describe_heap_address(unsigned long addr,
 	if (use_after_free)
 		free_stack = redzone->free_stack;
 
-	asan_describe_access_to_heap(addr, object_addr, object_size,
-				     redzone->kmalloc_size);
-
-	pr_err("%s%s of size %lu at %lx by thread T%d:%s\n",
-	       COLOR_BLUE, is_write ? "WRITE" : "READ", access_size,
-	       addr, asan_current_thread_id(), COLOR_NORMAL);
+	pr_err("%s%s of size %lu by thread T%d:%s\n", COLOR_BLUE,
+	       is_write ? "Write" : "Read", access_size,
+	       asan_current_thread_id(), COLOR_NORMAL);
 	asan_print_current_stack_trace();
 	pr_err("\n");
 
 	if (free_stack != NULL) {
-		pr_err("%sfreed by thread T%d here:%s\n", COLOR_MAGENTA,
+		pr_err("%sFreed by thread T%d:%s\n", COLOR_MAGENTA,
 		       redzone->free_thread_id, COLOR_NORMAL);
 		asan_print_stack_trace(free_stack, ASAN_STACK_TRACE_FRAMES);
 		pr_err("\n");
 	}
 
 	if (alloc_stack != NULL) {
-		pr_err("%s%sallocated by thread T%d here:%s\n", COLOR_MAGENTA,
-		       free_stack == NULL ? "" : "previously ",
+		pr_err("%sAllocated by thread T%d:%s\n", COLOR_MAGENTA,
 		       redzone->alloc_thread_id, COLOR_NORMAL);
 		asan_print_stack_trace(alloc_stack, ASAN_STACK_TRACE_FRAMES);
 		pr_err("\n");
 	}
+
+	asan_describe_access_to_heap(addr, object_addr, object_size,
+				     redzone->kmalloc_size);
+	pr_err("\n");
 }
 
 static int asan_print_shadow_byte(const char *before, u8 shadow,

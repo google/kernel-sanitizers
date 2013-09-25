@@ -33,7 +33,7 @@ pid_t asan_current_thread_id(void)
 }
 
 unsigned int asan_save_stack_trace(unsigned long *stack,
-				   unsigned int max_entries)
+					  unsigned int max_entries)
 {
 	struct stack_trace trace_info = {
 		.nr_entries = 0,
@@ -448,7 +448,7 @@ void asan_add_redzone(struct kmem_cache *cache, size_t *cache_size)
 
 void asan_on_kernel_init(void)
 {
-	/*asan_do_bo();
+	asan_do_bo();
 	asan_do_bo_left();
 	asan_do_bo_kmalloc();
 	asan_do_bo_krealloc();
@@ -457,7 +457,7 @@ void asan_on_kernel_init(void)
 	asan_do_bo_4mb();
 	asan_do_krealloc_more();
 	asan_do_uaf();
-	asan_do_uaf_quarantine();*/
+	asan_do_uaf_quarantine();
 	asan_do_uaf_memset();
 }
 
