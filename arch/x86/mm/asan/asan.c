@@ -33,14 +33,13 @@ pid_t asan_current_thread_id(void)
 }
 
 unsigned int asan_save_stack_trace(unsigned long *stack,
-					  unsigned int max_entries)
+				   unsigned int max_entries)
 {
 	struct stack_trace trace_info = {
 		.nr_entries = 0,
 		.entries = stack,
 		.max_entries = max_entries,
-		/* Skip save_stack_trace() and asan_save_stack_trace(). */
-		.skip = 2
+		.skip = 0
 	};
 	save_stack_trace(&trace_info);
 	return trace_info.nr_entries;

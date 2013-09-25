@@ -51,12 +51,16 @@ static void asan_print_stack_trace(unsigned long *stack,
 	}
 }
 
-static void asan_print_current_stack_trace(void)
+static void asan_print_current_stack_trace(unsigned long strip_addr)
 {
 	unsigned long stack[ASAN_MAX_STACK_TRACE_FRAMES];
 	unsigned int entries =
 		asan_save_stack_trace(&stack[0], ASAN_MAX_STACK_TRACE_FRAMES);
-	asan_print_stack_trace(&stack[0], entries);
+	int i = 0;
+
+	while (stack[i] != strip_addr && i < entries)
+		i++;
+	asan_print_stack_trace(&stack[i], entries - i);
 }
 
 static void asan_print_error_description(unsigned long addr,
@@ -129,7 +133,8 @@ static struct kmem_cache *asan_mem_to_cache(const void *obj)
 
 static void asan_describe_heap_address(unsigned long addr,
 				       unsigned long access_size,
-				       bool is_write)
+				       bool is_write,
+				       unsigned long strip_addr)
 {
 	u8 *shadow = (u8 *)asan_mem_to_shadow(addr);
 	u8 *shadow_left, *shadow_right;
@@ -148,7 +153,7 @@ static void asan_describe_heap_address(unsigned long addr,
 		pr_err("%s%s of size %lu at %lx thread T%d:%s\n",
 		       COLOR_BLUE, is_write ? "Write" : "Read", access_size,
 		       addr, asan_current_thread_id(), COLOR_NORMAL);
-		asan_print_current_stack_trace();
+		asan_print_current_stack_trace(strip_addr);
 		pr_err("\n");
 		pr_err("%sNo metainfo is available for this access.%s\n",
 		       COLOR_BLUE, COLOR_NORMAL);
@@ -214,7 +219,7 @@ static void asan_describe_heap_address(unsigned long addr,
 	pr_err("%s%s of size %lu by thread T%d:%s\n", COLOR_BLUE,
 	       is_write ? "Write" : "Read", access_size,
 	       asan_current_thread_id(), COLOR_NORMAL);
-	asan_print_current_stack_trace();
+	asan_print_current_stack_trace(strip_addr);
 	pr_err("\n");
 
 	if (free_stack != NULL) {
@@ -365,7 +370,9 @@ void asan_report_error(unsigned long poisoned_addr,
 
 	pr_err("=========================================================================\n");
 	asan_print_error_description(poisoned_addr, access_size);
-	asan_describe_heap_address(poisoned_addr, access_size, is_write);
+	/* XXX: pass strip_addr to asan_report_error()? */
+	asan_describe_heap_address(poisoned_addr, access_size, is_write,
+		(unsigned long)__builtin_return_address(1));
 	asan_print_shadow_for_address(poisoned_addr);
 	asan_print_shadow_legend();
 	pr_err("=========================================================================\n");
