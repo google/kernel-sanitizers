@@ -357,8 +357,8 @@ static void asan_print_shadow_legend(void)
 	       COLOR_WHITE, COLOR_NORMAL, COLOR_WHITE, COLOR_NORMAL);
 }
 
-void asan_report_error(unsigned long poisoned_addr,
-		       unsigned long access_size, bool is_write)
+void asan_report_error(unsigned long poisoned_addr, unsigned long access_size,
+		       bool is_write, unsigned long strip_addr)
 {
 	unsigned long flags;
 
@@ -370,9 +370,8 @@ void asan_report_error(unsigned long poisoned_addr,
 
 	pr_err("=========================================================================\n");
 	asan_print_error_description(poisoned_addr, access_size);
-	/* XXX: pass strip_addr to asan_report_error()? */
-	asan_describe_heap_address(poisoned_addr, access_size, is_write,
-		(unsigned long)__builtin_return_address(1));
+	asan_describe_heap_address(poisoned_addr, access_size,
+				   is_write, strip_addr);
 	asan_print_shadow_for_address(poisoned_addr);
 	asan_print_shadow_legend();
 	pr_err("=========================================================================\n");

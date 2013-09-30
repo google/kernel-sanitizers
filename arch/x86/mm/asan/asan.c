@@ -239,7 +239,8 @@ void asan_check_memory_region(const void *addr, unsigned long size, bool write)
 	if (poisoned_addr == 0)
 		return;
 
-	asan_report_error(poisoned_addr, size, write);
+	asan_report_error(poisoned_addr, size, write,
+		(unsigned long)__builtin_return_address(0));
 }
 
 static void asan_check_memory_word(unsigned long addr, unsigned long size,
@@ -264,7 +265,8 @@ static void asan_check_memory_word(unsigned long addr, unsigned long size,
 	if (last_accessed_byte < shadow_value)
 		return;
 
-	asan_report_error(addr, size, write);
+	asan_report_error(addr, size, write,
+		(unsigned long)__builtin_return_address(0));
 }
 
 void __init asan_init_shadow(void)

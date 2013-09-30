@@ -63,7 +63,7 @@ unsigned long asan_shadow_to_mem(unsigned long shadow_addr);
 /* Checks region for poisoned bytes. Reports poisoned bytes if found. */
 void asan_check_memory_region(const void *addr, unsigned long size, bool write);
 
-void asan_report_error(unsigned long poisoned_addr,
-		       unsigned long access_size, bool is_write);
+void asan_report_error(unsigned long poisoned_addr, unsigned long access_size,
+		       bool is_write, unsigned long strip_addr);
 
 #endif
