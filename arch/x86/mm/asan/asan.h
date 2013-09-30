@@ -55,7 +55,8 @@ extern spinlock_t asan_error_counter_lock;
 pid_t asan_current_thread_id(void);
 
 unsigned int asan_save_stack_trace(unsigned long *stack,
-				   unsigned int max_entries);
+				   unsigned int max_entries,
+				   unsigned long strip_addr);
 
 unsigned long asan_mem_to_shadow(unsigned long addr);
 unsigned long asan_shadow_to_mem(unsigned long shadow_addr);

@@ -32,17 +32,29 @@ pid_t asan_current_thread_id(void)
 	return current_thread_info()->task->pid;
 }
 
-unsigned int asan_save_stack_trace(unsigned long *stack,
-				   unsigned int max_entries)
+unsigned int asan_save_stack_trace(unsigned long *output,
+				   unsigned int max_entries,
+				   unsigned long strip_addr)
 {
+	unsigned long stack[ASAN_MAX_STACK_TRACE_FRAMES];
+	unsigned int entries;
+	unsigned int beg = 0, end;
+
 	struct stack_trace trace_info = {
 		.nr_entries = 0,
 		.entries = stack,
-		.max_entries = max_entries,
+		.max_entries = ASAN_MAX_STACK_TRACE_FRAMES,
 		.skip = 0
 	};
 	save_stack_trace(&trace_info);
-	return trace_info.nr_entries;
+	entries = trace_info.nr_entries;
+
+	while (stack[beg] != strip_addr && beg < entries)
+		beg++;
+	end = (entries - beg <= max_entries) ? entries : beg + max_entries;
+
+	(memcpy)(output, stack + beg, (end - beg) * sizeof(unsigned long));
+	return end - beg;
 }
 
 static void asan_quarantine_put(struct kmem_cache *cache, void *object)
@@ -230,6 +242,7 @@ static const void *asan_region_is_poisoned(const void *addr, unsigned long size)
 void asan_check_memory_region(const void *addr, unsigned long size, bool write)
 {
 	unsigned long poisoned_addr;
+	unsigned long strip_addr;
 
 	if (!asan_enabled)
 		return;
@@ -239,8 +252,9 @@ void asan_check_memory_region(const void *addr, unsigned long size, bool write)
 	if (poisoned_addr == 0)
 		return;
 
-	asan_report_error(poisoned_addr, size, write,
-		(unsigned long)__builtin_return_address(0));
+	/* FIXME: still prints asan_memset frame. */
+	strip_addr = (unsigned long)__builtin_return_address(0);
+	asan_report_error(poisoned_addr, size, write, strip_addr);
 }
 
 static void asan_check_memory_word(unsigned long addr, unsigned long size,
@@ -249,6 +263,7 @@ static void asan_check_memory_word(unsigned long addr, unsigned long size,
 	u8 *shadow_addr;
 	s8 shadow_value;
 	u8 last_accessed_byte;
+	unsigned long strip_addr;
 
 	if (!asan_enabled)
 		return;
@@ -265,8 +280,8 @@ static void asan_check_memory_word(unsigned long addr, unsigned long size,
 	if (last_accessed_byte < shadow_value)
 		return;
 
-	asan_report_error(addr, size, write,
-		(unsigned long)__builtin_return_address(0));
+	strip_addr = (unsigned long)__builtin_return_address(0);
+	asan_report_error(addr, size, write, strip_addr);
 }
 
 void __init asan_init_shadow(void)
@@ -287,7 +302,6 @@ void __init asan_init_shadow(void)
 		return;
 	}
 
-	/* XXX: use asan_unpoison_shadow()? */
 	(memset)(shadow_beg, 0, shadow_size);
 	asan_poison_shadow(shadow_beg, shadow_size, ASAN_SHADOW_GAP);
 
@@ -319,6 +333,7 @@ void asan_slab_alloc(struct kmem_cache *cache, void *object)
 	struct asan_redzone *redzone;
 	unsigned long *alloc_stack;
 	u8 *shadow;
+	unsigned long strip_addr;
 
 	asan_unpoison_shadow(object, rounded_down_size);
 	if (rounded_down_size != size) {
@@ -332,11 +347,10 @@ void asan_slab_alloc(struct kmem_cache *cache, void *object)
 	redzone = object + rounded_up_size;
 	alloc_stack = redzone->alloc_stack;
 
-	/* FIXME: unpoison / poison. */
-	asan_unpoison_shadow(alloc_stack, ASAN_STACK_TRACE_SIZE);
-	asan_save_stack_trace(alloc_stack, ASAN_STACK_TRACE_FRAMES);
-	asan_poison_shadow(alloc_stack, ASAN_STACK_TRACE_SIZE,
-			   ASAN_HEAP_REDZONE);
+	/* Strip asan_slab_alloc and kmem_cache_alloc frames. */
+	strip_addr = (unsigned long)__builtin_return_address(1);
+	asan_save_stack_trace(alloc_stack, ASAN_STACK_TRACE_FRAMES,
+			      strip_addr);
 
 	redzone->alloc_thread_id = asan_current_thread_id();
 	redzone->free_thread_id = -1;
@@ -355,6 +369,7 @@ bool asan_slab_free(struct kmem_cache *cache, void *object)
 	unsigned long rounded_up_size = round_up(size, ASAN_SHADOW_GRANULARITY);
 	struct asan_redzone *redzone;
 	unsigned long *free_stack;
+	unsigned long strip_addr;
 
 	if (cache->flags & SLAB_DESTROY_BY_RCU)
 		return true;
@@ -372,11 +387,10 @@ bool asan_slab_free(struct kmem_cache *cache, void *object)
 	if (redzone->quarantine_flag == 1)
 		return true;
 
-	/* FIXME: unpoison / poison. */
-	asan_unpoison_shadow(free_stack, ASAN_STACK_TRACE_SIZE);
-	asan_save_stack_trace(free_stack, ASAN_STACK_TRACE_FRAMES);
-	asan_poison_shadow(free_stack, ASAN_STACK_TRACE_SIZE,
-			   ASAN_HEAP_REDZONE);
+	/* Strip asan_slab_free and kmem_cache_free frames. */
+	strip_addr = (unsigned long)__builtin_return_address(1);
+	asan_save_stack_trace(free_stack, ASAN_STACK_TRACE_FRAMES,
+			      strip_addr);
 
 	redzone->free_thread_id = asan_current_thread_id();
 

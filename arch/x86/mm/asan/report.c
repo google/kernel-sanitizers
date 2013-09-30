@@ -37,13 +37,12 @@
 int asan_error_counter; /* = 0 */
 DEFINE_SPINLOCK(asan_error_counter_lock);
 
-static void asan_print_stack_trace(unsigned long *stack,
-				   unsigned int max_entries)
+static void asan_print_stack_trace(unsigned long *stack, unsigned int entries)
 {
 	unsigned int i;
 	void *frame;
 
-	for (i = 0; i < max_entries; i++) {
+	for (i = 0; i < entries; i++) {
 		if (stack[i] == ULONG_MAX || stack[i] == 0)
 			break;
 		frame = (void *)stack[i];
@@ -54,13 +53,9 @@ static void asan_print_stack_trace(unsigned long *stack,
 static void asan_print_current_stack_trace(unsigned long strip_addr)
 {
 	unsigned long stack[ASAN_MAX_STACK_TRACE_FRAMES];
-	unsigned int entries =
-		asan_save_stack_trace(&stack[0], ASAN_MAX_STACK_TRACE_FRAMES);
-	int i = 0;
-
-	while (stack[i] != strip_addr && i < entries)
-		i++;
-	asan_print_stack_trace(&stack[i], entries - i);
+	unsigned int entries = asan_save_stack_trace(&stack[0],
+		ASAN_MAX_STACK_TRACE_FRAMES, strip_addr);
+	asan_print_stack_trace(&stack[0], entries);
 }
 
 static void asan_print_error_description(unsigned long addr,
