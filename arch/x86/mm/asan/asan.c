@@ -463,7 +463,7 @@ void asan_add_redzone(struct kmem_cache *cache, size_t *cache_size)
 
 void asan_on_kernel_init(void)
 {
-	asan_do_bo();
+	/*asan_do_bo();
 	asan_do_bo_left();
 	asan_do_bo_kmalloc();
 	asan_do_bo_krealloc();
@@ -473,7 +473,7 @@ void asan_on_kernel_init(void)
 	asan_do_krealloc_more();
 	asan_do_uaf();
 	asan_do_uaf_quarantine();
-	asan_do_uaf_memset();
+	asan_do_uaf_memset();*/
 }
 
 void __tsan_read1(unsigned long addr)
