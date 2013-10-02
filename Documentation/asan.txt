@@ -1,0 +1,75 @@
+AddressSanitizer
+================
+
+
+0. Introduction
+===============
+
+AddressSanitizer (or ASAN) is a dynamic memory error detector. It provides fast
+and comprehensive solution for use-after-free (UAF) and out-of-bounds (OOB)
+bugs. Enabled with CONFIG_ASAN=y, currently works only on x86_64.
+
+ASAN is better than all of CONFIG_DEBUG_SLAB/CONFIG_KMEMCHECK/
+CONFIG_DEBUG_PAGEALLOC, because it:
+ - is based on compiler instrumentation (fast),
+ - detects OOB for both writes and reads,
+ - provides strong UAF detection (based on delayed memory reuse),
+ - does prompt detection of bad memory accesses,
+ - prints informative reports.
+
+
+1. Debugging
+============
+
+TODO: put a report and describe what it shows.
+
+
+2. General description
+======================
+
+2.1. Shadow memory
+==================
+
+TODO: What and where is the shadow memory.
+
+
+2.2. How we poison / unpoison
+=============================
+
+Each time a new cache is created the size of this cache (the size of the
+objects that can be allocated from this cache) is increased so it is possible
+to store some metainfo right after the object.
+This metainfo includes allocation and deallocation stacks, identifiers of the
+threads that allocated and deallocated the object, quarantine related info.
+
+Each time a new slab is created the shadow memory for the pages allocated
+for this slab is poisoned and freeing quarantined objects is performed if
+the quarantine is overflown.
+
+Each time a new object is allocated from the cache the shadow memory for this
+object is unpoisoned and allocation metainfo is stored.
+
+When a user tries to free an allocated object it's shadow memory is poisoned,
+the object is put in the quarantine and deallocation metainfo is stored.
+The object is not freed from the slab at this stage.
+
+The objects allocated via kmalloc (or krealloc) are poisoned more accurately.
+If a user asks for N bytes an object from one of kmalloc caches of size K is
+allocated and unpoisoned as described above. Then the last K - N bytes are
+poisoned again.
+
+
+2.2. How we instrument
+======================
+
+The kernel should be built with specific compiler to enable instrumentation.
+Additional instructions are added before each memory access. These instructions
+check the according shadow memory and report an error is the shadow is poisoned.
+
+TODO: how we check (only physical memory etc).
+
+
+3. Technical description
+========================
+
+TODO.
