@@ -476,62 +476,62 @@ void asan_on_kernel_init(void)
 	asan_do_uaf_memset();*/
 }
 
-void __tsan_read1(unsigned long addr)
+void __kasan_read1(unsigned long addr)
 {
 	asan_check_memory_word(addr, 1, false);
 }
-EXPORT_SYMBOL(__tsan_read1);
+EXPORT_SYMBOL(__kasan_read1);
 
-void __tsan_read2(unsigned long addr)
+void __kasan_read2(unsigned long addr)
 {
 	asan_check_memory_word(addr, 2, false);
 }
-EXPORT_SYMBOL(__tsan_read2);
+EXPORT_SYMBOL(__kasan_read2);
 
-void __tsan_read4(unsigned long addr)
+void __kasan_read4(unsigned long addr)
 {
 	asan_check_memory_word(addr, 4, false);
 }
-EXPORT_SYMBOL(__tsan_read4);
+EXPORT_SYMBOL(__kasan_read4);
 
-void __tsan_read8(unsigned long addr)
+void __kasan_read8(unsigned long addr)
 {
 	asan_check_memory_word(addr, 8, false);
 }
-EXPORT_SYMBOL(__tsan_read8);
+EXPORT_SYMBOL(__kasan_read8);
 
-void __tsan_read16(unsigned long addr)
+void __kasan_read16(unsigned long addr)
 {
 	asan_check_memory_region((void *)addr, 16, false);
 }
-EXPORT_SYMBOL(__tsan_read16);
+EXPORT_SYMBOL(__kasan_read16);
 
-void __tsan_write1(unsigned long addr)
+void __kasan_write1(unsigned long addr)
 {
 	asan_check_memory_word(addr, 1, true);
 }
-EXPORT_SYMBOL(__tsan_write1);
+EXPORT_SYMBOL(__kasan_write1);
 
-void __tsan_write2(unsigned long addr)
+void __kasan_write2(unsigned long addr)
 {
 	asan_check_memory_word(addr, 2, true);
 }
-EXPORT_SYMBOL(__tsan_write2);
+EXPORT_SYMBOL(__kasan_write2);
 
-void __tsan_write4(unsigned long addr)
+void __kasan_write4(unsigned long addr)
 {
 	asan_check_memory_word(addr, 4, true);
 }
-EXPORT_SYMBOL(__tsan_write4);
+EXPORT_SYMBOL(__kasan_write4);
 
-void __tsan_write8(unsigned long addr)
+void __kasan_write8(unsigned long addr)
 {
 	asan_check_memory_word(addr, 8, true);
 }
-EXPORT_SYMBOL(__tsan_write8);
+EXPORT_SYMBOL(__kasan_write8);
 
-void __tsan_write16(unsigned long addr)
+void __kasan_write16(unsigned long addr)
 {
 	asan_check_memory_region((void *)addr, 16, true);
 }
-EXPORT_SYMBOL(__tsan_write16);
+EXPORT_SYMBOL(__kasan_write16);

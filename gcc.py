@@ -32,7 +32,7 @@ if len(files) > 0:
   filename = files[-1]
   #sys.stderr.write(str(filename) + '\n')
   if should_instrument(filename):
-    args.append('-fsanitize=thread')
+    args.append('-fsanitize=kernel-address')
 
 gcc_args = [gcc] + args
 subprocess.call(gcc_args)
