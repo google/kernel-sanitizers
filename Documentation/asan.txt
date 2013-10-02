@@ -17,34 +17,196 @@ CONFIG_DEBUG_PAGEALLOC, because it:
  - does prompt detection of bad memory accesses,
  - prints informative reports.
 
+TODO: slowdown.
+TODO: only slab.
+
 
 1. Debugging
 ============
 
-TODO: put a report and describe what it shows.
+TODO: describe the report.
+
+[   69.062329] =========================================================================
+[   69.062332] AddressSanitizer: heap-use-after-free on address ffff8800230ef384
+[   69.062334] Write of size 4 by thread T12887:
+[   69.062343]  [<ffffffff811046dc>] ____call_usermodehelper+0x20c/0x230
+[   69.062346]  [<ffffffff81104733>] call_helper+0x33/0x40
+[   69.062350]  [<ffffffff8184226c>] ret_from_fork+0x7c/0xb0
+[   69.062350] 
+[   69.062351] Freed by thread T12636:
+[   69.062354]  [<ffffffff8110424c>] call_usermodehelper_freeinfo+0x2c/0x30
+[   69.062357]  [<ffffffff811049d5>] call_usermodehelper_exec+0xa5/0x1c0
+[   69.062359]  [<ffffffff811052b0>] call_usermodehelper+0x40/0x60
+[   69.062363]  [<ffffffff8146c15e>] kobject_uevent_env+0x5ee/0x620
+[   69.062366]  [<ffffffff8146c19b>] kobject_uevent+0xb/0x10
+[   69.062369]  [<ffffffff8173bd7f>] net_rx_queue_update_kobjects+0xaf/0x150
+[   69.062372]  [<ffffffff8173c179>] netdev_register_kobject+0x139/0x1a0
+[   69.062375]  [<ffffffff8171f508>] register_netdevice+0x4d8/0x660
+[   69.062378]  [<ffffffff8171f6aa>] register_netdev+0x1a/0x30
+[   69.062385]  [<ffffffff81617d1a>] loopback_net_init+0x5a/0xd0
+[   69.062388]  [<ffffffff8170e64b>] ops_init+0x5b/0x1b0
+[   69.062390]  [<ffffffff8170e86b>] setup_net+0xcb/0x1f0
+[   69.062393]  [<ffffffff8170f1e8>] copy_net_ns+0x88/0x150
+[   69.062396]  [<ffffffff8111c537>] create_new_namespaces+0x1f7/0x2d0
+[   69.062399]  [<ffffffff8111c822>] unshare_nsproxy_namespaces+0x72/0xd0
+[   69.062402]  [<ffffffff810e10a1>] SyS_unshare+0x1c1/0x340
+[   69.062402] 
+[   69.062403] Allocated by thread T12636:
+[   69.062406]  [<ffffffff81104dfb>] call_usermodehelper_setup+0x5b/0x170
+[   69.062409]  [<ffffffff811052a1>] call_usermodehelper+0x31/0x60
+[   69.062412]  [<ffffffff8146c15e>] kobject_uevent_env+0x5ee/0x620
+[   69.062414]  [<ffffffff8146c19b>] kobject_uevent+0xb/0x10
+[   69.062417]  [<ffffffff8173bd7f>] net_rx_queue_update_kobjects+0xaf/0x150
+[   69.062419]  [<ffffffff8173c179>] netdev_register_kobject+0x139/0x1a0
+[   69.062422]  [<ffffffff8171f508>] register_netdevice+0x4d8/0x660
+[   69.062425]  [<ffffffff8171f6aa>] register_netdev+0x1a/0x30
+[   69.062428]  [<ffffffff81617d1a>] loopback_net_init+0x5a/0xd0
+[   69.062430]  [<ffffffff8170e64b>] ops_init+0x5b/0x1b0
+[   69.062433]  [<ffffffff8170e86b>] setup_net+0xcb/0x1f0
+[   69.062435]  [<ffffffff8170f1e8>] copy_net_ns+0x88/0x150
+[   69.062438]  [<ffffffff8111c537>] create_new_namespaces+0x1f7/0x2d0
+[   69.062441]  [<ffffffff8111c822>] unshare_nsproxy_namespaces+0x72/0xd0
+[   69.062444]  [<ffffffff810e10a1>] SyS_unshare+0x1c1/0x340
+[   69.062446]  [<ffffffff81842312>] system_call_fastpath+0x16/0x1b
+[   69.062447] 
+[   69.062454] The buggy address ffff8800230ef384 is located 68 bytes inside
+[   69.062454]  of 96-byte region [ffff8800230ef340, ffff8800230ef3a0)
+[   69.062454] 
+[   69.062455] Memory state around the buggy address:
+[   69.062470]  ffff8800230eee00: ........ ....rrrr rrrrrrrr rrrrrrrr
+[   69.062484]  ffff8800230eef00: rrrrrrrr rrrrrrrr rrrrrrrr rrrrrrrr
+[   69.062497]  ffff8800230ef000: rrrrrrrr rrrrrrrr rrrrrrrr rrrrrrrr
+[   69.062511]  ffff8800230ef100: rrrrrrrr rrrrrrrr ........ ....rrrr
+[   69.062525]  ffff8800230ef200: rrrrrrrr rrrrrrrr rrrrrrrr rrrrrrrr
+[   69.062539] >ffff8800230ef300: rrrrrrrr ffffffff ffffrrrr rrrrrrrr
+[   69.062540]                                      ^
+[   69.062554]  ffff8800230ef400: rrrrrrrr rrrrrrrr rrrrrrrr rrrrrrrr
+[   69.062568]  ffff8800230ef500: ........ ....rrrr rrrrrrrr rrrrrrrr
+[   69.062581]  ffff8800230ef600: rrrrrrrr rrrrrrrr rrrrrrrr ........
+[   69.062595]  ffff8800230ef700: ....rrrr rrrrrrrr rrrrrrrr rrrrrrrr
+[   69.062609]  ffff8800230ef800: rrrrrrrr rrrrrrrr ........ ....rrrr
+[   69.062612] Legend:
+[   69.062613]  f - 8 freed bytes
+[   69.062614]  r - 8 redzone bytes
+[   69.062614]  . - 8 allocated bytes
+[   69.062616]  x=1..7 - x allocated bytes + (8-x) redzone bytes
+[   69.062617] =========================================================================
+
+=========================================================================
+AddressSanitizer: heap-use-after-free on address ffff8800230ef384
+Write of size 4 by thread T12887:
+ [<ffffffff811046dc>] ____call_usermodehelper+0x20c/0x230 ./kernel/kmod.c:250
+ [<ffffffff81104733>] call_helper+0x33/0x40 ./kernel/kmod.c:258
+ [<ffffffff8184226c>] ret_from_fork+0x7c/0xb0 ./arch/x86/kernel/entry_64.S:554
+
+Freed by thread T12636:
+ [<ffffffff8110424c>] call_usermodehelper_freeinfo+0x2c/0x30 ./kernel/kmod.c:265
+ [<ffffffff811049d5>] call_usermodehelper_exec+0xa5/0x1c0 ./kernel/kmod.c:612
+ [<ffffffff811052b0>] call_usermodehelper+0x40/0x60 ./kernel/kmod.c:642
+ [<ffffffff8146c15e>] kobject_uevent_env+0x5ee/0x620 ./lib/kobject_uevent.c:311
+ [<ffffffff8146c19b>] kobject_uevent+0xb/0x10 ./lib/kobject_uevent.c:333
+ [<     inlined    >] net_rx_queue_update_kobjects+0xaf/0x150 rx_queue_add_kobject ./net/core/net-sysfs.c:771
+ [<ffffffff8173bd7f>] net_rx_queue_update_kobjects+0xaf/0x150 ./net/core/net-sysfs.c:786
+ [<     inlined    >] netdev_register_kobject+0x139/0x1a0 register_queue_kobjects ./net/core/net-sysfs.c:1165
+ [<ffffffff8173c179>] netdev_register_kobject+0x139/0x1a0 ./net/core/net-sysfs.c:1336
+ [<ffffffff8171f508>] register_netdevice+0x4d8/0x660 ./net/core/dev.c:5662
+ [<ffffffff8171f6aa>] register_netdev+0x1a/0x30 ./net/core/dev.c:5774
+ [<ffffffff81617d1a>] loopback_net_init+0x5a/0xd0 loopback.c:0
+ [<ffffffff8170e64b>] ops_init+0x5b/0x1b0 ./net/core/net_namespace.c:106
+ [<ffffffff8170e86b>] setup_net+0xcb/0x1f0 ./net/core/net_namespace.c:167
+ [<ffffffff8170f1e8>] copy_net_ns+0x88/0x150 ./net/core/net_namespace.c:254
+ [<ffffffff8111c537>] create_new_namespaces+0x1f7/0x2d0 ./kernel/nsproxy.c:95
+ [<ffffffff8111c822>] unshare_nsproxy_namespaces+0x72/0xd0 ./kernel/nsproxy.c:190
+ [<     inlined    >] SyS_unshare+0x1c1/0x340 SYSC_unshare ./kernel/fork.c:1853
+ [<ffffffff810e10a1>] SyS_unshare+0x1c1/0x340 ./kernel/fork.c:1804
+
+Allocated by thread T12636:
+ [<     inlined    >] call_usermodehelper_setup+0x5b/0x170 kmalloc ./include/linux/slab.h:404
+ [<     inlined    >] call_usermodehelper_setup+0x5b/0x170 kzalloc ./include/linux/slab.h:645
+ [<ffffffff81104dfb>] call_usermodehelper_setup+0x5b/0x170 ./kernel/kmod.c:540
+ [<ffffffff811052a1>] call_usermodehelper+0x31/0x60 ./kernel/kmod.c:637
+ [<ffffffff8146c15e>] kobject_uevent_env+0x5ee/0x620 ./lib/kobject_uevent.c:311
+ [<ffffffff8146c19b>] kobject_uevent+0xb/0x10 ./lib/kobject_uevent.c:333
+ [<     inlined    >] net_rx_queue_update_kobjects+0xaf/0x150 rx_queue_add_kobject ./net/core/net-sysfs.c:771
+ [<ffffffff8173bd7f>] net_rx_queue_update_kobjects+0xaf/0x150 ./net/core/net-sysfs.c:786
+ [<     inlined    >] netdev_register_kobject+0x139/0x1a0 register_queue_kobjects ./net/core/net-sysfs.c:1165
+ [<ffffffff8173c179>] netdev_register_kobject+0x139/0x1a0 ./net/core/net-sysfs.c:1336
+ [<ffffffff8171f508>] register_netdevice+0x4d8/0x660 ./net/core/dev.c:5662
+ [<ffffffff8171f6aa>] register_netdev+0x1a/0x30 ./net/core/dev.c:5774
+ [<ffffffff81617d1a>] loopback_net_init+0x5a/0xd0 loopback.c:0
+ [<ffffffff8170e64b>] ops_init+0x5b/0x1b0 ./net/core/net_namespace.c:106
+ [<ffffffff8170e86b>] setup_net+0xcb/0x1f0 ./net/core/net_namespace.c:167
+ [<ffffffff8170f1e8>] copy_net_ns+0x88/0x150 ./net/core/net_namespace.c:254
+ [<ffffffff8111c537>] create_new_namespaces+0x1f7/0x2d0 ./kernel/nsproxy.c:95
+ [<ffffffff8111c822>] unshare_nsproxy_namespaces+0x72/0xd0 ./kernel/nsproxy.c:190
+ [<     inlined    >] SyS_unshare+0x1c1/0x340 SYSC_unshare ./kernel/fork.c:1853
+ [<ffffffff810e10a1>] SyS_unshare+0x1c1/0x340 ./kernel/fork.c:1804
+ [<ffffffff81842312>] system_call_fastpath+0x16/0x1b ./arch/x86/kernel/entry_64.S:629
+
+The buggy address ffff8800230ef384 is located 68 bytes inside
+ of 96-byte region [ffff8800230ef340, ffff8800230ef3a0)
+
+Memory state around the buggy address:
+ ffff8800230eee00: ........ ....rrrr rrrrrrrr rrrrrrrr
+ ffff8800230eef00: rrrrrrrr rrrrrrrr rrrrrrrr rrrrrrrr
+ ffff8800230ef000: rrrrrrrr rrrrrrrr rrrrrrrr rrrrrrrr
+ ffff8800230ef100: rrrrrrrr rrrrrrrr ........ ....rrrr
+ ffff8800230ef200: rrrrrrrr rrrrrrrr rrrrrrrr rrrrrrrr
+>ffff8800230ef300: rrrrrrrr ffffffff ffffrrrr rrrrrrrr
+                                     ^
+ ffff8800230ef400: rrrrrrrr rrrrrrrr rrrrrrrr rrrrrrrr
+ ffff8800230ef500: ........ ....rrrr rrrrrrrr rrrrrrrr
+ ffff8800230ef600: rrrrrrrr rrrrrrrr rrrrrrrr ........
+ ffff8800230ef700: ....rrrr rrrrrrrr rrrrrrrr rrrrrrrr
+ ffff8800230ef800: rrrrrrrr rrrrrrrr ........ ....rrrr
+Legend:
+ f - 8 freed bytes
+ r - 8 redzone bytes
+ . - 8 allocated bytes
+ x=1..7 - x allocated bytes + (8-x) redzone bytes
+=========================================================================
 
 
 2. General description
 ======================
 
-2.1. Shadow memory
+ASAN consists of two parts: an instrumentation module and a run-time library.
+The instrumentation module modifies the code to check the address state for
+each memory access. The current implementation is based on the GCC compiler.
+The run-time library replaces kmem_cache_alloc, kmem_cache_free and related
+functions, creates redzones around allocated memory regions, delays the reuse
+of freed memory regions, and does error reporting.
+
+
+2.1. Instrumentation
+====================
+
+ASAN requires the kernel to be built with a specific compiler. This compiler
+adds memory address checking instructions before every memory access.
+
+TODO: how we check (only physical memory etc).
+
+
+2.2. Shadow memory
 ==================
 
 TODO: What and where is the shadow memory.
 
 
-2.2. How we poison / unpoison
-=============================
+2.3. Poisoning / unpoisoning
+============================
 
 Each time a new cache is created the size of this cache (the size of the
 objects that can be allocated from this cache) is increased so it is possible
-to store some metainfo right after the object.
+to store some metainfo right after each object.
 This metainfo includes allocation and deallocation stacks, identifiers of the
 threads that allocated and deallocated the object, quarantine related info.
 
-Each time a new slab is created the shadow memory for the pages allocated
-for this slab is poisoned and freeing quarantined objects is performed if
-the quarantine is overflown.
+When a new slab is created the shadow memory for the pages allocated for
+this slab is poisoned and freeing quarantined objects is performed if the
+quarantine is overflown.
+
+FIXME: explain what is quarantine.
 
 Each time a new object is allocated from the cache the shadow memory for this
 object is unpoisoned and allocation metainfo is stored.
@@ -57,16 +219,6 @@ The objects allocated via kmalloc (or krealloc) are poisoned more accurately.
 If a user asks for N bytes an object from one of kmalloc caches of size K is
 allocated and unpoisoned as described above. Then the last K - N bytes are
 poisoned again.
-
-
-2.2. How we instrument
-======================
-
-The kernel should be built with specific compiler to enable instrumentation.
-Additional instructions are added before each memory access. These instructions
-check the according shadow memory and report an error is the shadow is poisoned.
-
-TODO: how we check (only physical memory etc).
 
 
 3. Technical description
