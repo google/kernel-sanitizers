@@ -236,8 +236,7 @@ static void asan_describe_heap_address(unsigned long addr,
 	pr_err("\n");
 }
 
-static char *asan_print_shadow_byte(const char *before, u8 shadow,
-				    const char *after, char *output)
+static char *asan_print_shadow_byte(u8 shadow, char *output)
 {
 	const char *color_prefix = COLOR_NORMAL;
 	const char *color_postfix = COLOR_NORMAL;
@@ -270,51 +269,53 @@ static char *asan_print_shadow_byte(const char *before, u8 shadow,
 		break;
 	}
 
-	sprintf(output, "%s%s%c%s%s", before, color_prefix,
-		marker, color_postfix, after);
-	return output + strlen(before) + strlen(color_prefix)
-		+ 1 + strlen(color_postfix) + strlen(after);
+	sprintf(output, "%s%c%s", color_prefix, marker, color_postfix);
+	return output + strlen(color_prefix) + 1 + strlen(color_postfix);
 }
 
 static char *asan_print_shadow_block(u8 *shadow, u8 *guilty, char *output)
 {
 	int i;
-	const char *before, *after;
 
 	for (i = 0; i < SHADOW_BYTES_PER_BLOCK; i++) {
-		before = (shadow == guilty) ? ">" : "";
-		after = (shadow == guilty) ? "<" : "";
-		output = asan_print_shadow_byte(before, *shadow,
-						after, output);
+		output = asan_print_shadow_byte(*shadow, output);
 		shadow++;
 	}
 
 	return output;
 }
 
-static bool asan_block_guilty(u8 *block, u8 *guilty)
-{
-	return (block <= guilty) && (guilty < block + SHADOW_BYTES_PER_BLOCK);
-}
-
-static void asan_print_shadow_row(u8 *shadow, u8 *guilty, char *output)
+static void asan_print_shadow_row(u8 *row, u8 *guilty, char *output)
 {
 	int i;
 	const char *before;
-	bool curr_guilty;
-	bool prev_guilty;
 
 	for (i = 0; i < SHADOW_BLOCKS_PER_ROW; i++) {
-		curr_guilty = asan_block_guilty(shadow, guilty);
-		prev_guilty = asan_block_guilty(shadow - SHADOW_BYTES_PER_BLOCK,
-						guilty);
-		before = curr_guilty ? " " :
-			 (prev_guilty && i != 0 ? " " : "  ");
+		before = (i == 0) ? "" : " ";
 		sprintf(output, before);
 		output += strlen(before);
-		output = asan_print_shadow_block(shadow, guilty, output);
-		shadow += SHADOW_BYTES_PER_BLOCK;
+		output = asan_print_shadow_block(row, guilty, output);
+		row += SHADOW_BYTES_PER_BLOCK;
 	}
+}
+
+static bool asan_row_guilty(unsigned long row, unsigned long guilty)
+{
+	return (row <= guilty) && (guilty < row + SHADOW_BYTES_PER_ROW);
+}
+
+static void asan_print_shadow_pointer(unsigned long row, unsigned long shadow,
+				      char *output)
+{
+	/* The length of ">ff00ff00ff00ff00: " is 19 chars. */
+	unsigned long space_count = 19 + shadow - row +
+		(shadow - row) / SHADOW_BYTES_PER_BLOCK;
+	unsigned long i;
+
+	for (i = 0; i < space_count; i++)
+		output[i] = ' ';
+	output[space_count] = '^';
+	output[space_count + 1] = '\0';
 }
 
 static void asan_print_shadow_for_address(unsigned long addr)
@@ -330,8 +331,12 @@ static void asan_print_shadow_for_address(unsigned long addr)
 	for (i = -SHADOW_ROWS_AROUND_ADDR; i <= SHADOW_ROWS_AROUND_ADDR; i++) {
 		asan_print_shadow_row((u8 *)aligned_shadow,
 				      (u8 *)shadow, buffer);
-		pr_err("%s%lx:%s\n", (i == 0) ? ">" : " ",
+		pr_err("%s%lx: %s\n", (i == 0) ? ">" : " ",
 		       asan_shadow_to_mem(aligned_shadow), buffer);
+		if (asan_row_guilty(aligned_shadow, shadow)) {
+			asan_print_shadow_pointer(aligned_shadow, shadow, buffer);
+			pr_err("%s\n", buffer);
+		}
 		aligned_shadow += SHADOW_BYTES_PER_ROW;
 	}
 }
@@ -345,9 +350,9 @@ static void asan_print_shadow_legend(void)
 		sprintf(partially_addressable + (i - 1) * 3, "%02x ", i);
 
 	pr_err("Legend:\n");
+	pr_err(" %sf%s - 8 freed bytes\n", COLOR_MAGENTA, COLOR_NORMAL);
+	pr_err(" %sr%s - 8 redzone bytes\n", COLOR_RED, COLOR_NORMAL);
 	pr_err(" %s.%s - 8 allocated bytes\n", COLOR_WHITE, COLOR_NORMAL);
-	pr_err(" %sf%s - freed bytes\n", COLOR_MAGENTA, COLOR_NORMAL);
-	pr_err(" %sr%s - redzone bytes\n", COLOR_RED, COLOR_NORMAL);
 	pr_err(" x=%s1%s..%s7%s - x allocated bytes + (8-x) redzone bytes\n",
 	       COLOR_WHITE, COLOR_NORMAL, COLOR_WHITE, COLOR_NORMAL);
 }
