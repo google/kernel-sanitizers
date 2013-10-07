@@ -385,25 +385,29 @@ to store some metainfo right after each object.
 This metainfo includes allocation and deallocation stacks, identifiers of the
 threads that allocated and deallocated the object, quarantine related info.
 
-FIXME: explain what is quarantine.
-
 When a new slab is created the shadow memory for the pages allocated for
-this slab is poisoned and freeing quarantined objects is performed if the
-quarantine is overflown.
-
-FIXME: ^.
+this slab is poisoned.
 
 Each time a new object is allocated from the cache the shadow memory for this
 object is unpoisoned and allocation metainfo is stored.
 
-When a user tries to free an allocated object it's shadow memory is poisoned,
-the object is put in the quarantine and deallocation metainfo is stored.
-The object is not freed from the slab at this stage.
+When a user tries to free an allocated object it's shadow memory is poisoned
+and deallocation metainfo is stored.
 
 The objects allocated via kmalloc (or krealloc) are poisoned more accurately.
-If a user asks for N bytes an object from one of kmalloc caches of size K is
-allocated and unpoisoned as described above. Then the last K - N bytes are
-poisoned again.
+When a user asks for an N bytes object and the kmalloc cache of size K is used
+for the allocation the object is allocated and unpoisoned as described above.
+Then the last K - N bytes are poisoned again.
+
+2.4 Quarantine
+==============
+
+When a user calls kmem_cache_free (or kfree) the object is poisoned, but not
+deallocated right away, because otherwise it can be allocated again soon and
+unpoisoned. Instead, the object is but put into a FIFO queue called quarantine.
+
+The total size of the objects in quarantine is counted and some objects are
+freed when the total size is more than some threshold.
 
 
 3. Technical description
@@ -415,3 +419,4 @@ TODO: physical memory address range.
 TODO: max_pfn.
 TODO: what instructions are added by instrumentation.
 TODO: memset -> asam_memset etc.
+TODO: quarantine is cleaned on slab creation.
