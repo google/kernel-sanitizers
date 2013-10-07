@@ -23,8 +23,8 @@ https://code.google.com/p/address-sanitizer/wiki/AddressSanitizerForKernel
 TODO: slowdown and additional memory usage.
 
 
-1. Debugging
-============
+1. Reports
+==========
 
 A typical report will look something like this:
 
@@ -97,9 +97,9 @@ Legend:
 If your kernel was compiled with CONFIG_DEBUG_INFO=y you can use addr2line
 to get file and line info of each frame of the stack.
 
-TODO: explain how to use addr2line (kmemcheck.txt explains)?
+XXX: explain how to use addr2line (kmemcheck.txt explains)?
 
-This can be done via our symbolizer script (see the ASAN web page).
+This can be also done via our symbolizer script (see the ASAN web page).
 The script also symbolizes stack frames which come from dynamic modules.
 As a result the report will be much easier to investigate.
 
@@ -179,7 +179,155 @@ Legend:
  x=1..7 - x allocated bytes + (8-x) redzone bytes
 =========================================================================
 
-TODO: describe the report.
+Let's take a closer look to different parts of the report.
+
+The header tells us what kind of bug happend and where:
+
+AddressSanitizer: heap-use-after-free on address ffff8800230ef384
+Write of size 4 by thread T12887:
+ [<ffffffff811046dc>] ____call_usermodehelper+0x20c/0x230 ./kernel/kmod.c:250
+ [<ffffffff81104733>] call_helper+0x33/0x40 ./kernel/kmod.c:258
+ [<ffffffff8184226c>] ret_from_fork+0x7c/0xb0 ./arch/x86/kernel/entry_64.S:554
+
+Here we can see that 4 bytes were written to a freed memory region in function
+____call_usermodehelper() which was called by thread T12887.
+
+The address of the instruction that caused the bad access is also present, but
+since the report was symbolized we can look at the file and line info instead.
+
+By looking in kernel/kmod.c , line 250 we can see that the report was caused by
+assigning some value to sub_info->retval.
+
+202 static int ____call_usermodehelper(void *data)
+203 {
+...
+248         /* Exec failed? */
+249 fail:
+250         sub_info->retval = retval;
+251         do_exit(0);
+252 }
+
+Since this is a use-after-free bug the sub_info was apparently freed somewhere.
+The report provides information about where it happened:
+
+Freed by thread T12636:
+ [<ffffffff8110424c>] call_usermodehelper_freeinfo+0x2c/0x30 ./kernel/kmod.c:265
+ [<ffffffff811049d5>] call_usermodehelper_exec+0xa5/0x1c0 ./kernel/kmod.c:612
+ [<ffffffff811052b0>] call_usermodehelper+0x40/0x60 ./kernel/kmod.c:642
+ [<ffffffff8146c15e>] kobject_uevent_env+0x5ee/0x620 ./lib/kobject_uevent.c:311
+ [<ffffffff8146c19b>] kobject_uevent+0xb/0x10 ./lib/kobject_uevent.c:333
+ [<     inlined    >] net_rx_queue_update_kobjects+0xaf/0x150 rx_queue_add_kobject ./net/core/net-sysfs.c:771
+ [<ffffffff8173bd7f>] net_rx_queue_update_kobjects+0xaf/0x150 ./net/core/net-sysfs.c:786
+ [<     inlined    >] netdev_register_kobject+0x139/0x1a0 register_queue_kobjects ./net/core/net-sysfs.c:1165
+ [<ffffffff8173c179>] netdev_register_kobject+0x139/0x1a0 ./net/core/net-sysfs.c:1336
+ [<ffffffff8171f508>] register_netdevice+0x4d8/0x660 ./net/core/dev.c:5662
+ [<ffffffff8171f6aa>] register_netdev+0x1a/0x30 ./net/core/dev.c:5774
+ [<ffffffff81617d1a>] loopback_net_init+0x5a/0xd0 loopback.c:0
+ [<ffffffff8170e64b>] ops_init+0x5b/0x1b0 ./net/core/net_namespace.c:106
+ [<ffffffff8170e86b>] setup_net+0xcb/0x1f0 ./net/core/net_namespace.c:167
+ [<ffffffff8170f1e8>] copy_net_ns+0x88/0x150 ./net/core/net_namespace.c:254
+ [<ffffffff8111c537>] create_new_namespaces+0x1f7/0x2d0 ./kernel/nsproxy.c:95
+ [<ffffffff8111c822>] unshare_nsproxy_namespaces+0x72/0xd0 ./kernel/nsproxy.c:190
+ [<     inlined    >] SyS_unshare+0x1c1/0x340 SYSC_unshare ./kernel/fork.c:1853
+ [<ffffffff810e10a1>] SyS_unshare+0x1c1/0x340 ./kernel/fork.c:1804
+
+The report shows that sub_info was freed by call_usermodehelper_freeinfo()
+in kernel/kmod.c, line 265:
+
+261 static void call_usermodehelper_freeinfo(struct subprocess_info *info)
+262 {
+263         if (info->cleanup)
+264                 (*info->cleanup)(info);
+265         kfree(info);
+266 }
+
+You can see where the allocation happened as well:
+
+Allocated by thread T12636:
+ [<     inlined    >] call_usermodehelper_setup+0x5b/0x170 kmalloc ./include/linux/slab.h:404
+ [<     inlined    >] call_usermodehelper_setup+0x5b/0x170 kzalloc ./include/linux/slab.h:645
+ [<ffffffff81104dfb>] call_usermodehelper_setup+0x5b/0x170 ./kernel/kmod.c:540
+ [<ffffffff811052a1>] call_usermodehelper+0x31/0x60 ./kernel/kmod.c:637
+ [<ffffffff8146c15e>] kobject_uevent_env+0x5ee/0x620 ./lib/kobject_uevent.c:311
+ [<ffffffff8146c19b>] kobject_uevent+0xb/0x10 ./lib/kobject_uevent.c:333
+ [<     inlined    >] net_rx_queue_update_kobjects+0xaf/0x150 rx_queue_add_kobject ./net/core/net-sysfs.c:771
+ [<ffffffff8173bd7f>] net_rx_queue_update_kobjects+0xaf/0x150 ./net/core/net-sysfs.c:786
+ [<     inlined    >] netdev_register_kobject+0x139/0x1a0 register_queue_kobjects ./net/core/net-sysfs.c:1165
+ [<ffffffff8173c179>] netdev_register_kobject+0x139/0x1a0 ./net/core/net-sysfs.c:1336
+ [<ffffffff8171f508>] register_netdevice+0x4d8/0x660 ./net/core/dev.c:5662
+ [<ffffffff8171f6aa>] register_netdev+0x1a/0x30 ./net/core/dev.c:5774
+ [<ffffffff81617d1a>] loopback_net_init+0x5a/0xd0 loopback.c:0
+ [<ffffffff8170e64b>] ops_init+0x5b/0x1b0 ./net/core/net_namespace.c:106
+ [<ffffffff8170e86b>] setup_net+0xcb/0x1f0 ./net/core/net_namespace.c:167
+ [<ffffffff8170f1e8>] copy_net_ns+0x88/0x150 ./net/core/net_namespace.c:254
+ [<ffffffff8111c537>] create_new_namespaces+0x1f7/0x2d0 ./kernel/nsproxy.c:95
+ [<ffffffff8111c822>] unshare_nsproxy_namespaces+0x72/0xd0 ./kernel/nsproxy.c:190
+ [<     inlined    >] SyS_unshare+0x1c1/0x340 SYSC_unshare ./kernel/fork.c:1853
+ [<ffffffff810e10a1>] SyS_unshare+0x1c1/0x340 ./kernel/fork.c:1804
+ [<ffffffff81842312>] system_call_fastpath+0x16/0x1b ./arch/x86/kernel/entry_64.S:629
+
+The first two frames of the allocation stack are the inlined calls of kmalloc
+and kzalloc, which are defined in include/linux/slab.h. But the actual
+allocation happened in kernel/kmod.c, line 540:
+
+533 struct subprocess_info *call_usermodehelper_setup(char *path, char **argv,
+534                 char **envp, gfp_t gfp_mask,
+535                 int (*init)(struct subprocess_info *info, struct cred *new),
+536                 void (*cleanup)(struct subprocess_info *info),
+537                 void *data)
+538 {
+539         struct subprocess_info *sub_info;
+540         sub_info = kzalloc(sizeof(struct subprocess_info), gfp_mask);
+...
+553         return sub_info;
+554 }
+
+Then, the report shows the address of the bad access and the memory range of
+the allocated memory block to which it belongs:
+
+The buggy address ffff8800230ef384 is located 68 bytes inside
+ of 96-byte region [ffff8800230ef340, ffff8800230ef3a0)
+
+Apparently, sizeof(struct subprocess_info) is 96 bytes and the retval field
+is 68 bytes within the struct (you can find subprocess_info struct definition
+in include/linux/kmod.h, line 56).
+
+Finally, the report shows memory state around the accessed address:
+
+Memory state around the buggy address:
+ ffff8800230eee00: ........ ....rrrr rrrrrrrr rrrrrrrr
+ ffff8800230eef00: rrrrrrrr rrrrrrrr rrrrrrrr rrrrrrrr
+ ffff8800230ef000: rrrrrrrr rrrrrrrr rrrrrrrr rrrrrrrr
+ ffff8800230ef100: rrrrrrrr rrrrrrrr ........ ....rrrr
+ ffff8800230ef200: rrrrrrrr rrrrrrrr rrrrrrrr rrrrrrrr
+>ffff8800230ef300: rrrrrrrr ffffffff ffffrrrr rrrrrrrr
+                                     ^
+ ffff8800230ef400: rrrrrrrr rrrrrrrr rrrrrrrr rrrrrrrr
+ ffff8800230ef500: ........ ....rrrr rrrrrrrr rrrrrrrr
+ ffff8800230ef600: rrrrrrrr rrrrrrrr rrrrrrrr ........
+ ffff8800230ef700: ....rrrr rrrrrrrr rrrrrrrr rrrrrrrr
+ ffff8800230ef800: rrrrrrrr rrrrrrrr ........ ....rrrr
+Legend:
+ f - 8 freed bytes
+ r - 8 redzone bytes
+ . - 8 allocated bytes
+ x=1..7 - x allocated bytes + (8-x) redzone bytes
+
+Understanding this part of the report requires some more knowledge about how
+ASAN works.
+
+Each 8 bytes of memory can be marked as addressable, partially addressable,
+freed or they can be part of a redzone.
+If 8 bytes are marked as addressable that means that they belong to some
+allocated memory block and it is possible to read or modify any of these
+8 bytes. These 8 bytes are indicated by '.' in the report.
+When only the first N bytes out of 8 belong to an allocated memory block,
+the 8 bytes are partially addressable. These 8 bytes are indicated by 'N'.
+8 freed bytes are indicated by 'f' and 8 redzone bytes - by 'r'.
+
+In the report above the arrows point to the letter 'f', which means that the
+accessed address is marked as freed.
+
 TODO: explain the bug.
 
 
