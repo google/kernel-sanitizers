@@ -2,8 +2,8 @@ AddressSanitizer
 ================
 
 
-0. Introduction
-===============
+0. Overview
+===========
 
 AddressSanitizer (or ASAN) is a dynamic memory error detector. It provides fast
 and comprehensive solution for use-after-free (UAF) and out-of-bounds (OOB)
@@ -17,80 +17,93 @@ CONFIG_DEBUG_PAGEALLOC, because it:
  - does prompt detection of bad memory accesses,
  - prints informative reports.
 
-TODO: slowdown.
-TODO: only slab.
+More information is available at:
+https://code.google.com/p/address-sanitizer/wiki/AddressSanitizerForKernel
+
+TODO: slowdown and additional memory usage.
 
 
 1. Debugging
 ============
 
-TODO: describe the report.
+A typical report will look something like this:
 
-[   69.062329] =========================================================================
-[   69.062332] AddressSanitizer: heap-use-after-free on address ffff8800230ef384
-[   69.062334] Write of size 4 by thread T12887:
-[   69.062343]  [<ffffffff811046dc>] ____call_usermodehelper+0x20c/0x230
-[   69.062346]  [<ffffffff81104733>] call_helper+0x33/0x40
-[   69.062350]  [<ffffffff8184226c>] ret_from_fork+0x7c/0xb0
-[   69.062350] 
-[   69.062351] Freed by thread T12636:
-[   69.062354]  [<ffffffff8110424c>] call_usermodehelper_freeinfo+0x2c/0x30
-[   69.062357]  [<ffffffff811049d5>] call_usermodehelper_exec+0xa5/0x1c0
-[   69.062359]  [<ffffffff811052b0>] call_usermodehelper+0x40/0x60
-[   69.062363]  [<ffffffff8146c15e>] kobject_uevent_env+0x5ee/0x620
-[   69.062366]  [<ffffffff8146c19b>] kobject_uevent+0xb/0x10
-[   69.062369]  [<ffffffff8173bd7f>] net_rx_queue_update_kobjects+0xaf/0x150
-[   69.062372]  [<ffffffff8173c179>] netdev_register_kobject+0x139/0x1a0
-[   69.062375]  [<ffffffff8171f508>] register_netdevice+0x4d8/0x660
-[   69.062378]  [<ffffffff8171f6aa>] register_netdev+0x1a/0x30
-[   69.062385]  [<ffffffff81617d1a>] loopback_net_init+0x5a/0xd0
-[   69.062388]  [<ffffffff8170e64b>] ops_init+0x5b/0x1b0
-[   69.062390]  [<ffffffff8170e86b>] setup_net+0xcb/0x1f0
-[   69.062393]  [<ffffffff8170f1e8>] copy_net_ns+0x88/0x150
-[   69.062396]  [<ffffffff8111c537>] create_new_namespaces+0x1f7/0x2d0
-[   69.062399]  [<ffffffff8111c822>] unshare_nsproxy_namespaces+0x72/0xd0
-[   69.062402]  [<ffffffff810e10a1>] SyS_unshare+0x1c1/0x340
-[   69.062402] 
-[   69.062403] Allocated by thread T12636:
-[   69.062406]  [<ffffffff81104dfb>] call_usermodehelper_setup+0x5b/0x170
-[   69.062409]  [<ffffffff811052a1>] call_usermodehelper+0x31/0x60
-[   69.062412]  [<ffffffff8146c15e>] kobject_uevent_env+0x5ee/0x620
-[   69.062414]  [<ffffffff8146c19b>] kobject_uevent+0xb/0x10
-[   69.062417]  [<ffffffff8173bd7f>] net_rx_queue_update_kobjects+0xaf/0x150
-[   69.062419]  [<ffffffff8173c179>] netdev_register_kobject+0x139/0x1a0
-[   69.062422]  [<ffffffff8171f508>] register_netdevice+0x4d8/0x660
-[   69.062425]  [<ffffffff8171f6aa>] register_netdev+0x1a/0x30
-[   69.062428]  [<ffffffff81617d1a>] loopback_net_init+0x5a/0xd0
-[   69.062430]  [<ffffffff8170e64b>] ops_init+0x5b/0x1b0
-[   69.062433]  [<ffffffff8170e86b>] setup_net+0xcb/0x1f0
-[   69.062435]  [<ffffffff8170f1e8>] copy_net_ns+0x88/0x150
-[   69.062438]  [<ffffffff8111c537>] create_new_namespaces+0x1f7/0x2d0
-[   69.062441]  [<ffffffff8111c822>] unshare_nsproxy_namespaces+0x72/0xd0
-[   69.062444]  [<ffffffff810e10a1>] SyS_unshare+0x1c1/0x340
-[   69.062446]  [<ffffffff81842312>] system_call_fastpath+0x16/0x1b
-[   69.062447] 
-[   69.062454] The buggy address ffff8800230ef384 is located 68 bytes inside
-[   69.062454]  of 96-byte region [ffff8800230ef340, ffff8800230ef3a0)
-[   69.062454] 
-[   69.062455] Memory state around the buggy address:
-[   69.062470]  ffff8800230eee00: ........ ....rrrr rrrrrrrr rrrrrrrr
-[   69.062484]  ffff8800230eef00: rrrrrrrr rrrrrrrr rrrrrrrr rrrrrrrr
-[   69.062497]  ffff8800230ef000: rrrrrrrr rrrrrrrr rrrrrrrr rrrrrrrr
-[   69.062511]  ffff8800230ef100: rrrrrrrr rrrrrrrr ........ ....rrrr
-[   69.062525]  ffff8800230ef200: rrrrrrrr rrrrrrrr rrrrrrrr rrrrrrrr
-[   69.062539] >ffff8800230ef300: rrrrrrrr ffffffff ffffrrrr rrrrrrrr
-[   69.062540]                                      ^
-[   69.062554]  ffff8800230ef400: rrrrrrrr rrrrrrrr rrrrrrrr rrrrrrrr
-[   69.062568]  ffff8800230ef500: ........ ....rrrr rrrrrrrr rrrrrrrr
-[   69.062581]  ffff8800230ef600: rrrrrrrr rrrrrrrr rrrrrrrr ........
-[   69.062595]  ffff8800230ef700: ....rrrr rrrrrrrr rrrrrrrr rrrrrrrr
-[   69.062609]  ffff8800230ef800: rrrrrrrr rrrrrrrr ........ ....rrrr
-[   69.062612] Legend:
-[   69.062613]  f - 8 freed bytes
-[   69.062614]  r - 8 redzone bytes
-[   69.062614]  . - 8 allocated bytes
-[   69.062616]  x=1..7 - x allocated bytes + (8-x) redzone bytes
-[   69.062617] =========================================================================
+=========================================================================
+AddressSanitizer: heap-use-after-free on address ffff8800230ef384
+Write of size 4 by thread T12887:
+ [<ffffffff811046dc>] ____call_usermodehelper+0x20c/0x230
+ [<ffffffff81104733>] call_helper+0x33/0x40
+ [<ffffffff8184226c>] ret_from_fork+0x7c/0xb0
+
+Freed by thread T12636:
+ [<ffffffff8110424c>] call_usermodehelper_freeinfo+0x2c/0x30
+ [<ffffffff811049d5>] call_usermodehelper_exec+0xa5/0x1c0
+ [<ffffffff811052b0>] call_usermodehelper+0x40/0x60
+ [<ffffffff8146c15e>] kobject_uevent_env+0x5ee/0x620
+ [<ffffffff8146c19b>] kobject_uevent+0xb/0x10
+ [<ffffffff8173bd7f>] net_rx_queue_update_kobjects+0xaf/0x150
+ [<ffffffff8173c179>] netdev_register_kobject+0x139/0x1a0
+ [<ffffffff8171f508>] register_netdevice+0x4d8/0x660
+ [<ffffffff8171f6aa>] register_netdev+0x1a/0x30
+ [<ffffffff81617d1a>] loopback_net_init+0x5a/0xd0
+ [<ffffffff8170e64b>] ops_init+0x5b/0x1b0
+ [<ffffffff8170e86b>] setup_net+0xcb/0x1f0
+ [<ffffffff8170f1e8>] copy_net_ns+0x88/0x150
+ [<ffffffff8111c537>] create_new_namespaces+0x1f7/0x2d0
+ [<ffffffff8111c822>] unshare_nsproxy_namespaces+0x72/0xd0
+ [<ffffffff810e10a1>] SyS_unshare+0x1c1/0x340
+
+Allocated by thread T12636:
+ [<ffffffff81104dfb>] call_usermodehelper_setup+0x5b/0x170
+ [<ffffffff811052a1>] call_usermodehelper+0x31/0x60
+ [<ffffffff8146c15e>] kobject_uevent_env+0x5ee/0x620
+ [<ffffffff8146c19b>] kobject_uevent+0xb/0x10
+ [<ffffffff8173bd7f>] net_rx_queue_update_kobjects+0xaf/0x150
+ [<ffffffff8173c179>] netdev_register_kobject+0x139/0x1a0
+ [<ffffffff8171f508>] register_netdevice+0x4d8/0x660
+ [<ffffffff8171f6aa>] register_netdev+0x1a/0x30
+ [<ffffffff81617d1a>] loopback_net_init+0x5a/0xd0
+ [<ffffffff8170e64b>] ops_init+0x5b/0x1b0
+ [<ffffffff8170e86b>] setup_net+0xcb/0x1f0
+ [<ffffffff8170f1e8>] copy_net_ns+0x88/0x150
+ [<ffffffff8111c537>] create_new_namespaces+0x1f7/0x2d0
+ [<ffffffff8111c822>] unshare_nsproxy_namespaces+0x72/0xd0
+ [<ffffffff810e10a1>] SyS_unshare+0x1c1/0x340
+ [<ffffffff81842312>] system_call_fastpath+0x16/0x1b
+
+The buggy address ffff8800230ef384 is located 68 bytes inside
+ of 96-byte region [ffff8800230ef340, ffff8800230ef3a0)
+
+Memory state around the buggy address:
+ ffff8800230eee00: ........ ....rrrr rrrrrrrr rrrrrrrr
+ ffff8800230eef00: rrrrrrrr rrrrrrrr rrrrrrrr rrrrrrrr
+ ffff8800230ef000: rrrrrrrr rrrrrrrr rrrrrrrr rrrrrrrr
+ ffff8800230ef100: rrrrrrrr rrrrrrrr ........ ....rrrr
+ ffff8800230ef200: rrrrrrrr rrrrrrrr rrrrrrrr rrrrrrrr
+>ffff8800230ef300: rrrrrrrr ffffffff ffffrrrr rrrrrrrr
+                                     ^
+ ffff8800230ef400: rrrrrrrr rrrrrrrr rrrrrrrr rrrrrrrr
+ ffff8800230ef500: ........ ....rrrr rrrrrrrr rrrrrrrr
+ ffff8800230ef600: rrrrrrrr rrrrrrrr rrrrrrrr ........
+ ffff8800230ef700: ....rrrr rrrrrrrr rrrrrrrr rrrrrrrr
+ ffff8800230ef800: rrrrrrrr rrrrrrrr ........ ....rrrr
+Legend:
+ f - 8 freed bytes
+ r - 8 redzone bytes
+ . - 8 allocated bytes
+ x=1..7 - x allocated bytes + (8-x) redzone bytes
+=========================================================================
+
+If your kernel was compiled with CONFIG_DEBUG_INFO=y you can use addr2line
+to get file and line info of each frame of the stack.
+
+TODO: explain how to use addr2line (kmemcheck.txt explains)?
+
+This can be done via our symbolizer script (see the ASAN web page).
+The script also symbolizes stack frames which come from dynamic modules.
+As a result the report will be much easier to investigate.
+
+Here is the report after symbolization:
 
 =========================================================================
 AddressSanitizer: heap-use-after-free on address ffff8800230ef384
@@ -166,9 +179,18 @@ Legend:
  x=1..7 - x allocated bytes + (8-x) redzone bytes
 =========================================================================
 
+TODO: describe the report.
+TODO: explain the bug.
+
 
 2. General description
 ======================
+
+From a high level, our approach to memory error detection is similar to that
+of kmemcheck: use shadow memory to record whether each byte of memory is safe
+to access, and use instrumentation to check the shadow memory on each memory
+access. However, ASAN uses a more efficient shadow mapping, a more compact
+shadow encoding and is faster than kmemcheck.
 
 ASAN consists of two parts: an instrumentation module and a run-time library.
 The instrumentation module modifies the code to check the address state for
@@ -177,36 +199,51 @@ The run-time library replaces kmem_cache_alloc, kmem_cache_free and related
 functions, creates redzones around allocated memory regions, delays the reuse
 of freed memory regions, and does error reporting.
 
+FIXME: explain what is a redzone.
 
-2.1. Instrumentation
+ASAN is tracking accesses only to the part of the kernel virtual address space,
+which is directly mapped to the physical memory. That means that ASAN can't
+detect bad accesses to the virtual memory allocated with vmalloc.
+
+Currently, only SLAB allocator is supported by ASAN.
+
+
+2.1. Shadow memory
+==================
+
+ASAN dedicates one-eighth of the main (physical) memory to its shadow memory.
+Each shadow byte corresponds to 8 bytes of the main memory.
+
+Poisoning or unpoisoning a byte in the main memory means writing some special
+value into the corresponding shadow memory. This value indicates whether the
+byte is addressable (valid to read or write) or not.
+
+
+2.2. Instrumentation
 ====================
 
 ASAN requires the kernel to be built with a specific compiler. This compiler
-adds memory address checking instructions before every memory access.
-
-TODO: how we check (only physical memory etc).
-
-
-2.2. Shadow memory
-==================
-
-TODO: What and where is the shadow memory.
+adds memory address checking instructions before every memory access. These
+instructions include checking if the accessed memory region is poisoned and
+printing a report if yes.
 
 
 2.3. Poisoning / unpoisoning
 ============================
 
-Each time a new cache is created the size of this cache (the size of the
+Each time a new slab cache is created the size of this cache (the size of the
 objects that can be allocated from this cache) is increased so it is possible
 to store some metainfo right after each object.
 This metainfo includes allocation and deallocation stacks, identifiers of the
 threads that allocated and deallocated the object, quarantine related info.
 
+FIXME: explain what is quarantine.
+
 When a new slab is created the shadow memory for the pages allocated for
 this slab is poisoned and freeing quarantined objects is performed if the
 quarantine is overflown.
 
-FIXME: explain what is quarantine.
+FIXME: ^.
 
 Each time a new object is allocated from the cache the shadow memory for this
 object is unpoisoned and allocation metainfo is stored.
@@ -224,4 +261,9 @@ poisoned again.
 3. Technical description
 ========================
 
-TODO.
+TODO: shadow enconding.
+TODO: shadow offset.
+TODO: physical memory address range.
+TODO: max_pfn.
+TODO: what instructions are added by instrumentation.
+TODO: memset -> asam_memset etc.
