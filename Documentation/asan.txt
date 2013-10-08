@@ -9,8 +9,8 @@ AddressSanitizer (or ASAN) is a dynamic memory error detector. It provides fast
 and comprehensive solution for use-after-free (UAF) and out-of-bounds (OOB)
 bugs. Enabled with CONFIG_ASAN=y, currently works only on x86_64.
 
-ASAN is better than all of CONFIG_DEBUG_SLAB/CONFIG_KMEMCHECK/
-CONFIG_DEBUG_PAGEALLOC, because it:
+ASAN is better than all of CONFIG_DEBUG_PAGEALLOC/CONFIG_DEBUG_SLAB/
+CONFIG_KMEMCHECK, because it:
  - is based on compiler instrumentation (fast),
  - detects OOB for both writes and reads,
  - provides strong UAF detection (based on delayed memory reuse),
@@ -195,7 +195,7 @@ ____call_usermodehelper() which was called by thread T12887.
 The address of the instruction that caused the bad access is also present, but
 since the report was symbolized we can look at the file and line info instead.
 
-By looking in kernel/kmod.c , line 250 we can see that the report was caused by
+By looking in kernel/kmod.c, line 250 we can see that the report was caused by
 assigning some value to sub_info->retval.
 
 202 static int ____call_usermodehelper(void *data)
@@ -267,7 +267,7 @@ Allocated by thread T12636:
  [<ffffffff81842312>] system_call_fastpath+0x16/0x1b ./arch/x86/kernel/entry_64.S:629
 
 The first two frames of the allocation stack are the inlined calls of kmalloc
-and kzalloc, which are defined in include/linux/slab.h. But the actual
+and kzalloc, which are defined in include/linux/slab.h. And the actual
 allocation happened in kernel/kmod.c, line 540:
 
 533 struct subprocess_info *call_usermodehelper_setup(char *path, char **argv,
@@ -320,7 +320,7 @@ Each 8 bytes of memory can be marked as addressable, partially addressable,
 freed or they can be part of a redzone.
 If 8 bytes are marked as addressable that means that they belong to some
 allocated memory block and it is possible to read or modify any of these
-8 bytes. These 8 bytes are indicated by '.' in the report.
+8 bytes. Addressable 8 bytes are indicated by '.' in the report.
 When only the first N bytes out of 8 belong to an allocated memory block,
 the 8 bytes are partially addressable. These 8 bytes are indicated by 'N'.
 8 freed bytes are indicated by 'f' and 8 redzone bytes - by 'r'.
@@ -331,8 +331,8 @@ accessed address is marked as freed.
 TODO: explain the bug.
 
 
-2. General description
-======================
+2. Technical description
+========================
 
 From a high level, our approach to memory error detection is similar to that
 of kmemcheck: use shadow memory to record whether each byte of memory is safe
@@ -347,7 +347,7 @@ The run-time library replaces kmem_cache_alloc, kmem_cache_free and related
 functions, creates redzones around allocated memory regions, delays the reuse
 of freed memory regions, and does error reporting.
 
-FIXME: explain what is a redzone.
+XXX: better name than run-time library?
 
 ASAN is tracking accesses only to the part of the kernel virtual address space,
 which is directly mapped to the physical memory. That means that ASAN can't
@@ -366,6 +366,7 @@ Poisoning or unpoisoning a byte in the main memory means writing some special
 value into the corresponding shadow memory. This value indicates whether the
 byte is addressable (valid to read or write) or not.
 
+TODO: describe different shadow values.
 
 2.2. Instrumentation
 ====================
@@ -375,9 +376,72 @@ adds memory address checking instructions before every memory access. These
 instructions include checking if the accessed memory region is poisoned and
 printing a report if yes.
 
+TODO: what instructions are added by instrumentation.
 
-2.3. Poisoning / unpoisoning
-============================
+
+2.3. Run-time library
+=====================
+
+The main purpose of the run-time library is to manage the shadow memory. At
+kernel startup the entire shadow region is reserved so that no other part of
+the kernel can use it.
+
+The kmem_cache_alloc (kmalloc) and kmem_cache_free (kfree) functions are
+replaced with a specialized implementation. The kmem_cache_alloc function
+allocates extra memory, the redzone, around the returned region. The redzones
+are marked as unaddressable, or poisoned. The larger the redzone, the larger
+the overflows or underflows that will be detected.
+
+The redzone is used to store some internal data (such as the allocation size,
+thread ID, etc.). This internal data can not be corrupted by an out-of-bounds
+write, because such writes are detected immediately prior to the actual store.
+
+The kmem_cache_free function poisons the entire memory region and puts it into
+quarantine, such that this region will not be allocated by kmem_cache_alloc any
+time soon. Currently, the quarantine is implemented as a FIFO queue which holds
+a fixed amount of memory at any time.
+
+kmem_cache_alloc and kmem_cache_free record the current call stack in order to
+provide more informative bug reports. The kmem_cache_alloc and kmem_cache_free
+call stacks are stored in the redzone (the larger the redzone, the larger the
+number of frames that can be stored).
+
+
+3. Implementation details
+=========================
+
+3.1. Shadow memory
+==================
+
+TODO: shadow offset.
+TODO: where and how allocated.
+TODO: physical memory address range.
+TODO: max_pfn.
+
+
+3.2. Instrumentation
+====================
+
+TODO: gcc pass, functions naming format.
+
+
+3.3. Run-time library
+=====================
+
+XXX: need to explain what are: cache, slab, object?
+
+3.3.1. Redzones
+===============
+
+TODO: only right redzones.
+TODO: redzone format.
+TODO: 4mb cache issue.
+TODO: redzone searching.
+
+TODO: rewrite:
+
+To detect out-of-bounds errors when an object is allocated some extra memory
+is allocated around it. This extra memory is called redzone.
 
 Each time a new slab cache is created the size of this cache (the size of the
 objects that can be allocated from this cache) is increased so it is possible
@@ -385,22 +449,38 @@ to store some metainfo right after each object.
 This metainfo includes allocation and deallocation stacks, identifiers of the
 threads that allocated and deallocated the object, quarantine related info.
 
+
+3.3.2. Poisoning / unpoisoning
+==============================
+
+TODO: poisoning function by function.
+TODO: krealloc etc. problems
+
+TODO: rewrite:
+
 When a new slab is created the shadow memory for the pages allocated for
-this slab is poisoned.
+this slab is poisoned. This includes the slab header (in case it is on-slab),
+the objects in this slab, the redzones around the objects.
 
 Each time a new object is allocated from the cache the shadow memory for this
-object is unpoisoned and allocation metainfo is stored.
+object is unpoisoned and allocation metainfo is stored in the redzone.
 
 When a user tries to free an allocated object it's shadow memory is poisoned
-and deallocation metainfo is stored.
+and deallocation metainfo is stored in the redzone.
 
 The objects allocated via kmalloc (or krealloc) are poisoned more accurately.
 When a user asks for an N bytes object and the kmalloc cache of size K is used
 for the allocation the object is allocated and unpoisoned as described above.
 Then the last K - N bytes are poisoned again.
 
-2.4 Quarantine
-==============
+
+3.3.3. Quarantine
+=================
+
+TODO: linked list in the redzone.
+TODO: quarantine is cleaned on slab creation.
+
+TODO: rewrite:
 
 When a user calls kmem_cache_free (or kfree) the object is poisoned, but not
 deallocated right away, because otherwise it can be allocated again soon and
@@ -410,13 +490,7 @@ The total size of the objects in quarantine is counted and some objects are
 freed when the total size is more than some threshold.
 
 
-3. Technical description
+3.3.4. Libc interception
 ========================
 
-TODO: shadow enconding.
-TODO: shadow offset.
-TODO: physical memory address range.
-TODO: max_pfn.
-TODO: what instructions are added by instrumentation.
 TODO: memset -> asam_memset etc.
-TODO: quarantine is cleaned on slab creation.
