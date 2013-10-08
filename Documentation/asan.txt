@@ -313,8 +313,7 @@ Legend:
  . - 8 allocated bytes
  x=1..7 - x allocated bytes + (8-x) redzone bytes
 
-Understanding this part of the report requires some more knowledge about how
-ASAN works.
+Reading this part requires some more undestanding of how ASAN works.
 
 Each 8 bytes of memory can be marked as addressable, partially addressable,
 freed or they can be part of a redzone.
@@ -349,24 +348,48 @@ of freed memory regions, and does error reporting.
 
 XXX: better name than run-time library?
 
-ASAN is tracking accesses only to the part of the kernel virtual address space,
-which is directly mapped to the physical memory. That means that ASAN can't
-detect bad accesses to the virtual memory allocated with vmalloc.
-
-Currently, only SLAB allocator is supported by ASAN.
-
 
 2.1. Shadow memory
 ==================
 
-ASAN dedicates one-eighth of the main (physical) memory to its shadow memory.
-Each shadow byte corresponds to 8 bytes of the main memory.
+AddressSanitizer dedicates one-eighth of the physical memory to its shadow
+memory. Since in x86_64 physical memory is directly mapped to the part of the
+kernel virtual memory, it is possible to use direct mapping with a scale and
+offset to translate a memory address to its corresponding shadow address.
+Given the memory address Addr, the address of the shadow byte is computed as
+(Addr >> 3) + Offset. If Max - 1 is the maximum valid address in the virtual
+memory (that is mapped to the physical), the value of Offset should be chosen
+in such a way that the region from Offset to Offset + Max / 8 is not occupied
+at startup.
+
+The figure below shows the address space layout. The physical memory is split
+into two parts (low and high) which map to the corresponding shadow regions.
+Applying the shadow mapping to addresses in the shadow region gives us
+addresses in the Bad region.
+
+|--------|        |--------|
+| Memory |----    | Memory |
+|--------|    \   |--------|
+| Shadow |--   -->| Shadow |
+|--------|  \     |--------|
+|   Bad  |   ---->|  Bad   |
+|--------|  /     |--------|
+| Shadow |--   -->| Shadow |
+|--------|    /   |--------|
+| Memory |----    | Memory |
+|--------|        |--------|
+
+Each shadow byte corresponds to 8 bytes of the main memory. We use the
+following encoding for each shadow byte: 0 means that all 8 bytes of the
+corresponding memory region are addressable; k (1 <= k <= 7) means that
+the first k bytes are addressable; any negative value indicates that the entire
+8-byte word is unaddressable. We use different negative values to distinguish
+between different kinds of unaddressable memory (redzones, freed memory).
 
 Poisoning or unpoisoning a byte in the main memory means writing some special
 value into the corresponding shadow memory. This value indicates whether the
-byte is addressable (valid to read or write) or not.
+byte is addressable or not.
 
-TODO: describe different shadow values.
 
 2.2. Instrumentation
 ====================
@@ -410,6 +433,14 @@ number of frames that can be stored).
 3. Implementation details
 =========================
 
+TODO: rewrite:
+
+ASAN is tracking accesses only to the part of the kernel virtual address space,
+which is directly mapped to the physical memory. That means that ASAN can't
+detect bad accesses to the virtual memory allocated with vmalloc.
+
+Currently, only SLAB allocator is supported by ASAN.
+
 3.1. Shadow memory
 ==================
 
@@ -417,7 +448,7 @@ TODO: shadow offset.
 TODO: where and how allocated.
 TODO: physical memory address range.
 TODO: max_pfn.
-
+TODO: accesses to the bad region.
 
 3.2. Instrumentation
 ====================
