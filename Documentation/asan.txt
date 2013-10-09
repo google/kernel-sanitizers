@@ -7,7 +7,12 @@ AddressSanitizer
 
 AddressSanitizer (or ASAN) is a dynamic memory error detector. It provides fast
 and comprehensive solution for use-after-free (UAF) and out-of-bounds (OOB)
-bugs. Enabled with CONFIG_ASAN=y, currently works only on x86_64.
+bugs.
+
+ASAN can be enabled with CONFIG_ASAN=y, currently works only on x86_64,
+supports only SLAB allocator.
+
+FIXME: kernel should be built with specific compiler.
 
 ASAN is better than all of CONFIG_DEBUG_PAGEALLOC/CONFIG_DEBUG_SLAB/
 CONFIG_KMEMCHECK, because it:
@@ -21,7 +26,7 @@ More information is available at:
 https://code.google.com/p/address-sanitizer/wiki/AddressSanitizerForKernel
 
 TODO: slowdown and additional memory usage.
-
+XXX: tell about kmemcheck?
 
 1. Reports
 ==========
@@ -353,14 +358,12 @@ XXX: better name than run-time library?
 ==================
 
 AddressSanitizer dedicates one-eighth of the physical memory to its shadow
-memory. Since in x86_64 physical memory is directly mapped to the part of the
-kernel virtual memory, it is possible to use direct mapping with a scale and
-offset to translate a memory address to its corresponding shadow address.
-Given the memory address Addr, the address of the shadow byte is computed as
-(Addr >> 3) + Offset. If Max - 1 is the maximum valid address in the virtual
-memory (that is mapped to the physical), the value of Offset should be chosen
-in such a way that the region from Offset to Offset + Max / 8 is not occupied
-at startup.
+memory and uses direct mapping with a scale and offset to translate a memory
+address to its corresponding shadow address. Given the memory address Addr,
+the address of the shadow byte is computed as (Addr >> 3) + Offset. If Max - 1
+is the maximum valid address in the memory, the value of Offset should be
+chosen in such a way that the region from Offset to Offset + Max / 8 is not
+occupied at startup.
 
 The figure below shows the address space layout. The physical memory is split
 into two parts (low and high) which map to the corresponding shadow regions.
@@ -448,24 +451,28 @@ number of frames that can be stored).
 3. Implementation details
 =========================
 
-TODO: rewrite:
+In this section you will find some details of how the instrumentation module
+and the run-time library are implemented.
 
-ASAN is tracking accesses only to the part of the kernel virtual address space,
-which is directly mapped to the physical memory. That means that ASAN can't
-detect bad accesses to the virtual memory allocated with vmalloc.
-
-Currently, only SLAB allocator is supported by ASAN.
-
-XXX: sizeof(unsigned long) == sizeof(void *) == 1 << SHADOW_SCALE !
 
 3.1. Shadow memory
 ==================
 
 TODO: shadow offset.
 TODO: where and how allocated.
-TODO: physical memory address range.
+TODO: sizeof(unsigned long) == (1 << SHADOW_SCALE).
+
+In x86_64 physical memory is directly mapped to the part of the kernel virtual
+memory with the address range of [0xffff880000000000, 0xffffc7ffffffffff]. ASAN
+is tracking accesses only to this part of the kernel virtual memory. That means
+that ASAN can't detect bad accesses to the virtual memory allocated with vmalloc.
+
 TODO: max_pfn.
-TODO: accesses to the bad region.
+XXX: why do we use max_pfn and not just compare to 0xffffc7ffffffffff?
+XXX: also we could probably catch ot-of-physical-memory accesses.
+
+Accesses to the described above Bad memory region are also detected and
+reported as wild-memory-access'es.
 
 3.2. Instrumentation
 ====================
@@ -482,30 +489,57 @@ XXX: need to explain what are: cache, slab, object?
 3.3.1. Redzones
 ===============
 
+Each time a new slab cache is created with kmem_cache_create the size of this
+cache (the size of the objects that can be allocated from this cache) is
+increased by ASAN_REDZONE_SIZE. When an object is allocated from this cache,
+the last ASAN_REDZONE_SIZE bytes are considered to be the redzone and poisoned
+appropriately.
+
 TODO: only right redzones.
-TODO: redzone format.
+
+As a result, slabs with on-slab descriptor look like:
+
+|---------------------------------------------------------------------------|
+| Descriptor | Object | Redzone | Object | Redzone | ... | Object | Redzone |
+|---------------------------------------------------------------------------|
+
+And slabs with off-slab descriptor look like:
+
+|--------------------------------------------------------------|
+| Object | Redzone | Object | Redzone | ... | Object | Redzone |
+|--------------------------------------------------------------|
+
+Currently, the redzones have the following format:
+
+struct chunk {
+        struct kmem_cache *cache;
+        void *object;
+        struct list_head list;
+};
+
+struct asan_redzone {
+        unsigned long alloc_stack[16];
+        unsigned long free_stack[16];
+
+        int alloc_thread_id;
+        int free_thread_id;
+
+        struct chunk chunk;
+        unsigned long quarantine_flag;
+
+	unsigned long kmalloc_size;
+};
+
+TODO: describe redzone format.
+
 TODO: 4mb cache issue.
 TODO: redzone searching.
-
-TODO: rewrite:
-
-To detect out-of-bounds errors when an object is allocated some extra memory
-is allocated around it. This extra memory is called redzone.
-
-Each time a new slab cache is created the size of this cache (the size of the
-objects that can be allocated from this cache) is increased so it is possible
-to store some metainfo right after each object.
-This metainfo includes allocation and deallocation stacks, identifiers of the
-threads that allocated and deallocated the object, quarantine related info.
 
 
 3.3.2. Poisoning / unpoisoning
 ==============================
 
-TODO: poisoning function by function.
-TODO: krealloc etc. problems
-
-TODO: rewrite:
+TODO: more details (function names, etc.).
 
 When a new slab is created the shadow memory for the pages allocated for
 this slab is poisoned. This includes the slab header (in case it is on-slab),
@@ -526,10 +560,7 @@ Then the last K - N bytes are poisoned again.
 3.3.3. Quarantine
 =================
 
-TODO: linked list in the redzone.
-TODO: quarantine is cleaned on slab creation.
-
-TODO: rewrite:
+TODO: more details (function names, etc.).
 
 When a user calls kmem_cache_free (or kfree) the object is poisoned, but not
 deallocated right away, because otherwise it can be allocated again soon and
@@ -537,6 +568,9 @@ unpoisoned. Instead, the object is but put into a FIFO queue called quarantine.
 
 The total size of the objects in quarantine is counted and some objects are
 freed when the total size is more than some threshold.
+
+TODO: linked list in the redzone.
+TODO: quarantine is cleaned on slab creation.
 
 
 3.3.4. Libc interception
