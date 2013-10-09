@@ -399,7 +399,22 @@ adds memory address checking instructions before every memory access. These
 instructions include checking if the accessed memory region is poisoned and
 printing a report if yes.
 
-TODO: what instructions are added by instrumentation.
+When instrumenting an 8-byte memory access, ASAN computes the address of the
+corresponding shadow byte, loads that byte, and checks whether it is zero:
+
+0 ShadowAddr = (Addr >> 3) + Offset;
+1 if (*ShadowAddr != 0)
+2         ReportAndCrash(Addr);
+
+When instrumenting 1-, 2-, or 4- byte accesses, the instrumentation is slightly
+more complex: if the shadow value is positive (i.e., only the first k bytes in
+the 8-byte word are addressable) we need to compare the 3 last bits of the
+address with k.
+
+0 ShadowAddr = (Addr >> 3) + Offset;
+1 k = *ShadowAddr;
+2 if (k != 0 && ((Addr & 7) + AccessSize > k))
+3         ReportAndCrash(Addr);
 
 
 2.3. Run-time library
@@ -441,6 +456,8 @@ detect bad accesses to the virtual memory allocated with vmalloc.
 
 Currently, only SLAB allocator is supported by ASAN.
 
+XXX: sizeof(unsigned long) == sizeof(void *) == 1 << SHADOW_SCALE !
+
 3.1. Shadow memory
 ==================
 
@@ -454,6 +471,7 @@ TODO: accesses to the bad region.
 ====================
 
 TODO: gcc pass, functions naming format.
+TODO: about 16-byte accesses.
 
 
 3.3. Run-time library
