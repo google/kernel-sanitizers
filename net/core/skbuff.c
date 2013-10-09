@@ -1066,7 +1066,7 @@ int pskb_expand_head(struct sk_buff *skb, int nhead, int ntail,
 			       gfp_mask, NUMA_NO_NODE, NULL);
 	if (!data)
 		goto nodata;
-	size = SKB_WITH_OVERHEAD(ksize(data));
+	size = SKB_WITH_OVERHEAD(/*ksize(data)*/size);
 
 	/* Copy only real data... and, alas, header. This should be
 	 * optimized for the cases when header is void.
