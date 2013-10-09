@@ -25,6 +25,17 @@ void asan_do_bo_kmalloc(void)
 }
 
 /* Expected to produce report. */
+void asan_do_bo_kmalloc_node(void)
+{
+	char *ptr;
+
+	pr_err("Trying buffer-overflow in kmalloc_node redzone...\n");
+	ptr = kmalloc_node(17, GFP_KERNEL, 0);
+	*(ptr + 18) = 'x';
+	kfree(ptr);
+}
+
+/* Expected to produce report. */
 void asan_do_bo_krealloc(void)
 {
 	char *ptr1, *ptr2;

@@ -4,6 +4,7 @@
 void asan_do_bo(void);
 void asan_do_bo_left(void);
 void asan_do_bo_kmalloc(void);
+void asan_do_bo_kmalloc_node(void);
 void asan_do_bo_krealloc(void);
 void asan_do_bo_krealloc_less(void);
 void asan_do_krealloc_more(void);

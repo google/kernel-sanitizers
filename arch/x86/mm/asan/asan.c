@@ -467,6 +467,7 @@ void asan_on_kernel_init(void)
 	asan_do_bo();
 	asan_do_bo_left();
 	asan_do_bo_kmalloc();
+	asan_do_bo_kmalloc_node();
 	asan_do_bo_krealloc();
 	asan_do_bo_krealloc_less();
 	asan_do_bo_16();

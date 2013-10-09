@@ -11,12 +11,12 @@ def should_instrument(filename):
     return True
 
   if filename.startswith('arch/x86/mm/asan'):
-    return False #loop?
+    return False
   if filename.startswith('mm/slab'):
-    return False #slab.c slab_common.c
-  if filename.startswith('arch/x86/vdso'):
-    return False #user-space
+    return False
 
+  if filename.startswith('arch/x86/vdso'):
+    return False
   if filename.startswith('arch/x86/realmode'):
     return False
   if filename.startswith('arch/x86/boot'):
