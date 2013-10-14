@@ -250,13 +250,14 @@ struct sk_buff *__alloc_skb(unsigned int size, gfp_t gfp_mask,
 	size = SKB_DATA_ALIGN(size);
 	size += SKB_DATA_ALIGN(sizeof(struct skb_shared_info));
 	data = kmalloc_reserve(size, gfp_mask, node, &pfmemalloc);
+	asan_krealloc(data, ksize(data));
 	if (!data)
 		goto nodata;
 	/* kmalloc(size) might give us more room than requested.
 	 * Put skb_shared_info exactly at the end of allocated zone,
 	 * to allow max possible filling before reallocation.
 	 */
-	size = SKB_WITH_OVERHEAD(/*ksize(data)*/size);
+	size = SKB_WITH_OVERHEAD(ksize(data));
 	prefetchw(data + size);
 
 	/*
@@ -1064,9 +1065,10 @@ int pskb_expand_head(struct sk_buff *skb, int nhead, int ntail,
 		gfp_mask |= __GFP_MEMALLOC;
 	data = kmalloc_reserve(size + SKB_DATA_ALIGN(sizeof(struct skb_shared_info)),
 			       gfp_mask, NUMA_NO_NODE, NULL);
+	asan_krealloc(data, ksize(data));
 	if (!data)
 		goto nodata;
-	size = SKB_WITH_OVERHEAD(/*ksize(data)*/size + SKB_DATA_ALIGN(sizeof(struct skb_shared_info)));
+	size = SKB_WITH_OVERHEAD(ksize(data));
 
 	/* Copy only real data... and, alas, header. This should be
 	 * optimized for the cases when header is void.
