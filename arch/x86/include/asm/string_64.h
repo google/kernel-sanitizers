@@ -65,18 +65,30 @@ char *strcpy(char *dest, const char *src);
 char *strcat(char *dest, const char *src);
 int strcmp(const char *cs, const char *ct);
 
-#ifdef CONFIG_ASAN
+#if defined(CONFIG_ASAN) && !defined(ASAN_NO_INTERCEPTORS)
+
+/*
+ * ASAN instruments for memory accesses only functions written in C.
+ * The following functions are written in assembly,
+ * so we explicitly redirect them into ASAN interceptors.
+ * In rare circumstances you may need to use the original functions,
+ * in such case define ASAN_NO_INTERCEPTORS before including this file.
+ */
+
+void *asan_memset(void *ptr, int val, size_t len);
+void *asan_memcpy(void *dst, const void *src, size_t len);
+void *asan_memmove(void *dst, const void *src, size_t len);
 
 #define memcpy(dst, src, len) asan_memcpy((dst), (src), (len))
 #define memset(ptr, val, len) asan_memset((ptr), (val), (len))
 #define memmove(dst, src, len) asan_memmove((dst), (src), (len))
 
 /*
- * memcmp, strlen, strcpy, strcat, strcmp, etc. are in lib/string.c
- * and instrumented as they are.
+ * memcmp, strlen, strcpy, strcat, strcmp, etc. are written in C
+ * (see lib/string.c) and instrumented as they are.
  */
 
-#endif /* CONFIG_ASAN */
+#endif /* CONFIG_ASAN && !ASAN_NO_INTERCEPTORS */
 
 #endif /* __KERNEL__ */
 

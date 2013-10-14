@@ -47,8 +47,8 @@ struct asan_redzone {
 
 #define ASAN_QUARANTINE_SIZE (128 << 20)
 
-#define ASAN_COLORED_OUTPUT_ENABLE 0
-#define ASAN_TESTS_ENABLE 0
+#define ASAN_COLORED_OUTPUT_ENABLE 1
+#define ASAN_TESTS_ENABLE 1
 
 extern int asan_error_counter;
 extern spinlock_t asan_error_counter_lock;

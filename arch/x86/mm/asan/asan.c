@@ -21,11 +21,24 @@
 #include "asan.h"
 #include "test.h"
 
-static int asan_enabled; /* = 0 */
+#undef memset
+#undef memcpy
 
-static unsigned long quarantine_size; /* = 0; */
-static LIST_HEAD(quarantine_chunk_list);
-static DEFINE_SPINLOCK(quarantine_lock);
+/* CONFIG_ASAN is incompatible with CONFIG_DEBUG_SLAB */
+/* CONFIG_ASAN is incompatible with CONFIG_KMEMCHECK */
+
+static struct
+{
+	int enabled;
+	spinlock_t quarantine_lock;
+	struct list_head quarantine_list;
+	size_t quarantine_size;
+} ctx = {
+	.enabled = 0,
+	.quarantine_lock = __SPIN_LOCK_UNLOCKED(ctx.quarantine_lock),
+	.quarantine_list = LIST_HEAD_INIT(ctx.quarantine_list),
+	.quarantine_size = 0,
+};
 
 pid_t asan_current_thread_id(void)
 {
@@ -53,7 +66,7 @@ unsigned int asan_save_stack_trace(unsigned long *output,
 		beg++;
 	end = (entries - beg <= max_entries) ? entries : beg + max_entries;
 
-	(memcpy)(output, stack + beg, (end - beg) * sizeof(unsigned long));
+	memcpy(output, stack + beg, (end - beg) * sizeof(unsigned long));
 	return end - beg;
 }
 
@@ -65,15 +78,15 @@ static void asan_quarantine_put(struct kmem_cache *cache, void *object)
 	struct chunk *chunk = &redzone->chunk;
 	unsigned long flags;
 
-	if (!asan_enabled)
+	if (!ctx.enabled)
 		return;
 
-	spin_lock_irqsave(&quarantine_lock, flags);
+	spin_lock_irqsave(&ctx.quarantine_lock, flags);
 
-	list_add(&chunk->list, &quarantine_chunk_list);
-	quarantine_size += cache->object_size;
+	list_add(&chunk->list, &ctx.quarantine_list);
+	ctx.quarantine_size += cache->object_size;
 
-	spin_unlock_irqrestore(&quarantine_lock, flags);
+	spin_unlock_irqrestore(&ctx.quarantine_lock, flags);
 }
 
 static void asan_quarantine_flush(void)
@@ -81,23 +94,23 @@ static void asan_quarantine_flush(void)
 	struct chunk *chunk;
 	unsigned long flags;
 
-	spin_lock_irqsave(&quarantine_lock, flags);
+	spin_lock_irqsave(&ctx.quarantine_lock, flags);
 
-	while (quarantine_size > ASAN_QUARANTINE_SIZE) {
-		BUG_ON(list_empty(&quarantine_chunk_list));
+	while (ctx.quarantine_size > ASAN_QUARANTINE_SIZE) {
+		BUG_ON(list_empty(&ctx.quarantine_list));
 
-		chunk = list_entry(quarantine_chunk_list.prev,
+		chunk = list_entry(ctx.quarantine_list.prev,
 				   struct chunk, list);
-		list_del(quarantine_chunk_list.prev);
+		list_del(ctx.quarantine_list.prev);
 
-		quarantine_size -= chunk->cache->object_size;
+		ctx.quarantine_size -= chunk->cache->object_size;
 
-		spin_unlock_irqrestore(&quarantine_lock, flags);
+		spin_unlock_irqrestore(&ctx.quarantine_lock, flags);
 		kmem_cache_free(chunk->cache, chunk->object);
-		spin_lock_irqsave(&quarantine_lock, flags);
+		spin_lock_irqsave(&ctx.quarantine_lock, flags);
 	}
 
-	spin_unlock_irqrestore(&quarantine_lock, flags);
+	spin_unlock_irqrestore(&ctx.quarantine_lock, flags);
 }
 
 static void asan_quarantine_drop_cache(struct kmem_cache *cache)
@@ -106,22 +119,22 @@ static void asan_quarantine_drop_cache(struct kmem_cache *cache)
 	struct list_head *pos, *n;
 	struct chunk *chunk;
 
-	spin_lock_irqsave(&quarantine_lock, flags);
+	spin_lock_irqsave(&ctx.quarantine_lock, flags);
 
-	list_for_each_safe(pos, n, &quarantine_chunk_list) {
+	list_for_each_safe(pos, n, &ctx.quarantine_list) {
 		chunk = list_entry(pos, struct chunk, list);
 		if (chunk->cache == cache) {
 			list_del(pos);
 
-			quarantine_size -= chunk->cache->object_size;
+			ctx.quarantine_size -= chunk->cache->object_size;
 
-			spin_unlock_irqrestore(&quarantine_lock, flags);
+			spin_unlock_irqrestore(&ctx.quarantine_lock, flags);
 			kmem_cache_free(chunk->cache, chunk->object);
-			spin_lock_irqsave(&quarantine_lock, flags);
+			spin_lock_irqsave(&ctx.quarantine_lock, flags);
 		}
 	}
 
-	spin_unlock_irqrestore(&quarantine_lock, flags);
+	spin_unlock_irqrestore(&ctx.quarantine_lock, flags);
 }
 
 static bool asan_addr_is_in_mem(unsigned long addr)
@@ -162,7 +175,7 @@ asan_poison_shadow(const void *address, unsigned long size, u8 value)
 	shadow_beg = asan_mem_to_shadow(addr);
 	shadow_end = asan_mem_to_shadow(addr + size - ASAN_SHADOW_GRANULARITY)
 		     + 1;
-	(memset)((void *)shadow_beg, value, shadow_end - shadow_beg);
+	memset((void *)shadow_beg, value, shadow_end - shadow_beg);
 }
 
 static void asan_unpoison_shadow(const void *address, unsigned long size)
@@ -244,7 +257,7 @@ void asan_check_memory_region(const void *addr, unsigned long size, bool write)
 	unsigned long poisoned_addr;
 	unsigned long strip_addr;
 
-	if (!asan_enabled)
+	if (!ctx.enabled)
 		return;
 
 	poisoned_addr = (unsigned long)asan_region_is_poisoned(addr, size);
@@ -265,7 +278,7 @@ static void asan_check_memory_word(unsigned long addr, unsigned long size,
 	u8 last_accessed_byte;
 	unsigned long strip_addr;
 
-	if (!asan_enabled)
+	if (!ctx.enabled)
 		return;
 
 	if (!asan_addr_is_in_mem(addr) || !asan_addr_is_in_mem(addr + size))
@@ -302,10 +315,10 @@ void __init asan_init_shadow(void)
 		return;
 	}
 
-	(memset)(shadow_beg, 0, shadow_size);
+	memset(shadow_beg, 0, shadow_size);
 	asan_poison_shadow(shadow_beg, shadow_size, ASAN_SHADOW_GAP);
 
-	asan_enabled = 1;
+	ctx.enabled = 1;
 }
 
 void asan_slab_create(struct kmem_cache *cache, void *slab)

@@ -2,13 +2,10 @@
 #define BOOT_COMPRESSED_MISC_H
 
 /*
- * Since the binaries in arch/x86/boot are not linked with
- * the asan runtime library, we can't replace memset with asan_memset,
- * memove with asan_memove, etc.
+ * Since the binaries in arch/x86/boot are not linked with ASAN runtime library,
+ * we must not replace memset with asan_memset.
  */
-#ifdef CONFIG_ASAN
-#undef CONFIG_ASAN
-#endif
+#define ASAN_NO_INTERCEPTORS
 
 /*
  * we have to be careful, because no indirections are allowed here, and
