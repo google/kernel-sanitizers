@@ -420,6 +420,7 @@ address with k.
 2 if (k != 0 && ((Addr & 7) + AccessSize > k))
 3         ReportAndCrash(Addr);
 
+TODO: different SHADOW_SCALE.
 
 2.3. Run-time library
 =====================
@@ -470,8 +471,8 @@ During the kernel boot part of the physical memory is reserved for the shadow
 memory. Currently the offset of the shadow memory within the physical memory
 is SHADOW_OFFSET = 0x36400600. The size of the shadow memory region depends on
 the amount of the available physical memory and is calculated as
-(max_pfn << PAGE_SHIFT) >> 3, where max_pfn is the number of physical memory
-pages we have available.
+(max_pfn << PAGE_SHIFT) >> SHADOW_SCALE, where max_pfn is the number of physical
+memory pages we have available, PAGE_SHIFT is the number of
 
 TODO: offset => 1GB (or 512mb?) restriction.
 TODO: a different offset may be needed.
@@ -484,8 +485,8 @@ When the shadow memory is reserved, asan_enabled flag is set to 1. Each time
 a memory access happens the checking instructions first check asan_enabled
 to ensure that the shadow memory is initialized.
 
-The described above Bad memory region is also poisoned and accesses to this
-region are detected and reported as wild-memory-access'es.
+The shadow memory region itself is also poisoned and accesses to this region
+are detected and reported as wild-memory-access'es.
 
 TODO: sizeof(unsigned long) == (1 << SHADOW_SCALE).
 
@@ -502,17 +503,26 @@ __kasan_read1, _kasan_write1, ..., __kasan_read16, __kasan_write16.
 
 TODO: 16-byte access functions check 2 shadow bytes.
 
+The shadow mapping described above actually looks like:
+0 ShadowAddr = ((Addr - PAGE_OFFSET) >> 3) + PAGE_OFSSET + SHADOW_OFFSET;
+But this can be easily transformed into:
+0 Offset = PAGE_OFFSET + SHADOW_OFFSET - (PAGE_OFFSET >> 3)
+1 ShadowAddr = (Addr >> 3) + Offset;
+Where PAGE_OFFSET = 0xffff880000000000 is the start of the physical memory
+mapping region in the virtual memory.
+
 The address checking is performed as follows:
-1. Check asan_enabled flag (see above).
-2. Check that the address lies within the physical memory (use max_pfn).
+1. Check that asan_enabled flag is 1 (see above).
+2. Check that the address lies within the physical memory (using max_pfn).
 3. Check the according shadow byte(s) (see above).
 
 Since some of the libc functions (memset, memcpy and memmove in x86_64) are
 written in assembly, the compiler can't instrument memory accesses inside them.
-To solve this issue we replace these functions with our own functions written
-in C using #define macros (see arch/x86/include/asm/string_64.h).
+To solve this issue we replace these functions with our own written in C
+functions using #define macros (see arch/x86/include/asm/string_64.h).
 
 TODO: tell about (memset) and ASAN_NO_INTERCEPTORS.
+TODO: PAGE_OFFSET.
 
 
 3.3. Run-time library
@@ -563,7 +573,6 @@ struct asan_redzone {
 };
 
 TODO: describe redzone format.
-
 TODO: 4mb cache issue.
 TODO: redzone searching.
 
@@ -582,8 +591,6 @@ A shadow byte can be equal to a few values besides 0, 1, ..., 7:
 | ASAN_SHADOW_GAP           | 0xfe  | in the Bad region                |
 |----------------------------------------------------------------------|
 
-TODO: more details (function names, etc.).
-
 When a new slab is created the pages allocated for this slab are poisoned. This
 includes the slab descriptor (in case it is on-slab), the objects in the slab,
 the redzones around the objects. Each time a slab is destroyed the allocated
@@ -599,8 +606,9 @@ When a user asks for an N bytes object and the kmalloc cache of size K is used
 for the allocation the object is allocated and unpoisoned as described above.
 Then the last K - N bytes are poisoned again.
 
-TODO: kmalloc false positives.
-TODO: kmem_freepages.
+Since kmalloc may internally round up allocations and return more memory than
+requested and the caller may use this additional memory, accesses to this
+memory will be reported by ASAN, even if they are not actual bugs.
 
 
 3.3.3. Quarantine
@@ -609,16 +617,15 @@ TODO: kmem_freepages.
 Quarantine is implemented as a kernel linked list which acts as a FIFO queue
 with list_head stored in the object's redzone.
 
-Freeing objects from qurantine can't be done right in the kmem_cache_free
+Freeing objects from the qurantine can't be done in the kmem_cache_free right
 after a new object was added into the queue due to some deadlock issues.
-Instead, objects are freed when a new slab is created.
-
-TODO: shouldn't cause out of memory.
+Instead, objects are freed when a new slab is created. This should not cause
+out-of-memory, since to allocate new memory a new slab should be created
+and the qurantine will be cleaned.
 
 When a cache is destroyed via kmem_cache_destroy it can still have some
 allocated objects inside, since they could be not freed yet but put into the
 quarantine. Therefore, each time some cache is destroyed the quarantine is
 checked for objects from this cache and the found objects are freed.
 
-TODO: kmem_cache_free modifications.
-TODO: qurantine flag.
+TODO: kmem_cache_free modifications (qurantine_flag, etc.).
