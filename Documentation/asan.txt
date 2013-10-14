@@ -458,21 +458,34 @@ and the run-time library are implemented.
 3.1. Shadow memory
 ==================
 
-TODO: shadow offset.
-TODO: where and how allocated.
-TODO: sizeof(unsigned long) == (1 << SHADOW_SCALE).
+In x86_64 the physical memory is directly mapped to the part of the virtual
+memory with the address range of [0xffff880000000000, 0xffffc7ffffffffff].
+It means that the physical memory can be accessed through the virtual memory.
+ASAN is tracking accesses only to this mapped part of the virtual memory.
+Therefore ASAN can't detect bad accesses to the virtual memory blocks
+allocated with vmalloc.
 
-In x86_64 physical memory is directly mapped to the part of the virtual memory
-with the address range of [0xffff880000000000, 0xffffc7ffffffffff]. ASAN is
-tracking accesses only to this part of the virtual memory. That means that ASAN
-can't detect bad accesses to the virtual memory blocks allocated with vmalloc.
+During the kernel boot part of the physical memory is reserved for the shadow
+memory. Currently the offset of the shadow memory within the physical memory
+is SHADOW_OFFSET = 0x36400600. The size of the shadow memory region depends on
+the amount of the available physical memory and is calculated as
+(max_pfn << PAGE_SHIFT) >> 3, where max_pfn is the number of physical memory
+pages we have available.
 
-TODO: max_pfn.
 XXX: why do we use max_pfn and not just compare to 0xffffc7ffffffffff?
 XXX: also we could probably catch out-of-physical-memory accesses.
 
-Accesses to the described above Bad memory region are also detected and
-reported as wild-memory-access'es.
+TODO: sizeof(unsigned long) == (1 << SHADOW_SCALE).
+TODO: offset => 1GB (or 512mb?) restriction.
+TODO: asan_enabled.
+
+Since physical memory can contain garbage values on boot, the shadow memory
+may contain garbage values as well. Therefore the shadow memory should be
+initially filled with 0 to indicate that the physical memory is unpoisoned.
+
+The described above Bad memory region is also poisoned and accesses to this
+region are detected and reported as wild-memory-access'es.
+
 
 3.2. Instrumentation
 ====================
@@ -508,8 +521,6 @@ increased by ASAN_REDZONE_SIZE. When an object is allocated from this cache,
 the last ASAN_REDZONE_SIZE bytes are considered to be the redzone and poisoned
 appropriately.
 
-TODO: only right redzones.
-
 As a result, slabs with on-slab descriptor look like:
 
 |---------------------------------------------------------------------------|
@@ -522,13 +533,11 @@ And slabs with off-slab descriptor look like:
 | Object | Redzone | Object | Redzone | ... | Object | Redzone |
 |--------------------------------------------------------------|
 
-Currently, the redzones have the following format:
+As you can see the first object in each slab doesn't have a redzone to the left
+(unless the slab descriptor is on-slab or another slab lies to the left).
+Therefore out-of-bounds to the left of the first objects may not be detected.
 
-struct chunk {
-        struct kmem_cache *cache;
-        void *object;
-        struct list_head list;
-};
+Currently, the redzones have the following format:
 
 struct asan_redzone {
         unsigned long alloc_stack[16];
@@ -537,7 +546,9 @@ struct asan_redzone {
         int alloc_thread_id;
         int free_thread_id;
 
-        struct chunk chunk;
+        struct kmem_cache *cache;
+        void *object;
+        struct list_head list;
         unsigned long quarantine_flag;
 
 	unsigned long kmalloc_size;
@@ -569,6 +580,8 @@ When a user asks for an N bytes object and the kmalloc cache of size K is used
 for the allocation the object is allocated and unpoisoned as described above.
 Then the last K - N bytes are poisoned again.
 
+TODO: kmalloc false positives.
+TODO: kmem_freepages.
 
 3.3.3. Quarantine
 =================
