@@ -472,19 +472,21 @@ the amount of the available physical memory and is calculated as
 (max_pfn << PAGE_SHIFT) >> 3, where max_pfn is the number of physical memory
 pages we have available.
 
-XXX: why do we use max_pfn and not just compare to 0xffffc7ffffffffff?
-XXX: also we could probably catch out-of-physical-memory accesses.
-
-TODO: sizeof(unsigned long) == (1 << SHADOW_SCALE).
 TODO: offset => 1GB (or 512mb?) restriction.
-TODO: asan_enabled.
+TODO: a different offset may be needed.
 
 Since physical memory can contain garbage values on boot, the shadow memory
 may contain garbage values as well. Therefore the shadow memory should be
 initially filled with 0 to indicate that the physical memory is unpoisoned.
 
+When the shadow memory is reserved, asan_enabled flag is set to 1. Each time
+a memory access happens the checking instructions first check asan_enabled
+to ensure that the shadow memory is initialized.
+
 The described above Bad memory region is also poisoned and accesses to this
 region are detected and reported as wild-memory-access'es.
+
+TODO: sizeof(unsigned long) == (1 << SHADOW_SCALE).
 
 
 3.2. Instrumentation
@@ -498,6 +500,11 @@ There is a separate function for each access size and type:
 __kasan_read1, _kasan_write1, ..., __kasan_read16, __kasan_write16.
 
 TODO: 16-byte access functions check 2 shadow bytes.
+
+The address checking is performed as follows:
+1. Check asan_enabled flag (see above).
+2. Check that the address lies within the physical memory (use max_pfn).
+3. Check the according shadow byte(s) (see above).
 
 Since some of the libc functions (memset, memcpy and memmove in x86_64) are
 written in assembly, the compiler can't instrument memory accesses inside them.
@@ -563,17 +570,28 @@ TODO: redzone searching.
 3.3.2. Poisoning / unpoisoning
 ==============================
 
+A shadow byte can be equal to a few values besides 0, 1, ..., 7:
+
+|----------------------------------------------------------------------|
+| Name                      | Value | Meaning (for all 8 bytes)        |
+|----------------------------------------------------------------------|
+| ASAN_HEAP_REDZONE         | 0xfa  | in a redzone                     |
+| ASAN_HEAP_KMALLOC_REDZONE | 0xfb  | in a kmalloc redzone (see below) |
+| ASAN_HEAP_FREE            | 0xfd  | in a freed region                |
+| ASAN_SHADOW_GAP           | 0xfe  | in the Bad region                |
+|----------------------------------------------------------------------|
+
 TODO: more details (function names, etc.).
 
-When a new slab is created the shadow memory for the pages allocated for
-this slab is poisoned. This includes the slab header (in case it is on-slab),
-the objects in this slab, the redzones around the objects.
+When a new slab is created the pages allocated for this slab are poisoned. This
+includes the slab descriptor (in case it is on-slab), the objects in the slab,
+the redzones around the objects. Each time a slab is destroyed the allocated
+pages are unpoisoned.
 
-Each time a new object is allocated from the cache the shadow memory for this
-object is unpoisoned and allocation metainfo is stored in the redzone.
-
-When a user tries to free an allocated object it's shadow memory is poisoned
-and deallocation metainfo is stored in the redzone.
+When a new object is allocated from a cache the object is unpoisoned and
+allocation metainfo is stored in the redzone. Each time a user tries to free
+an object from a cache the object is poisoned and deallocation metainfo is
+stored in the redzone. The object is not actually freed at this stage.
 
 The objects allocated via kmalloc (or krealloc) are poisoned more accurately.
 When a user asks for an N bytes object and the kmalloc cache of size K is used
@@ -586,14 +604,11 @@ TODO: kmem_freepages.
 3.3.3. Quarantine
 =================
 
-TODO: more details (function names, etc.).
+Quarantine is implemented as a kernel linked list which acts as a FIFO queue
+with list_head stored in the object's redzone.
 
-When a user calls kmem_cache_free (or kfree) the object is poisoned, but not
-deallocated right away, because otherwise it can be allocated again soon and
-unpoisoned. Instead, the object is but put into a FIFO queue called quarantine.
-
-The total size of the objects in quarantine is counted and some objects are
-freed when the total size is more than some threshold.
-
-TODO: linked list in the redzone.
 TODO: quarantine is cleaned on slab creation.
+TODO: quarantine is cleaned on cache destruction.
+
+TODO: kmem_cache_free modifications.
+TODO: qurantine flag.
