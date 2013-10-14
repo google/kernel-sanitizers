@@ -332,6 +332,7 @@ the 8 bytes are partially addressable. These 8 bytes are indicated by 'N'.
 In the report above the arrows point to the letter 'f', which means that the
 accessed address is marked as freed.
 
+TODO: figure out the bug.
 TODO: explain the bug.
 
 
@@ -601,14 +602,23 @@ Then the last K - N bytes are poisoned again.
 TODO: kmalloc false positives.
 TODO: kmem_freepages.
 
+
 3.3.3. Quarantine
 =================
 
 Quarantine is implemented as a kernel linked list which acts as a FIFO queue
 with list_head stored in the object's redzone.
 
-TODO: quarantine is cleaned on slab creation.
-TODO: quarantine is cleaned on cache destruction.
+Freeing objects from qurantine can't be done right in the kmem_cache_free
+after a new object was added into the queue due to some deadlock issues.
+Instead, objects are freed when a new slab is created.
+
+TODO: shouldn't cause out of memory.
+
+When a cache is destroyed via kmem_cache_destroy it can still have some
+allocated objects inside, since they could be not freed yet but put into the
+quarantine. Therefore, each time some cache is destroyed the quarantine is
+checked for objects from this cache and the found objects are freed.
 
 TODO: kmem_cache_free modifications.
 TODO: qurantine flag.
