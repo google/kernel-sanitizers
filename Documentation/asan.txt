@@ -462,14 +462,14 @@ TODO: shadow offset.
 TODO: where and how allocated.
 TODO: sizeof(unsigned long) == (1 << SHADOW_SCALE).
 
-In x86_64 physical memory is directly mapped to the part of the kernel virtual
-memory with the address range of [0xffff880000000000, 0xffffc7ffffffffff]. ASAN
-is tracking accesses only to this part of the kernel virtual memory. That means
-that ASAN can't detect bad accesses to the virtual memory allocated with vmalloc.
+In x86_64 physical memory is directly mapped to the part of the virtual memory
+with the address range of [0xffff880000000000, 0xffffc7ffffffffff]. ASAN is
+tracking accesses only to this part of the virtual memory. That means that ASAN
+can't detect bad accesses to the virtual memory blocks allocated with vmalloc.
 
 TODO: max_pfn.
 XXX: why do we use max_pfn and not just compare to 0xffffc7ffffffffff?
-XXX: also we could probably catch ot-of-physical-memory accesses.
+XXX: also we could probably catch out-of-physical-memory accesses.
 
 Accesses to the described above Bad memory region are also detected and
 reported as wild-memory-access'es.
@@ -477,8 +477,21 @@ reported as wild-memory-access'es.
 3.2. Instrumentation
 ====================
 
-TODO: gcc pass, functions naming format.
-TODO: about 16-byte accesses.
+Instrumentation is implemented as a pass of the GCC compiler. Before each of
+the memory accesses of size 1, 2, 4, 8 or 16 a specific function is called,
+which checks addressability of the accessed address range.
+
+There is a separate function for each access size and type:
+__kasan_read1, _kasan_write1, ..., __kasan_read16, __kasan_write16.
+
+TODO: 16-byte access functions check 2 shadow bytes.
+
+Since some of the libc functions (memset, memcpy and memmove in x86_64) are
+written in assembly, the compiler can't instrument memory accesses inside them.
+To solve this issue we replace these functions with our own functions written
+in C using #define macros (see arch/x86/include/asm/string_64.h).
+
+TODO: tell about (memset) and ASAN_NO_INTERCEPTORS.
 
 
 3.3. Run-time library
@@ -571,9 +584,3 @@ freed when the total size is more than some threshold.
 
 TODO: linked list in the redzone.
 TODO: quarantine is cleaned on slab creation.
-
-
-3.3.4. Libc interception
-========================
-
-TODO: memset -> asam_memset etc.
