@@ -4517,6 +4517,10 @@ size_t ksize(const void *objp)
 	if (unlikely(objp == ZERO_SIZE_PTR))
 		return 0;
 
+#ifdef CONFIG_ASAN
+	return asan_ksize(objp);
+#else
 	return virt_to_cache(objp)->object_size;
+#endif
 }
 EXPORT_SYMBOL(ksize);

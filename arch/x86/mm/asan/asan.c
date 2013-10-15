@@ -39,6 +39,13 @@ static struct {
 	.quarantine_size = 0,
 };
 
+static struct kmem_cache *virt_to_cache(const void *ptr)
+{
+	struct page *page = virt_to_head_page(ptr);
+	return page->slab_cache;
+}
+
+
 pid_t asan_current_thread_id(void)
 {
 	return current_thread_info()->task->pid;
@@ -460,11 +467,30 @@ void asan_kmalloc(struct kmem_cache *cache, void *object, unsigned long size)
 }
 EXPORT_SYMBOL(asan_kmalloc);
 
+size_t asan_ksize(const void *ptr)
+{
+	struct kmem_cache *cache;
+	const struct asan_redzone *redzone;
+
+	BUG_ON(!ptr);
+	if (unlikely(ptr == ZERO_SIZE_PTR))
+		return 0;
+
+	cache = virt_to_cache(ptr);
+	if (ASAN_HAS_REDZONE(cache)) {
+		redzone = ptr + round_up(cache->object_size, ASAN_SHADOW_GRAIN);
+		if (redzone->kmalloc_size) {
+			BUG_ON(redzone->kmalloc_size > cache->object_size);
+			return redzone->kmalloc_size;
+		}
+	}
+	return cache->object_size;
+}
+EXPORT_SYMBOL(asan_ksize);
+
 void asan_krealloc(void *object, unsigned long new_size)
 {
-	struct page *page = virt_to_head_page(object);
-	struct kmem_cache *cache = page->slab_cache;
-	asan_kmalloc(cache, object, new_size);
+	asan_kmalloc(virt_to_cache(object), object, new_size);
 }
 
 void asan_on_kernel_init(void)
