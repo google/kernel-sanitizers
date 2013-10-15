@@ -3582,13 +3582,25 @@ free_done:
  * Release an obj back to its cache. If the obj has a constructed state, it must
  * be in this state _before_ it is released.  Called with disabled ints.
  */
+#ifdef CONFIG_ASAN
 static inline void __cache_free(struct kmem_cache *cachep, void *objp,
 				unsigned long caller)
 {
-	struct array_cache *ac = cpu_cache_get(cachep);
+	/*
+	 * ASAN will put the object into quarantine and
+	 * call noasan_cache_free() later.
+	 */
+	asan_slab_free(cachep, objp);
+}
 
-	if (!asan_slab_free(cachep, objp))
-		return;
+void noasan_cache_free(struct kmem_cache *cachep, void *objp,
+		       unsigned long caller)
+#else
+static inline void __cache_free(struct kmem_cache *cachep, void *objp,
+				unsigned long caller)
+#endif
+{
+	struct array_cache *ac = cpu_cache_get(cachep);
 
 	check_irq_off();
 	kmemleak_free_recursive(objp, cachep->flags);

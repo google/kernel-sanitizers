@@ -92,6 +92,9 @@ static void asan_quarantine_put(struct kmem_cache *cache, void *object)
 	spin_unlock_irqrestore(&ctx.quarantine_lock, flags);
 }
 
+void noasan_cache_free(struct kmem_cache *cachep, void *objp,
+		       unsigned long caller);
+
 static void asan_quarantine_flush(void)
 {
 	struct chunk *chunk;
@@ -109,7 +112,7 @@ static void asan_quarantine_flush(void)
 		ctx.quarantine_size -= chunk->cache->object_size;
 
 		spin_unlock_irqrestore(&ctx.quarantine_lock, flags);
-		kmem_cache_free(chunk->cache, chunk->object);
+		noasan_cache_free(chunk->cache, chunk->object, _THIS_IP_);
 		spin_lock_irqsave(&ctx.quarantine_lock, flags);
 	}
 
@@ -385,16 +388,15 @@ void asan_slab_alloc(struct kmem_cache *cache, void *object)
 			      strip_addr);
 
 	redzone->alloc_thread_id = asan_current_thread_id();
-	redzone->free_thread_id = -1;
+	redzone->free_thread_id = 0;
 
 	redzone->chunk.cache = cache;
 	redzone->chunk.object = object;
 
-	redzone->quarantine_flag = 0;
 	redzone->kmalloc_size = 0;
 }
 
-bool asan_slab_free(struct kmem_cache *cache, void *object)
+void asan_slab_free(struct kmem_cache *cache, void *object)
 {
 	unsigned long size = cache->object_size;
 	unsigned long rounded_up_size = round_up(size, ASAN_SHADOW_GRAIN);
@@ -403,20 +405,15 @@ bool asan_slab_free(struct kmem_cache *cache, void *object)
 	unsigned long strip_addr;
 
 	if (cache->flags & SLAB_DESTROY_BY_RCU)
-		return true;
+		return;
 
-	/* XXX: double poisoning with quarantine. */
 	asan_poison_shadow(object, rounded_up_size, ASAN_HEAP_FREE);
 
 	if (!ASAN_HAS_REDZONE(cache))
-		return true;
+		return;
 
 	redzone = ASAN_GET_REDZONE(cache, object);
 	free_stack = redzone->free_stack;
-
-	/* Check if the object is in the quarantine. */
-	if (redzone->quarantine_flag == 1)
-		return true;
 
 	/* Strip asan_slab_free and kmem_cache_free frames. */
 	strip_addr = (unsigned long)__builtin_return_address(1);
@@ -425,10 +422,7 @@ bool asan_slab_free(struct kmem_cache *cache, void *object)
 
 	redzone->free_thread_id = asan_current_thread_id();
 
-	redzone->quarantine_flag = 1;
 	asan_quarantine_put(cache, object);
-
-	return false;
 }
 
 void asan_kmalloc(struct kmem_cache *cache, void *object, unsigned long size)

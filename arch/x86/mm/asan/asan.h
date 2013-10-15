@@ -37,7 +37,6 @@ struct asan_redzone {
 	int free_thread_id;
 
 	struct chunk chunk;
-	unsigned long quarantine_flag;
 
 	/* Size of the kmalloc or krealloc if they were used for allocation. */
 	unsigned long kmalloc_size;
