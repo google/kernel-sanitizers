@@ -39,10 +39,7 @@ struct asan_redzone {
 	struct chunk chunk;
 	unsigned long quarantine_flag;
 
-	/*
-	 * Size of the kmalloc or krealloc.
-	 * 0 if the object was allocated another way.
-	 */
+	/* Size of the kmalloc or krealloc if they were used for allocation. */
 	unsigned long kmalloc_size;
 };
 
@@ -51,6 +48,8 @@ struct asan_redzone {
 
 /* FIXME: no redzones in 4MB cache. */
 #define ASAN_HAS_REDZONE(cache) ((cache)->object_size < (4 << 20))
+#define ASAN_GET_REDZONE(cache, object) \
+	((object) + round_up((cache)->object_size, ASAN_SHADOW_GRAIN))
 
 extern int asan_error_counter;
 extern spinlock_t asan_error_counter_lock;

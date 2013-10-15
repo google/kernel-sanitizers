@@ -45,7 +45,6 @@ static struct kmem_cache *virt_to_cache(const void *ptr)
 	return page->slab_cache;
 }
 
-
 pid_t asan_current_thread_id(void)
 {
 	return current_thread_info()->task->pid;
@@ -78,20 +77,18 @@ unsigned int asan_save_stack_trace(unsigned long *output,
 
 static void asan_quarantine_put(struct kmem_cache *cache, void *object)
 {
-	unsigned long size = cache->object_size;
-	unsigned long rounded_up_size = round_up(size, ASAN_SHADOW_GRAIN);
-	struct asan_redzone *redzone = object + rounded_up_size;
-	struct chunk *chunk = &redzone->chunk;
+	struct asan_redzone *redzone;
 	unsigned long flags;
 
 	if (!ctx.enabled)
 		return;
+	BUG_ON(!ASAN_HAS_REDZONE(cache));
+
+	redzone = ASAN_GET_REDZONE(cache, object);
 
 	spin_lock_irqsave(&ctx.quarantine_lock, flags);
-
-	list_add(&chunk->list, &ctx.quarantine_list);
+	list_add(&redzone->chunk.list, &ctx.quarantine_list);
 	ctx.quarantine_size += cache->object_size;
-
 	spin_unlock_irqrestore(&ctx.quarantine_lock, flags);
 }
 
@@ -365,7 +362,6 @@ void asan_slab_alloc(struct kmem_cache *cache, void *object)
 	unsigned long addr = (unsigned long)object;
 	unsigned long size = cache->object_size;
 	unsigned long rounded_down_size = round_down(size, ASAN_SHADOW_GRAIN);
-	unsigned long rounded_up_size = round_up(size, ASAN_SHADOW_GRAIN);
 	struct asan_redzone *redzone;
 	unsigned long *alloc_stack;
 	u8 *shadow;
@@ -380,7 +376,7 @@ void asan_slab_alloc(struct kmem_cache *cache, void *object)
 	if (!ASAN_HAS_REDZONE(cache))
 		return;
 
-	redzone = object + rounded_up_size;
+	redzone = ASAN_GET_REDZONE(cache, object);
 	alloc_stack = redzone->alloc_stack;
 
 	/* Strip asan_slab_alloc and kmem_cache_alloc frames. */
@@ -415,7 +411,7 @@ bool asan_slab_free(struct kmem_cache *cache, void *object)
 	if (!ASAN_HAS_REDZONE(cache))
 		return true;
 
-	redzone = object + rounded_up_size;
+	redzone = ASAN_GET_REDZONE(cache, object);
 	free_stack = redzone->free_stack;
 
 	/* Check if the object is in the quarantine. */
@@ -461,7 +457,7 @@ void asan_kmalloc(struct kmem_cache *cache, void *object, unsigned long size)
 	if (!ASAN_HAS_REDZONE(cache))
 		return;
 
-	redzone = object + rounded_up_object_size;
+	redzone = ASAN_GET_REDZONE(cache, object);
 
 	redzone->kmalloc_size = size;
 }
@@ -478,7 +474,7 @@ size_t asan_ksize(const void *ptr)
 
 	cache = virt_to_cache(ptr);
 	if (ASAN_HAS_REDZONE(cache)) {
-		redzone = ptr + round_up(cache->object_size, ASAN_SHADOW_GRAIN);
+		redzone = ASAN_GET_REDZONE(cache, ptr);
 		if (redzone->kmalloc_size) {
 			BUG_ON(redzone->kmalloc_size > cache->object_size);
 			return redzone->kmalloc_size;
