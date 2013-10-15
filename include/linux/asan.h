@@ -16,13 +16,13 @@ struct kmem_cache;
 void asan_init_shadow(void);
 
 /* Hooks for kmalloc/slab. */
+void asan_cache_create(struct kmem_cache *cache, size_t *cache_size);
+void asan_cache_destroy(struct kmem_cache *cache);
+
 void asan_slab_create(struct kmem_cache *cache, void *slab);
 void asan_slab_destroy(struct kmem_cache *cache, void *slab);
 void asan_slab_alloc(struct kmem_cache *cache, void *object);
 bool asan_slab_free(struct kmem_cache *cache, void *object);
-
-void asan_add_redzone(struct kmem_cache *cache, size_t *cache_size);
-void asan_cache_destroy(struct kmem_cache *cache);
 
 void asan_kmalloc(struct kmem_cache *cache, void *object, unsigned long size);
 void asan_krealloc(void *object, unsigned long new_size);

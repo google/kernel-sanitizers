@@ -145,7 +145,7 @@ static void asan_describe_heap_address(unsigned long addr,
 
 	struct kmem_cache *cache = asan_mem_to_cache((void *)addr);
 
-	if (!cache->asan_has_redzone || *shadow == ASAN_SHADOW_GAP) {
+	if (!ASAN_HAS_REDZONE(cache) || *shadow == ASAN_SHADOW_GAP) {
 		pr_err("%s%s of size %lu at %lx thread T%d:%s\n",
 		       COLOR_BLUE, is_write ? "Write" : "Read", access_size,
 		       addr, asan_current_thread_id(), COLOR_NORMAL);

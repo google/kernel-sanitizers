@@ -69,14 +69,6 @@ struct kmem_cache {
 	struct memcg_cache_params *memcg_params;
 #endif
 
-#ifdef CONFIG_ASAN
-	/*
-	 * Indicates whether AddressSanitizer adds a redzone
-	 * to the objects in this cache.
-	 */
-	int asan_has_redzone;
-#endif
-
 /* 6) per-cpu/per-node data, touched during every alloc/free */
 	/*
 	 * We put array[] at the end of kmem_cache, because we want to size

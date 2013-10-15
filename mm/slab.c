@@ -2290,7 +2290,7 @@ __kmem_cache_create (struct kmem_cache *cachep, unsigned long flags)
 
 	setup_node_pointer(cachep);
 
-	asan_add_redzone(cachep, &size);
+	asan_cache_create(cachep, &size);
 
 #if DEBUG
 
