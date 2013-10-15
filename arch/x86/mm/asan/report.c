@@ -9,12 +9,13 @@
 #include <linux/string.h>
 #include <linux/types.h>
 
+/* Shadow layout customization. */
 #define SHADOW_BYTES_PER_BLOCK 8
 #define SHADOW_BLOCKS_PER_ROW 4
 #define SHADOW_BYTES_PER_ROW (SHADOW_BLOCKS_PER_ROW * SHADOW_BYTES_PER_BLOCK)
 #define SHADOW_ROWS_AROUND_ADDR 5
 
-#define MAX_OBJECT_SIZE (2 << 20)
+#define MAX_OBJECT_SIZE (2UL << 20)
 
 #if ASAN_COLORED_OUTPUT_ENABLE
 	#define COLOR_NORMAL  "\x1B[0m"
@@ -65,13 +66,13 @@ static void asan_print_error_description(unsigned long addr,
 	const char *bug_type = "unknown-crash";
 
 	/* If we are accessing 16 bytes, look at the second shadow byte. */
-	if (*shadow == 0 && access_size > ASAN_SHADOW_GRANULARITY)
+	if (*shadow == 0 && access_size > ASAN_SHADOW_GRAIN)
 		shadow++;
 
 	switch (*shadow) {
 	case ASAN_HEAP_REDZONE:
 	case ASAN_HEAP_KMALLOC_REDZONE:
-	case 0 ... ASAN_SHADOW_GRANULARITY - 1:
+	case 0 ... ASAN_SHADOW_GRAIN - 1:
 		bug_type = "heap-buffer-overflow";
 		break;
 	case ASAN_HEAP_FREE:
@@ -184,7 +185,7 @@ static void asan_describe_heap_address(unsigned long addr,
 
 		break;
 	case ASAN_HEAP_KMALLOC_REDZONE:
-	case 0 ... ASAN_SHADOW_GRANULARITY - 1:
+	case 0 ... ASAN_SHADOW_GRAIN - 1:
 		while (*shadow != ASAN_HEAP_REDZONE)
 			shadow++;
 		break;
@@ -255,7 +256,7 @@ static char *asan_print_shadow_byte(u8 shadow, char *output)
 		color_prefix = COLOR_WHITE;
 		marker = '.';
 		break;
-	case 1 ... ASAN_SHADOW_GRANULARITY - 1:
+	case 1 ... ASAN_SHADOW_GRAIN - 1:
 		color_prefix = COLOR_WHITE;
 		marker = '0' + shadow;
 		break;
@@ -346,7 +347,7 @@ static void asan_print_shadow_legend(void)
 	int i;
 	char partially_addressable[64];
 
-	for (i = 1; i < ASAN_SHADOW_GRANULARITY; i++)
+	for (i = 1; i < ASAN_SHADOW_GRAIN; i++)
 		sprintf(partially_addressable + (i - 1) * 3, "%02x ", i);
 
 	pr_err("Legend:\n");

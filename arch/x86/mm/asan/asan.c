@@ -27,8 +27,7 @@
 /* CONFIG_ASAN is incompatible with CONFIG_DEBUG_SLAB */
 /* CONFIG_ASAN is incompatible with CONFIG_KMEMCHECK */
 
-static struct
-{
+static struct {
 	int enabled;
 	spinlock_t quarantine_lock;
 	struct list_head quarantine_list;
@@ -73,7 +72,7 @@ unsigned int asan_save_stack_trace(unsigned long *output,
 static void asan_quarantine_put(struct kmem_cache *cache, void *object)
 {
 	unsigned long size = cache->object_size;
-	unsigned long rounded_up_size = round_up(size, ASAN_SHADOW_GRANULARITY);
+	unsigned long rounded_up_size = round_up(size, ASAN_SHADOW_GRAIN);
 	struct asan_redzone *redzone = object + rounded_up_size;
 	struct chunk *chunk = &redzone->chunk;
 	unsigned long flags;
@@ -159,7 +158,7 @@ unsigned long asan_shadow_to_mem(unsigned long shadow_addr)
 
 /*
  * Poisons the shadow memory for 'size' bytes starting from 'addr'.
- * Memory addresses should be aligned to ASAN_SHADOW_GRANULARITY.
+ * Memory addresses should be aligned to ASAN_SHADOW_GRAIN.
  */
 static void
 asan_poison_shadow(const void *address, unsigned long size, u8 value)
@@ -167,13 +166,13 @@ asan_poison_shadow(const void *address, unsigned long size, u8 value)
 	unsigned long shadow_beg, shadow_end;
 	unsigned long addr = (unsigned long)address;
 
-	BUG_ON(!IS_ALIGNED(addr, ASAN_SHADOW_GRANULARITY));
-	BUG_ON(!IS_ALIGNED(addr + size, ASAN_SHADOW_GRANULARITY));
+	BUG_ON(!IS_ALIGNED(addr, ASAN_SHADOW_GRAIN));
+	BUG_ON(!IS_ALIGNED(addr + size, ASAN_SHADOW_GRAIN));
 	BUG_ON(!asan_addr_is_in_mem(addr));
-	BUG_ON(!asan_addr_is_in_mem(addr + size - ASAN_SHADOW_GRANULARITY));
+	BUG_ON(!asan_addr_is_in_mem(addr + size - ASAN_SHADOW_GRAIN));
 
 	shadow_beg = asan_mem_to_shadow(addr);
-	shadow_end = asan_mem_to_shadow(addr + size - ASAN_SHADOW_GRANULARITY)
+	shadow_end = asan_mem_to_shadow(addr + size - ASAN_SHADOW_GRAIN)
 		     + 1;
 	memset((void *)shadow_beg, value, shadow_end - shadow_beg);
 }
@@ -189,7 +188,7 @@ static bool asan_memory_is_poisoned(unsigned long addr)
 	u8 *shadow_addr = (u8 *)asan_mem_to_shadow(addr);
 	s8 shadow_value = *shadow_addr;
 	if (shadow_value != 0) {
-		u8 last_accessed_byte = (addr & (ASAN_SHADOW_GRANULARITY - 1))
+		u8 last_accessed_byte = (addr & (ASAN_SHADOW_GRAIN - 1))
 					+ ACCESS_SIZE - 1;
 		return last_accessed_byte >= shadow_value;
 	}
@@ -235,8 +234,8 @@ static const void *asan_region_is_poisoned(const void *addr, unsigned long size)
 	if (!asan_addr_is_in_mem(beg) || !asan_addr_is_in_mem(end))
 		return NULL;
 
-	aligned_beg = round_up(beg, ASAN_SHADOW_GRANULARITY);
-	aligned_end = round_down(end, ASAN_SHADOW_GRANULARITY);
+	aligned_beg = round_up(beg, ASAN_SHADOW_GRAIN);
+	aligned_end = round_down(end, ASAN_SHADOW_GRAIN);
 	shadow_beg = asan_mem_to_shadow(aligned_beg);
 	shadow_end = asan_mem_to_shadow(aligned_end);
 	if (!asan_memory_is_poisoned(beg) &&
@@ -289,7 +288,7 @@ static void asan_check_memory_word(unsigned long addr, unsigned long size,
 	if (shadow_value == 0)
 		return;
 
-	last_accessed_byte = (addr & (ASAN_SHADOW_GRANULARITY - 1)) + size - 1;
+	last_accessed_byte = (addr & (ASAN_SHADOW_GRAIN - 1)) + size - 1;
 	if (last_accessed_byte < shadow_value)
 		return;
 
@@ -303,7 +302,7 @@ void __init asan_init_shadow(void)
 		(max_pfn << PAGE_SHIFT) >> ASAN_SHADOW_SCALE;
 	unsigned long found_free_range = memblock_find_in_range(
 		ASAN_SHADOW_OFFSET, ASAN_SHADOW_OFFSET + shadow_size,
-		shadow_size, ASAN_SHADOW_GRANULARITY);
+		shadow_size, ASAN_SHADOW_GRAIN);
 	void *shadow_beg = (void *)(PAGE_OFFSET + ASAN_SHADOW_OFFSET);
 
 	pr_err("Shadow offset: %lx\n", ASAN_SHADOW_OFFSET);
@@ -339,10 +338,8 @@ void asan_slab_alloc(struct kmem_cache *cache, void *object)
 {
 	unsigned long addr = (unsigned long)object;
 	unsigned long size = cache->object_size;
-	unsigned long rounded_down_size =
-		round_down(size, ASAN_SHADOW_GRANULARITY);
-	unsigned long rounded_up_size =
-		round_up(size, ASAN_SHADOW_GRANULARITY);
+	unsigned long rounded_down_size = round_down(size, ASAN_SHADOW_GRAIN);
+	unsigned long rounded_up_size = round_up(size, ASAN_SHADOW_GRAIN);
 	struct asan_redzone *redzone;
 	unsigned long *alloc_stack;
 	u8 *shadow;
@@ -351,7 +348,7 @@ void asan_slab_alloc(struct kmem_cache *cache, void *object)
 	asan_unpoison_shadow(object, rounded_down_size);
 	if (rounded_down_size != size) {
 		shadow = (u8 *)asan_mem_to_shadow(addr + rounded_down_size);
-		*shadow = size & (ASAN_SHADOW_GRANULARITY - 1);
+		*shadow = size & (ASAN_SHADOW_GRAIN - 1);
 	}
 
 	if (!cache->asan_has_redzone)
@@ -372,14 +369,13 @@ void asan_slab_alloc(struct kmem_cache *cache, void *object)
 	redzone->chunk.object = object;
 
 	redzone->quarantine_flag = 0;
-
 	redzone->kmalloc_size = 0;
 }
 
 bool asan_slab_free(struct kmem_cache *cache, void *object)
 {
 	unsigned long size = cache->object_size;
-	unsigned long rounded_up_size = round_up(size, ASAN_SHADOW_GRANULARITY);
+	unsigned long rounded_up_size = round_up(size, ASAN_SHADOW_GRAIN);
 	struct asan_redzone *redzone;
 	unsigned long *free_stack;
 	unsigned long strip_addr;
@@ -423,9 +419,9 @@ void asan_kmalloc(struct kmem_cache *cache, void *object, unsigned long size)
 	unsigned long addr = (unsigned long)object;
 	unsigned long object_size = cache->object_size;
 	unsigned long rounded_up_object_size =
-		round_up(object_size, ASAN_SHADOW_GRANULARITY);
+		round_up(object_size, ASAN_SHADOW_GRAIN);
 	unsigned long rounded_down_kmalloc_size =
-		round_down(size, ASAN_SHADOW_GRANULARITY);
+		round_down(size, ASAN_SHADOW_GRAIN);
 	struct asan_redzone *redzone;
 	u8 *shadow;
 
@@ -438,7 +434,7 @@ void asan_kmalloc(struct kmem_cache *cache, void *object, unsigned long size)
 	if (rounded_down_kmalloc_size != size) {
 		shadow = (u8 *)asan_mem_to_shadow(addr +
 						  rounded_down_kmalloc_size);
-		*shadow = size & (ASAN_SHADOW_GRANULARITY - 1);
+		*shadow = size & (ASAN_SHADOW_GRAIN - 1);
 	}
 
 	if (!cache->asan_has_redzone)

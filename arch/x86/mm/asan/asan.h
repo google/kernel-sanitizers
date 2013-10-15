@@ -4,14 +4,17 @@
 #include <linux/slab.h>
 #include <linux/types.h>
 
+#define ASAN_COLORED_OUTPUT_ENABLE 0
+#define ASAN_TESTS_ENABLE 0
+
+#define ASAN_SHADOW_OFFSET 0x36400600UL
+#define ASAN_SHADOW_SCALE 3UL
+#define ASAN_SHADOW_GRAIN (1UL << ASAN_SHADOW_SCALE)
+
 #define ASAN_HEAP_REDZONE 0xfa
 #define ASAN_HEAP_KMALLOC_REDZONE 0xfb
 #define ASAN_HEAP_FREE 0xfd
 #define ASAN_SHADOW_GAP 0xfe
-
-#define ASAN_SHADOW_SCALE 3UL
-#define ASAN_SHADOW_OFFSET 0x36400600UL
-#define ASAN_SHADOW_GRANULARITY (1UL << ASAN_SHADOW_SCALE)
 
 /* The number of frames that will be saved for alloc and free stacks. */
 #define ASAN_STACK_TRACE_FRAMES 16
@@ -44,11 +47,7 @@ struct asan_redzone {
 };
 
 #define ASAN_REDZONE_SIZE sizeof(struct asan_redzone)
-
-#define ASAN_QUARANTINE_SIZE (128 << 20)
-
-#define ASAN_COLORED_OUTPUT_ENABLE 1
-#define ASAN_TESTS_ENABLE 1
+#define ASAN_QUARANTINE_SIZE (128UL << 20)
 
 extern int asan_error_counter;
 extern spinlock_t asan_error_counter_lock;

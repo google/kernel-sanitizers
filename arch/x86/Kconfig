@@ -123,7 +123,7 @@ config X86
 	select COMPAT_OLD_SIGACTION if IA32_EMULATION
 	select RTC_LIB
 	select HAVE_DEBUG_STACKOVERFLOW
-	select HAVE_ASAN if X86_64
+	select HAVE_ARCH_ASAN if X86_64
 
 config INSTRUCTION_DECODER
 	def_bool y
