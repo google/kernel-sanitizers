@@ -45,7 +45,7 @@ static struct kmem_cache *virt_to_cache(const void *ptr)
 	return page->slab_cache;
 }
 
-pid_t asan_current_thread_id(void)
+int asan_current_thread_id(void)
 {
 	return current_thread_info()->task->pid;
 }
@@ -151,14 +151,14 @@ static bool asan_addr_is_in_mem(unsigned long addr)
 
 unsigned long asan_mem_to_shadow(unsigned long addr)
 {
-	if (!asan_addr_is_in_mem(addr))
-		return 0;
+	BUG_ON(!asan_addr_is_in_mem(addr));
 	return ((addr - PAGE_OFFSET) >> ASAN_SHADOW_SCALE)
 		+ PAGE_OFFSET + ASAN_SHADOW_OFFSET;
 }
 
 unsigned long asan_shadow_to_mem(unsigned long shadow_addr)
 {
+	/* TODO: addr in in shadow. */
 	return ((shadow_addr - ASAN_SHADOW_OFFSET - PAGE_OFFSET)
 		<< ASAN_SHADOW_SCALE) + PAGE_OFFSET;
 }
@@ -179,8 +179,7 @@ asan_poison_shadow(const void *address, unsigned long size, u8 value)
 	BUG_ON(!asan_addr_is_in_mem(addr + size - ASAN_SHADOW_GRAIN));
 
 	shadow_beg = asan_mem_to_shadow(addr);
-	shadow_end = asan_mem_to_shadow(addr + size - ASAN_SHADOW_GRAIN)
-		     + 1;
+	shadow_end = asan_mem_to_shadow(addr + size - ASAN_SHADOW_GRAIN) + 1;
 	memset((void *)shadow_beg, value, shadow_end - shadow_beg);
 }
 
@@ -273,7 +272,8 @@ void asan_check_memory_region(const void *addr, unsigned long size, bool write)
 
 	/* FIXME: still prints asan_memset frame. */
 	strip_addr = (unsigned long)__builtin_return_address(0);
-	asan_report_error(poisoned_addr, size, write, strip_addr);
+	asan_report_error(poisoned_addr, size, write,
+		asan_current_thread_id(), strip_addr);
 }
 
 static void asan_check_memory_word(unsigned long addr, unsigned long size,
@@ -300,17 +300,19 @@ static void asan_check_memory_word(unsigned long addr, unsigned long size,
 		return;
 
 	strip_addr = (unsigned long)__builtin_return_address(0);
-	asan_report_error(addr, size, write, strip_addr);
+	asan_report_error(addr, size, write,
+		asan_current_thread_id(), strip_addr);
 }
 
 void __init asan_init_shadow(void)
 {
-	unsigned long shadow_size =
-		(max_pfn << PAGE_SHIFT) >> ASAN_SHADOW_SCALE;
+	unsigned long memory_size = max_pfn << PAGE_SHIFT;
+	unsigned long shadow_size = memory_size >> ASAN_SHADOW_SCALE;
+	void *memory_beg = (void *)PAGE_OFFSET;
+	void *shadow_beg = memory_beg + ASAN_SHADOW_OFFSET;
 	unsigned long found_free_range = memblock_find_in_range(
 		ASAN_SHADOW_OFFSET, ASAN_SHADOW_OFFSET + shadow_size,
 		shadow_size, ASAN_SHADOW_GRAIN);
-	void *shadow_beg = (void *)(PAGE_OFFSET + ASAN_SHADOW_OFFSET);
 
 	pr_err("Shadow offset: %lx\n", ASAN_SHADOW_OFFSET);
 	pr_err("Shadow size: %lx\n", shadow_size);
@@ -321,7 +323,7 @@ void __init asan_init_shadow(void)
 		return;
 	}
 
-	memset(shadow_beg, 0, shadow_size);
+	asan_unpoison_shadow(memory_beg, memory_size);
 	asan_poison_shadow(shadow_beg, shadow_size, ASAN_SHADOW_GAP);
 
 	ctx.enabled = 1;

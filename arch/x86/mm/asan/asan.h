@@ -32,7 +32,6 @@ struct asan_redzone {
 	unsigned long alloc_stack[ASAN_STACK_TRACE_FRAMES];
 	unsigned long free_stack[ASAN_STACK_TRACE_FRAMES];
 
-	/* XXX: use pid_t? */
 	int alloc_thread_id;
 	int free_thread_id;
 
@@ -53,8 +52,6 @@ struct asan_redzone {
 extern int asan_error_counter;
 extern spinlock_t asan_error_counter_lock;
 
-pid_t asan_current_thread_id(void);
-
 unsigned int asan_save_stack_trace(unsigned long *stack,
 				   unsigned int max_entries,
 				   unsigned long strip_addr);
@@ -66,6 +63,6 @@ unsigned long asan_shadow_to_mem(unsigned long shadow_addr);
 void asan_check_memory_region(const void *addr, unsigned long size, bool write);
 
 void asan_report_error(unsigned long poisoned_addr, unsigned long access_size,
-		       bool is_write, unsigned long strip_addr);
+		       bool is_write, int thread_id, unsigned long strip_addr);
 
 #endif

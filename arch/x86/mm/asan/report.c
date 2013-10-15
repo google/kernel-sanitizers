@@ -130,6 +130,7 @@ static struct kmem_cache *asan_mem_to_cache(const void *obj)
 static void asan_describe_heap_address(unsigned long addr,
 				       unsigned long access_size,
 				       bool is_write,
+				       int thread_id,
 				       unsigned long strip_addr)
 {
 	u8 *shadow = (u8 *)asan_mem_to_shadow(addr);
@@ -148,7 +149,7 @@ static void asan_describe_heap_address(unsigned long addr,
 	if (!ASAN_HAS_REDZONE(cache) || *shadow == ASAN_SHADOW_GAP) {
 		pr_err("%s%s of size %lu at %lx thread T%d:%s\n",
 		       COLOR_BLUE, is_write ? "Write" : "Read", access_size,
-		       addr, asan_current_thread_id(), COLOR_NORMAL);
+		       addr, thread_id, COLOR_NORMAL);
 		asan_print_current_stack_trace(strip_addr);
 		pr_err("\n");
 		pr_err("%sNo metainfo is available for this access.%s\n",
@@ -214,7 +215,7 @@ static void asan_describe_heap_address(unsigned long addr,
 
 	pr_err("%s%s of size %lu by thread T%d:%s\n", COLOR_BLUE,
 	       is_write ? "Write" : "Read", access_size,
-	       asan_current_thread_id(), COLOR_NORMAL);
+	       thread_id, COLOR_NORMAL);
 	asan_print_current_stack_trace(strip_addr);
 	pr_err("\n");
 
@@ -359,7 +360,7 @@ static void asan_print_shadow_legend(void)
 }
 
 void asan_report_error(unsigned long poisoned_addr, unsigned long access_size,
-		       bool is_write, unsigned long strip_addr)
+		       bool is_write, int thread_id, unsigned long strip_addr)
 {
 	unsigned long flags;
 
@@ -372,7 +373,7 @@ void asan_report_error(unsigned long poisoned_addr, unsigned long access_size,
 	pr_err("=========================================================================\n");
 	asan_print_error_description(poisoned_addr, access_size);
 	asan_describe_heap_address(poisoned_addr, access_size,
-				   is_write, strip_addr);
+				   is_write, thread_id, strip_addr);
 	asan_print_shadow_for_address(poisoned_addr);
 	asan_print_shadow_legend();
 	pr_err("=========================================================================\n");
