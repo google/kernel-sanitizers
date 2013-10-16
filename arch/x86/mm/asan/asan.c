@@ -379,8 +379,6 @@ void asan_cache_destroy(struct kmem_cache *cache)
 
 void asan_slab_create(struct kmem_cache *cache, void *slab)
 {
-	if (cache->flags & SLAB_DESTROY_BY_RCU)
-		return;
 	poison_shadow(slab, (1 << cache->gfporder) << PAGE_SHIFT,
 			   ASAN_HEAP_REDZONE);
 	quarantine_flush();
