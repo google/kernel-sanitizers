@@ -39,7 +39,7 @@ struct asan_redzone {
 	struct chunk chunk;
 
 	/* Size of the kmalloc or krealloc if they were used for allocation. */
-	unsigned long kmalloc_size;
+	size_t kmalloc_size;
 };
 
 #define ASAN_REDZONE_SIZE sizeof(struct asan_redzone)
@@ -64,9 +64,9 @@ unsigned long asan_mem_to_shadow(unsigned long addr);
 unsigned long asan_shadow_to_mem(unsigned long shadow_addr);
 
 struct error_info {
-	/* TODO: unsigned long access_addr; */
+	/* XXX: unsigned long access_addr? */
 	unsigned long poisoned_addr;
-	unsigned long access_size;
+	size_t access_size;
 	bool is_write;
 	int thread_id;
 	unsigned long strip_addr;

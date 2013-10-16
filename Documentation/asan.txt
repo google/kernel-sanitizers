@@ -524,6 +524,8 @@ functions using #define macros (see arch/x86/include/asm/string_64.h).
 TODO: tell about (memset) and ASAN_NO_INTERCEPTORS.
 TODO: PAGE_OFFSET.
 
+TODO: user-memory-access.
+
 
 3.3. Run-time library
 =====================
@@ -609,6 +611,8 @@ Then the last K - N bytes are poisoned again.
 Since kmalloc may internally round up allocations and return more memory than
 requested and the caller may use this additional memory, accesses to this
 memory will be reported by ASAN, even if they are not actual bugs.
+
+TODO: ksize and asan_ksize.
 
 
 3.3.3. Quarantine

@@ -166,7 +166,7 @@ unsigned long asan_shadow_to_mem(unsigned long shadow_addr)
  * Poisons the shadow memory for 'size' bytes starting from 'addr'.
  * Memory addresses should be aligned to ASAN_SHADOW_GRAIN.
  */
-static void poison_shadow(const void *address, unsigned long size, u8 value)
+static void poison_shadow(const void *address, size_t size, u8 value)
 {
 	unsigned long shadow_beg, shadow_end;
 	unsigned long addr = (unsigned long)address;
@@ -181,7 +181,7 @@ static void poison_shadow(const void *address, unsigned long size, u8 value)
 	memset((void *)shadow_beg, value, shadow_end - shadow_beg);
 }
 
-static void unpoison_shadow(const void *address, unsigned long size)
+static void unpoison_shadow(const void *address, size_t size)
 {
 	poison_shadow(address, size, 0);
 }
@@ -199,7 +199,7 @@ static bool address_is_poisoned(unsigned long addr)
 	return false;
 }
 
-static bool memory_is_zero(const u8 *beg, unsigned long size)
+static bool memory_is_zero(const u8 *beg, size_t size)
 {
 	const u8 *end = beg + size;
 	unsigned long beg_addr = (unsigned long)beg;
@@ -224,7 +224,7 @@ static bool memory_is_zero(const u8 *beg, unsigned long size)
  * Returns address of the first poisoned byte if the memory region
  * lies in the physical memory and poisoned, returns 0 otherwise.
  */
-static unsigned long memory_is_poisoned(unsigned long addr, unsigned long size)
+static unsigned long memory_is_poisoned(unsigned long addr, size_t size)
 {
 	unsigned long beg, end;
 	unsigned long aligned_beg, aligned_end;
@@ -255,8 +255,7 @@ static unsigned long memory_is_poisoned(unsigned long addr, unsigned long size)
 	return 0;
 }
 
-static void check_memory_region(unsigned long addr, unsigned long size,
-				bool write)
+static void check_memory_region(unsigned long addr, size_t size, bool write)
 {
 	unsigned long poisoned_addr;
 	struct error_info info;
@@ -289,8 +288,7 @@ static void check_memory_region(unsigned long addr, unsigned long size,
 	asan_report_error(&info);
 }
 
-static void check_memory_word(unsigned long addr, unsigned long size,
-			      bool write)
+static void check_memory_word(unsigned long addr, size_t size, bool write)
 {
 	u8 *shadow_addr;
 	s8 shadow_value;

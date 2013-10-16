@@ -94,8 +94,8 @@ static void print_error_description(struct error_info *info)
 
 static void print_memory_block_description(unsigned long addr,
 					   unsigned long object_addr,
-					   unsigned long object_size,
-					   unsigned long kmalloc_size)
+					   size_t object_size,
+					   size_t kmalloc_size)
 {
 	const char *rel_type;
 	unsigned long rel_bytes;
@@ -135,7 +135,7 @@ static void print_address_description(struct error_info *info)
 	bool use_after_free = (*shadow == ASAN_HEAP_FREE);
 
 	unsigned long object_addr = 0;
-	unsigned long object_size = 0;
+	size_t object_size = 0;
 	unsigned long *alloc_stack = NULL;
 	unsigned long *free_stack = NULL;
 
