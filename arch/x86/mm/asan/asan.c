@@ -89,10 +89,6 @@ static void quarantine_put(struct kmem_cache *cache, void *object)
 	spin_unlock_irqrestore(&ctx.quarantine_lock, flags);
 }
 
-/* TODO: move it somewhere. */
-void noasan_cache_free(struct kmem_cache *cachep, void *objp,
-		       unsigned long caller);
-
 static void quarantine_flush(void)
 {
 	struct chunk *chunk;
@@ -136,7 +132,8 @@ static void quarantine_drop_cache(struct kmem_cache *cache)
 
 			spin_unlock_irqrestore(&ctx.quarantine_lock, flags);
 			local_irq_save(flags);
-			noasan_cache_free(chunk->cache, chunk->object, _THIS_IP_);
+			noasan_cache_free(chunk->cache, chunk->object,
+					  _THIS_IP_);
 			local_irq_restore(flags);
 			spin_lock_irqsave(&ctx.quarantine_lock, flags);
 		}
@@ -160,7 +157,7 @@ unsigned long asan_mem_to_shadow(unsigned long addr)
 
 unsigned long asan_shadow_to_mem(unsigned long shadow_addr)
 {
-	/* TODO: addr in in shadow. */
+	/* TODO: check addr in in shadow. */
 	return ((shadow_addr - ASAN_SHADOW_OFFSET - PAGE_OFFSET)
 		<< ASAN_SHADOW_SCALE) + PAGE_OFFSET;
 }
@@ -189,7 +186,7 @@ static void unpoison_shadow(const void *address, unsigned long size)
 	poison_shadow(address, size, 0);
 }
 
-static bool memory_is_poisoned(unsigned long addr)
+static bool address_is_poisoned(unsigned long addr)
 {
 	const unsigned long ACCESS_SIZE = 1;
 	u8 *shadow_addr = (u8 *)asan_mem_to_shadow(addr);
@@ -202,7 +199,7 @@ static bool memory_is_poisoned(unsigned long addr)
 	return false;
 }
 
-static bool mem_is_zero(const u8 *beg, unsigned long size)
+static bool memory_is_zero(const u8 *beg, unsigned long size)
 {
 	const u8 *end = beg + size;
 	unsigned long beg_addr = (unsigned long)beg;
@@ -224,42 +221,42 @@ static bool mem_is_zero(const u8 *beg, unsigned long size)
 }
 
 /*
- * Returns pointer to the first poisoned byte if the region is in memory
- * and poisoned, returns NULL otherwise.
+ * Returns address of the first poisoned byte if the memory region
+ * lies in the physical memory and poisoned, returns 0 otherwise.
  */
-static const void *region_is_poisoned(const void *addr, unsigned long size)
+static unsigned long memory_is_poisoned(unsigned long addr, unsigned long size)
 {
 	unsigned long beg, end;
 	unsigned long aligned_beg, aligned_end;
 	unsigned long shadow_beg, shadow_end;
 
 	if (size == 0)
-		return NULL;
+		return 0;
 
-	beg = (unsigned long)addr;
+	beg = addr;
 	end = beg + size;
 	if (!addr_is_in_mem(beg) || !addr_is_in_mem(end))
-		return NULL;
+		return 0;
 
 	aligned_beg = round_up(beg, ASAN_SHADOW_GRAIN);
 	aligned_end = round_down(end, ASAN_SHADOW_GRAIN);
 	shadow_beg = asan_mem_to_shadow(aligned_beg);
 	shadow_end = asan_mem_to_shadow(aligned_end);
-	if (!memory_is_poisoned(beg) &&
-	    !memory_is_poisoned(end - 1) &&
+	if (!address_is_poisoned(beg) &&
+	    !address_is_poisoned(end - 1) &&
 	    (shadow_end <= shadow_beg ||
-	     mem_is_zero((const u8 *)shadow_beg, shadow_end - shadow_beg)))
-		return NULL;
+	     memory_is_zero((const u8 *)shadow_beg, shadow_end - shadow_beg)))
+		return 0;
 	for (; beg < end; beg++)
-		if (memory_is_poisoned(beg))
-			return (const void *)beg;
+		if (address_is_poisoned(beg))
+			return beg;
 
 	BUG(); /* Unreachable. */
-	return NULL;
+	return 0;
 }
 
-/* XXX: include lib.c in this file and make this static? */
-void asan_check_memory_region(const void *addr, unsigned long size, bool write)
+static void check_memory_region(unsigned long addr, unsigned long size,
+				bool write)
 {
 	unsigned long poisoned_addr;
 	unsigned long strip_addr;
@@ -267,7 +264,7 @@ void asan_check_memory_region(const void *addr, unsigned long size, bool write)
 	if (!ctx.enabled)
 		return;
 
-	poisoned_addr = (unsigned long)region_is_poisoned(addr, size);
+	poisoned_addr = memory_is_poisoned(addr, size);
 
 	if (poisoned_addr == 0)
 		return;
@@ -278,8 +275,8 @@ void asan_check_memory_region(const void *addr, unsigned long size, bool write)
 		current_thread_id(), strip_addr);
 }
 
-static void asan_check_memory_word(unsigned long addr, unsigned long size,
-				   bool write)
+static void check_memory_word(unsigned long addr, unsigned long size,
+			      bool write)
 {
 	u8 *shadow_addr;
 	s8 shadow_value;
@@ -505,62 +502,111 @@ void asan_on_kernel_init(void)
 #endif
 }
 
+void *asan_memcpy(void *dst, const void *src, size_t len)
+{
+	char *d = (char *)dst;
+	const char *s = (const char *)src;
+	size_t i;
+
+	check_memory_region((unsigned long)src, len, false);
+	check_memory_region((unsigned long)dst, len, true);
+
+	for (i = 0; i < len; i++)
+		d[i] = s[i];
+	return dst;
+}
+EXPORT_SYMBOL(asan_memcpy);
+
+void *asan_memset(void *ptr, int val, size_t len)
+{
+	char *p = (char *)ptr;
+	size_t i;
+
+	check_memory_region((unsigned long)ptr, len, true);
+
+	for (i = 0; i < len; i++)
+		p[i] = val;
+	return ptr;
+}
+EXPORT_SYMBOL(asan_memset);
+
+void *asan_memmove(void *dst, const void *src, size_t len)
+{
+	char *d = (char *)dst;
+	const char *s = (const char *)src;
+	long i;
+
+	check_memory_region((unsigned long)src, len, false);
+	check_memory_region((unsigned long)dst, len, true);
+
+	if (d < s) {
+		for (i = 0; i < len; i++)
+			d[i] = s[i];
+	} else {
+		if (d > s && len > 0)
+			for (i = len - 1; i >= 0; i--)
+				d[i] = s[i];
+	}
+	return dst;
+}
+EXPORT_SYMBOL(asan_memmove);
+
 void __kasan_read1(unsigned long addr)
 {
-	asan_check_memory_word(addr, 1, false);
+	check_memory_word(addr, 1, false);
 }
 EXPORT_SYMBOL(__kasan_read1);
 
 void __kasan_read2(unsigned long addr)
 {
-	asan_check_memory_word(addr, 2, false);
+	check_memory_word(addr, 2, false);
 }
 EXPORT_SYMBOL(__kasan_read2);
 
 void __kasan_read4(unsigned long addr)
 {
-	asan_check_memory_word(addr, 4, false);
+	check_memory_word(addr, 4, false);
 }
 EXPORT_SYMBOL(__kasan_read4);
 
 void __kasan_read8(unsigned long addr)
 {
-	asan_check_memory_word(addr, 8, false);
+	check_memory_word(addr, 8, false);
 }
 EXPORT_SYMBOL(__kasan_read8);
 
 void __kasan_read16(unsigned long addr)
 {
-	asan_check_memory_region((void *)addr, 16, false);
+	check_memory_region(addr, 16, false);
 }
 EXPORT_SYMBOL(__kasan_read16);
 
 void __kasan_write1(unsigned long addr)
 {
-	asan_check_memory_word(addr, 1, true);
+	check_memory_word(addr, 1, true);
 }
 EXPORT_SYMBOL(__kasan_write1);
 
 void __kasan_write2(unsigned long addr)
 {
-	asan_check_memory_word(addr, 2, true);
+	check_memory_word(addr, 2, true);
 }
 EXPORT_SYMBOL(__kasan_write2);
 
 void __kasan_write4(unsigned long addr)
 {
-	asan_check_memory_word(addr, 4, true);
+	check_memory_word(addr, 4, true);
 }
 EXPORT_SYMBOL(__kasan_write4);
 
 void __kasan_write8(unsigned long addr)
 {
-	asan_check_memory_word(addr, 8, true);
+	check_memory_word(addr, 8, true);
 }
 EXPORT_SYMBOL(__kasan_write8);
 
 void __kasan_write16(unsigned long addr)
 {
-	asan_check_memory_region((void *)addr, 16, true);
+	check_memory_region(addr, 16, true);
 }
 EXPORT_SYMBOL(__kasan_write16);

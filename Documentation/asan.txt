@@ -628,4 +628,4 @@ allocated objects inside, since they could be not freed yet but put into the
 quarantine. Therefore, each time some cache is destroyed the quarantine is
 checked for objects from this cache and the found objects are freed.
 
-TODO: kmem_cache_free modifications (qurantine_flag, etc.).
+TODO: kmem_cache_free modifications (noasan_cache_free, etc.).

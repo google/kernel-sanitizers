@@ -52,15 +52,15 @@ struct asan_redzone {
 extern int asan_error_counter;
 extern spinlock_t asan_error_counter_lock;
 
+void noasan_cache_free(struct kmem_cache *cachep, void *objp,
+		       unsigned long caller);
+
 unsigned int asan_save_stack_trace(unsigned long *stack,
 				   unsigned int max_entries,
 				   unsigned long strip_addr);
 
 unsigned long asan_mem_to_shadow(unsigned long addr);
 unsigned long asan_shadow_to_mem(unsigned long shadow_addr);
-
-/* Checks region for poisoned bytes. Reports poisoned bytes if found. */
-void asan_check_memory_region(const void *addr, unsigned long size, bool write);
 
 void asan_report_error(unsigned long poisoned_addr, unsigned long access_size,
 		       bool is_write, int thread_id, unsigned long strip_addr);

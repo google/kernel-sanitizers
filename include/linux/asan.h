@@ -50,11 +50,6 @@ static inline void asan_krealloc(void *object, size_t size) {}
 
 static inline void asan_on_kernel_init(void) {}
 
-/*
- * No need to make asan_memcpy, asan_memset and asan_memmove no-ops, since
- * they are defined under CONFIG_ASAN (arch/x86/include/asm/string_64.h).
- */
-
 #endif /* CONFIG_ASAN */
 
 #endif /* LINUX_ASAN_H */

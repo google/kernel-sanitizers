@@ -38,6 +38,12 @@
 int asan_error_counter; /* = 0 */
 DEFINE_SPINLOCK(asan_error_counter_lock);
 
+static struct kmem_cache *virt_to_cache(const void *obj)
+{
+	struct page *page = virt_to_head_page(obj);
+	return page->slab_cache;
+}
+
 static void print_saved_stack_trace(unsigned long *stack, unsigned int entries)
 {
 	unsigned int i;
@@ -119,12 +125,6 @@ static void describe_access_to_heap(unsigned long addr,
 	       "%s of %lu-byte region [%lx, %lx)%s\n", COLOR_GREEN, addr,
 	       rel_bytes, rel_type, COLOR_NORMAL, COLOR_GREEN, object_size,
 	       object_addr, object_addr + object_size, COLOR_NORMAL);
-}
-
-static struct kmem_cache *virt_to_cache(const void *obj)
-{
-	struct page *page = virt_to_head_page(obj);
-	return page->slab_cache;
 }
 
 static void describe_heap_address(unsigned long addr,
