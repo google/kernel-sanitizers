@@ -62,9 +62,16 @@ unsigned int asan_save_stack_trace(unsigned long *stack,
 unsigned long asan_mem_to_shadow(unsigned long addr);
 unsigned long asan_shadow_to_mem(unsigned long shadow_addr);
 
-void asan_report_error(unsigned long poisoned_addr, unsigned long access_size,
-		       bool is_write, int thread_id, unsigned long strip_addr);
-void asan_report_user_access(unsigned long addr, unsigned long access_size,
-			bool is_write, int thread_id, unsigned long strip_addr);
+struct error_info {
+	/* TODO: unsigned long access_addr; */
+	unsigned long poisoned_addr;
+	unsigned long access_size;
+	bool is_write;
+	int thread_id;
+	unsigned long strip_addr;
+};
+
+void asan_report_error(struct error_info *info);
+void asan_report_user_access(struct error_info *info);
 
 #endif

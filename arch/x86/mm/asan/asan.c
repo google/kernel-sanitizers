@@ -259,6 +259,7 @@ static void check_memory_region(unsigned long addr, unsigned long size,
 				bool write)
 {
 	unsigned long poisoned_addr;
+	struct error_info info;
 
 	if (!ctx.enabled)
 		return;
@@ -267,18 +268,25 @@ static void check_memory_region(unsigned long addr, unsigned long size,
 		return;
 
 	if ((addr & (1UL << 63)) == 0) {
-		asan_report_user_access(addr, size, write,
-					current_thread_id(), _RET_IP_);
+		info.poisoned_addr = addr,
+		info.access_size = size,
+		info.is_write = write,
+		info.thread_id = current_thread_id(),
+		info.strip_addr = _RET_IP_,
+		asan_report_user_access(&info);
 		return;
 	}
 
 	poisoned_addr = memory_is_poisoned(addr, size);
-
 	if (poisoned_addr == 0)
 		return;
 
-	asan_report_error(poisoned_addr, size, write,
-			  current_thread_id(), _RET_IP_);
+	info.poisoned_addr = poisoned_addr,
+	info.access_size = size,
+	info.is_write = write,
+	info.thread_id = current_thread_id(),
+	info.strip_addr = _RET_IP_,
+	asan_report_error(&info);
 }
 
 static void check_memory_word(unsigned long addr, unsigned long size,
@@ -287,6 +295,7 @@ static void check_memory_word(unsigned long addr, unsigned long size,
 	u8 *shadow_addr;
 	s8 shadow_value;
 	u8 last_accessed_byte;
+	struct error_info info;
 
 	if (!ctx.enabled)
 		return;
@@ -295,8 +304,12 @@ static void check_memory_word(unsigned long addr, unsigned long size,
 		return;
 
 	if ((addr & (1UL << 63)) == 0) {
-		asan_report_user_access(addr, size, write,
-					current_thread_id(), _RET_IP_);
+		info.poisoned_addr = addr,
+		info.access_size = size,
+		info.is_write = write,
+		info.thread_id = current_thread_id(),
+		info.strip_addr = _RET_IP_,
+		asan_report_user_access(&info);
 		return;
 	}
 
@@ -312,7 +325,12 @@ static void check_memory_word(unsigned long addr, unsigned long size,
 	if (last_accessed_byte < shadow_value)
 		return;
 
-	asan_report_error(addr, size, write, current_thread_id(), _RET_IP_);
+	info.poisoned_addr = addr,
+	info.access_size = size,
+	info.is_write = write,
+	info.thread_id = current_thread_id(),
+	info.strip_addr = _RET_IP_,
+	asan_report_error(&info);
 }
 
 void __init asan_init_shadow(void)

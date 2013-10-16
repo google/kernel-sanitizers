@@ -65,14 +65,13 @@ static void print_current_stack_trace(unsigned long strip_addr)
 	print_saved_stack_trace(&stack[0], entries);
 }
 
-static void print_error_description(unsigned long addr,
-				    unsigned long access_size)
+static void print_error_description(struct error_info *info)
 {
-	u8 *shadow = (u8 *)asan_mem_to_shadow(addr);
+	u8 *shadow = (u8 *)asan_mem_to_shadow(info->poisoned_addr);
 	const char *bug_type = "unknown-crash";
 
 	/* If we are accessing 16 bytes, look at the second shadow byte. */
-	if (*shadow == 0 && access_size > ASAN_SHADOW_GRAIN)
+	if (*shadow == 0 && info->access_size > ASAN_SHADOW_GRAIN)
 		shadow++;
 
 	switch (*shadow) {
@@ -90,7 +89,7 @@ static void print_error_description(unsigned long addr,
 	}
 
 	pr_err("%sAddressSanitizer: %s on address %lx%s\n",
-	       COLOR_RED, bug_type, addr, COLOR_NORMAL);
+	       COLOR_RED, bug_type, info->poisoned_addr, COLOR_NORMAL);
 }
 
 static void describe_access_to_heap(unsigned long addr,
@@ -127,12 +126,9 @@ static void describe_access_to_heap(unsigned long addr,
 	       object_addr, object_addr + object_size, COLOR_NORMAL);
 }
 
-static void describe_heap_address(unsigned long addr,
-				  unsigned long access_size,
-				  bool is_write, int thread_id,
-				  unsigned long strip_addr)
+static void describe_heap_address(struct error_info *info)
 {
-	u8 *shadow = (u8 *)asan_mem_to_shadow(addr);
+	u8 *shadow = (u8 *)asan_mem_to_shadow(info->poisoned_addr);
 	u8 *shadow_left, *shadow_right;
 	unsigned long redzone_addr;
 	struct asan_redzone *redzone;
@@ -143,13 +139,13 @@ static void describe_heap_address(unsigned long addr,
 	unsigned long *alloc_stack = NULL;
 	unsigned long *free_stack = NULL;
 
-	struct kmem_cache *cache = virt_to_cache((void *)addr);
+	struct kmem_cache *cache = virt_to_cache((void *)info->poisoned_addr);
 
 	if (!ASAN_HAS_REDZONE(cache) || *shadow == ASAN_SHADOW_GAP) {
-		pr_err("%s%s of size %lu at %lx thread T%d:%s\n",
-		       COLOR_BLUE, is_write ? "Write" : "Read", access_size,
-		       addr, thread_id, COLOR_NORMAL);
-		print_current_stack_trace(strip_addr);
+		pr_err("%s%s of size %lu by thread T%d:%s\n",
+		       COLOR_BLUE, info->is_write ? "Write" : "Read",
+		       info->access_size, info->thread_id, COLOR_NORMAL);
+		print_current_stack_trace(info->strip_addr);
 		pr_err("\n");
 		pr_err("%sNo metainfo is available for this access.%s\n",
 		       COLOR_BLUE, COLOR_NORMAL);
@@ -212,10 +208,10 @@ static void describe_heap_address(unsigned long addr,
 	if (use_after_free)
 		free_stack = redzone->free_stack;
 
-	pr_err("%s%s of size %lu by thread T%d:%s\n", COLOR_BLUE,
-	       is_write ? "Write" : "Read", access_size,
-	       thread_id, COLOR_NORMAL);
-	print_current_stack_trace(strip_addr);
+	pr_err("%s%s of size %lu by thread T%d:%s\n",
+	       COLOR_BLUE, info->is_write ? "Write" : "Read",
+	       info->access_size, info->thread_id, COLOR_NORMAL);
+	print_current_stack_trace(info->strip_addr);
 	pr_err("\n");
 
 	if (free_stack != NULL) {
@@ -232,8 +228,8 @@ static void describe_heap_address(unsigned long addr,
 		pr_err("\n");
 	}
 
-	describe_access_to_heap(addr, object_addr, object_size,
-				redzone->kmalloc_size);
+	describe_access_to_heap(info->poisoned_addr, object_addr,
+				object_size, redzone->kmalloc_size);
 	pr_err("\n");
 }
 
@@ -357,8 +353,7 @@ static void print_shadow_legend(void)
 	       COLOR_WHITE, COLOR_NORMAL, COLOR_WHITE, COLOR_NORMAL);
 }
 
-void asan_report_error(unsigned long poisoned_addr, unsigned long access_size,
-		       bool is_write, int thread_id, unsigned long strip_addr)
+void asan_report_error(struct error_info *info)
 {
 	unsigned long flags;
 
@@ -368,17 +363,16 @@ void asan_report_error(unsigned long poisoned_addr, unsigned long access_size,
 		return;
 	spin_unlock_irqrestore(&asan_error_counter_lock, flags);
 
+	/* FIXME: pass info futher. */
 	pr_err("==================================================================\n");
-	print_error_description(poisoned_addr, access_size);
-	describe_heap_address(poisoned_addr, access_size,
-			      is_write, thread_id, strip_addr);
-	print_shadow_for_address(poisoned_addr);
+	print_error_description(info);
+	describe_heap_address(info);
+	print_shadow_for_address(info->poisoned_addr);
 	print_shadow_legend();
 	pr_err("==================================================================\n");
 }
 
-void asan_report_user_access(unsigned long addr, unsigned long access_size,
-			bool is_write, int thread_id, unsigned long strip_addr)
+void asan_report_user_access(struct error_info *info)
 {
 	unsigned long flags;
 
@@ -390,10 +384,10 @@ void asan_report_user_access(unsigned long addr, unsigned long access_size,
 
 	pr_err("==================================================================\n");
 	pr_err("%sAddressSanitizer: user-memory-access on address %lx%s\n",
-	       COLOR_RED, addr, COLOR_NORMAL);
+	       COLOR_RED, info->poisoned_addr, COLOR_NORMAL);
 	pr_err("%s%s of size %lu by thread T%d:%s\n",
-	       COLOR_BLUE, is_write ? "Write" : "Read",
-	       access_size, thread_id, COLOR_NORMAL);
-	print_current_stack_trace(strip_addr);
+	       COLOR_BLUE, info->is_write ? "Write" : "Read",
+	       info->access_size, info->thread_id, COLOR_NORMAL);
+	print_current_stack_trace(info->strip_addr);
 	pr_err("==================================================================\n");
 }
