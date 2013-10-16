@@ -411,14 +411,14 @@ void asan_slab_alloc(struct kmem_cache *cache, void *object)
 		return;
 
 	redzone = ASAN_GET_REDZONE(cache, object);
-	alloc_stack = redzone->alloc_stack;
 
 	/* Strip asan_slab_alloc and kmem_cache_alloc frames. */
+	alloc_stack = redzone->alloc_stack;
 	strip_addr = (unsigned long)__builtin_return_address(1);
 	asan_save_stack_trace(alloc_stack, ASAN_STACK_TRACE_FRAMES, strip_addr);
 
 	redzone->alloc_thread_id = current_thread_id();
-	redzone->free_thread_id = 0;
+	redzone->free_thread_id = -1;
 
 	redzone->chunk.cache = cache;
 	redzone->chunk.object = object;
@@ -443,9 +443,9 @@ void asan_slab_free(struct kmem_cache *cache, void *object)
 		return;
 
 	redzone = ASAN_GET_REDZONE(cache, object);
-	free_stack = redzone->free_stack;
 
 	/* Strip asan_slab_free and kmem_cache_free frames. */
+	free_stack = redzone->free_stack;
 	strip_addr = (unsigned long)__builtin_return_address(1);
 	asan_save_stack_trace(free_stack, ASAN_STACK_TRACE_FRAMES, strip_addr);
 
@@ -479,9 +479,7 @@ void asan_kmalloc(struct kmem_cache *cache, void *object, size_t size)
 
 	if (!ASAN_HAS_REDZONE(cache))
 		return;
-
 	redzone = ASAN_GET_REDZONE(cache, object);
-
 	redzone->kmalloc_size = size;
 }
 EXPORT_SYMBOL(asan_kmalloc);
@@ -521,10 +519,10 @@ void asan_on_kernel_init(void)
 	asan_do_bo_kmalloc_node();
 	asan_do_bo_krealloc();
 	asan_do_bo_krealloc_less();
+	asan_do_krealloc_more();
 	asan_do_bo_16();
 	asan_do_bo_4mb();
 	asan_do_bo_memset();
-	asan_do_krealloc_more();
 	asan_do_uaf();
 	asan_do_uaf_memset();
 	asan_do_uaf_quarantine();
