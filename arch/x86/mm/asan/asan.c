@@ -19,7 +19,7 @@
 #include <asm/thread_info.h>
 
 #include "asan.h"
-#include "test.h"
+#include "tests.h"
 
 #undef memset
 #undef memcpy

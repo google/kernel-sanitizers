@@ -1,5 +1,5 @@
-#ifndef ASAN_ERROR_H_
-#define ASAN_ERROR_H_
+#ifndef ASAN_TESTS_H_
+#define ASAN_TESTS_H_
 
 void asan_do_bo(void);
 void asan_do_bo_left(void);
@@ -14,4 +14,4 @@ void asan_do_uaf(void);
 void asan_do_uaf_memset(void);
 void asan_do_uaf_quarantine(void);
 
-#endif /* ASAN_ERROR_H_ */
+#endif /* ASAN_TESTS_H_ */
