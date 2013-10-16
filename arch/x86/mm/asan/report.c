@@ -38,7 +38,7 @@
 int asan_error_counter; /* = 0 */
 DEFINE_SPINLOCK(asan_error_counter_lock);
 
-static void asan_print_stack_trace(unsigned long *stack, unsigned int entries)
+static void print_saved_stack_trace(unsigned long *stack, unsigned int entries)
 {
 	unsigned int i;
 	void *frame;
@@ -51,16 +51,16 @@ static void asan_print_stack_trace(unsigned long *stack, unsigned int entries)
 	}
 }
 
-static void asan_print_current_stack_trace(unsigned long strip_addr)
+static void print_current_stack_trace(unsigned long strip_addr)
 {
 	unsigned long stack[ASAN_MAX_STACK_TRACE_FRAMES];
 	unsigned int entries = asan_save_stack_trace(&stack[0],
 		ASAN_MAX_STACK_TRACE_FRAMES, strip_addr);
-	asan_print_stack_trace(&stack[0], entries);
+	print_saved_stack_trace(&stack[0], entries);
 }
 
-static void asan_print_error_description(unsigned long addr,
-					 unsigned long access_size)
+static void print_error_description(unsigned long addr,
+				    unsigned long access_size)
 {
 	u8 *shadow = (u8 *)asan_mem_to_shadow(addr);
 	const char *bug_type = "unknown-crash";
@@ -87,10 +87,10 @@ static void asan_print_error_description(unsigned long addr,
 	       COLOR_RED, bug_type, addr, COLOR_NORMAL);
 }
 
-static void asan_describe_access_to_heap(unsigned long addr,
-					 unsigned long object_addr,
-					 unsigned long object_size,
-					 unsigned long kmalloc_size)
+static void describe_access_to_heap(unsigned long addr,
+				    unsigned long object_addr,
+				    unsigned long object_size,
+				    unsigned long kmalloc_size)
 {
 	const char *rel_type;
 	unsigned long rel_bytes;
@@ -121,17 +121,16 @@ static void asan_describe_access_to_heap(unsigned long addr,
 	       object_addr, object_addr + object_size, COLOR_NORMAL);
 }
 
-static struct kmem_cache *asan_mem_to_cache(const void *obj)
+static struct kmem_cache *virt_to_cache(const void *obj)
 {
 	struct page *page = virt_to_head_page(obj);
 	return page->slab_cache;
 }
 
-static void asan_describe_heap_address(unsigned long addr,
-				       unsigned long access_size,
-				       bool is_write,
-				       int thread_id,
-				       unsigned long strip_addr)
+static void describe_heap_address(unsigned long addr,
+				  unsigned long access_size,
+				  bool is_write, int thread_id,
+				  unsigned long strip_addr)
 {
 	u8 *shadow = (u8 *)asan_mem_to_shadow(addr);
 	u8 *shadow_left, *shadow_right;
@@ -144,13 +143,13 @@ static void asan_describe_heap_address(unsigned long addr,
 	unsigned long *alloc_stack = NULL;
 	unsigned long *free_stack = NULL;
 
-	struct kmem_cache *cache = asan_mem_to_cache((void *)addr);
+	struct kmem_cache *cache = virt_to_cache((void *)addr);
 
 	if (!ASAN_HAS_REDZONE(cache) || *shadow == ASAN_SHADOW_GAP) {
 		pr_err("%s%s of size %lu at %lx thread T%d:%s\n",
 		       COLOR_BLUE, is_write ? "Write" : "Read", access_size,
 		       addr, thread_id, COLOR_NORMAL);
-		asan_print_current_stack_trace(strip_addr);
+		print_current_stack_trace(strip_addr);
 		pr_err("\n");
 		pr_err("%sNo metainfo is available for this access.%s\n",
 		       COLOR_BLUE, COLOR_NORMAL);
@@ -216,29 +215,29 @@ static void asan_describe_heap_address(unsigned long addr,
 	pr_err("%s%s of size %lu by thread T%d:%s\n", COLOR_BLUE,
 	       is_write ? "Write" : "Read", access_size,
 	       thread_id, COLOR_NORMAL);
-	asan_print_current_stack_trace(strip_addr);
+	print_current_stack_trace(strip_addr);
 	pr_err("\n");
 
 	if (free_stack != NULL) {
 		pr_err("%sFreed by thread T%d:%s\n", COLOR_MAGENTA,
 		       redzone->free_thread_id, COLOR_NORMAL);
-		asan_print_stack_trace(free_stack, ASAN_STACK_TRACE_FRAMES);
+		print_saved_stack_trace(free_stack, ASAN_STACK_TRACE_FRAMES);
 		pr_err("\n");
 	}
 
 	if (alloc_stack != NULL) {
 		pr_err("%sAllocated by thread T%d:%s\n", COLOR_MAGENTA,
 		       redzone->alloc_thread_id, COLOR_NORMAL);
-		asan_print_stack_trace(alloc_stack, ASAN_STACK_TRACE_FRAMES);
+		print_saved_stack_trace(alloc_stack, ASAN_STACK_TRACE_FRAMES);
 		pr_err("\n");
 	}
 
-	asan_describe_access_to_heap(addr, object_addr, object_size,
-				     redzone->kmalloc_size);
+	describe_access_to_heap(addr, object_addr, object_size,
+				redzone->kmalloc_size);
 	pr_err("\n");
 }
 
-static char *asan_print_shadow_byte(u8 shadow, char *output)
+static char *print_shadow_byte(u8 shadow, char *output)
 {
 	const char *color_prefix = COLOR_NORMAL;
 	const char *color_postfix = COLOR_NORMAL;
@@ -275,19 +274,19 @@ static char *asan_print_shadow_byte(u8 shadow, char *output)
 	return output + strlen(color_prefix) + 1 + strlen(color_postfix);
 }
 
-static char *asan_print_shadow_block(u8 *shadow, u8 *guilty, char *output)
+static char *print_shadow_block(u8 *shadow, u8 *guilty, char *output)
 {
 	int i;
 
 	for (i = 0; i < SHADOW_BYTES_PER_BLOCK; i++) {
-		output = asan_print_shadow_byte(*shadow, output);
+		output = print_shadow_byte(*shadow, output);
 		shadow++;
 	}
 
 	return output;
 }
 
-static void asan_print_shadow_row(u8 *row, u8 *guilty, char *output)
+static void print_shadow_row(u8 *row, u8 *guilty, char *output)
 {
 	int i;
 	const char *before;
@@ -296,18 +295,18 @@ static void asan_print_shadow_row(u8 *row, u8 *guilty, char *output)
 		before = (i == 0) ? "" : " ";
 		sprintf(output, before);
 		output += strlen(before);
-		output = asan_print_shadow_block(row, guilty, output);
+		output = print_shadow_block(row, guilty, output);
 		row += SHADOW_BYTES_PER_BLOCK;
 	}
 }
 
-static bool asan_row_guilty(unsigned long row, unsigned long guilty)
+static bool row_guilty(unsigned long row, unsigned long guilty)
 {
 	return (row <= guilty) && (guilty < row + SHADOW_BYTES_PER_ROW);
 }
 
-static void asan_print_shadow_pointer(unsigned long row, unsigned long shadow,
-				      char *output)
+static void print_shadow_pointer(unsigned long row, unsigned long shadow,
+				 char *output)
 {
 	/* The length of ">ff00ff00ff00ff00: " is 19 chars. */
 	unsigned long space_count = 19 + shadow - row +
@@ -320,7 +319,7 @@ static void asan_print_shadow_pointer(unsigned long row, unsigned long shadow,
 	output[space_count + 1] = '\0';
 }
 
-static void asan_print_shadow_for_address(unsigned long addr)
+static void print_shadow_for_address(unsigned long addr)
 {
 	int i;
 	char buffer[512];
@@ -331,19 +330,18 @@ static void asan_print_shadow_for_address(unsigned long addr)
 	pr_err("Memory state around the buggy address:\n");
 
 	for (i = -SHADOW_ROWS_AROUND_ADDR; i <= SHADOW_ROWS_AROUND_ADDR; i++) {
-		asan_print_shadow_row((u8 *)aligned_shadow,
-				      (u8 *)shadow, buffer);
+		print_shadow_row((u8 *)aligned_shadow, (u8 *)shadow, buffer);
 		pr_err("%s%lx: %s\n", (i == 0) ? ">" : " ",
 		       asan_shadow_to_mem(aligned_shadow), buffer);
-		if (asan_row_guilty(aligned_shadow, shadow)) {
-			asan_print_shadow_pointer(aligned_shadow, shadow, buffer);
+		if (row_guilty(aligned_shadow, shadow)) {
+			print_shadow_pointer(aligned_shadow, shadow, buffer);
 			pr_err("%s\n", buffer);
 		}
 		aligned_shadow += SHADOW_BYTES_PER_ROW;
 	}
 }
 
-static void asan_print_shadow_legend(void)
+static void print_shadow_legend(void)
 {
 	int i;
 	char partially_addressable[64];
@@ -371,10 +369,10 @@ void asan_report_error(unsigned long poisoned_addr, unsigned long access_size,
 	spin_unlock_irqrestore(&asan_error_counter_lock, flags);
 
 	pr_err("=========================================================================\n");
-	asan_print_error_description(poisoned_addr, access_size);
-	asan_describe_heap_address(poisoned_addr, access_size,
-				   is_write, thread_id, strip_addr);
-	asan_print_shadow_for_address(poisoned_addr);
-	asan_print_shadow_legend();
+	print_error_description(poisoned_addr, access_size);
+	describe_heap_address(poisoned_addr, access_size,
+			      is_write, thread_id, strip_addr);
+	print_shadow_for_address(poisoned_addr);
+	print_shadow_legend();
 	pr_err("=========================================================================\n");
 }
