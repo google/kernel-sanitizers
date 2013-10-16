@@ -92,10 +92,10 @@ static void print_error_description(struct error_info *info)
 	       COLOR_RED, bug_type, info->poisoned_addr, COLOR_NORMAL);
 }
 
-static void describe_access_to_heap(unsigned long addr,
-				    unsigned long object_addr,
-				    unsigned long object_size,
-				    unsigned long kmalloc_size)
+static void print_memory_block_description(unsigned long addr,
+					   unsigned long object_addr,
+					   unsigned long object_size,
+					   unsigned long kmalloc_size)
 {
 	const char *rel_type;
 	unsigned long rel_bytes;
@@ -126,7 +126,7 @@ static void describe_access_to_heap(unsigned long addr,
 	       object_addr, object_addr + object_size, COLOR_NORMAL);
 }
 
-static void describe_heap_address(struct error_info *info)
+static void print_address_description(struct error_info *info)
 {
 	u8 *shadow = (u8 *)asan_mem_to_shadow(info->poisoned_addr);
 	u8 *shadow_left, *shadow_right;
@@ -228,8 +228,8 @@ static void describe_heap_address(struct error_info *info)
 		pr_err("\n");
 	}
 
-	describe_access_to_heap(info->poisoned_addr, object_addr,
-				object_size, redzone->kmalloc_size);
+	print_memory_block_description(info->poisoned_addr, object_addr,
+				       object_size, redzone->kmalloc_size);
 	pr_err("\n");
 }
 
@@ -296,7 +296,7 @@ static void print_shadow_row(u8 *row, u8 *guilty, char *output)
 	}
 }
 
-static bool row_guilty(unsigned long row, unsigned long guilty)
+static bool row_is_guilty(unsigned long row, unsigned long guilty)
 {
 	return (row <= guilty) && (guilty < row + SHADOW_BYTES_PER_ROW);
 }
@@ -329,7 +329,7 @@ static void print_shadow_for_address(unsigned long addr)
 		print_shadow_row((u8 *)aligned_shadow, (u8 *)shadow, buffer);
 		pr_err("%s%lx: %s\n", (i == 0) ? ">" : " ",
 		       asan_shadow_to_mem(aligned_shadow), buffer);
-		if (row_guilty(aligned_shadow, shadow)) {
+		if (row_is_guilty(aligned_shadow, shadow)) {
 			print_shadow_pointer(aligned_shadow, shadow, buffer);
 			pr_err("%s\n", buffer);
 		}
@@ -363,10 +363,9 @@ void asan_report_error(struct error_info *info)
 		return;
 	spin_unlock_irqrestore(&asan_error_counter_lock, flags);
 
-	/* FIXME: pass info futher. */
 	pr_err("==================================================================\n");
 	print_error_description(info);
-	describe_heap_address(info);
+	print_address_description(info);
 	print_shadow_for_address(info->poisoned_addr);
 	print_shadow_legend();
 	pr_err("==================================================================\n");
