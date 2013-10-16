@@ -9,6 +9,7 @@ config ASAN
 	depends on !DEBUG_SLAB
 	depends on !DEBUG_PAGEALLOC
 	depends on !KMEMCHECK
+	default n
 	help
 	  Enables AddressSanitizer - dynamic memory error detector,
 	  that finds out-of-bounds and use-after-free bugs.
