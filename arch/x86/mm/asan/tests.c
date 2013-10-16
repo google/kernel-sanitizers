@@ -154,7 +154,7 @@ void asan_do_uaf_quarantine(void)
 	kfree(ptr2);
 }
 
-/* Expected to produce a report. */
+/* Expected to produce a report and cause kernel panic. */
 void asan_do_user_memory_access(void)
 {
 	char *ptr1 = (char *)(1UL << 24);
