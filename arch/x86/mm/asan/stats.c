@@ -31,4 +31,4 @@ static int __init asan_stats_init(void)
 	return 0;
 }
 
-__initcall(asan_stats_init);
+device_initcall(asan_stats_init);

@@ -259,7 +259,6 @@ static void check_memory_region(unsigned long addr, unsigned long size,
 				bool write)
 {
 	unsigned long poisoned_addr;
-	unsigned long strip_addr;
 
 	if (!ctx.enabled)
 		return;
@@ -270,9 +269,8 @@ static void check_memory_region(unsigned long addr, unsigned long size,
 		return;
 
 	/* FIXME: still prints asan_memset frame. */
-	strip_addr = (unsigned long)__builtin_return_address(0);
 	asan_report_error(poisoned_addr, size, write,
-		current_thread_id(), strip_addr);
+			  current_thread_id(), _RET_IP_);
 }
 
 static void check_memory_word(unsigned long addr, unsigned long size,
@@ -281,7 +279,6 @@ static void check_memory_word(unsigned long addr, unsigned long size,
 	u8 *shadow_addr;
 	s8 shadow_value;
 	u8 last_accessed_byte;
-	unsigned long strip_addr;
 
 	if (!ctx.enabled)
 		return;
@@ -298,9 +295,7 @@ static void check_memory_word(unsigned long addr, unsigned long size,
 	if (last_accessed_byte < shadow_value)
 		return;
 
-	strip_addr = (unsigned long)__builtin_return_address(0);
-	asan_report_error(addr, size, write,
-		current_thread_id(), strip_addr);
+	asan_report_error(addr, size, write, current_thread_id(), _RET_IP_);
 }
 
 void __init asan_init_shadow(void)
@@ -385,8 +380,7 @@ void asan_slab_alloc(struct kmem_cache *cache, void *object)
 
 	/* Strip asan_slab_alloc and kmem_cache_alloc frames. */
 	strip_addr = (unsigned long)__builtin_return_address(1);
-	asan_save_stack_trace(alloc_stack, ASAN_STACK_TRACE_FRAMES,
-			      strip_addr);
+	asan_save_stack_trace(alloc_stack, ASAN_STACK_TRACE_FRAMES, strip_addr);
 
 	redzone->alloc_thread_id = current_thread_id();
 	redzone->free_thread_id = 0;
@@ -418,8 +412,7 @@ void asan_slab_free(struct kmem_cache *cache, void *object)
 
 	/* Strip asan_slab_free and kmem_cache_free frames. */
 	strip_addr = (unsigned long)__builtin_return_address(1);
-	asan_save_stack_trace(free_stack, ASAN_STACK_TRACE_FRAMES,
-			      strip_addr);
+	asan_save_stack_trace(free_stack, ASAN_STACK_TRACE_FRAMES, strip_addr);
 
 	redzone->free_thread_id = current_thread_id();
 
@@ -441,7 +434,7 @@ void asan_kmalloc(struct kmem_cache *cache, void *object, size_t size)
 		return;
 
 	poison_shadow(object, rounded_up_object_size,
-			   ASAN_HEAP_KMALLOC_REDZONE);
+		ASAN_HEAP_KMALLOC_REDZONE);
 	unpoison_shadow(object, rounded_down_kmalloc_size);
 	if (rounded_down_kmalloc_size != size) {
 		shadow = (u8 *)asan_mem_to_shadow(addr +
