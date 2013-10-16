@@ -16,6 +16,7 @@
 #define SHADOW_ROWS_AROUND_ADDR 5
 
 #define MAX_OBJECT_SIZE (2UL << 20)
+#define MAX_FUNCTION_NAME_SIZE (128)
 
 #if ASAN_COLORED_OUTPUT_ENABLE
 	#define COLOR_NORMAL  "\x1B[0m"
@@ -69,6 +70,8 @@ static void print_error_description(struct error_info *info)
 {
 	u8 *shadow = (u8 *)asan_mem_to_shadow(info->poisoned_addr);
 	const char *bug_type = "unknown-crash";
+	char function[MAX_FUNCTION_NAME_SIZE];
+	int i;
 
 	/* If we are accessing 16 bytes, look at the second shadow byte. */
 	if (*shadow == 0 && info->access_size > ASAN_SHADOW_GRAIN)
@@ -88,8 +91,16 @@ static void print_error_description(struct error_info *info)
 		break;
 	}
 
-	pr_err("%sAddressSanitizer: %s on address %lx%s\n",
-	       COLOR_RED, bug_type, info->poisoned_addr, COLOR_NORMAL);
+	sprintf(function, "%pS", (void *)info->strip_addr);
+	for (i = 0; i < MAX_FUNCTION_NAME_SIZE; i++) {
+		if (function[i] == '+') {
+			function[i] = '\0';
+			break;
+		}
+	}
+
+	pr_err("%sAddressSanitizer: %s in %s%s\n",
+	       COLOR_RED, bug_type, function, COLOR_NORMAL);
 }
 
 static void print_memory_block_description(unsigned long addr,
