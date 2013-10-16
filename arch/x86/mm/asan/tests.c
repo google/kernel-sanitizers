@@ -141,3 +141,15 @@ void asan_do_uaf_quarantine(void)
 	ptr1[5] = 'x';
 	kfree(ptr2);
 }
+
+/* Expected to produce report. */
+void asan_do_user_memory_access(void)
+{
+	char *ptr1 = (char *)(1UL << 24);
+	char *ptr2;
+
+	pr_err("Trying user-memory-access...\n");
+	ptr2 = kmalloc(10, GFP_KERNEL);
+	ptr2[3] = *ptr1;
+	kfree(ptr2);
+}

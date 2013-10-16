@@ -64,5 +64,7 @@ unsigned long asan_shadow_to_mem(unsigned long shadow_addr);
 
 void asan_report_error(unsigned long poisoned_addr, unsigned long access_size,
 		       bool is_write, int thread_id, unsigned long strip_addr);
+void asan_report_user_access(unsigned long addr, unsigned long access_size,
+			bool is_write, int thread_id, unsigned long strip_addr);
 
 #endif

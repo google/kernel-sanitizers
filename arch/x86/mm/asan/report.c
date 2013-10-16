@@ -368,11 +368,32 @@ void asan_report_error(unsigned long poisoned_addr, unsigned long access_size,
 		return;
 	spin_unlock_irqrestore(&asan_error_counter_lock, flags);
 
-	pr_err("=========================================================================\n");
+	pr_err("==================================================================\n");
 	print_error_description(poisoned_addr, access_size);
 	describe_heap_address(poisoned_addr, access_size,
 			      is_write, thread_id, strip_addr);
 	print_shadow_for_address(poisoned_addr);
 	print_shadow_legend();
-	pr_err("=========================================================================\n");
+	pr_err("==================================================================\n");
+}
+
+void asan_report_user_access(unsigned long addr, unsigned long access_size,
+			bool is_write, int thread_id, unsigned long strip_addr)
+{
+	unsigned long flags;
+
+	spin_lock_irqsave(&asan_error_counter_lock, flags);
+	asan_error_counter++;
+	if (asan_error_counter > 100)
+		return;
+	spin_unlock_irqrestore(&asan_error_counter_lock, flags);
+
+	pr_err("==================================================================\n");
+	pr_err("%sAddressSanitizer: user-memory-access on address %lx%s\n",
+	       COLOR_RED, addr, COLOR_NORMAL);
+	pr_err("%s%s of size %lu by thread T%d:%s\n",
+	       COLOR_BLUE, is_write ? "Write" : "Read",
+	       access_size, thread_id, COLOR_NORMAL);
+	print_current_stack_trace(strip_addr);
+	pr_err("==================================================================\n");
 }

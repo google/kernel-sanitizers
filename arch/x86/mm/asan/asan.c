@@ -263,12 +263,20 @@ static void check_memory_region(unsigned long addr, unsigned long size,
 	if (!ctx.enabled)
 		return;
 
+	if (addr == 0 || size == 0)
+		return;
+
+	if ((addr & (1UL << 63)) == 0) {
+		asan_report_user_access(addr, size, write,
+					current_thread_id(), _RET_IP_);
+		return;
+	}
+
 	poisoned_addr = memory_is_poisoned(addr, size);
 
 	if (poisoned_addr == 0)
 		return;
 
-	/* FIXME: still prints asan_memset frame. */
 	asan_report_error(poisoned_addr, size, write,
 			  current_thread_id(), _RET_IP_);
 }
@@ -282,6 +290,15 @@ static void check_memory_word(unsigned long addr, unsigned long size,
 
 	if (!ctx.enabled)
 		return;
+
+	if (addr == 0 || size == 0)
+		return;
+
+	if ((addr & (1UL << 63)) == 0) {
+		asan_report_user_access(addr, size, write,
+					current_thread_id(), _RET_IP_);
+		return;
+	}
 
 	if (!addr_is_in_mem(addr) || !addr_is_in_mem(addr + size))
 		return;
@@ -490,8 +507,9 @@ void asan_on_kernel_init(void)
 	asan_do_bo_4mb();
 	asan_do_krealloc_more();
 	asan_do_uaf();
-	asan_do_uaf_quarantine();
 	asan_do_uaf_memset();
+	asan_do_uaf_quarantine();
+	/* asan_do_user_memory_access(); */
 #endif
 }
 

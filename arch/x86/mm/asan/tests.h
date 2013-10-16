@@ -13,5 +13,6 @@ void asan_do_bo_4mb(void);
 void asan_do_uaf(void);
 void asan_do_uaf_memset(void);
 void asan_do_uaf_quarantine(void);
+void asan_do_user_memory_access(void);
 
 #endif /* ASAN_TESTS_H_ */
