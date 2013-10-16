@@ -24,9 +24,6 @@
 #undef memset
 #undef memcpy
 
-/* CONFIG_ASAN is incompatible with CONFIG_DEBUG_SLAB */
-/* CONFIG_ASAN is incompatible with CONFIG_KMEMCHECK */
-
 static struct {
 	int enabled;
 	spinlock_t quarantine_lock;
@@ -45,7 +42,7 @@ static struct kmem_cache *virt_to_cache(const void *ptr)
 	return page->slab_cache;
 }
 
-int asan_current_thread_id(void)
+static int asan_current_thread_id(void)
 {
 	return current_thread_info()->task->pid;
 }
@@ -432,7 +429,7 @@ void asan_slab_free(struct kmem_cache *cache, void *object)
 	asan_quarantine_put(cache, object);
 }
 
-void asan_kmalloc(struct kmem_cache *cache, void *object, unsigned long size)
+void asan_kmalloc(struct kmem_cache *cache, void *object, size_t size)
 {
 	unsigned long addr = (unsigned long)object;
 	unsigned long object_size = cache->object_size;
@@ -464,6 +461,11 @@ void asan_kmalloc(struct kmem_cache *cache, void *object, unsigned long size)
 }
 EXPORT_SYMBOL(asan_kmalloc);
 
+void asan_krealloc(void *object, size_t size)
+{
+	asan_kmalloc(virt_to_cache(object), object, size);
+}
+
 size_t asan_ksize(const void *ptr)
 {
 	struct kmem_cache *cache;
@@ -484,11 +486,6 @@ size_t asan_ksize(const void *ptr)
 	return cache->object_size;
 }
 EXPORT_SYMBOL(asan_ksize);
-
-void asan_krealloc(void *object, unsigned long new_size)
-{
-	asan_kmalloc(virt_to_cache(object), object, new_size);
-}
 
 void asan_on_kernel_init(void)
 {
