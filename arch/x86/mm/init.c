@@ -583,9 +583,8 @@ void __init zone_sizes_init(void)
 	free_area_init_nodes(max_zone_pfns);
 
 	/*
-	 * Reserve physical shadow memory for AddressSanitizer,
-	 * this must be done as early as possible,
-	 * so that the memory range is not occupied
+	 * Reserve physical shadow memory for AddressSanitizer, this must be
+	 * done as early as possible, so that the memory range is not occupied.
 	 */
 	asan_init_shadow();
 }

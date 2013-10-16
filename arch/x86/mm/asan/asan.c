@@ -82,8 +82,8 @@ static void asan_quarantine_put(struct kmem_cache *cache, void *object)
 
 	if (!ctx.enabled)
 		return;
-	BUG_ON(!ASAN_HAS_REDZONE(cache));
 
+	BUG_ON(!ASAN_HAS_REDZONE(cache));
 	redzone = ASAN_GET_REDZONE(cache, object);
 
 	spin_lock_irqsave(&ctx.quarantine_lock, flags);
@@ -92,6 +92,7 @@ static void asan_quarantine_put(struct kmem_cache *cache, void *object)
 	spin_unlock_irqrestore(&ctx.quarantine_lock, flags);
 }
 
+/* TODO: move it somewhere. */
 void noasan_cache_free(struct kmem_cache *cachep, void *objp,
 		       unsigned long caller);
 
@@ -112,7 +113,9 @@ static void asan_quarantine_flush(void)
 		ctx.quarantine_size -= chunk->cache->object_size;
 
 		spin_unlock_irqrestore(&ctx.quarantine_lock, flags);
+		local_irq_save(flags);
 		noasan_cache_free(chunk->cache, chunk->object, _THIS_IP_);
+		local_irq_restore(flags);
 		spin_lock_irqsave(&ctx.quarantine_lock, flags);
 	}
 
@@ -135,7 +138,9 @@ static void asan_quarantine_drop_cache(struct kmem_cache *cache)
 			ctx.quarantine_size -= chunk->cache->object_size;
 
 			spin_unlock_irqrestore(&ctx.quarantine_lock, flags);
-			kmem_cache_free(chunk->cache, chunk->object);
+			local_irq_save(flags);
+			noasan_cache_free(chunk->cache, chunk->object, _THIS_IP_);
+			local_irq_restore(flags);
 			spin_lock_irqsave(&ctx.quarantine_lock, flags);
 		}
 	}
