@@ -108,6 +108,17 @@ void asan_do_bo_4mb(void)
 }
 
 /* Expected to produce report. */
+void asan_do_bo_memset(void)
+{
+	char *ptr;
+
+	pr_err("Trying buffer-overflow in memset...\n");
+	ptr = kmalloc(33, GFP_KERNEL);
+	memset(ptr, 0, 40);
+	kfree(ptr);
+}
+
+/* Expected to produce report. */
 void asan_do_uaf(void)
 {
 	char *ptr;

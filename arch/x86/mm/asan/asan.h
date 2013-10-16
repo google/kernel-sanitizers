@@ -28,6 +28,7 @@ struct chunk {
 	struct list_head list;
 };
 
+/* XXX: rename to redzone? */
 struct asan_redzone {
 	unsigned long alloc_stack[ASAN_STACK_TRACE_FRAMES];
 	unsigned long free_stack[ASAN_STACK_TRACE_FRAMES];
