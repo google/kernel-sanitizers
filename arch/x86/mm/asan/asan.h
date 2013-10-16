@@ -4,8 +4,8 @@
 #include <linux/slab.h>
 #include <linux/types.h>
 
-#define ASAN_COLORED_OUTPUT_ENABLE 1
-#define ASAN_TESTS_ENABLE 1
+#define ASAN_COLORED_OUTPUT_ENABLE 0
+#define ASAN_TESTS_ENABLE 0
 
 #define ASAN_SHADOW_OFFSET 0x36400600UL
 #define ASAN_SHADOW_SCALE 3UL
