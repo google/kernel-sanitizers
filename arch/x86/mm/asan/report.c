@@ -45,25 +45,26 @@ static struct kmem_cache *virt_to_cache(const void *obj)
 	return page->slab_cache;
 }
 
-static void print_saved_stack_trace(unsigned long *stack, unsigned int entries)
+static void print_compressed_stack_trace(unsigned int *stack,
+					 unsigned int entries)
 {
 	unsigned int i;
-	void *frame;
+	unsigned long frame;
 
 	for (i = 0; i < entries; i++) {
-		if (stack[i] == ULONG_MAX || stack[i] == 0)
+		if (stack[i] == UINT_MAX || stack[i] == 0)
 			break;
-		frame = (void *)stack[i];
-		pr_err(" [<%p>] %pS\n", frame, frame);
+		frame = (ULONG_MAX - UINT_MAX) | stack[i];
+		pr_err(" [<%p>] %pS\n", (void *)frame, (void *)frame);
 	}
 }
 
 static void print_current_stack_trace(unsigned long strip_addr)
 {
-	unsigned long stack[ASAN_MAX_STACK_TRACE_FRAMES];
-	unsigned int entries = asan_save_stack_trace(&stack[0],
+	unsigned int stack[ASAN_MAX_STACK_TRACE_FRAMES];
+	unsigned int entries = asan_compress_and_save_stack_trace(&stack[0],
 		ASAN_MAX_STACK_TRACE_FRAMES, strip_addr);
-	print_saved_stack_trace(&stack[0], entries);
+	print_compressed_stack_trace(&stack[0], entries);
 }
 
 static void print_error_description(struct error_info *info)
@@ -147,8 +148,8 @@ static void print_address_description(struct error_info *info)
 
 	unsigned long object_addr = 0;
 	size_t object_size = 0;
-	unsigned long *alloc_stack = NULL;
-	unsigned long *free_stack = NULL;
+	unsigned int *alloc_stack = NULL;
+	unsigned int *free_stack = NULL;
 
 	struct kmem_cache *cache = virt_to_cache((void *)info->poisoned_addr);
 
@@ -228,14 +229,16 @@ static void print_address_description(struct error_info *info)
 	if (free_stack != NULL) {
 		pr_err("%sFreed by thread T%d:%s\n", COLOR_MAGENTA,
 		       redzone->free_thread_id, COLOR_NORMAL);
-		print_saved_stack_trace(free_stack, ASAN_STACK_TRACE_FRAMES);
+		print_compressed_stack_trace(free_stack,
+			ASAN_STACK_TRACE_FRAMES);
 		pr_err("\n");
 	}
 
 	if (alloc_stack != NULL) {
 		pr_err("%sAllocated by thread T%d:%s\n", COLOR_MAGENTA,
 		       redzone->alloc_thread_id, COLOR_NORMAL);
-		print_saved_stack_trace(alloc_stack, ASAN_STACK_TRACE_FRAMES);
+		print_compressed_stack_trace(alloc_stack,
+			ASAN_STACK_TRACE_FRAMES);
 		pr_err("\n");
 	}
 

@@ -29,8 +29,8 @@ struct chunk {
 };
 
 struct redzone {
-	unsigned long alloc_stack[ASAN_STACK_TRACE_FRAMES];
-	unsigned long free_stack[ASAN_STACK_TRACE_FRAMES];
+	unsigned int alloc_stack[ASAN_STACK_TRACE_FRAMES];
+	unsigned int free_stack[ASAN_STACK_TRACE_FRAMES];
 
 	int alloc_thread_id;
 	int free_thread_id;
@@ -56,9 +56,9 @@ extern spinlock_t asan_error_counter_lock;
 void noasan_cache_free(struct kmem_cache *cachep, void *objp,
 		       unsigned long caller);
 
-unsigned int asan_save_stack_trace(unsigned long *stack,
-				   unsigned int max_entries,
-				   unsigned long strip_addr);
+unsigned int asan_compress_and_save_stack_trace(unsigned int *stack,
+						unsigned int max_entries,
+						unsigned long strip_addr);
 
 unsigned long asan_mem_to_shadow(unsigned long addr);
 unsigned long asan_shadow_to_mem(unsigned long shadow_addr);

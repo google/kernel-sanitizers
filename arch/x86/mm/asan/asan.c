@@ -47,13 +47,13 @@ static int current_thread_id(void)
 	return current_thread_info()->task->pid;
 }
 
-unsigned int asan_save_stack_trace(unsigned long *output,
-				   unsigned int max_entries,
-				   unsigned long strip_addr)
+unsigned int asan_compress_and_save_stack_trace(unsigned int *output,
+						unsigned int max_entries,
+						unsigned long strip_addr)
 {
 	unsigned long stack[ASAN_MAX_STACK_TRACE_FRAMES];
 	unsigned int entries;
-	unsigned int beg = 0, end;
+	unsigned int beg = 0, end, i;
 
 	struct stack_trace trace_info = {
 		.nr_entries = 0,
@@ -68,7 +68,8 @@ unsigned int asan_save_stack_trace(unsigned long *output,
 		beg++;
 	end = (entries - beg <= max_entries) ? entries : beg + max_entries;
 
-	memcpy(output, stack + beg, (end - beg) * sizeof(unsigned long));
+	for (i = 0; i < end - beg; i++)
+		output[i] = stack[beg + i] & UINT_MAX;
 	return end - beg;
 }
 
@@ -393,7 +394,7 @@ void asan_slab_alloc(struct kmem_cache *cache, void *object)
 	unsigned long size = cache->object_size;
 	unsigned long rounded_down_size = round_down(size, ASAN_SHADOW_GRAIN);
 	struct redzone *redzone;
-	unsigned long *alloc_stack;
+	unsigned int *alloc_stack;
 	u8 *shadow;
 	unsigned long strip_addr;
 
@@ -411,7 +412,8 @@ void asan_slab_alloc(struct kmem_cache *cache, void *object)
 	/* Strip asan_slab_alloc and kmem_cache_alloc frames. */
 	alloc_stack = redzone->alloc_stack;
 	strip_addr = (unsigned long)__builtin_return_address(1);
-	asan_save_stack_trace(alloc_stack, ASAN_STACK_TRACE_FRAMES, strip_addr);
+	asan_compress_and_save_stack_trace(alloc_stack,
+		ASAN_STACK_TRACE_FRAMES, strip_addr);
 
 	redzone->alloc_thread_id = current_thread_id();
 	redzone->free_thread_id = -1;
@@ -427,7 +429,7 @@ void asan_slab_free(struct kmem_cache *cache, void *object)
 	unsigned long size = cache->object_size;
 	unsigned long rounded_up_size = round_up(size, ASAN_SHADOW_GRAIN);
 	struct redzone *redzone;
-	unsigned long *free_stack;
+	unsigned int *free_stack;
 	unsigned long strip_addr;
 
 	if (cache->flags & SLAB_DESTROY_BY_RCU)
@@ -443,7 +445,8 @@ void asan_slab_free(struct kmem_cache *cache, void *object)
 	/* Strip asan_slab_free and kmem_cache_free frames. */
 	free_stack = redzone->free_stack;
 	strip_addr = (unsigned long)__builtin_return_address(1);
-	asan_save_stack_trace(free_stack, ASAN_STACK_TRACE_FRAMES, strip_addr);
+	asan_compress_and_save_stack_trace(free_stack,
+		ASAN_STACK_TRACE_FRAMES, strip_addr);
 
 	redzone->free_thread_id = current_thread_id();
 

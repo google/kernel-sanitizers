@@ -560,8 +560,8 @@ Therefore out-of-bounds to the left of the first objects may not be detected.
 Currently, the redzones have the following format:
 
 struct asan_redzone {
-        unsigned long alloc_stack[16];
-        unsigned long free_stack[16];
+        unsigned int alloc_stack[16];
+        unsigned int free_stack[16];
 
         int alloc_thread_id;
         int free_thread_id;
@@ -577,6 +577,7 @@ TODO: describe redzone format.
 TODO: 4mb cache issue.
 TODO: redzone searching.
 
+TODO: stack trace compression.
 
 3.3.2. Poisoning / unpoisoning
 ==============================
