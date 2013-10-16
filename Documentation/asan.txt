@@ -569,7 +569,6 @@ struct asan_redzone {
         struct kmem_cache *cache;
         void *object;
         struct list_head list;
-        unsigned long quarantine_flag;
 
 	unsigned long kmalloc_size;
 };
@@ -621,11 +620,11 @@ TODO: ksize and asan_ksize.
 Quarantine is implemented as a kernel linked list which acts as a FIFO queue
 with list_head stored in the object's redzone.
 
-Freeing objects from the qurantine can't be done in the kmem_cache_free right
+Freeing objects from the quarantine can't be done in the kmem_cache_free right
 after a new object was added into the queue due to some deadlock issues.
 Instead, objects are freed when a new slab is created. This should not cause
 out-of-memory, since to allocate new memory a new slab should be created
-and the qurantine will be cleaned.
+and the quarantine will be cleaned.
 
 When a cache is destroyed via kmem_cache_destroy it can still have some
 allocated objects inside, since they could be not freed yet but put into the

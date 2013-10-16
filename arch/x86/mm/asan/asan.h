@@ -43,7 +43,8 @@ struct asan_redzone {
 };
 
 #define ASAN_REDZONE_SIZE sizeof(struct asan_redzone)
-#define ASAN_QUARANTINE_SIZE (128UL << 20)
+#define ASAN_QUARANTINE_SIZE \
+	(((unsigned long)(CONFIG_ASAN_QUARANTINE_SIZE)) << 20)
 
 /* FIXME: no redzones in 4MB cache. */
 #define ASAN_HAS_REDZONE(cache) ((cache)->object_size < (4 << 20))

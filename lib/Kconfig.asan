@@ -13,4 +13,12 @@ config ASAN
 	  Enables AddressSanitizer - dynamic memory error detector,
 	  that finds out-of-bounds and use-after-free bugs.
 
+config ASAN_QUARANTINE_SIZE
+	int "AddressSanitizer: quarantine size in MB"
+	depends on ASAN
+	default 128
+	help
+	  Select the maximum total size of quarantine in MB.
+	  AddressSanitizer puts memory blocks in quarantine instead of
+	  freeing them so they are not reallocated and reused any time soon.
 endif
