@@ -74,7 +74,7 @@ unsigned int asan_save_stack_trace(unsigned long *output,
 
 static void quarantine_put(struct kmem_cache *cache, void *object)
 {
-	struct asan_redzone *redzone;
+	struct redzone *redzone;
 	unsigned long flags;
 
 	if (!ctx.enabled)
@@ -392,7 +392,7 @@ void asan_slab_alloc(struct kmem_cache *cache, void *object)
 	unsigned long addr = (unsigned long)object;
 	unsigned long size = cache->object_size;
 	unsigned long rounded_down_size = round_down(size, ASAN_SHADOW_GRAIN);
-	struct asan_redzone *redzone;
+	struct redzone *redzone;
 	unsigned long *alloc_stack;
 	u8 *shadow;
 	unsigned long strip_addr;
@@ -426,7 +426,7 @@ void asan_slab_free(struct kmem_cache *cache, void *object)
 {
 	unsigned long size = cache->object_size;
 	unsigned long rounded_up_size = round_up(size, ASAN_SHADOW_GRAIN);
-	struct asan_redzone *redzone;
+	struct redzone *redzone;
 	unsigned long *free_stack;
 	unsigned long strip_addr;
 
@@ -458,7 +458,7 @@ void asan_kmalloc(struct kmem_cache *cache, void *object, size_t size)
 		round_up(object_size, ASAN_SHADOW_GRAIN);
 	unsigned long rounded_down_kmalloc_size =
 		round_down(size, ASAN_SHADOW_GRAIN);
-	struct asan_redzone *redzone;
+	struct redzone *redzone;
 	u8 *shadow;
 
 	if (object == NULL)
@@ -488,7 +488,7 @@ void asan_krealloc(void *object, size_t size)
 size_t asan_ksize(const void *ptr)
 {
 	struct kmem_cache *cache;
-	const struct asan_redzone *redzone;
+	const struct redzone *redzone;
 
 	BUG_ON(!ptr);
 	if (unlikely(ptr == ZERO_SIZE_PTR))

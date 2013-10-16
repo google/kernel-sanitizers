@@ -131,7 +131,7 @@ static void print_address_description(struct error_info *info)
 	u8 *shadow = (u8 *)asan_mem_to_shadow(info->poisoned_addr);
 	u8 *shadow_left, *shadow_right;
 	unsigned long redzone_addr;
-	struct asan_redzone *redzone;
+	struct redzone *redzone;
 	bool use_after_free = (*shadow == ASAN_HEAP_FREE);
 
 	unsigned long object_addr = 0;
@@ -193,7 +193,7 @@ static void print_address_description(struct error_info *info)
 
 	/* shadow now points to the beginning of the redzone. */
 	redzone_addr = asan_shadow_to_mem((unsigned long)shadow);
-	redzone = (struct asan_redzone *)redzone_addr;
+	redzone = (struct redzone *)redzone_addr;
 
 	object_addr = (unsigned long)redzone->chunk.object;
 

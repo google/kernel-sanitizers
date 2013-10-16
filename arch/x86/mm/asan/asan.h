@@ -28,8 +28,7 @@ struct chunk {
 	struct list_head list;
 };
 
-/* XXX: rename to redzone? */
-struct asan_redzone {
+struct redzone {
 	unsigned long alloc_stack[ASAN_STACK_TRACE_FRAMES];
 	unsigned long free_stack[ASAN_STACK_TRACE_FRAMES];
 
@@ -42,7 +41,7 @@ struct asan_redzone {
 	size_t kmalloc_size;
 };
 
-#define ASAN_REDZONE_SIZE sizeof(struct asan_redzone)
+#define ASAN_REDZONE_SIZE sizeof(struct redzone)
 #define ASAN_QUARANTINE_SIZE \
 	(((unsigned long)(CONFIG_ASAN_QUARANTINE_SIZE)) << 20)
 
