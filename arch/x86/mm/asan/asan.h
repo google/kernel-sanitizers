@@ -22,12 +22,6 @@
 
 #define ASAN_MAX_STACK_TRACE_FRAMES 64
 
-struct chunk {
-	struct kmem_cache *cache;
-	void *object;
-	struct list_head list;
-};
-
 struct redzone {
 	unsigned int alloc_stack[ASAN_STACK_TRACE_FRAMES];
 	unsigned int free_stack[ASAN_STACK_TRACE_FRAMES];
@@ -35,7 +29,9 @@ struct redzone {
 	int alloc_thread_id;
 	int free_thread_id;
 
-	struct chunk chunk;
+	struct kmem_cache *cache;
+	void *object;
+	struct list_head list;
 
 	/* Size of the kmalloc or krealloc if they were used for allocation. */
 	size_t kmalloc_size;

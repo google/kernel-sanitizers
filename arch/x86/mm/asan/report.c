@@ -203,14 +203,14 @@ static void print_address_description(struct error_info *info)
 	redzone_addr = asan_shadow_to_mem((unsigned long)shadow);
 	redzone = (struct redzone *)redzone_addr;
 
-	object_addr = (unsigned long)redzone->chunk.object;
+	object_addr = (unsigned long)redzone->object;
 
 	/*
 	 * XXX: Checking for NULL is a temporary workaround for
 	 * false positives in slab allocator in debug build.
 	 */
-	if (redzone->chunk.cache != NULL)
-		object_size = redzone->chunk.cache->object_size;
+	if (redzone->cache != NULL)
+		object_size = redzone->cache->object_size;
 
 	alloc_stack = redzone->alloc_stack;
 	if (use_after_free)
