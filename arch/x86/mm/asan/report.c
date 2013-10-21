@@ -63,7 +63,7 @@ static void print_current_stack_trace(unsigned long strip_addr)
 	print_compressed_stack_trace(&stack[0], entries);
 }
 
-static void print_error_description(struct error_info *info)
+static void print_error_description(struct access_info *info)
 {
 	u8 *shadow = (u8 *)asan_mem_to_shadow(info->poisoned_addr);
 	const char *bug_type = "unknown-crash";
@@ -134,7 +134,7 @@ static void print_memory_block_description(unsigned long addr,
 	       object_addr, object_addr + object_size, COLOR_NORMAL);
 }
 
-static void print_address_description(struct error_info *info)
+static void print_address_description(struct access_info *info)
 {
 	u8 *shadow = (u8 *)asan_mem_to_shadow(info->poisoned_addr);
 	u8 *shadow_left, *shadow_right;
@@ -357,7 +357,7 @@ static void print_shadow_legend(void)
 	       COLOR_WHITE, COLOR_NORMAL, COLOR_WHITE, COLOR_NORMAL);
 }
 
-void asan_report_error(struct error_info *info)
+void asan_report_error(struct access_info *info)
 {
 	unsigned long flags;
 
@@ -375,7 +375,7 @@ void asan_report_error(struct error_info *info)
 	pr_err("==================================================================\n");
 }
 
-void asan_report_user_access(struct error_info *info)
+void asan_report_user_access(struct access_info *info)
 {
 	unsigned long flags;
 

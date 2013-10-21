@@ -263,7 +263,7 @@ static unsigned long memory_is_poisoned(unsigned long addr, size_t size)
 static void check_memory_region(unsigned long addr, size_t size, bool write)
 {
 	unsigned long poisoned_addr;
-	struct error_info info;
+	struct access_info info;
 
 	if (!ctx.enabled)
 		return;
@@ -298,7 +298,7 @@ static void check_memory_word(unsigned long addr, size_t size, bool write)
 	u8 *shadow_addr;
 	s8 shadow_value;
 	u8 last_accessed_byte;
-	struct error_info info;
+	struct access_info info;
 
 	if (!ctx.enabled)
 		return;

@@ -58,7 +58,7 @@ unsigned int asan_compress_and_save_stack_trace(unsigned int *stack,
 unsigned long asan_mem_to_shadow(unsigned long addr);
 unsigned long asan_shadow_to_mem(unsigned long shadow_addr);
 
-struct error_info {
+struct access_info {
 	/* XXX: unsigned long access_addr? */
 	unsigned long poisoned_addr;
 	size_t access_size;
@@ -67,7 +67,7 @@ struct error_info {
 	unsigned long strip_addr;
 };
 
-void asan_report_error(struct error_info *info);
-void asan_report_user_access(struct error_info *info);
+void asan_report_error(struct access_info *info);
+void asan_report_user_access(struct access_info *info);
 
 #endif
