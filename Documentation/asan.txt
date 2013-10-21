@@ -31,7 +31,7 @@ XXX: tell about kmemcheck?
 1. Reports
 ==========
 
-A typical report will look something like this:
+A typical UAF report looks like this:
 
 =========================================================================
 AddressSanitizer: heap-use-after-free on address ffff8800230ef384
@@ -184,7 +184,7 @@ Legend:
  x=1..7 - x allocated bytes + (8-x) redzone bytes
 =========================================================================
 
-Let's take a closer look to different parts of the report.
+Let's take a closer look at different parts of the report.
 
 The header tells us what kind of bug happend and where:
 
@@ -332,9 +332,6 @@ the 8 bytes are partially addressable. These 8 bytes are indicated by 'N'.
 In the report above the arrows point to the letter 'f', which means that the
 accessed address is marked as freed.
 
-TODO: figure out the bug.
-TODO: explain the bug.
-
 
 2. Technical description
 ========================
@@ -420,8 +417,6 @@ address with k.
 2 if (k != 0 && ((Addr & 7) + AccessSize > k))
 3         ReportAndCrash(Addr);
 
-TODO: different SHADOW_SCALE.
-
 2.3. Run-time library
 =====================
 
@@ -433,11 +428,8 @@ The kmem_cache_alloc (kmalloc) and kmem_cache_free (kfree) functions are
 replaced with a specialized implementation. The kmem_cache_alloc function
 allocates extra memory, the redzone, around the returned region. The redzones
 are marked as unaddressable, or poisoned. The larger the redzone, the larger
-the overflows or underflows that will be detected.
-
-The redzone is used to store some internal data (such as the allocation size,
-thread ID, etc.). This internal data can not be corrupted by an out-of-bounds
-write, because such writes are detected immediately prior to the actual store.
+the overflows or underflows that will be detected. The redzone is used to
+store some internal data (such as the allocation size, thread ID, etc.).
 
 The kmem_cache_free function poisons the entire memory region and puts it into
 quarantine, such that this region will not be allocated by kmem_cache_alloc any
@@ -529,8 +521,6 @@ TODO: user-memory-access.
 
 3.3. Run-time library
 =====================
-
-XXX: need to explain what are: cache, slab, object?
 
 3.3.1. Redzones
 ===============

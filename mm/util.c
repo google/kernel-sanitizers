@@ -124,8 +124,7 @@ static __always_inline void *__do_krealloc(const void *p, size_t new_size,
 
 	ret = kmalloc_track_caller(new_size, flags);
 	if (ret && p)
-		/* Call (memcpy) to suppress ASAN false positive. */
-		(memcpy)(ret, p, ks);
+		memcpy(ret, p, ks);
 
 	return ret;
 }
@@ -197,8 +196,7 @@ void kzfree(const void *p)
 	if (unlikely(ZERO_OR_NULL_PTR(mem)))
 		return;
 	ks = ksize(mem);
-	/* Call (memset) to suppress ASAN false positive. */
-	(memset)(mem, 0, ks);
+	memset(mem, 0, ks);
 	kfree(mem);
 }
 EXPORT_SYMBOL(kzfree);

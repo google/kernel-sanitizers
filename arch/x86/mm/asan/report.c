@@ -19,22 +19,18 @@
 #define MAX_FUNCTION_NAME_SIZE (128)
 
 #if ASAN_COLORED_OUTPUT_ENABLE
-	#define COLOR_NORMAL  "\x1B[0m"
-	#define COLOR_RED     "\x1B[1;31m"
-	#define COLOR_GREEN   "\x1B[1;32m"
-	#define COLOR_YELLOW  "\x1B[1;33m"
-	#define COLOR_BLUE    "\x1B[1;34m"
-	#define COLOR_MAGENTA "\x1B[1;35m"
-	#define COLOR_WHITE   "\x1B[1;37m"
+	#define COLOR(x) (x)
 #else
-	#define COLOR_NORMAL  ""
-	#define COLOR_RED     ""
-	#define COLOR_GREEN   ""
-	#define COLOR_YELLOW  ""
-	#define COLOR_BLUE    ""
-	#define COLOR_MAGENTA ""
-	#define COLOR_WHITE   ""
+	#define COLOR(x) ""
 #endif
+
+#define COLOR_NORMAL  COLOR("\x1B[0m")
+#define COLOR_RED     COLOR("\x1B[1;31m")
+#define COLOR_GREEN   COLOR("\x1B[1;32m")
+#define COLOR_YELLOW  COLOR("\x1B[1;33m")
+#define COLOR_BLUE    COLOR("\x1B[1;34m")
+#define COLOR_MAGENTA COLOR("\x1B[1;35m")
+#define COLOR_WHITE   COLOR("\x1B[1;37m")
 
 int asan_error_counter; /* = 0 */
 DEFINE_SPINLOCK(asan_error_counter_lock);

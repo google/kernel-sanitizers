@@ -9,7 +9,11 @@
 
 static int asan_stats_show(struct seq_file *m, void *v)
 {
-	seq_printf(m, "Errors: %d\n", asan_error_counter);
+	unsigned long flags;
+
+	spin_lock_irqsave(&asan_error_counter_lock, flags);
+	seq_printf(m, "errors: %d\n", asan_error_counter);
+	spin_unlock_irqrestore(&asan_error_counter_lock, flags);
 	return 0;
 }
 

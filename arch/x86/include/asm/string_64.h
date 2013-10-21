@@ -1,8 +1,6 @@
 #ifndef _ASM_X86_STRING_64_H
 #define _ASM_X86_STRING_64_H
 
-#include <linux/asan.h>
-
 #ifdef __KERNEL__
 
 /* Written 2002 by Andi Kleen */
