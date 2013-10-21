@@ -29,9 +29,8 @@ struct redzone {
 	int alloc_thread_id;
 	int free_thread_id;
 
-	struct kmem_cache *cache;
 	void *object;
-	struct list_head list;
+	struct list_head quarantine_list;
 
 	/* Size of the kmalloc or krealloc if they were used for allocation. */
 	size_t kmalloc_size;

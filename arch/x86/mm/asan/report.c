@@ -35,9 +35,9 @@
 int asan_error_counter; /* = 0 */
 DEFINE_SPINLOCK(asan_error_counter_lock);
 
-static struct kmem_cache *virt_to_cache(const void *obj)
+static struct kmem_cache *virt_to_cache(const void *virt)
 {
-	struct page *page = virt_to_head_page(obj);
+	struct page *page = virt_to_head_page(virt);
 	return page->slab_cache;
 }
 
@@ -204,13 +204,7 @@ static void print_address_description(struct error_info *info)
 	redzone = (struct redzone *)redzone_addr;
 
 	object_addr = (unsigned long)redzone->object;
-
-	/*
-	 * XXX: Checking for NULL is a temporary workaround for
-	 * false positives in slab allocator in debug build.
-	 */
-	if (redzone->cache != NULL)
-		object_size = redzone->cache->object_size;
+	object_size = virt_to_cache(redzone->object)->object_size;
 
 	alloc_stack = redzone->alloc_stack;
 	if (use_after_free)

@@ -85,7 +85,7 @@ static void quarantine_put(struct kmem_cache *cache, void *object)
 	redzone = ASAN_GET_REDZONE(cache, object);
 
 	spin_lock_irqsave(&ctx.quarantine_lock, flags);
-	list_add(&redzone->list, &ctx.quarantine_list);
+	list_add(&redzone->quarantine_list, &ctx.quarantine_list);
 	ctx.quarantine_size += cache->object_size;
 	spin_unlock_irqrestore(&ctx.quarantine_lock, flags);
 }
@@ -93,6 +93,8 @@ static void quarantine_put(struct kmem_cache *cache, void *object)
 static void quarantine_flush(void)
 {
 	struct redzone *redzone;
+	struct kmem_cache *cache;
+	void *object;
 	unsigned long flags;
 
 	spin_lock_irqsave(&ctx.quarantine_lock, flags);
@@ -101,14 +103,17 @@ static void quarantine_flush(void)
 		BUG_ON(list_empty(&ctx.quarantine_list));
 
 		redzone = list_entry(ctx.quarantine_list.prev,
-				     struct redzone, list);
+				     struct redzone, quarantine_list);
 		list_del(ctx.quarantine_list.prev);
 
-		ctx.quarantine_size -= redzone->cache->object_size;
+		object = redzone->object;
+		cache = virt_to_cache(object);
+
+		ctx.quarantine_size -= cache->object_size;
 
 		spin_unlock_irqrestore(&ctx.quarantine_lock, flags);
 		local_irq_save(flags);
-		noasan_cache_free(redzone->cache, redzone->object, _THIS_IP_);
+		noasan_cache_free(cache, object, _THIS_IP_);
 		local_irq_restore(flags);
 		spin_lock_irqsave(&ctx.quarantine_lock, flags);
 	}
@@ -125,16 +130,15 @@ static void quarantine_drop_cache(struct kmem_cache *cache)
 	spin_lock_irqsave(&ctx.quarantine_lock, flags);
 
 	list_for_each_safe(pos, n, &ctx.quarantine_list) {
-		redzone = list_entry(pos, struct redzone, list);
-		if (redzone->cache == cache) {
+		redzone = list_entry(pos, struct redzone, quarantine_list);
+		if (virt_to_cache(redzone) == cache) {
 			list_del(pos);
 
-			ctx.quarantine_size -= redzone->cache->object_size;
+			ctx.quarantine_size -= cache->object_size;
 
 			spin_unlock_irqrestore(&ctx.quarantine_lock, flags);
 			local_irq_save(flags);
-			noasan_cache_free(redzone->cache, redzone->object,
-					  _THIS_IP_);
+			noasan_cache_free(cache, redzone->object, _THIS_IP_);
 			local_irq_restore(flags);
 			spin_lock_irqsave(&ctx.quarantine_lock, flags);
 		}
@@ -418,7 +422,6 @@ void asan_slab_alloc(struct kmem_cache *cache, void *object)
 	redzone->alloc_thread_id = current_thread_id();
 	redzone->free_thread_id = -1;
 
-	redzone->cache = cache;
 	redzone->object = object;
 
 	redzone->kmalloc_size = 0;
