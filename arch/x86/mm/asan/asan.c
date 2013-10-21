@@ -86,7 +86,7 @@ static void quarantine_put(struct kmem_cache *cache, void *object)
 
 	spin_lock_irqsave(&ctx.quarantine_lock, flags);
 	list_add(&redzone->quarantine_list, &ctx.quarantine_list);
-	ctx.quarantine_size += cache->object_size;
+	ctx.quarantine_size += cache->size;
 	spin_unlock_irqrestore(&ctx.quarantine_lock, flags);
 }
 
@@ -109,7 +109,7 @@ static void quarantine_flush(void)
 		object = redzone->object;
 		cache = virt_to_cache(object);
 
-		ctx.quarantine_size -= cache->object_size;
+		ctx.quarantine_size -= cache->size;
 
 		spin_unlock_irqrestore(&ctx.quarantine_lock, flags);
 		local_irq_save(flags);
@@ -134,7 +134,7 @@ static void quarantine_drop_cache(struct kmem_cache *cache)
 		if (virt_to_cache(redzone) == cache) {
 			list_del(pos);
 
-			ctx.quarantine_size -= cache->object_size;
+			ctx.quarantine_size -= cache->size;
 
 			spin_unlock_irqrestore(&ctx.quarantine_lock, flags);
 			local_irq_save(flags);
