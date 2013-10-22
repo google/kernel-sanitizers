@@ -22,4 +22,13 @@ config ASAN_QUARANTINE_SIZE
 	  Select the maximum total size of quarantine in MB.
 	  AddressSanitizer puts memory blocks in quarantine instead of
 	  freeing them so they are not reallocated and reused any time soon.
+
+config ASAN_SHADOW_OFFSET
+	hex "AddressSanitizer: offset of shadow memory"
+	depends on ASAN
+	default 0x36400600
+	help
+	  Select the offset in bytes of the shadow memory region
+	  within the physical memory.
+
 endif
