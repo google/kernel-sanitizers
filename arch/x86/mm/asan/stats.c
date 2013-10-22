@@ -7,6 +7,7 @@
 #include <linux/seq_file.h>
 #include <linux/utsname.h>
 
+/* The format for all stats is "some_stat: N". */
 static int asan_stats_show(struct seq_file *m, void *v)
 {
 	unsigned long flags;

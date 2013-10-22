@@ -480,7 +480,9 @@ to ensure that the shadow memory is initialized.
 The shadow memory region itself is also poisoned and accesses to this region
 are detected and reported as wild-memory-access'es.
 
-TODO: sizeof(unsigned long) == (1 << SHADOW_SCALE).
+Since the current implementation relies on the fact that sizeof(unsigned long)
+equals (1 << SHADOW_SCALE), changing SHADOW_SCALE would probably require some
+other fixes.
 
 
 3.2. Instrumentation
