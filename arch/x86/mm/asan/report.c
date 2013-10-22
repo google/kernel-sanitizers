@@ -32,9 +32,6 @@
 #define COLOR_MAGENTA COLOR("\x1B[1;35m")
 #define COLOR_WHITE   COLOR("\x1B[1;37m")
 
-int asan_error_counter; /* = 0 */
-DEFINE_SPINLOCK(asan_error_counter_lock);
-
 static struct kmem_cache *virt_to_cache(const void *virt)
 {
 	struct page *page = virt_to_head_page(virt);

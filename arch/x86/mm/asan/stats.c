@@ -7,6 +7,9 @@
 #include <linux/seq_file.h>
 #include <linux/utsname.h>
 
+int asan_error_counter; /* = 0 */
+DEFINE_SPINLOCK(asan_error_counter_lock);
+
 /* The format for all stats is "some_stat: N". */
 static int asan_stats_show(struct seq_file *m, void *v)
 {
