@@ -82,7 +82,7 @@ static void quarantine_put(struct kmem_cache *cache, void *object)
 		return;
 
 	BUG_ON(!ASAN_HAS_REDZONE(cache));
-	redzone = ASAN_GET_REDZONE(cache, object);
+	redzone = ASAN_OBJECT_TO_REDZONE(cache, object);
 
 	spin_lock_irqsave(&ctx.quarantine_lock, flags);
 	list_add(&redzone->quarantine_list, &ctx.quarantine_list);
@@ -106,8 +106,8 @@ static void quarantine_flush(void)
 				     struct redzone, quarantine_list);
 		list_del(ctx.quarantine_list.prev);
 
-		object = redzone->object;
-		cache = virt_to_cache(object);
+		cache = virt_to_cache(redzone);
+		object = ASAN_REDZONE_TO_OBJECT(cache, redzone);
 
 		ctx.quarantine_size -= cache->size;
 
@@ -123,9 +123,10 @@ static void quarantine_flush(void)
 
 static void quarantine_drop_cache(struct kmem_cache *cache)
 {
-	unsigned long flags;
 	struct list_head *pos, *n;
 	struct redzone *redzone;
+	void *object;
+	unsigned long flags;
 
 	spin_lock_irqsave(&ctx.quarantine_lock, flags);
 
@@ -134,11 +135,13 @@ static void quarantine_drop_cache(struct kmem_cache *cache)
 		if (virt_to_cache(redzone) == cache) {
 			list_del(pos);
 
+			object = ASAN_REDZONE_TO_OBJECT(cache, redzone);
+
 			ctx.quarantine_size -= cache->size;
 
 			spin_unlock_irqrestore(&ctx.quarantine_lock, flags);
 			local_irq_save(flags);
-			noasan_cache_free(cache, redzone->object, _THIS_IP_);
+			noasan_cache_free(cache, object, _THIS_IP_);
 			local_irq_restore(flags);
 			spin_lock_irqsave(&ctx.quarantine_lock, flags);
 		}
@@ -411,7 +414,7 @@ void asan_slab_alloc(struct kmem_cache *cache, void *object)
 	if (!ASAN_HAS_REDZONE(cache))
 		return;
 
-	redzone = ASAN_GET_REDZONE(cache, object);
+	redzone = ASAN_OBJECT_TO_REDZONE(cache, object);
 
 	/* Strip asan_slab_alloc and kmem_cache_alloc frames. */
 	alloc_stack = redzone->alloc_stack;
@@ -421,8 +424,6 @@ void asan_slab_alloc(struct kmem_cache *cache, void *object)
 
 	redzone->alloc_thread_id = current_thread_id();
 	redzone->free_thread_id = -1;
-
-	redzone->object = object;
 
 	redzone->kmalloc_size = 0;
 }
@@ -443,7 +444,7 @@ void asan_slab_free(struct kmem_cache *cache, void *object)
 	if (!ASAN_HAS_REDZONE(cache))
 		return;
 
-	redzone = ASAN_GET_REDZONE(cache, object);
+	redzone = ASAN_OBJECT_TO_REDZONE(cache, object);
 
 	/* Strip asan_slab_free and kmem_cache_free frames. */
 	free_stack = redzone->free_stack;
@@ -481,7 +482,7 @@ void asan_kmalloc(struct kmem_cache *cache, void *object, size_t size)
 
 	if (!ASAN_HAS_REDZONE(cache))
 		return;
-	redzone = ASAN_GET_REDZONE(cache, object);
+	redzone = ASAN_OBJECT_TO_REDZONE(cache, object);
 	redzone->kmalloc_size = size;
 }
 EXPORT_SYMBOL(asan_kmalloc);
@@ -502,7 +503,7 @@ size_t asan_ksize(const void *ptr)
 
 	cache = virt_to_cache(ptr);
 	if (ASAN_HAS_REDZONE(cache)) {
-		redzone = ASAN_GET_REDZONE(cache, ptr);
+		redzone = ASAN_OBJECT_TO_REDZONE(cache, ptr);
 		if (redzone->kmalloc_size) {
 			BUG_ON(redzone->kmalloc_size > cache->object_size);
 			return redzone->kmalloc_size;

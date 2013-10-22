@@ -138,16 +138,17 @@ static void print_address_description(struct access_info *info)
 {
 	u8 *shadow = (u8 *)asan_mem_to_shadow(info->poisoned_addr);
 	u8 *shadow_left, *shadow_right;
-	unsigned long redzone_addr;
-	struct redzone *redzone;
 	bool use_after_free = (*shadow == ASAN_HEAP_FREE);
 
-	unsigned long object_addr = 0;
-	size_t object_size = 0;
+	unsigned long redzone_addr;
+	struct redzone *redzone;
 	unsigned int *alloc_stack = NULL;
 	unsigned int *free_stack = NULL;
 
 	struct kmem_cache *cache = virt_to_cache((void *)info->poisoned_addr);
+	void *object;
+	unsigned long object_addr;
+	size_t object_size;
 
 	if (!ASAN_HAS_REDZONE(cache) || *shadow == ASAN_SHADOW_GAP) {
 		pr_err("%s%s of size %lu by thread T%d:%s\n",
@@ -203,8 +204,9 @@ static void print_address_description(struct access_info *info)
 	redzone_addr = asan_shadow_to_mem((unsigned long)shadow);
 	redzone = (struct redzone *)redzone_addr;
 
-	object_addr = (unsigned long)redzone->object;
-	object_size = virt_to_cache(redzone->object)->object_size;
+	object = ASAN_REDZONE_TO_OBJECT(cache, redzone);
+	object_addr = (unsigned long)object;
+	object_size = cache->object_size;
 
 	alloc_stack = redzone->alloc_stack;
 	if (use_after_free)

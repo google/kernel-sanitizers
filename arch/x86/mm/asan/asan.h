@@ -29,7 +29,6 @@ struct redzone {
 	int alloc_thread_id;
 	int free_thread_id;
 
-	void *object;
 	struct list_head quarantine_list;
 
 	/* Size of the kmalloc or krealloc if they were used for allocation. */
@@ -42,8 +41,10 @@ struct redzone {
 
 /* FIXME: no redzones in 4MB cache. */
 #define ASAN_HAS_REDZONE(cache) ((cache)->object_size < (4 << 20))
-#define ASAN_GET_REDZONE(cache, object) \
-	((object) + round_up((cache)->object_size, ASAN_SHADOW_GRAIN))
+#define ASAN_OBJECT_TO_REDZONE(cache, object) \
+	((void *)(object) + round_up((cache)->object_size, ASAN_SHADOW_GRAIN))
+#define ASAN_REDZONE_TO_OBJECT(cache, redzone) \
+	((void *)(redzone) - round_up((cache)->object_size, ASAN_SHADOW_GRAIN))
 
 extern int asan_error_counter;
 extern spinlock_t asan_error_counter_lock;
