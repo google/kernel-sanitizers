@@ -456,15 +456,19 @@ Therefore ASAN can't detect bad accesses to the virtual memory blocks
 allocated with vmalloc.
 
 During the kernel boot part of the physical memory is reserved for the shadow
-memory. Currently the offset of the shadow memory within the physical memory
-is SHADOW_OFFSET = 0x36400600. The size of the shadow memory region depends on
-the amount of the available physical memory and is calculated as
-(max_pfn << PAGE_SHIFT) >> SHADOW_SCALE, where max_pfn is the number of physical
-memory pages we have available, PAGE_SHIFT is the number of bits to shift one
-bit left to get the PAGE_SIZE value and SHADOW_SCALE is currently 3.
+memory. The shadow memory size depends on the amount of the available physical
+memory and is calculated as (max_pfn << PAGE_SHIFT) >> SHADOW_SCALE, where
+max_pfn is the number of physical memory pages we have available, PAGE_SHIFT
+is the number of bits to shift one bit left to get the PAGE_SIZE value and
+SHADOW_SCALE is currently 3.
 
-TODO: offset => 1GB (or 512mb?) restriction.
-TODO: a different offset may be needed.
+The offset of the shadow memory within the physical memory can be configured
+as CONFIG_ASAN_SHADOW_OFFSET, the default value is 0x36400600. To use the
+default value at least 1 GB of physical memory is required.
+
+Since the current implementation relies on the fact that sizeof(unsigned long)
+equals (1 << SHADOW_SCALE), changing SHADOW_SCALE would probably require some
+other fixes.
 
 Since physical memory can contain garbage values on boot, the shadow memory
 may contain garbage values as well. Therefore the shadow memory should be
@@ -477,10 +481,6 @@ to ensure that the shadow memory is initialized.
 The shadow memory region itself is also poisoned and accesses to this region
 are detected and reported as wild-memory-access'es.
 
-Since the current implementation relies on the fact that sizeof(unsigned long)
-equals (1 << SHADOW_SCALE), changing SHADOW_SCALE would probably require some
-other fixes.
-
 
 3.2. Instrumentation
 ====================
@@ -491,8 +491,8 @@ which checks addressability of the accessed address range.
 
 There is a separate function for each access size and type:
 __kasan_read1, _kasan_write1, ..., __kasan_read16, __kasan_write16.
-
-TODO: 16-byte access functions check 2 shadow bytes.
+Each of these functions except for the last two checks only one shadow bytes,
+the last two check two shadow bytes.
 
 The shadow mapping described above actually looks like:
 0 ShadowAddr = ((Addr - PAGE_OFFSET) >> 3) + PAGE_OFSSET + SHADOW_OFFSET;
@@ -513,7 +513,7 @@ The address checking is performed as follows:
 
 Since some of the libc functions (memset, memcpy and memmove in x86_64) are
 written in assembly, the compiler can't instrument memory accesses inside them.
-To solve this issue we replace these functions with our own written in C
+To solve this issue we replace these functions with our own instrumented
 functions using #define macros (see arch/x86/include/asm/string_64.h).
 
 Some of the kernel code may define and use it's own memset, mempy or memmove
@@ -554,7 +554,7 @@ Therefore out-of-bounds to the left of the first objects may not be detected.
 
 Currently, the redzones have the following format:
 
-struct asan_redzone {
+struct redzone {
         unsigned int alloc_stack[16];
         unsigned int free_stack[16];
 
@@ -574,8 +574,24 @@ the allocation and deallocation happened, quarantine_list is the list_head for
 the quarantine queue, kmalloc_size is used when an object was allocated via
 kmalloc (or krealloc) and it holds the actual size that was passed to kmalloc.
 
-TODO: 4mb cache issue.
-TODO: redzone searching.
+The size of each redzone equals to the size of the redzone struct.
+
+When a bad access happend we should print approprate meta information stored
+in the redzone, and for that we need to find the redzone itself, as when a
+bad access happens we know only the accessed address. We assume that the
+accessed address is not far away from the memory block it was meant to be in.
+
+The accessed memory address can be in one of the following states:
+1) in a redzone, 2) in a kmalloc redzone, 3) freed or 4) in the Bad region.
+In the 4th case we don't want to search for the redzone as there is none.
+In the 3rd case the redzone should be to the right of the freed memory block.
+In the 2nd case the redzone should be to the right of the kmalloc redzone.
+In the 1st case we may have underflowed or overflowed the memory region.
+We calculate the distance to the object to the left and the distance to
+the object to the right and depending on which one is closer we select the
+according redzone.
+
+Currently the objects in the caches larger than 4 mb don't have redzones.
 
 3.3.2. Poisoning / unpoisoning
 ==============================
@@ -591,28 +607,32 @@ A shadow byte can be equal to a few values besides 0, 1, ..., 7:
 | ASAN_SHADOW_GAP           | 0xfe  | in the Bad region                |
 |----------------------------------------------------------------------|
 
-When a new slab is created the pages allocated for this slab are poisoned. This
-includes the slab descriptor (in case it is on-slab), the objects in the slab,
-the redzones around the objects. Each time a slab is destroyed the allocated
-pages are unpoisoned.
+When a new slab is created the pages allocated for this slab are poisoned as
+ASAN_HEAP_REDZONE. This includes the slab descriptor (in case it is on-slab),
+the objects in the slab, the redzones around the objects. Each time a slab is
+destroyed the allocated pages are unpoisoned.
 
 When a new object is allocated from a cache the object is unpoisoned and
-allocation metainfo is stored in the redzone. Each time a user tries to free
-an object from a cache the object is poisoned and deallocation metainfo is
-stored in the redzone. The object is not actually freed at this stage.
+allocation metainfo is stored in the redzone (the redzone is still poisoned).
+Each time a user tries to free an object from a cache the object is poisoned
+as ASAN_HEAP_FREE and deallocation metainfo is stored in the redzone. The
+object is not actually freed at this stage.
 
 The objects allocated via kmalloc (or krealloc) are poisoned more accurately.
 When a user asks for an N bytes object and the kmalloc cache of size K is used
 for the allocation the object is allocated and unpoisoned as described above.
-Then the last K - N bytes are poisoned again.
+Then the last K - N bytes are poisoned as ASAN_HEAP_KMALLOC_REDZONE again.
+When a user tries to free an object allocated via kmalloc the whole slab object
+as poisoned including the last K - N bytes.
 
 Since kmalloc may internally round up allocations and return more memory than
 requested and the caller may use this additional memory, accesses to this
 memory will be reported by ASAN, even if they are not actual bugs.
-
 To supress some of the false positives caused by kmalloc we replace ksize
 implementation with our own, which returns the size that was requested by
 kmalloc (or krealloc) in case the memory was allocated via these functions.
+
+The whole Bad region is poisoned as ASAN_SHADOW_GAP.
 
 
 3.3.3. Quarantine
@@ -630,8 +650,6 @@ and the quarantine will be cleaned.
 When a cache is destroyed via kmem_cache_destroy it can still have some
 allocated objects inside, since they could be not freed yet but put into the
 quarantine. Therefore, each time some cache is destroyed the quarantine is
-checked for objects from this cache and the found objects are freed.
+checked for any objects from this cache and the found objects are freed.
 
 Qurantine size can be configured by CONFIG_ASAN_QUARANTINE_SIZE.
-
-TODO: kmem_cache_free modifications (noasan_cache_free, etc.).
