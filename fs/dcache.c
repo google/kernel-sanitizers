@@ -1377,27 +1377,21 @@ static void check_and_drop(void *_data)
  * d_invalidate - detach submounts, prune dcache, and drop
  * @dentry: dentry to invalidate (aka detach, prune and drop)
  *
- * Try to invalidate the dentry if it turns out to be
- * possible. If there are reasons not to delete it
- * return -EBUSY. On success return 0.
- *
  * no dcache lock.
  *
  * The final d_drop is done as an atomic operation relative to
  * rename_lock ensuring there are no races with d_set_mounted.  This
  * ensures there are no unhashed dentries on the path to a mountpoint.
  */
-int d_invalidate(struct dentry *dentry)
+void d_invalidate(struct dentry *dentry)
 {
-	int ret = 0;
-
 	/*
 	 * If it's already been dropped, return OK.
 	 */
 	spin_lock(&dentry->d_lock);
 	if (d_unhashed(dentry)) {
 		spin_unlock(&dentry->d_lock);
-		return 0;
+		return;
 	}
 	spin_unlock(&dentry->d_lock);
 
@@ -1432,7 +1426,7 @@ int d_invalidate(struct dentry *dentry)
 	}
 
 out:
-	return ret;
+	return;
 }
 EXPORT_SYMBOL(d_invalidate);
 
