@@ -985,6 +985,12 @@ static int nvt_probe(struct pnp_dev *pdev, const struct pnp_device_id *dev_id)
 		goto exit_free_dev_rdev;
 
 	ret = -ENODEV;
+	/* activate pnp device */
+	if (pnp_activate_dev(pdev) < 0) {
+		dev_err(&pdev->dev, "Could not activate PNP device!\n");
+		goto exit_free_dev_rdev;
+	}
+
 	/* validate pnp resources */
 	if (!pnp_port_valid(pdev, 0) ||
 	    pnp_port_len(pdev, 0) < CIR_IOREG_LENGTH) {
@@ -1038,7 +1044,7 @@ static int nvt_probe(struct pnp_dev *pdev, const struct pnp_device_id *dev_id)
 	/* Set up the rc device */
 	rdev->priv = nvt;
 	rdev->driver_type = RC_DRIVER_IR_RAW;
-	rdev->allowed_protos = RC_BIT_ALL;
+	rc_set_allowed_protocols(rdev, RC_BIT_ALL);
 	rdev->open = nvt_open;
 	rdev->close = nvt_close;
 	rdev->tx_ir = nvt_tx_ir;
