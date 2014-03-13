@@ -5013,8 +5013,27 @@ defines possible values for de-emphasis. Here they are:</entry>
     <section id="rf-tuner-controls">
       <title>RF Tuner Control Reference</title>
 
-      <para>The RF Tuner (RF_TUNER) class includes controls for common features
-of devices having RF tuner.</para>
+      <para>
+The RF Tuner (RF_TUNER) class includes controls for common features of devices
+having RF tuner.
+      </para>
+      <para>
+In this context, RF tuner is radio receiver circuit between antenna and
+demodulator. It receives radio frequency (RF) from the antenna and converts that
+received signal to lower intermediate frequency (IF) or baseband frequency (BB).
+Tuners that could do baseband output are often called Zero-IF tuners. Older
+tuners were typically simple PLL tuners inside a metal box, whilst newer ones
+are highly integrated chips without a metal box "silicon tuners". These controls
+are mostly applicable for new feature rich silicon tuners, just because older
+tuners does not have much adjustable features.
+      </para>
+      <para>
+For more information about RF tuners see
+<ulink url="http://en.wikipedia.org/wiki/Tuner_%28radio%29">Tuner (radio)</ulink>
+and
+<ulink url="http://en.wikipedia.org/wiki/RF_front_end">RF front end</ulink>
+from Wikipedia.
+      </para>
 
       <table pgwide="1" frame="none" id="rf-tuner-control-id">
         <title>RF_TUNER Control IDs</title>
@@ -5043,6 +5062,25 @@ of devices having RF tuner.</para>
             </row><row><entry spanname="descr">The RF_TUNER class
 descriptor. Calling &VIDIOC-QUERYCTRL; for this control will return a
 description of this control class.</entry>
+            </row>
+            <row>
+              <entry spanname="id"><constant>V4L2_CID_RF_TUNER_BANDWIDTH_AUTO</constant>&nbsp;</entry>
+              <entry>boolean</entry>
+            </row>
+            <row>
+              <entry spanname="descr">Enables/disables tuner radio channel
+bandwidth configuration. In automatic mode bandwidth configuration is performed
+by the driver.</entry>
+            </row>
+            <row>
+              <entry spanname="id"><constant>V4L2_CID_RF_TUNER_BANDWIDTH</constant>&nbsp;</entry>
+              <entry>integer</entry>
+            </row>
+            <row>
+              <entry spanname="descr">Filter(s) on tuner signal path are used to
+filter signal according to receiving party needs. Driver configures filters to
+fulfill desired bandwidth requirement. Used when V4L2_CID_RF_TUNER_BANDWIDTH_AUTO is not
+set. Unit is in Hz. The range and step are driver-specific.</entry>
             </row>
             <row>
               <entry spanname="id"><constant>V4L2_CID_RF_TUNER_LNA_GAIN_AUTO</constant>&nbsp;</entry>
@@ -5095,6 +5133,15 @@ signal path. It is located on output of RF tuner. It controls signal level of
 intermediate frequency output or baseband output. Used when
 <constant>V4L2_CID_RF_TUNER_IF_GAIN_AUTO</constant> is not set. The range and step are
 driver-specific.</entry>
+            </row>
+            <row>
+              <entry spanname="id"><constant>V4L2_CID_RF_TUNER_PLL_LOCK</constant>&nbsp;</entry>
+              <entry>boolean</entry>
+            </row>
+            <row>
+              <entry spanname="descr">Is synthesizer PLL locked? RF tuner is
+receiving given frequency when that control is set. This is a read-only control.
+</entry>
             </row>
           </tbody>
         </tgroup>
