@@ -29,6 +29,7 @@
 #include "cypress_dpm.h"
 #include "btc_dpm.h"
 #include "atom.h"
+#include <linux/seq_file.h>
 
 #define MC_CG_ARB_FREQ_F0           0x0a
 #define MC_CG_ARB_FREQ_F1           0x0b
@@ -49,6 +50,7 @@ struct rv7xx_ps *rv770_get_ps(struct radeon_ps *rps);
 struct rv7xx_power_info *rv770_get_pi(struct radeon_device *rdev);
 struct evergreen_power_info *evergreen_get_pi(struct radeon_device *rdev);
 
+extern int ni_mc_load_microcode(struct radeon_device *rdev);
 
 //********* BARTS **************//
 static const u32 barts_cgcg_cgls_default[] =
@@ -1168,6 +1170,23 @@ static const struct radeon_blacklist_clocks btc_blacklist_clocks[] =
         { 25000, 30000, RADEON_SCLK_UP }
 };
 
+void btc_get_max_clock_from_voltage_dependency_table(struct radeon_clock_voltage_dependency_table *table,
+						     u32 *max_clock)
+{
+	u32 i, clock = 0;
+
+	if ((table == NULL) || (table->count == 0)) {
+		*max_clock = clock;
+		return;
+	}
+
+	for (i = 0; i < table->count; i++) {
+		if (clock < table->entries[i].clk)
+			clock = table->entries[i].clk;
+	}
+	*max_clock = clock;
+}
+
 void btc_apply_voltage_dependency_rules(struct radeon_clock_voltage_dependency_table *table,
 					u32 clock, u16 max_voltage, u16 *voltage)
 {
@@ -1913,7 +1932,7 @@ static int btc_set_mc_special_registers(struct radeon_device *rdev,
 			}
 			j++;
 
-			if (j > SMC_EVERGREEN_MC_REGISTER_ARRAY_SIZE)
+			if (j >= SMC_EVERGREEN_MC_REGISTER_ARRAY_SIZE)
 				return -EINVAL;
 
 			tmp = RREG32(MC_PMG_CMD_MRS);
@@ -1928,7 +1947,7 @@ static int btc_set_mc_special_registers(struct radeon_device *rdev,
 			}
 			j++;
 
-			if (j > SMC_EVERGREEN_MC_REGISTER_ARRAY_SIZE)
+			if (j >= SMC_EVERGREEN_MC_REGISTER_ARRAY_SIZE)
 				return -EINVAL;
 			break;
 		case MC_SEQ_RESERVE_M >> 2:
@@ -1942,7 +1961,7 @@ static int btc_set_mc_special_registers(struct radeon_device *rdev,
 			}
 			j++;
 
-			if (j > SMC_EVERGREEN_MC_REGISTER_ARRAY_SIZE)
+			if (j >= SMC_EVERGREEN_MC_REGISTER_ARRAY_SIZE)
 				return -EINVAL;
 			break;
 		default:
@@ -2080,6 +2099,7 @@ static void btc_apply_state_adjust_rules(struct radeon_device *rdev,
 	bool disable_mclk_switching;
 	u32 mclk, sclk;
 	u16 vddc, vddci;
+	u32 max_sclk_vddc, max_mclk_vddci, max_mclk_vddc;
 
 	if ((rdev->pm.dpm.new_active_crtc_count > 1) ||
 	    btc_dpm_vblank_too_short(rdev))
@@ -2119,6 +2139,39 @@ static void btc_apply_state_adjust_rules(struct radeon_device *rdev,
 			ps->low.vddc = max_limits->vddc;
 		if (ps->low.vddci > max_limits->vddci)
 			ps->low.vddci = max_limits->vddci;
+	}
+
+	/* limit clocks to max supported clocks based on voltage dependency tables */
+	btc_get_max_clock_from_voltage_dependency_table(&rdev->pm.dpm.dyn_state.vddc_dependency_on_sclk,
+							&max_sclk_vddc);
+	btc_get_max_clock_from_voltage_dependency_table(&rdev->pm.dpm.dyn_state.vddci_dependency_on_mclk,
+							&max_mclk_vddci);
+	btc_get_max_clock_from_voltage_dependency_table(&rdev->pm.dpm.dyn_state.vddc_dependency_on_mclk,
+							&max_mclk_vddc);
+
+	if (max_sclk_vddc) {
+		if (ps->low.sclk > max_sclk_vddc)
+			ps->low.sclk = max_sclk_vddc;
+		if (ps->medium.sclk > max_sclk_vddc)
+			ps->medium.sclk = max_sclk_vddc;
+		if (ps->high.sclk > max_sclk_vddc)
+			ps->high.sclk = max_sclk_vddc;
+	}
+	if (max_mclk_vddci) {
+		if (ps->low.mclk > max_mclk_vddci)
+			ps->low.mclk = max_mclk_vddci;
+		if (ps->medium.mclk > max_mclk_vddci)
+			ps->medium.mclk = max_mclk_vddci;
+		if (ps->high.mclk > max_mclk_vddci)
+			ps->high.mclk = max_mclk_vddci;
+	}
+	if (max_mclk_vddc) {
+		if (ps->low.mclk > max_mclk_vddc)
+			ps->low.mclk = max_mclk_vddc;
+		if (ps->medium.mclk > max_mclk_vddc)
+			ps->medium.mclk = max_mclk_vddc;
+		if (ps->high.mclk > max_mclk_vddc)
+			ps->high.mclk = max_mclk_vddc;
 	}
 
 	/* XXX validate the min clocks required for display */
@@ -2459,21 +2512,6 @@ int btc_dpm_enable(struct radeon_device *rdev)
 	if (eg_pi->ls_clock_gating)
 		btc_ls_clock_gating_enable(rdev, true);
 
-	if (rdev->irq.installed &&
-	    r600_is_internal_thermal_sensor(rdev->pm.int_thermal_type)) {
-		PPSMC_Result result;
-
-		ret = rv770_set_thermal_temperature_range(rdev, R600_TEMP_RANGE_MIN, R600_TEMP_RANGE_MAX);
-		if (ret)
-			return ret;
-		rdev->irq.dpm_thermal = true;
-		radeon_irq_set(rdev);
-		result = rv770_send_msg_to_smc(rdev, PPSMC_MSG_EnableThermalInterrupt);
-
-		if (result != PPSMC_Result_OK)
-			DRM_DEBUG_KMS("Could not enable thermal interrupts.\n");
-	}
-
 	rv770_enable_auto_throttle_source(rdev, RADEON_DPM_AUTO_THROTTLE_SRC_THERMAL, true);
 
 	btc_init_stutter_mode(rdev);
@@ -2525,7 +2563,11 @@ void btc_dpm_disable(struct radeon_device *rdev)
 void btc_dpm_setup_asic(struct radeon_device *rdev)
 {
 	struct evergreen_power_info *eg_pi = evergreen_get_pi(rdev);
+	int r;
 
+	r = ni_mc_load_microcode(rdev);
+	if (r)
+		DRM_ERROR("Failed to load MC firmware!\n");
 	rv770_get_memory_type(rdev);
 	rv740_read_clock_registers(rdev);
 	btc_read_arb_registers(rdev);
@@ -2713,6 +2755,37 @@ void btc_dpm_fini(struct radeon_device *rdev)
 	kfree(rdev->pm.dpm.priv);
 	kfree(rdev->pm.dpm.dyn_state.vddc_dependency_on_dispclk.entries);
 	r600_free_extended_power_table(rdev);
+}
+
+void btc_dpm_debugfs_print_current_performance_level(struct radeon_device *rdev,
+						     struct seq_file *m)
+{
+	struct evergreen_power_info *eg_pi = evergreen_get_pi(rdev);
+	struct radeon_ps *rps = &eg_pi->current_rps;
+	struct rv7xx_ps *ps = rv770_get_ps(rps);
+	struct rv7xx_pl *pl;
+	u32 current_index =
+		(RREG32(TARGET_AND_CURRENT_PROFILE_INDEX) & CURRENT_PROFILE_INDEX_MASK) >>
+		CURRENT_PROFILE_INDEX_SHIFT;
+
+	if (current_index > 2) {
+		seq_printf(m, "invalid dpm profile %d\n", current_index);
+	} else {
+		if (current_index == 0)
+			pl = &ps->low;
+		else if (current_index == 1)
+			pl = &ps->medium;
+		else /* current_index == 2 */
+			pl = &ps->high;
+		seq_printf(m, "uvd    vclk: %d dclk: %d\n", rps->vclk, rps->dclk);
+		if (rdev->family >= CHIP_CEDAR) {
+			seq_printf(m, "power level %d    sclk: %u mclk: %u vddc: %u vddci: %u\n",
+				   current_index, pl->sclk, pl->mclk, pl->vddc, pl->vddci);
+		} else {
+			seq_printf(m, "power level %d    sclk: %u mclk: %u vddc: %u\n",
+				   current_index, pl->sclk, pl->mclk, pl->vddc);
+		}
+	}
 }
 
 u32 btc_dpm_get_sclk(struct radeon_device *rdev, bool low)

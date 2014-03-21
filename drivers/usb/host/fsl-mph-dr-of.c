@@ -24,7 +24,7 @@ struct fsl_usb2_dev_data {
 	enum fsl_usb2_operating_modes op_mode;	/* operating mode */
 };
 
-struct fsl_usb2_dev_data dr_mode_data[] = {
+static struct fsl_usb2_dev_data dr_mode_data[] = {
 	{
 		.dr_mode = "host",
 		.drivers = { "fsl-ehci", NULL, NULL, },
@@ -42,7 +42,7 @@ struct fsl_usb2_dev_data dr_mode_data[] = {
 	},
 };
 
-struct fsl_usb2_dev_data *get_dr_mode_data(struct device_node *np)
+static struct fsl_usb2_dev_data *get_dr_mode_data(struct device_node *np)
 {
 	const unsigned char *prop;
 	int i;
@@ -75,7 +75,7 @@ static enum fsl_usb2_phy_modes determine_usb_phy(const char *phy_type)
 	return FSL_USB2_PHY_NONE;
 }
 
-struct platform_device *fsl_usb2_device_register(
+static struct platform_device *fsl_usb2_device_register(
 					struct platform_device *ofdev,
 					struct fsl_usb2_platform_data *pdata,
 					const char *name, int id)
@@ -261,19 +261,8 @@ int fsl_usb2_mpc5121_init(struct platform_device *pdev)
 	struct fsl_usb2_platform_data *pdata = dev_get_platdata(&pdev->dev);
 	struct clk *clk;
 	int err;
-	char clk_name[10];
-	int base, clk_num;
 
-	base = pdev->resource->start & 0xf000;
-	if (base == 0x3000)
-		clk_num = 1;
-	else if (base == 0x4000)
-		clk_num = 2;
-	else
-		return -ENODEV;
-
-	snprintf(clk_name, sizeof(clk_name), "usb%d_clk", clk_num);
-	clk = devm_clk_get(pdev->dev.parent, clk_name);
+	clk = devm_clk_get(pdev->dev.parent, "ipg");
 	if (IS_ERR(clk)) {
 		dev_err(&pdev->dev, "failed to get clk\n");
 		return PTR_ERR(clk);

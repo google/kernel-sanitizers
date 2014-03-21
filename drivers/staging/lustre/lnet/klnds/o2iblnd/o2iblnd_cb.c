@@ -529,8 +529,7 @@ kiblnd_kvaddr_to_page (unsigned long vaddr)
 {
 	struct page *page;
 
-	if (vaddr >= VMALLOC_START &&
-	    vaddr < VMALLOC_END) {
+	if (is_vmalloc_addr((void *)vaddr)) {
 		page = vmalloc_to_page ((void *)vaddr);
 		LASSERT (page != NULL);
 		return page;
@@ -1802,7 +1801,7 @@ kiblnd_recv (lnet_ni_t *ni, void *private, lnet_msg_t *lntmsg, int delayed,
 int
 kiblnd_thread_start(int (*fn)(void *arg), void *arg, char *name)
 {
-	struct task_struct *task = kthread_run(fn, arg, name);
+	struct task_struct *task = kthread_run(fn, arg, "%s", name);
 
 	if (IS_ERR(task))
 		return PTR_ERR(task);

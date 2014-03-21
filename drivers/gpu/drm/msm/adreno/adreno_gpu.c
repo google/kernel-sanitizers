@@ -17,6 +17,7 @@
 
 #include "adreno_gpu.h"
 #include "msm_gem.h"
+#include "msm_mmu.h"
 
 struct adreno_info {
 	struct adreno_rev rev;
@@ -44,7 +45,7 @@ static const struct adreno_info gpulist[] = {
 		.pfpfw = "a300_pfp.fw",
 		.gmem  = SZ_512K,
 	}, {
-		.rev   = ADRENO_REV(3, 3, 0, 0),
+		.rev   = ADRENO_REV(3, 3, 0, ANY_ID),
 		.revn  = 330,
 		.name  = "A330",
 		.pm4fw = "a330_pm4.fw",
@@ -52,6 +53,11 @@ static const struct adreno_info gpulist[] = {
 		.gmem  = SZ_1M,
 	},
 };
+
+MODULE_FIRMWARE("a300_pm4.fw");
+MODULE_FIRMWARE("a300_pfp.fw");
+MODULE_FIRMWARE("a330_pm4.fw");
+MODULE_FIRMWARE("a330_pfp.fw");
 
 #define RB_SIZE    SZ_32K
 #define RB_BLKSIZE 16
@@ -65,7 +71,7 @@ int adreno_get_param(struct msm_gpu *gpu, uint32_t param, uint64_t *value)
 		*value = adreno_gpu->info->revn;
 		return 0;
 	case MSM_PARAM_GMEM_SIZE:
-		*value = adreno_gpu->info->gmem;
+		*value = adreno_gpu->gmem;
 		return 0;
 	default:
 		DBG("%s: invalid param: %u", gpu->name, param);
@@ -86,7 +92,7 @@ int adreno_hw_init(struct msm_gpu *gpu)
 	gpu_write(gpu, REG_AXXX_CP_RB_CNTL,
 			/* size is log2(quad-words): */
 			AXXX_CP_RB_CNTL_BUFSZ(ilog2(gpu->rb->size / 8)) |
-			AXXX_CP_RB_CNTL_BLKSZ(RB_BLKSIZE));
+			AXXX_CP_RB_CNTL_BLKSZ(ilog2(RB_BLKSIZE / 8)));
 
 	/* Setup ringbuffer address: */
 	gpu_write(gpu, REG_AXXX_CP_RB_BASE, gpu->rb_iova);
@@ -124,6 +130,8 @@ void adreno_recover(struct msm_gpu *gpu)
 
 	/* reset completed fence seqno, just discard anything pending: */
 	adreno_gpu->memptrs->fence = gpu->submitted_fence;
+	adreno_gpu->memptrs->rptr  = 0;
+	adreno_gpu->memptrs->wptr  = 0;
 
 	gpu->funcs->pm_resume(gpu);
 	ret = gpu->funcs->hw_init(gpu);
@@ -229,7 +237,7 @@ void adreno_idle(struct msm_gpu *gpu)
 			return;
 	} while(time_before(jiffies, t));
 
-	DRM_ERROR("timeout waiting for %s to drain ringbuffer!\n", gpu->name);
+	DRM_ERROR("%s: timeout waiting to drain ringbuffer!\n", gpu->name);
 
 	/* TODO maybe we need to reset GPU here to recover from hang? */
 }
@@ -256,11 +264,17 @@ void adreno_wait_ring(struct msm_gpu *gpu, uint32_t ndwords)
 {
 	struct adreno_gpu *adreno_gpu = to_adreno_gpu(gpu);
 	uint32_t freedwords;
+	unsigned long t = jiffies + ADRENO_IDLE_TIMEOUT;
 	do {
 		uint32_t size = gpu->rb->size / 4;
 		uint32_t wptr = get_wptr(gpu->rb);
 		uint32_t rptr = adreno_gpu->memptrs->rptr;
 		freedwords = (rptr + (size - 1) - wptr) % size;
+
+		if (time_after(jiffies, t)) {
+			DRM_ERROR("%s: timeout waiting for ringbuffer space\n", gpu->name);
+			break;
+		}
 	} while(freedwords < ndwords);
 }
 
@@ -278,6 +292,7 @@ int adreno_gpu_init(struct drm_device *drm, struct platform_device *pdev,
 		struct adreno_gpu *gpu, const struct adreno_gpu_funcs *funcs,
 		struct adreno_rev rev)
 {
+	struct msm_mmu *mmu;
 	int i, ret;
 
 	/* identify gpu: */
@@ -303,6 +318,7 @@ int adreno_gpu_init(struct drm_device *drm, struct platform_device *pdev,
 			rev.core, rev.major, rev.minor, rev.patchid);
 
 	gpu->funcs = funcs;
+	gpu->gmem = gpu->info->gmem;
 	gpu->rev = rev;
 
 	ret = request_firmware(&gpu->pm4, gpu->info->pm4fw, drm->dev);
@@ -325,10 +341,13 @@ int adreno_gpu_init(struct drm_device *drm, struct platform_device *pdev,
 	if (ret)
 		return ret;
 
-	ret = msm_iommu_attach(drm, gpu->base.iommu,
-			iommu_ports, ARRAY_SIZE(iommu_ports));
-	if (ret)
-		return ret;
+	mmu = gpu->base.mmu;
+	if (mmu) {
+		ret = mmu->funcs->attach(mmu, iommu_ports,
+				ARRAY_SIZE(iommu_ports));
+		if (ret)
+			return ret;
+	}
 
 	gpu->memptrs_bo = msm_gem_new(drm, sizeof(*gpu->memptrs),
 			MSM_BO_UNCACHED);

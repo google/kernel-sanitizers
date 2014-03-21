@@ -588,12 +588,6 @@ static const struct mvebu_mbus_soc_data mv78xx0_mbus_data = {
 	.show_cpu_target     = mvebu_sdram_debug_show_orion,
 };
 
-/*
- * The driver doesn't yet have a DT binding because the details of
- * this DT binding still need to be sorted out. However, as a
- * preparation, we already use of_device_id to match a SoC description
- * string against the SoC specific details of this driver.
- */
 static const struct of_device_id of_mvebu_mbus_ids[] = {
 	{ .compatible = "marvell,armada370-mbus",
 	  .data = &armada_370_xp_mbus_data, },
@@ -700,6 +694,7 @@ static int __init mvebu_mbus_common_init(struct mvebu_mbus_state *mbus,
 					 phys_addr_t sdramwins_phys_base,
 					 size_t sdramwins_size)
 {
+	struct device_node *np;
 	int win;
 
 	mbus->mbuswins_base = ioremap(mbuswins_phys_base, mbuswins_size);
@@ -712,8 +707,11 @@ static int __init mvebu_mbus_common_init(struct mvebu_mbus_state *mbus,
 		return -ENOMEM;
 	}
 
-	if (of_find_compatible_node(NULL, NULL, "marvell,coherency-fabric"))
+	np = of_find_compatible_node(NULL, NULL, "marvell,coherency-fabric");
+	if (np) {
 		mbus->hw_io_coherency = 1;
+		of_node_put(np);
+	}
 
 	for (win = 0; win < mbus->soc->num_wins; win++)
 		mvebu_mbus_disable_window(mbus, win);
@@ -730,11 +728,11 @@ int __init mvebu_mbus_init(const char *soc, phys_addr_t mbuswins_phys_base,
 {
 	const struct of_device_id *of_id;
 
-	for (of_id = of_mvebu_mbus_ids; of_id->compatible; of_id++)
+	for (of_id = of_mvebu_mbus_ids; of_id->compatible[0]; of_id++)
 		if (!strcmp(of_id->compatible, soc))
 			break;
 
-	if (!of_id->compatible) {
+	if (!of_id->compatible[0]) {
 		pr_err("could not find a matching SoC family\n");
 		return -ENODEV;
 	}
@@ -861,11 +859,13 @@ static void __init mvebu_mbus_get_pcie_resources(struct device_node *np,
 	int ret;
 
 	/*
-	 * These are optional, so we clear them and they'll
-	 * be zero if they are missing from the DT.
+	 * These are optional, so we make sure that resource_size(x) will
+	 * return 0.
 	 */
 	memset(mem, 0, sizeof(struct resource));
+	mem->end = -1;
 	memset(io, 0, sizeof(struct resource));
+	io->end = -1;
 
 	ret = of_property_read_u32_array(np, "pcie-mem-aperture", reg, ARRAY_SIZE(reg));
 	if (!ret) {
