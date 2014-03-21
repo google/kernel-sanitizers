@@ -1708,7 +1708,7 @@ static void kmem_freepages(struct kmem_cache *cachep, struct page *page)
 	const unsigned long nr_freed = (1 << cachep->gfporder);
 
 	kmemcheck_free_shadow(page, cachep->gfporder);
-	asan_slab_destroy(cachep, addr);
+	asan_slab_destroy(cachep, page_address(page));
 
 	if (cachep->flags & SLAB_RECLAIM_ACCOUNT)
 		sub_zone_page_state(page_zone(page),
@@ -2720,7 +2720,7 @@ static int cache_grow(struct kmem_cache *cachep,
 
 	cache_init_objs(cachep, page);
 
-	asan_slab_create(cachep, objp);
+	asan_slab_create(cachep, page_address(page));
 
 	if (local_flags & __GFP_WAIT)
 		local_irq_disable();
