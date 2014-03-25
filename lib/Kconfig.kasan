@@ -1,0 +1,13 @@
+config HAVE_ARCH_KASAN
+	bool
+
+if HAVE_ARCH_KASAN
+
+config KASAN
+	bool "AddressSanitizer: dynamic memory error detector"
+	default n
+	help
+	  Enables AddressSanitizer - dynamic memory error detector,
+	  that finds out-of-bounds and use-after-free bugs.
+
+endif
