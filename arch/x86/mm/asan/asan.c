@@ -436,13 +436,17 @@ void asan_slab_free(struct kmem_cache *cache, void *object)
 	unsigned int *free_stack;
 	unsigned long strip_addr;
 
-	if (cache->flags & SLAB_DESTROY_BY_RCU)
+	if (cache->flags & SLAB_DESTROY_BY_RCU) {
+		noasan_cache_free(cache, object, _THIS_IP_);
 		return;
+	}
 
 	poison_shadow(object, rounded_up_size, ASAN_HEAP_FREE);
 
-	if (!ASAN_HAS_REDZONE(cache))
+	if (!ASAN_HAS_REDZONE(cache)) {
+		noasan_cache_free(cache, object, _THIS_IP_);
 		return;
+	}
 
 	redzone = ASAN_OBJECT_TO_REDZONE(cache, object);
 
