@@ -407,6 +407,17 @@ export KBUILD_AFLAGS_MODULE KBUILD_CFLAGS_MODULE KBUILD_LDFLAGS_MODULE
 export KBUILD_AFLAGS_KERNEL KBUILD_CFLAGS_KERNEL
 export KBUILD_ARFLAGS
 
+ifdef CONFIG_LTO
+# LTO gcc creates a lot of files in TMPDIR, and with /tmp as tmpfs
+# it's easy to drive the machine OOM. Use the object directory
+# instead.
+ifndef TMPDIR
+TMPDIR ?= $(objtree)
+export TMPDIR
+$(info setting TMPDIR=$(objtree) for LTO build)
+endif
+endif
+
 # When compiling out-of-tree modules, put MODVERDIR in the module
 # tree rather than in the kernel tree. The kernel tree might
 # even be read-only.
