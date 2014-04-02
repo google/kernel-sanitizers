@@ -2,6 +2,8 @@
 # Makefile for the linux memory manager.
 #
 
+KASAN_SANITIZE_page_alloc.o := n
+
 mmu-y			:= nommu.o
 mmu-$(CONFIG_MMU)	:= fremap.o gup.o highmem.o madvise.o memory.o mincore.o \
 			   mlock.o mmap.o mprotect.o mremap.o msync.o rmap.o \
