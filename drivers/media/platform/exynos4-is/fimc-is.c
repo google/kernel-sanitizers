@@ -24,13 +24,13 @@
 #include <linux/i2c.h>
 #include <linux/of_irq.h>
 #include <linux/of_address.h>
+#include <linux/of_graph.h>
 #include <linux/of_platform.h>
 #include <linux/platform_device.h>
 #include <linux/pm_runtime.h>
 #include <linux/slab.h>
 #include <linux/types.h>
 #include <linux/videodev2.h>
-#include <media/v4l2-of.h>
 #include <media/videobuf2-dma-contig.h>
 
 #include "media-dev.h"
@@ -175,11 +175,11 @@ static int fimc_is_parse_sensor_config(struct fimc_is *is, unsigned int index,
 		return -EINVAL;
 	}
 
-	node = v4l2_of_get_next_endpoint(node, NULL);
+	node = of_graph_get_next_endpoint(node, NULL);
 	if (!node)
 		return -ENXIO;
 
-	node = v4l2_of_get_remote_port(node);
+	node = of_graph_get_remote_port(node);
 	if (!node)
 		return -ENXIO;
 

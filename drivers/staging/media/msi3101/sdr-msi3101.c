@@ -132,7 +132,7 @@ struct msi3101_state {
 	unsigned int vb_full; /* vb is full and packets dropped */
 
 	struct urb *urbs[MAX_ISO_BUFS];
-	int (*convert_stream) (struct msi3101_state *s, u8 *dst, u8 *src,
+	int (*convert_stream)(struct msi3101_state *s, u8 *dst, u8 *src,
 			unsigned int src_len);
 
 	/* Controls */
