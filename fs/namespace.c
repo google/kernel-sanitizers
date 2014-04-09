@@ -953,8 +953,25 @@ static void delayed_free(struct rcu_head *head)
 	kmem_cache_free(mnt_cache, mnt);
 }
 
+static void cleanup_mnt(struct mount *mnt)
+{
+	fsnotify_vfsmount_delete(&mnt->mnt);
+	dput(mnt->mnt.mnt_root);
+	deactivate_super(mnt->mnt.mnt_sb);
+	mnt_free_id(mnt);
+	complete(mnt->mnt_undone);
+	call_rcu(&mnt->mnt_rcu, delayed_free);
+}
+
+static void cleanup_mnt_work(struct work_struct *work)
+{
+	cleanup_mnt(container_of(work, struct mount, mnt_cleanup_work));
+}
+
 static void mntput_no_expire(struct mount *mnt)
 {
+	struct completion undone;
+
 	rcu_read_lock();
 	mnt_add_count(mnt, -1);
 	if (likely(mnt->mnt_ns)) { /* shouldn't be the last one */
@@ -997,11 +1014,16 @@ static void mntput_no_expire(struct mount *mnt)
 	 * so mnt_get_writers() below is safe.
 	 */
 	WARN_ON(mnt_get_writers(mnt));
-	fsnotify_vfsmount_delete(&mnt->mnt);
-	dput(mnt->mnt.mnt_root);
-	deactivate_super(mnt->mnt.mnt_sb);
-	mnt_free_id(mnt);
-	call_rcu(&mnt->mnt_rcu, delayed_free);
+	/* The stack may be deep here, cleanup the mount on a work
+	 * queue where the stack is guaranteed to be shallow.
+	 */
+	init_completion(&undone);
+	mnt->mnt_undone = &undone;
+
+	INIT_WORK(&mnt->mnt_cleanup_work, cleanup_mnt_work);
+	schedule_work(&mnt->mnt_cleanup_work);
+
+	wait_for_completion(&undone);
 }
 
 void mntput(struct vfsmount *mnt)

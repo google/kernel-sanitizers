@@ -59,6 +59,8 @@ struct mount {
 	int mnt_expiry_mark;		/* true if marked for expiry */
 	int mnt_pinned;
 	struct path mnt_ex_mountpoint;
+	struct work_struct mnt_cleanup_work;
+	struct completion *mnt_undone;
 };
 
 #define MNT_NS_INTERNAL ERR_PTR(-EINVAL) /* distinct from any mnt_namespace */
