@@ -955,7 +955,6 @@ static void delayed_free(struct rcu_head *head)
 
 static void mntput_no_expire(struct mount *mnt)
 {
-put_again:
 	rcu_read_lock();
 	mnt_add_count(mnt, -1);
 	if (likely(mnt->mnt_ns)) { /* shouldn't be the last one */
@@ -969,12 +968,12 @@ put_again:
 		return;
 	}
 	if (unlikely(mnt->mnt_pinned)) {
-		mnt_add_count(mnt, mnt->mnt_pinned + 1);
+		mnt_add_count(mnt, mnt->mnt_pinned);
 		mnt->mnt_pinned = 0;
 		rcu_read_unlock();
 		unlock_mount_hash();
 		acct_auto_close_mnt(&mnt->mnt);
-		goto put_again;
+		return;
 	}
 	if (unlikely(mnt->mnt.mnt_flags & MNT_DOOMED)) {
 		rcu_read_unlock();
