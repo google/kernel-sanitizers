@@ -985,11 +985,14 @@ static void mntput_no_expire(struct mount *mnt)
 		return;
 	}
 	if (unlikely(mnt->mnt_pinned)) {
+		init_completion(&undone);
+		mnt->mnt_undone = &undone;
 		mnt_add_count(mnt, mnt->mnt_pinned);
 		mnt->mnt_pinned = 0;
 		rcu_read_unlock();
 		unlock_mount_hash();
 		acct_auto_close_mnt(&mnt->mnt);
+		wait_for_completion(&undone);
 		return;
 	}
 	if (unlikely(mnt->mnt.mnt_flags & MNT_DOOMED)) {
@@ -1018,7 +1021,10 @@ static void mntput_no_expire(struct mount *mnt)
 	 * queue where the stack is guaranteed to be shallow.
 	 */
 	init_completion(&undone);
-	mnt->mnt_undone = &undone;
+	if (!mnt->mnt_undone)
+		mnt->mnt_undone = &undone;
+	else
+		complete(&undone);
 
 	INIT_WORK(&mnt->mnt_cleanup_work, cleanup_mnt_work);
 	schedule_work(&mnt->mnt_cleanup_work);
