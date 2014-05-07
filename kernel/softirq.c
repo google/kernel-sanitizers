@@ -25,6 +25,7 @@
 #include <linux/smp.h>
 #include <linux/smpboot.h>
 #include <linux/tick.h>
+#include <linux/irq.h>
 
 #define CREATE_TRACE_POINTS
 #include <trace/events/irq.h>
@@ -777,4 +778,9 @@ int __init __weak arch_probe_nr_irqs(void)
 int __init __weak arch_early_irq_init(void)
 {
 	return 0;
+}
+
+unsigned int __weak arch_dynirq_lower_bound(unsigned int from)
+{
+	return from;
 }
