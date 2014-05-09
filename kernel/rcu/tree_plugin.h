@@ -2220,6 +2220,8 @@ static int rcu_nocb_kthread(void *arg)
 {
 	int c, cl;
 	bool firsttime = 1;
+	unsigned long gp_next_start = jiffies;
+	unsigned long j;
 	struct rcu_head *list;
 	struct rcu_head *next;
 	struct rcu_head **tail;
@@ -2227,6 +2229,11 @@ static int rcu_nocb_kthread(void *arg)
 
 	/* Each pass through this loop invokes one batch of callbacks */
 	for (;;) {
+		/* Avoid excessive wakeups due to short grace periods. */
+		j = jiffies;
+		if (time_before(j, gp_next_start))
+			schedule_timeout_uninterruptible(gp_next_start - j);
+
 		/* If not polling, wait for next batch of callbacks. */
 		if (!rcu_nocb_poll) {
 			trace_rcu_nocb_wake(rdp->rsp->name, rdp->cpu,
@@ -2250,6 +2257,14 @@ static int rcu_nocb_kthread(void *arg)
 		firsttime = 1;
 		trace_rcu_nocb_wake(rdp->rsp->name, rdp->cpu,
 				    TPS("WokeNonEmpty"));
+		/*
+		 * Time of next grace-period start.  The idea is that
+		 * we are willing to take a jiffies_till_next_fqs delay
+		 * if any CPUs are idle, so we should be willing to take
+		 * a similar delay when all are busy context-switching
+		 * their little brains out.
+		 */
+		gp_next_start = jiffies + read_jiffies_till_next_fqs();
 
 		/*
 		 * Extract queued callbacks, update counts, and wait

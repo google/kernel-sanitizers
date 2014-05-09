@@ -1579,6 +1579,22 @@ static void note_gp_changes(struct rcu_state *rsp, struct rcu_data *rdp)
 }
 
 /*
+ * Read from the jiffies_till_next_fqs boot/sysfs parameter, applying
+ * limits and updating as needed.
+ */
+static unsigned long read_jiffies_till_next_fqs(void)
+{
+	unsigned long j;
+
+	j = jiffies_till_next_fqs;
+	if (j > HZ)
+		j = jiffies_till_next_fqs = HZ;
+	else if (j < 1)
+		j = jiffies_till_next_fqs = 1;
+	return j;
+}
+
+/*
  * Initialize a new grace period.  Return 0 if no grace period required.
  */
 static int rcu_gp_init(struct rcu_state *rsp)
@@ -1840,14 +1856,7 @@ static int __noreturn rcu_gp_kthread(void *arg)
 						       ACCESS_ONCE(rsp->gpnum),
 						       TPS("fqswaitsig"));
 			}
-			j = jiffies_till_next_fqs;
-			if (j > HZ) {
-				j = HZ;
-				jiffies_till_next_fqs = HZ;
-			} else if (j < 1) {
-				j = 1;
-				jiffies_till_next_fqs = 1;
-			}
+			j = read_jiffies_till_next_fqs();
 		}
 
 		/* Handle grace-period end. */
