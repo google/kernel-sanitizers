@@ -234,15 +234,18 @@ struct v4l2_subdev_audio_ops {
 
 /* Indicates the @length field specifies maximum data length. */
 #define V4L2_MBUS_FRAME_DESC_FL_LEN_MAX		(1U << 0)
-/* Indicates user defined data format, i.e. non standard frame format. */
+/*
+ * Indicates that the format does not have line offsets, i.e. the
+ * receiver should use 1D DMA.
+ */
 #define V4L2_MBUS_FRAME_DESC_FL_BLOB		(1U << 1)
 
 /**
  * struct v4l2_mbus_frame_desc_entry - media bus frame description structure
  * @flags: V4L2_MBUS_FRAME_DESC_FL_* flags
  * @pixelcode: media bus pixel code, valid if FRAME_DESC_FL_BLOB is not set
- * @length: number of octets per frame, valid for compressed or unspecified
- *          formats
+ * @length: number of octets per frame, valid if V4L2_MBUS_FRAME_DESC_FL_BLOB
+ *	    is set
  */
 struct v4l2_mbus_frame_desc_entry {
 	u16 flags;
@@ -269,8 +272,11 @@ struct v4l2_mbus_frame_desc {
    g_std_output: get current standard for video OUTPUT devices. This is ignored
 	by video input devices.
 
-   g_tvnorms_output: get v4l2_std_id with all standards supported by video
-	OUTPUT device. This is ignored by video input devices.
+   g_tvnorms: get v4l2_std_id with all standards supported by the video
+	CAPTURE device. This is ignored by video output devices.
+
+   g_tvnorms_output: get v4l2_std_id with all standards supported by the video
+	OUTPUT device. This is ignored by video capture devices.
 
    s_crystal_freq: sets the frequency of the crystal used to generate the
 	clocks in Hz. An extra flags field allows device specific configuration
@@ -313,6 +319,7 @@ struct v4l2_subdev_video_ops {
 	int (*s_std_output)(struct v4l2_subdev *sd, v4l2_std_id std);
 	int (*g_std_output)(struct v4l2_subdev *sd, v4l2_std_id *std);
 	int (*querystd)(struct v4l2_subdev *sd, v4l2_std_id *std);
+	int (*g_tvnorms)(struct v4l2_subdev *sd, v4l2_std_id *std);
 	int (*g_tvnorms_output)(struct v4l2_subdev *sd, v4l2_std_id *std);
 	int (*g_input_status)(struct v4l2_subdev *sd, u32 *status);
 	int (*s_stream)(struct v4l2_subdev *sd, int enable);
@@ -584,6 +591,7 @@ struct v4l2_subdev {
 #endif
 	struct list_head list;
 	struct module *owner;
+	bool owner_v4l2_dev;
 	u32 flags;
 	struct v4l2_device *v4l2_dev;
 	const struct v4l2_subdev_ops *ops;
@@ -690,11 +698,6 @@ void v4l2_subdev_init(struct v4l2_subdev *sd,
 #define v4l2_subdev_call(sd, o, f, args...)				\
 	(!(sd) ? -ENODEV : (((sd)->ops->o && (sd)->ops->o->f) ?	\
 		(sd)->ops->o->f((sd) , ##args) : -ENOIOCTLCMD))
-
-/* Send a notification to v4l2_device. */
-#define v4l2_subdev_notify(sd, notification, arg)			   \
-	((!(sd) || !(sd)->v4l2_dev || !(sd)->v4l2_dev->notify) ? -ENODEV : \
-	 (sd)->v4l2_dev->notify((sd), (notification), (arg)))
 
 #define v4l2_subdev_has_op(sd, o, f) \
 	((sd)->ops->o && (sd)->ops->o->f)

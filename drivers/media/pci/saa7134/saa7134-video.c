@@ -824,26 +824,26 @@ static int buffer_activate(struct saa7134_dev *dev,
 	buf->vb.state = VIDEOBUF_ACTIVE;
 	buf->top_seen = 0;
 
-	set_size(dev,TASK_A,buf->vb.width,buf->vb.height,
+	set_size(dev, TASK_A, buf->vb.width, buf->vb.height,
 		 V4L2_FIELD_HAS_BOTH(buf->vb.field));
-	if (buf->fmt->yuv)
+	if (dev->fmt->yuv)
 		saa_andorb(SAA7134_DATA_PATH(TASK_A), 0x3f, 0x03);
 	else
 		saa_andorb(SAA7134_DATA_PATH(TASK_A), 0x3f, 0x01);
-	saa_writeb(SAA7134_OFMT_VIDEO_A, buf->fmt->pm);
+	saa_writeb(SAA7134_OFMT_VIDEO_A, dev->fmt->pm);
 
 	/* DMA: setup channel 0 (= Video Task A0) */
 	base  = saa7134_buffer_base(buf);
-	if (buf->fmt->planar)
+	if (dev->fmt->planar)
 		bpl = buf->vb.width;
 	else
-		bpl = (buf->vb.width * buf->fmt->depth) / 8;
+		bpl = (buf->vb.width * dev->fmt->depth) / 8;
 	control = SAA7134_RS_CONTROL_BURST_16 |
 		SAA7134_RS_CONTROL_ME |
 		(buf->pt->dma >> 12);
-	if (buf->fmt->bswap)
+	if (dev->fmt->bswap)
 		control |= SAA7134_RS_CONTROL_BSWAP;
-	if (buf->fmt->wswap)
+	if (dev->fmt->wswap)
 		control |= SAA7134_RS_CONTROL_WSWAP;
 	if (V4L2_FIELD_HAS_BOTH(buf->vb.field)) {
 		/* interlaced */
@@ -858,13 +858,13 @@ static int buffer_activate(struct saa7134_dev *dev,
 	}
 	saa_writel(SAA7134_RS_CONTROL(0),control);
 
-	if (buf->fmt->planar) {
+	if (dev->fmt->planar) {
 		/* DMA: setup channel 4+5 (= planar task A) */
-		bpl_uv   = bpl >> buf->fmt->hshift;
-		lines_uv = buf->vb.height >> buf->fmt->vshift;
+		bpl_uv   = bpl >> dev->fmt->hshift;
+		lines_uv = buf->vb.height >> dev->fmt->vshift;
 		base2    = base + bpl * buf->vb.height;
 		base3    = base2 + bpl_uv * lines_uv;
-		if (buf->fmt->uvswap)
+		if (dev->fmt->uvswap)
 			tmp = base2, base2 = base3, base3 = tmp;
 		dprintk("uv: bpl=%ld lines=%ld base2/3=%ld/%ld\n",
 			bpl_uv,lines_uv,base2,base3);
@@ -891,7 +891,7 @@ static int buffer_activate(struct saa7134_dev *dev,
 
 	/* start DMA */
 	saa7134_set_dmabits(dev);
-	mod_timer(&dev->video_q.timeout, jiffies+BUFFER_TIMEOUT);
+	mod_timer(&dev->video_q.timeout, jiffies + BUFFER_TIMEOUT);
 	return 0;
 }
 
@@ -900,7 +900,7 @@ static int buffer_prepare(struct videobuf_queue *q,
 			  enum v4l2_field field)
 {
 	struct saa7134_dev *dev = q->priv_data;
-	struct saa7134_buf *buf = container_of(vb,struct saa7134_buf,vb);
+	struct saa7134_buf *buf = container_of(vb, struct saa7134_buf, vb);
 	unsigned int size;
 	int err;
 
@@ -924,8 +924,7 @@ static int buffer_prepare(struct videobuf_queue *q,
 	if (buf->vb.width  != dev->width  ||
 	    buf->vb.height != dev->height ||
 	    buf->vb.size   != size       ||
-	    buf->vb.field  != field      ||
-	    buf->fmt       != dev->fmt) {
+	    buf->vb.field  != field) {
 		saa7134_dma_free(q,buf);
 	}
 
@@ -936,7 +935,6 @@ static int buffer_prepare(struct videobuf_queue *q,
 		buf->vb.height = dev->height;
 		buf->vb.size   = size;
 		buf->vb.field  = field;
-		buf->fmt       = dev->fmt;
 		buf->pt        = &dev->pt_cap;
 		dev->video_q.curr = NULL;
 
@@ -974,14 +972,14 @@ buffer_setup(struct videobuf_queue *q, unsigned int *count, unsigned int *size)
 static void buffer_queue(struct videobuf_queue *q, struct videobuf_buffer *vb)
 {
 	struct saa7134_dev *dev = q->priv_data;
-	struct saa7134_buf *buf = container_of(vb,struct saa7134_buf,vb);
+	struct saa7134_buf *buf = container_of(vb, struct saa7134_buf, vb);
 
 	saa7134_buffer_queue(dev, &dev->video_q, buf);
 }
 
 static void buffer_release(struct videobuf_queue *q, struct videobuf_buffer *vb)
 {
-	struct saa7134_buf *buf = container_of(vb,struct saa7134_buf,vb);
+	struct saa7134_buf *buf = container_of(vb, struct saa7134_buf, vb);
 
 	saa7134_dma_free(q,buf);
 }
@@ -1088,7 +1086,7 @@ static struct videobuf_queue *saa7134_queue(struct file *file)
 
 	switch (vdev->vfl_type) {
 	case VFL_TYPE_GRABBER:
-		q = fh->is_empress ? &dev->empress_tsq : &dev->cap;
+		q = fh->is_empress ? &dev->empress_vbq : &dev->cap;
 		break;
 	case VFL_TYPE_VBI:
 		q = &dev->vbi;
@@ -1130,11 +1128,11 @@ static int video_open(struct file *file)
 
 	if (vdev->vfl_type == VFL_TYPE_RADIO) {
 		/* switch to radio mode */
-		saa7134_tvaudio_setinput(dev,&card(dev).radio);
+		saa7134_tvaudio_setinput(dev, &card(dev).radio);
 		saa_call_all(dev, tuner, s_radio);
 	} else {
 		/* switch to video/vbi mode */
-		video_mux(dev,dev->ctl_input);
+		video_mux(dev, dev->ctl_input);
 	}
 	v4l2_fh_add(&fh->fh);
 
@@ -1243,6 +1241,7 @@ static int video_release(struct file *file)
 		videobuf_streamoff(&dev->cap);
 		res_free(dev, fh, RESOURCE_VIDEO);
 		videobuf_mmap_free(&dev->cap);
+		INIT_LIST_HEAD(&dev->cap.stream);
 	}
 	if (dev->cap.read_buf) {
 		buffer_release(&dev->cap, dev->cap.read_buf);
@@ -1254,6 +1253,7 @@ static int video_release(struct file *file)
 		videobuf_stop(&dev->vbi);
 		res_free(dev, fh, RESOURCE_VBI);
 		videobuf_mmap_free(&dev->vbi);
+		INIT_LIST_HEAD(&dev->vbi.stream);
 	}
 
 	/* ts-capture will not work in planar mode, so turn it off Hac: 04.05*/
@@ -1457,9 +1457,9 @@ static int saa7134_s_fmt_vid_cap(struct file *file, void *priv,
 	if (0 != err)
 		return err;
 
-	dev->fmt       = format_by_fourcc(f->fmt.pix.pixelformat);
-	dev->width     = f->fmt.pix.width;
-	dev->height    = f->fmt.pix.height;
+	dev->fmt = format_by_fourcc(f->fmt.pix.pixelformat);
+	dev->width = f->fmt.pix.width;
+	dev->height = f->fmt.pix.height;
 	dev->cap.field = f->fmt.pix.field;
 	return 0;
 }
@@ -1987,17 +1987,12 @@ int saa7134_streamoff(struct file *file, void *priv,
 					enum v4l2_buf_type type)
 {
 	struct saa7134_dev *dev = video_drvdata(file);
-	int err;
 	int res = saa7134_resource(file);
 
 	if (res != RESOURCE_EMPRESS)
 		pm_qos_remove_request(&dev->qos_request);
 
-	err = videobuf_streamoff(saa7134_queue(file));
-	if (err < 0)
-		return err;
-	res_free(dev, priv, res);
-	return 0;
+	return videobuf_streamoff(saa7134_queue(file));
 }
 EXPORT_SYMBOL_GPL(saa7134_streamoff);
 
@@ -2385,17 +2380,10 @@ void saa7134_irq_video_done(struct saa7134_dev *dev, unsigned long status)
 				goto done;
 		}
 		dev->video_q.curr->vb.field_count = dev->video_fieldcount;
-		saa7134_buffer_finish(dev,&dev->video_q,VIDEOBUF_DONE);
+		saa7134_buffer_finish(dev, &dev->video_q, VIDEOBUF_DONE);
 	}
-	saa7134_buffer_next(dev,&dev->video_q);
+	saa7134_buffer_next(dev, &dev->video_q);
 
  done:
 	spin_unlock(&dev->slock);
 }
-
-/* ----------------------------------------------------------- */
-/*
- * Local variables:
- * c-basic-offset: 8
- * End:
- */

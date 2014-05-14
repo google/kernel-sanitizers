@@ -67,10 +67,10 @@ static void task_init(struct saa7134_dev *dev, struct saa7134_buf *buf,
 	saa_writeb(SAA7134_VBI_PHASE_OFFSET_LUMA(task),   0x00);
 	saa_writeb(SAA7134_VBI_PHASE_OFFSET_CHROMA(task), 0x00);
 
-	saa_writeb(SAA7134_VBI_H_LEN1(task), buf->vb.width   & 0xff);
-	saa_writeb(SAA7134_VBI_H_LEN2(task), buf->vb.width   >> 8);
-	saa_writeb(SAA7134_VBI_V_LEN1(task), buf->vb.height  & 0xff);
-	saa_writeb(SAA7134_VBI_V_LEN2(task), buf->vb.height  >> 8);
+	saa_writeb(SAA7134_VBI_H_LEN1(task), dev->vbi_hlen & 0xff);
+	saa_writeb(SAA7134_VBI_H_LEN2(task), dev->vbi_hlen >> 8);
+	saa_writeb(SAA7134_VBI_V_LEN1(task), dev->vbi_vlen & 0xff);
+	saa_writeb(SAA7134_VBI_V_LEN2(task), dev->vbi_vlen >> 8);
 
 	saa_andorb(SAA7134_DATA_PATH(task), 0xc0, 0x00);
 }
@@ -81,14 +81,14 @@ static int buffer_activate(struct saa7134_dev *dev,
 			   struct saa7134_buf *buf,
 			   struct saa7134_buf *next)
 {
-	unsigned long control,base;
+	unsigned long control, base;
 
-	dprintk("buffer_activate [%p]\n",buf);
+	dprintk("buffer_activate [%p]\n", buf);
 	buf->vb.state = VIDEOBUF_ACTIVE;
 	buf->top_seen = 0;
 
-	task_init(dev,buf,TASK_A);
-	task_init(dev,buf,TASK_B);
+	task_init(dev, buf, TASK_A);
+	task_init(dev, buf, TASK_B);
 	saa_writeb(SAA7134_OFMT_DATA_A, 0x06);
 	saa_writeb(SAA7134_OFMT_DATA_B, 0x06);
 
@@ -97,18 +97,18 @@ static int buffer_activate(struct saa7134_dev *dev,
 	control = SAA7134_RS_CONTROL_BURST_16 |
 		SAA7134_RS_CONTROL_ME |
 		(buf->pt->dma >> 12);
-	saa_writel(SAA7134_RS_BA1(2),base);
-	saa_writel(SAA7134_RS_BA2(2),base + buf->vb.size/2);
-	saa_writel(SAA7134_RS_PITCH(2),buf->vb.width);
-	saa_writel(SAA7134_RS_CONTROL(2),control);
-	saa_writel(SAA7134_RS_BA1(3),base);
-	saa_writel(SAA7134_RS_BA2(3),base + buf->vb.size/2);
-	saa_writel(SAA7134_RS_PITCH(3),buf->vb.width);
-	saa_writel(SAA7134_RS_CONTROL(3),control);
+	saa_writel(SAA7134_RS_BA1(2), base);
+	saa_writel(SAA7134_RS_BA2(2), base + dev->vbi_hlen * dev->vbi_vlen);
+	saa_writel(SAA7134_RS_PITCH(2), dev->vbi_hlen);
+	saa_writel(SAA7134_RS_CONTROL(2), control);
+	saa_writel(SAA7134_RS_BA1(3), base);
+	saa_writel(SAA7134_RS_BA2(3), base + dev->vbi_hlen * dev->vbi_vlen);
+	saa_writel(SAA7134_RS_PITCH(3), dev->vbi_hlen);
+	saa_writel(SAA7134_RS_CONTROL(3), control);
 
 	/* start DMA */
 	saa7134_set_dmabits(dev);
-	mod_timer(&dev->vbi_q.timeout, jiffies+BUFFER_TIMEOUT);
+	mod_timer(&dev->vbi_q.timeout, jiffies + BUFFER_TIMEOUT);
 
 	return 0;
 }
@@ -119,15 +119,10 @@ static int buffer_prepare(struct videobuf_queue *q,
 {
 	struct saa7134_dev *dev = q->priv_data;
 	struct saa7134_buf *buf = container_of(vb,struct saa7134_buf,vb);
-	struct saa7134_tvnorm *norm = dev->tvnorm;
-	unsigned int lines, llength, size;
+	unsigned int size;
 	int err;
 
-	lines   = norm->vbi_v_stop_0 - norm->vbi_v_start_0 +1;
-	if (lines > VBI_LINE_COUNT)
-		lines = VBI_LINE_COUNT;
-	llength = VBI_LINE_LENGTH;
-	size = lines * llength * 2;
+	size = dev->vbi_hlen * dev->vbi_vlen * 2;
 	if (0 != buf->vb.baddr  &&  buf->vb.bsize < size)
 		return -EINVAL;
 
@@ -137,8 +132,8 @@ static int buffer_prepare(struct videobuf_queue *q,
 	if (VIDEOBUF_NEEDS_INIT == buf->vb.state) {
 		struct videobuf_dmabuf *dma=videobuf_to_dma(&buf->vb);
 
-		buf->vb.width  = llength;
-		buf->vb.height = lines;
+		buf->vb.width  = dev->vbi_hlen;
+		buf->vb.height = dev->vbi_vlen;
 		buf->vb.size   = size;
 		buf->pt        = &dev->pt_vbi;
 
@@ -166,11 +161,12 @@ static int
 buffer_setup(struct videobuf_queue *q, unsigned int *count, unsigned int *size)
 {
 	struct saa7134_dev *dev = q->priv_data;
-	int llength,lines;
 
-	lines   = dev->tvnorm->vbi_v_stop_0 - dev->tvnorm->vbi_v_start_0 +1;
-	llength = VBI_LINE_LENGTH;
-	*size = lines * llength * 2;
+	dev->vbi_vlen = dev->tvnorm->vbi_v_stop_0 - dev->tvnorm->vbi_v_start_0 + 1;
+	if (dev->vbi_vlen > VBI_LINE_COUNT)
+		dev->vbi_vlen = VBI_LINE_COUNT;
+	dev->vbi_hlen = VBI_LINE_LENGTH;
+	*size = dev->vbi_hlen * dev->vbi_vlen * 2;
 	if (0 == *count)
 		*count = vbibufs;
 	*count = saa7134_buffer_count(*size,*count);
@@ -236,17 +232,10 @@ void saa7134_irq_vbi_done(struct saa7134_dev *dev, unsigned long status)
 			goto done;
 
 		dev->vbi_q.curr->vb.field_count = dev->vbi_fieldcount;
-		saa7134_buffer_finish(dev,&dev->vbi_q,VIDEOBUF_DONE);
+		saa7134_buffer_finish(dev, &dev->vbi_q, VIDEOBUF_DONE);
 	}
-	saa7134_buffer_next(dev,&dev->vbi_q);
+	saa7134_buffer_next(dev, &dev->vbi_q);
 
  done:
 	spin_unlock(&dev->slock);
 }
-
-/* ----------------------------------------------------------- */
-/*
- * Local variables:
- * c-basic-offset: 8
- * End:
- */

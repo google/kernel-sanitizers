@@ -456,7 +456,6 @@ struct saa7134_buf {
 	struct videobuf_buffer vb;
 
 	/* saa7134 specific */
-	struct saa7134_format   *fmt;
 	unsigned int            top_seen;
 	int (*activate)(struct saa7134_dev *dev,
 			struct saa7134_buf *buf,
@@ -504,7 +503,10 @@ struct saa7134_dmasound {
 	unsigned int               blksize;
 	unsigned int               bufsize;
 	struct saa7134_pgtable     pt;
-	struct videobuf_dmabuf     dma;
+	void			   *vaddr;
+	struct scatterlist	   *sglist;
+	int                        sglen;
+	int                        nr_pages;
 	unsigned int               dma_blk;
 	unsigned int               read_offset;
 	unsigned int               read_count;
@@ -597,6 +599,7 @@ struct saa7134_dev {
 	unsigned int               vbi_fieldcount;
 	struct saa7134_format      *fmt;
 	unsigned int               width, height;
+	unsigned int               vbi_hlen, vbi_vlen;
 	struct pm_qos_request	   qos_request;
 
 	/* various v4l controls */
@@ -644,7 +647,7 @@ struct saa7134_dev {
 	/* SAA7134_MPEG_EMPRESS only */
 	struct video_device        *empress_dev;
 	struct v4l2_subdev	   *empress_sd;
-	struct videobuf_queue      empress_tsq;
+	struct videobuf_queue      empress_vbq;
 	struct work_struct         empress_workqueue;
 	int                        empress_started;
 	struct v4l2_ctrl_handler   empress_ctrl_handler;

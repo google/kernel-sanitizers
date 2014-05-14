@@ -48,17 +48,7 @@ MODULE_PARM_DESC(debug,"enable debug messages");
 
 /* ------------------------------------------------------------------ */
 
-static void ts_reset_encoder(struct saa7134_dev* dev)
-{
-	if (!dev->empress_started)
-		return;
-
-	saa_writeb(SAA7134_SPECIAL_MODE, 0x00);
-	msleep(10);
-	saa_writeb(SAA7134_SPECIAL_MODE, 0x01);
-	msleep(100);
-	dev->empress_started = 0;
-}
+static void ts_reset_encoder(struct saa7134_dev* dev);
 
 static int ts_init_encoder(struct saa7134_dev* dev)
 {
@@ -77,6 +67,18 @@ static int ts_init_encoder(struct saa7134_dev* dev)
 	saa_call_all(dev, core, init, leading_null_bytes);
 	dev->empress_started = 1;
 	return 0;
+}
+
+static void ts_reset_encoder(struct saa7134_dev* dev)
+{
+	if (!dev->empress_started)
+		return;
+
+	saa_writeb(SAA7134_SPECIAL_MODE, 0x00);
+	msleep(10);
+	saa_writeb(SAA7134_SPECIAL_MODE, 0x01);
+	msleep(100);
+	dev->empress_started = 0;
 }
 
 /* ------------------------------------------------------------------ */
@@ -110,8 +112,8 @@ static int ts_release(struct file *file)
 	struct saa7134_fh *fh = file->private_data;
 
 	if (res_check(fh, RESOURCE_EMPRESS)) {
-		videobuf_stop(&dev->empress_tsq);
-		videobuf_mmap_free(&dev->empress_tsq);
+		videobuf_stop(&dev->empress_vbq);
+		videobuf_mmap_free(&dev->empress_vbq);
 
 		/* stop the encoder */
 		ts_reset_encoder(dev);
@@ -136,7 +138,7 @@ ts_read(struct file *file, char __user *data, size_t count, loff_t *ppos)
 	if (!dev->empress_started)
 		ts_init_encoder(dev);
 
-	return videobuf_read_stream(&dev->empress_tsq,
+	return videobuf_read_stream(&dev->empress_vbq,
 				    data, count, ppos, 0,
 				    file->f_flags & O_NONBLOCK);
 }
@@ -153,7 +155,7 @@ ts_poll(struct file *file, struct poll_table_struct *wait)
 		rc = POLLPRI;
 	else if (req_events & POLLPRI)
 		poll_wait(file, &fh->fh.wait, wait);
-	return rc | videobuf_poll_stream(file, &dev->empress_tsq, wait);
+	return rc | videobuf_poll_stream(file, &dev->empress_vbq, wait);
 }
 
 
@@ -162,7 +164,7 @@ ts_mmap(struct file *file, struct vm_area_struct * vma)
 {
 	struct saa7134_dev *dev = video_drvdata(file);
 
-	return videobuf_mmap_mapper(&dev->empress_tsq, vma);
+	return videobuf_mmap_mapper(&dev->empress_vbq, vma);
 }
 
 static int empress_enum_fmt_vid_cap(struct file *file, void  *priv,
@@ -352,7 +354,7 @@ static int empress_init(struct saa7134_dev *dev)
 	printk(KERN_INFO "%s: registered device %s [mpeg]\n",
 	       dev->name, video_device_node_name(dev->empress_dev));
 
-	videobuf_queue_sg_init(&dev->empress_tsq, &saa7134_ts_qops,
+	videobuf_queue_sg_init(&dev->empress_vbq, &saa7134_ts_qops,
 			    &dev->pci->dev, &dev->slock,
 			    V4L2_BUF_TYPE_VIDEO_CAPTURE,
 			    V4L2_FIELD_ALTERNATE,
@@ -395,10 +397,3 @@ static void __exit empress_unregister(void)
 
 module_init(empress_register);
 module_exit(empress_unregister);
-
-/* ----------------------------------------------------------- */
-/*
- * Local variables:
- * c-basic-offset: 8
- * End:
- */

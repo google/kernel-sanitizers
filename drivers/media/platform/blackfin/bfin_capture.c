@@ -427,14 +427,11 @@ static int bcap_start_streaming(struct vb2_queue *vq, unsigned int count)
 	return 0;
 }
 
-static int bcap_stop_streaming(struct vb2_queue *vq)
+static void bcap_stop_streaming(struct vb2_queue *vq)
 {
 	struct bcap_device *bcap_dev = vb2_get_drv_priv(vq);
 	struct ppi_if *ppi = bcap_dev->ppi;
 	int ret;
-
-	if (!vb2_is_streaming(vq))
-		return 0;
 
 	bcap_dev->stop = true;
 	wait_for_completion(&bcap_dev->comp);
@@ -452,7 +449,6 @@ static int bcap_stop_streaming(struct vb2_queue *vq)
 		list_del(&bcap_dev->cur_frm->list);
 		vb2_buffer_done(&bcap_dev->cur_frm->vb, VB2_BUF_STATE_ERROR);
 	}
-	return 0;
 }
 
 static struct vb2_ops bcap_video_qops = {
