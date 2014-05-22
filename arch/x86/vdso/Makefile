@@ -63,10 +63,10 @@ $(vobjs): KBUILD_CFLAGS += $(CFL)
 #
 # vDSO code runs in userspace and -pg doesn't help with profiling anyway.
 #
-CFLAGS_REMOVE_vdso-note.o = -pg
-CFLAGS_REMOVE_vclock_gettime.o = -pg
-CFLAGS_REMOVE_vgetcpu.o = -pg
-CFLAGS_REMOVE_vvar.o = -pg
+CFLAGS_REMOVE_vdso-note.o = -pg -fsanitize=kernel-address
+CFLAGS_REMOVE_vclock_gettime.o = -pg -fsanitize=kernel-address
+CFLAGS_REMOVE_vgetcpu.o = -pg -fsanitize=kernel-address
+CFLAGS_REMOVE_vvar.o = -pg -fsanitize=kernel-address
 
 targets += vdso-syms.lds
 obj-$(VDSO64-y)			+= vdso-syms.lds

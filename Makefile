@@ -349,7 +349,7 @@ include $(srctree)/scripts/Kbuild.include
 
 AS		= $(CROSS_COMPILE)as
 LD		= $(CROSS_COMPILE)ld
-CC		= ./gcc.py
+CC		= $(CROSS_COMPILE)gcc
 CPP		= $(CC) -E
 AR		= $(CROSS_COMPILE)ar
 NM		= $(CROSS_COMPILE)nm
@@ -729,6 +729,11 @@ KBUILD_ARFLAGS := $(call ar-option,D)
 # check for 'asm goto'
 ifeq ($(shell $(CONFIG_SHELL) $(srctree)/scripts/gcc-goto.sh $(CC)), y)
 	KBUILD_CFLAGS += -DCC_HAVE_ASM_GOTO
+endif
+
+# use an appropriate -fsanitize if CONFIG_ASAN is enabled
+ifdef CONFIG_ASAN
+KBUILD_CFLAGS += -fsanitize=kernel-address
 endif
 
 # Add user supplied CPPFLAGS, AFLAGS and CFLAGS as the last assignments

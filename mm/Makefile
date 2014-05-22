@@ -63,3 +63,6 @@ obj-$(CONFIG_MEMORY_ISOLATION) += page_isolation.o
 obj-$(CONFIG_ZBUD)	+= zbud.o
 obj-$(CONFIG_ZSMALLOC)	+= zsmalloc.o
 obj-$(CONFIG_GENERIC_EARLY_IOREMAP) += early_ioremap.o
+
+CFLAGS_REMOVE_slab.o = -fsanitize=kernel-address
+CFLAGS_REMOVE_slab_common.o = -fsanitize=kernel-address
