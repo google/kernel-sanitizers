@@ -2707,8 +2707,6 @@ static void em28xx_card_setup(struct em28xx *dev)
 	if (dev->board.is_webcam) {
 		if (em28xx_detect_sensor(dev) < 0)
 			dev->board.is_webcam = 0;
-		else
-			dev->progressive = 1;
 	}
 
 	switch (dev->model) {
@@ -2743,11 +2741,6 @@ static void em28xx_card_setup(struct em28xx *dev)
 		    dev->board.name, dev->model);
 
 	dev->tuner_type = em28xx_boards[dev->model].tuner_type;
-	if (em28xx_boards[dev->model].tuner_addr)
-		dev->tuner_addr = em28xx_boards[dev->model].tuner_addr;
-
-	if (em28xx_boards[dev->model].tda9887_conf)
-		dev->tda9887_conf = em28xx_boards[dev->model].tda9887_conf;
 
 	/* request some modules */
 	switch (dev->model) {
@@ -3016,8 +3009,6 @@ static int em28xx_init_dev(struct em28xx *dev, struct usb_device *udev,
 	const char *chip_name = default_chip_name;
 
 	dev->udev = udev;
-	mutex_init(&dev->vb_queue_lock);
-	mutex_init(&dev->vb_vbi_queue_lock);
 	mutex_init(&dev->ctrl_urb_lock);
 	spin_lock_init(&dev->slock);
 
@@ -3441,15 +3432,14 @@ static int em28xx_usb_probe(struct usb_interface *interface,
 
 	/* Select USB transfer types to use */
 	if (has_video) {
-	    if (!dev->analog_ep_isoc || (try_bulk && dev->analog_ep_bulk))
-		dev->analog_xfer_bulk = 1;
-	    em28xx_info("analog set to %s mode.\n",
-			dev->analog_xfer_bulk ? "bulk" : "isoc");
+		if (!dev->analog_ep_isoc || (try_bulk && dev->analog_ep_bulk))
+			dev->analog_xfer_bulk = 1;
+		em28xx_info("analog set to %s mode.\n",
+			    dev->analog_xfer_bulk ? "bulk" : "isoc");
 	}
 	if (has_dvb) {
-	    if (!dev->dvb_ep_isoc || (try_bulk && dev->dvb_ep_bulk))
-		dev->dvb_xfer_bulk = 1;
-
+		if (!dev->dvb_ep_isoc || (try_bulk && dev->dvb_ep_bulk))
+			dev->dvb_xfer_bulk = 1;
 		em28xx_info("dvb set to %s mode.\n",
 			    dev->dvb_xfer_bulk ? "bulk" : "isoc");
 	}

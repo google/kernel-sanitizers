@@ -63,11 +63,6 @@ struct common_obj {
 	struct vpif_cap_buffer *cur_frm;
 	/* Pointer pointing to current v4l2_buffer */
 	struct vpif_cap_buffer *next_frm;
-	/*
-	 * This field keeps track of type of buffer exchange mechanism
-	 * user has selected
-	 */
-	enum v4l2_memory memory;
 	/* Used to store pixel format */
 	struct v4l2_format fmt;
 	/* Buffer queue used in video-buf */
@@ -82,8 +77,6 @@ struct common_obj {
 	struct mutex lock;
 	/* number of users performing IO */
 	u32 io_usrs;
-	/* Indicates whether streaming started */
-	u8 started;
 	/* Function pointer to set the addresses */
 	void (*set_addr) (unsigned long, unsigned long, unsigned long,
 			  unsigned long);
@@ -104,8 +97,6 @@ struct common_obj {
 struct channel_obj {
 	/* Identifies video device for this channel */
 	struct video_device *video_dev;
-	/* Used to keep track of state of the priority */
-	struct v4l2_prio_state prio;
 	/* number of open instances of the channel */
 	int usrs;
 	/* Indicates id of the field which is being displayed */
@@ -126,35 +117,12 @@ struct channel_obj {
 	struct video_obj video;
 };
 
-/* File handle structure */
-struct vpif_fh {
-	/* pointer to channel object for opened device */
-	struct channel_obj *channel;
-	/* Indicates whether this file handle is doing IO */
-	u8 io_allowed[VPIF_NUMBER_OF_OBJECTS];
-	/* Used to keep track priority of this instance */
-	enum v4l2_priority prio;
-	/* Used to indicate channel is initialize or not */
-	u8 initialized;
-};
-
 struct vpif_device {
 	struct v4l2_device v4l2_dev;
 	struct channel_obj *dev[VPIF_CAPTURE_NUM_CHANNELS];
 	struct v4l2_subdev **sd;
 	struct v4l2_async_notifier notifier;
 	struct vpif_capture_config *config;
-};
-
-struct vpif_config_params {
-	u8 min_numbuffers;
-	u8 numbuffers[VPIF_CAPTURE_NUM_CHANNELS];
-	s8 device_type;
-	u32 min_bufsize[VPIF_CAPTURE_NUM_CHANNELS];
-	u32 channel_bufsize[VPIF_CAPTURE_NUM_CHANNELS];
-	u8 default_device[VPIF_CAPTURE_NUM_CHANNELS];
-	u32 video_limit[VPIF_CAPTURE_NUM_CHANNELS];
-	u8 max_device_type;
 };
 
 #endif				/* End of __KERNEL__ */
