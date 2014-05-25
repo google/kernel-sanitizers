@@ -1,5 +1,6 @@
 /*
  * Copyright (C) 2009 Texas Instruments Inc
+ * Copyright (C) 2014 Lad, Prabhakar <prabhakar.csengg@gmail.com>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -38,10 +39,32 @@ MODULE_VERSION(VPIF_CAPTURE_VERSION);
 		v4l2_dbg(level, debug, &vpif_obj.v4l2_dev, fmt, ## arg)
 
 static int debug = 1;
+static u32 ch0_numbuffers = 3;
+static u32 ch1_numbuffers = 3;
+static u32 ch0_bufsize = 1920 * 1080 * 2;
+static u32 ch1_bufsize = 720 * 576 * 2;
 
 module_param(debug, int, 0644);
+module_param(ch0_numbuffers, uint, S_IRUGO);
+module_param(ch1_numbuffers, uint, S_IRUGO);
+module_param(ch0_bufsize, uint, S_IRUGO);
+module_param(ch1_bufsize, uint, S_IRUGO);
 
 MODULE_PARM_DESC(debug, "Debug level 0-1");
+MODULE_PARM_DESC(ch2_numbuffers, "Channel0 buffer count (default:3)");
+MODULE_PARM_DESC(ch3_numbuffers, "Channel1 buffer count (default:3)");
+MODULE_PARM_DESC(ch2_bufsize, "Channel0 buffer size (default:1920 x 1080 x 2)");
+MODULE_PARM_DESC(ch3_bufsize, "Channel1 buffer size (default:720 x 576 x 2)");
+
+static struct vpif_config_params config_params = {
+	.min_numbuffers = 3,
+	.numbuffers[0] = 3,
+	.numbuffers[1] = 3,
+	.min_bufsize[0] = 720 * 480 * 2,
+	.min_bufsize[1] = 720 * 480 * 2,
+	.channel_bufsize[0] = 1920 * 1080 * 2,
+	.channel_bufsize[1] = 720 * 576 * 2,
+};
 
 #define VPIF_DRIVER_NAME	"vpif_capture"
 
@@ -587,6 +610,9 @@ static void vpif_config_format(struct channel_obj *ch)
 	vpif_dbg(2, debug, "vpif_config_format\n");
 
 	common->fmt.fmt.pix.field = V4L2_FIELD_ANY;
+	common->fmt.fmt.pix.sizeimage
+	    = config_params.channel_bufsize[ch->channel_id];
+
 	if (ch->vpifparams.iface.if_type == VPIF_IF_RAW_BAYER)
 		common->fmt.fmt.pix.pixelformat = V4L2_PIX_FMT_SBGGR8;
 	else
@@ -862,10 +888,21 @@ static int vpif_querystd(struct file *file, void *priv, v4l2_std_id *std_id)
  */
 static int vpif_g_std(struct file *file, void *priv, v4l2_std_id *std)
 {
+	struct vpif_capture_config *config = vpif_dev->platform_data;
 	struct video_device *vdev = video_devdata(file);
 	struct channel_obj *ch = video_get_drvdata(vdev);
+	struct vpif_capture_chan_config *chan_cfg;
+	struct v4l2_input input;
 
 	vpif_dbg(2, debug, "vpif_g_std\n");
+
+	if (config->chan_config[ch->channel_id].inputs == NULL)
+		return -ENODATA;
+
+	chan_cfg = &config->chan_config[ch->channel_id];
+	input = chan_cfg->inputs[ch->input_idx].input;
+	if (input.capabilities != V4L2_IN_CAP_STD)
+		return -ENODATA;
 
 	*std = ch->video.stdid;
 	return 0;
@@ -879,12 +916,23 @@ static int vpif_g_std(struct file *file, void *priv, v4l2_std_id *std)
  */
 static int vpif_s_std(struct file *file, void *priv, v4l2_std_id std_id)
 {
+	struct vpif_capture_config *config = vpif_dev->platform_data;
 	struct video_device *vdev = video_devdata(file);
 	struct channel_obj *ch = video_get_drvdata(vdev);
 	struct common_obj *common = &ch->common[VPIF_VIDEO_INDEX];
-	int ret = 0;
+	struct vpif_capture_chan_config *chan_cfg;
+	struct v4l2_input input;
+	int ret;
 
 	vpif_dbg(2, debug, "vpif_s_std\n");
+
+	if (config->chan_config[ch->channel_id].inputs == NULL)
+		return -ENODATA;
+
+	chan_cfg = &config->chan_config[ch->channel_id];
+	input = chan_cfg->inputs[ch->input_idx].input;
+	if (input.capabilities != V4L2_IN_CAP_STD)
+		return -ENODATA;
 
 	if (vb2_is_busy(&common->buffer_queue))
 		return -EBUSY;
@@ -903,7 +951,7 @@ static int vpif_s_std(struct file *file, void *priv, v4l2_std_id std_id)
 	vpif_config_format(ch);
 
 	/* set standard in the sub device */
-	ret = v4l2_subdev_call(ch->sd, core, s_std, std_id);
+	ret = v4l2_subdev_call(ch->sd, video, s_std, std_id);
 	if (ret && ret != -ENOIOCTLCMD && ret != -ENODEV) {
 		vpif_dbg(1, debug, "Failed to set standard for sub devices\n");
 		return ret;
@@ -1100,30 +1148,6 @@ static int vpif_querycap(struct file *file, void  *priv,
 }
 
 /**
- * vpif_cropcap() - cropcap handler
- * @file: file ptr
- * @priv: file handle
- * @crop: ptr to v4l2_cropcap structure
- */
-static int vpif_cropcap(struct file *file, void *priv,
-			struct v4l2_cropcap *crop)
-{
-	struct video_device *vdev = video_devdata(file);
-	struct channel_obj *ch = video_get_drvdata(vdev);
-	struct common_obj *common = &ch->common[VPIF_VIDEO_INDEX];
-
-	if (V4L2_BUF_TYPE_VIDEO_CAPTURE != crop->type)
-		return -EINVAL;
-
-	crop->bounds.left = 0;
-	crop->bounds.top = 0;
-	crop->bounds.height = common->height;
-	crop->bounds.width = common->width;
-	crop->defrect = crop->bounds;
-	return 0;
-}
-
-/**
  * vpif_enum_dv_timings() - ENUM_DV_TIMINGS handler
  * @file: file ptr
  * @priv: file handle
@@ -1133,13 +1157,27 @@ static int
 vpif_enum_dv_timings(struct file *file, void *priv,
 		     struct v4l2_enum_dv_timings *timings)
 {
+	struct vpif_capture_config *config = vpif_dev->platform_data;
 	struct video_device *vdev = video_devdata(file);
 	struct channel_obj *ch = video_get_drvdata(vdev);
+	struct vpif_capture_chan_config *chan_cfg;
+	struct v4l2_input input;
 	int ret;
 
-	ret = v4l2_subdev_call(ch->sd, video, enum_dv_timings, timings);
+	if (config->chan_config[ch->channel_id].inputs == NULL)
+		return -ENODATA;
+
+	chan_cfg = &config->chan_config[ch->channel_id];
+	input = chan_cfg->inputs[ch->input_idx].input;
+	if (input.capabilities != V4L2_IN_CAP_DV_TIMINGS)
+		return -ENODATA;
+
+	timings->pad = 0;
+
+	ret = v4l2_subdev_call(ch->sd, pad, enum_dv_timings, timings);
 	if (ret == -ENOIOCTLCMD || ret == -ENODEV)
 		return -EINVAL;
+
 	return ret;
 }
 
@@ -1153,13 +1191,25 @@ static int
 vpif_query_dv_timings(struct file *file, void *priv,
 		      struct v4l2_dv_timings *timings)
 {
+	struct vpif_capture_config *config = vpif_dev->platform_data;
 	struct video_device *vdev = video_devdata(file);
 	struct channel_obj *ch = video_get_drvdata(vdev);
+	struct vpif_capture_chan_config *chan_cfg;
+	struct v4l2_input input;
 	int ret;
+
+	if (config->chan_config[ch->channel_id].inputs == NULL)
+		return -ENODATA;
+
+	chan_cfg = &config->chan_config[ch->channel_id];
+	input = chan_cfg->inputs[ch->input_idx].input;
+	if (input.capabilities != V4L2_IN_CAP_DV_TIMINGS)
+		return -ENODATA;
 
 	ret = v4l2_subdev_call(ch->sd, video, query_dv_timings, timings);
 	if (ret == -ENOIOCTLCMD || ret == -ENODEV)
 		return -ENODATA;
+
 	return ret;
 }
 
@@ -1172,18 +1222,33 @@ vpif_query_dv_timings(struct file *file, void *priv,
 static int vpif_s_dv_timings(struct file *file, void *priv,
 		struct v4l2_dv_timings *timings)
 {
+	struct vpif_capture_config *config = vpif_dev->platform_data;
 	struct video_device *vdev = video_devdata(file);
 	struct channel_obj *ch = video_get_drvdata(vdev);
 	struct vpif_params *vpifparams = &ch->vpifparams;
 	struct vpif_channel_config_params *std_info = &vpifparams->std_info;
+	struct common_obj *common = &ch->common[VPIF_VIDEO_INDEX];
 	struct video_obj *vid_ch = &ch->video;
 	struct v4l2_bt_timings *bt = &vid_ch->dv_timings.bt;
+	struct vpif_capture_chan_config *chan_cfg;
+	struct v4l2_input input;
 	int ret;
+
+	if (config->chan_config[ch->channel_id].inputs == NULL)
+		return -ENODATA;
+
+	chan_cfg = &config->chan_config[ch->channel_id];
+	input = chan_cfg->inputs[ch->input_idx].input;
+	if (input.capabilities != V4L2_IN_CAP_DV_TIMINGS)
+		return -ENODATA;
 
 	if (timings->type != V4L2_DV_BT_656_1120) {
 		vpif_dbg(2, debug, "Timing type not defined\n");
 		return -EINVAL;
 	}
+
+	if (vb2_is_busy(&common->buffer_queue))
+		return -EBUSY;
 
 	/* Configure subdevice timings, if any */
 	ret = v4l2_subdev_call(ch->sd, video, s_dv_timings, timings);
@@ -1260,9 +1325,20 @@ static int vpif_s_dv_timings(struct file *file, void *priv,
 static int vpif_g_dv_timings(struct file *file, void *priv,
 		struct v4l2_dv_timings *timings)
 {
+	struct vpif_capture_config *config = vpif_dev->platform_data;
 	struct video_device *vdev = video_devdata(file);
 	struct channel_obj *ch = video_get_drvdata(vdev);
 	struct video_obj *vid_ch = &ch->video;
+	struct vpif_capture_chan_config *chan_cfg;
+	struct v4l2_input input;
+
+	if (config->chan_config[ch->channel_id].inputs == NULL)
+		return -ENODATA;
+
+	chan_cfg = &config->chan_config[ch->channel_id];
+	input = chan_cfg->inputs[ch->input_idx].input;
+	if (input.capabilities != V4L2_IN_CAP_DV_TIMINGS)
+		return -ENODATA;
 
 	*timings = vid_ch->dv_timings;
 
@@ -1286,11 +1362,12 @@ static int vpif_log_status(struct file *filep, void *priv)
 
 /* vpif capture ioctl operations */
 static const struct v4l2_ioctl_ops vpif_ioctl_ops = {
-	.vidioc_querycap        	= vpif_querycap,
+	.vidioc_querycap		= vpif_querycap,
 	.vidioc_enum_fmt_vid_cap	= vpif_enum_fmt_vid_cap,
-	.vidioc_g_fmt_vid_cap  		= vpif_g_fmt_vid_cap,
+	.vidioc_g_fmt_vid_cap		= vpif_g_fmt_vid_cap,
 	.vidioc_s_fmt_vid_cap		= vpif_s_fmt_vid_cap,
 	.vidioc_try_fmt_vid_cap		= vpif_try_fmt_vid_cap,
+
 	.vidioc_enum_input		= vpif_enum_input,
 	.vidioc_s_input			= vpif_s_input,
 	.vidioc_g_input			= vpif_g_input,
@@ -1305,14 +1382,14 @@ static const struct v4l2_ioctl_ops vpif_ioctl_ops = {
 	.vidioc_streamoff		= vb2_ioctl_streamoff,
 
 	.vidioc_querystd		= vpif_querystd,
-	.vidioc_s_std           	= vpif_s_std,
+	.vidioc_s_std			= vpif_s_std,
 	.vidioc_g_std			= vpif_g_std,
 
-	.vidioc_cropcap         	= vpif_cropcap,
-	.vidioc_enum_dv_timings         = vpif_enum_dv_timings,
-	.vidioc_query_dv_timings        = vpif_query_dv_timings,
-	.vidioc_s_dv_timings            = vpif_s_dv_timings,
-	.vidioc_g_dv_timings            = vpif_g_dv_timings,
+	.vidioc_enum_dv_timings		= vpif_enum_dv_timings,
+	.vidioc_query_dv_timings	= vpif_query_dv_timings,
+	.vidioc_s_dv_timings		= vpif_s_dv_timings,
+	.vidioc_g_dv_timings		= vpif_g_dv_timings,
+
 	.vidioc_log_status		= vpif_log_status,
 };
 
@@ -1333,8 +1410,35 @@ static struct v4l2_file_operations vpif_fops = {
  */
 static int initialize_vpif(void)
 {
-	int err, i, j;
+	int err = 0, i, j;
 	int free_channel_objects_index;
+
+	/* Default number of buffers should be 3 */
+	if ((ch0_numbuffers > 0) &&
+	    (ch0_numbuffers < config_params.min_numbuffers))
+		ch0_numbuffers = config_params.min_numbuffers;
+	if ((ch1_numbuffers > 0) &&
+	    (ch1_numbuffers < config_params.min_numbuffers))
+		ch1_numbuffers = config_params.min_numbuffers;
+
+	/* Set buffer size to min buffers size if it is invalid */
+	if (ch0_bufsize < config_params.min_bufsize[VPIF_CHANNEL0_VIDEO])
+		ch0_bufsize =
+		    config_params.min_bufsize[VPIF_CHANNEL0_VIDEO];
+	if (ch1_bufsize < config_params.min_bufsize[VPIF_CHANNEL1_VIDEO])
+		ch1_bufsize =
+		    config_params.min_bufsize[VPIF_CHANNEL1_VIDEO];
+
+	config_params.numbuffers[VPIF_CHANNEL0_VIDEO] = ch0_numbuffers;
+	config_params.numbuffers[VPIF_CHANNEL1_VIDEO] = ch1_numbuffers;
+	if (ch0_numbuffers) {
+		config_params.channel_bufsize[VPIF_CHANNEL0_VIDEO]
+		    = ch0_bufsize;
+	}
+	if (ch1_numbuffers) {
+		config_params.channel_bufsize[VPIF_CHANNEL1_VIDEO]
+		    = ch1_bufsize;
+	}
 
 	/* Allocate memory for six channel objects */
 	for (i = 0; i < VPIF_CAPTURE_MAX_DEVICES; i++) {
@@ -1618,7 +1722,7 @@ static int vpif_remove(struct platform_device *device)
 	return 0;
 }
 
-#ifdef CONFIG_PM
+#ifdef CONFIG_PM_SLEEP
 /**
  * vpif_suspend: vpif device suspend
  */
@@ -1633,18 +1737,20 @@ static int vpif_suspend(struct device *dev)
 		/* Get the pointer to the channel object */
 		ch = vpif_obj.dev[i];
 		common = &ch->common[VPIF_VIDEO_INDEX];
+
+		if (!vb2_is_streaming(&common->buffer_queue))
+			continue;
+
 		mutex_lock(&common->lock);
-		if (ch->usrs && common->io_usrs) {
-			/* Disable channel */
-			if (ch->channel_id == VPIF_CHANNEL0_VIDEO) {
-				enable_channel0(0);
-				channel0_intr_enable(0);
-			}
-			if (ch->channel_id == VPIF_CHANNEL1_VIDEO ||
-				ycmux_mode == 2) {
-				enable_channel1(0);
-				channel1_intr_enable(0);
-			}
+		/* Disable channel */
+		if (ch->channel_id == VPIF_CHANNEL0_VIDEO) {
+			enable_channel0(0);
+			channel0_intr_enable(0);
+		}
+		if (ch->channel_id == VPIF_CHANNEL1_VIDEO ||
+			ycmux_mode == 2) {
+			enable_channel1(0);
+			channel1_intr_enable(0);
 		}
 		mutex_unlock(&common->lock);
 	}
@@ -1665,40 +1771,35 @@ static int vpif_resume(struct device *dev)
 		/* Get the pointer to the channel object */
 		ch = vpif_obj.dev[i];
 		common = &ch->common[VPIF_VIDEO_INDEX];
+
+		if (!vb2_is_streaming(&common->buffer_queue))
+			continue;
+
 		mutex_lock(&common->lock);
-		if (ch->usrs && common->io_usrs) {
-			/* Disable channel */
-			if (ch->channel_id == VPIF_CHANNEL0_VIDEO) {
-				enable_channel0(1);
-				channel0_intr_enable(1);
-			}
-			if (ch->channel_id == VPIF_CHANNEL1_VIDEO ||
-				ycmux_mode == 2) {
-				enable_channel1(1);
-				channel1_intr_enable(1);
-			}
+		/* Enable channel */
+		if (ch->channel_id == VPIF_CHANNEL0_VIDEO) {
+			enable_channel0(1);
+			channel0_intr_enable(1);
+		}
+		if (ch->channel_id == VPIF_CHANNEL1_VIDEO ||
+			ycmux_mode == 2) {
+			enable_channel1(1);
+			channel1_intr_enable(1);
 		}
 		mutex_unlock(&common->lock);
 	}
 
 	return 0;
 }
-
-static const struct dev_pm_ops vpif_dev_pm_ops = {
-	.suspend = vpif_suspend,
-	.resume = vpif_resume,
-};
-
-#define vpif_pm_ops (&vpif_dev_pm_ops)
-#else
-#define vpif_pm_ops NULL
 #endif
+
+static SIMPLE_DEV_PM_OPS(vpif_pm_ops, vpif_suspend, vpif_resume);
 
 static __refdata struct platform_driver vpif_driver = {
 	.driver	= {
 		.name	= VPIF_DRIVER_NAME,
 		.owner	= THIS_MODULE,
-		.pm	= vpif_pm_ops,
+		.pm	= &vpif_pm_ops,
 	},
 	.probe = vpif_probe,
 	.remove = vpif_remove,

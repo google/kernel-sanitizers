@@ -631,7 +631,7 @@ static int bcap_s_std(struct file *file, void *priv, v4l2_std_id std)
 	if (vb2_is_busy(&bcap_dev->buffer_queue))
 		return -EBUSY;
 
-	ret = v4l2_subdev_call(bcap_dev->sd, core, s_std, std);
+	ret = v4l2_subdev_call(bcap_dev->sd, video, s_std, std);
 	if (ret < 0)
 		return ret;
 
@@ -644,7 +644,9 @@ static int bcap_enum_dv_timings(struct file *file, void *priv,
 {
 	struct bcap_device *bcap_dev = video_drvdata(file);
 
-	return v4l2_subdev_call(bcap_dev->sd, video,
+	timings->pad = 0;
+
+	return v4l2_subdev_call(bcap_dev->sd, pad,
 			enum_dv_timings, timings);
 }
 
@@ -1065,7 +1067,7 @@ static int bcap_probe(struct platform_device *pdev)
 	/* now we can probe the default state */
 	if (config->inputs[0].capabilities & V4L2_IN_CAP_STD) {
 		v4l2_std_id std;
-		ret = v4l2_subdev_call(bcap_dev->sd, core, g_std, &std);
+		ret = v4l2_subdev_call(bcap_dev->sd, video, g_std, &std);
 		if (ret) {
 			v4l2_err(&bcap_dev->v4l2_dev,
 					"Unable to get std\n");
