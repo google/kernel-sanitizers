@@ -19,7 +19,6 @@
 #include <asm/thread_info.h>
 
 #include "asan.h"
-#include "tests.h"
 
 #undef memset
 #undef memcpy
@@ -516,26 +515,6 @@ size_t asan_ksize(const void *ptr)
 	return cache->object_size;
 }
 EXPORT_SYMBOL(asan_ksize);
-
-void asan_on_kernel_init(void)
-{
-#if ASAN_TESTS_ENABLE
-	asan_do_bo();
-	asan_do_bo_left();
-	asan_do_bo_kmalloc();
-	asan_do_bo_kmalloc_node();
-	asan_do_bo_krealloc();
-	asan_do_bo_krealloc_less();
-	asan_do_krealloc_more();
-	asan_do_bo_16();
-	asan_do_bo_4mb();
-	asan_do_bo_memset();
-	asan_do_uaf();
-	asan_do_uaf_memset();
-	asan_do_uaf_quarantine();
-	/* asan_do_user_memory_access(); */
-#endif
-}
 
 void *asan_memcpy(void *dst, const void *src, size_t len)
 {

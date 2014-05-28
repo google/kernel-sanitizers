@@ -77,7 +77,6 @@
 #include <linux/sched_clock.h>
 #include <linux/context_tracking.h>
 #include <linux/random.h>
-#include <linux/asan.h>
 
 #include <asm/io.h>
 #include <asm/bugs.h>
@@ -648,8 +647,6 @@ asmlinkage __visible void __init start_kernel(void)
 	}
 
 	ftrace_init();
-
-	asan_on_kernel_init();
 
 	/* Do the rest non-__init'ed, we're now alive */
 	rest_init();

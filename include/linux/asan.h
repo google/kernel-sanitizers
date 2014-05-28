@@ -28,9 +28,6 @@ void asan_kmalloc(struct kmem_cache *cache, void *object, size_t size);
 void asan_krealloc(void *object, size_t new_size);
 size_t asan_ksize(const void *ptr);
 
-/* Calls some tests when the kernel is initialized. */
-void asan_on_kernel_init(void);
-
 #else /* CONFIG_ASAN */
 
 /* When disabled ASAN is no-op. */
@@ -47,8 +44,6 @@ static inline void asan_cache_destroy(struct kmem_cache *cache) {}
 
 static inline void asan_kmalloc(struct kmem_cache *cc, void *ob, size_t sz) {}
 static inline void asan_krealloc(void *object, size_t size) {}
-
-static inline void asan_on_kernel_init(void) {}
 
 #endif /* CONFIG_ASAN */
 

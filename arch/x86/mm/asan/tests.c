@@ -1,5 +1,8 @@
+#include <asm/uaccess.h>
+#include <linux/fs.h>
 #include <linux/kernel.h>
 #include <linux/printk.h>
+#include <linux/proc_fs.h>
 #include <linux/slab.h>
 #include <linux/string.h>
 
@@ -165,3 +168,50 @@ void asan_do_user_memory_access(void)
 	ptr2[3] = *ptr1;
 	kfree(ptr2);
 }
+
+void asan_run_tests(void)
+{
+	asan_do_bo();
+	asan_do_bo_left();
+	asan_do_bo_kmalloc();
+	asan_do_bo_kmalloc_node();
+	asan_do_bo_krealloc();
+	asan_do_bo_krealloc_less();
+	asan_do_krealloc_more();
+	asan_do_bo_16();
+	asan_do_bo_4mb();
+	asan_do_bo_memset();
+	asan_do_uaf();
+	asan_do_uaf_memset();
+	asan_do_uaf_quarantine();
+	/* asan_do_user_memory_access(); */
+}
+
+static ssize_t asan_tests_write(struct file *file, const char __user *buf,
+				size_t count, loff_t *offset)
+{
+	char buffer[16];
+
+	memset(buffer, 0, sizeof(buffer));
+	if (count > sizeof(buffer) - 1)
+		count = sizeof(buffer) - 1;
+	if (copy_from_user(buffer, buf, count))
+		return -EFAULT;
+
+	if (!strcmp(buffer, "asan_run_tests\n"))
+		asan_run_tests();
+
+	return count;
+}
+
+static const struct file_operations asan_tests_operations = {
+	.write		= asan_tests_write,
+};
+
+static int __init asan_tests_init(void)
+{
+	proc_create("kasan_tests", S_IWUSR, NULL, &asan_tests_operations);
+	return 0;
+}
+
+device_initcall(asan_tests_init);
