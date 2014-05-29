@@ -55,7 +55,6 @@ struct dm_crypt_io {
 
 	struct convert_context ctx;
 
-	atomic_t io_pending;
 	int error;
 	sector_t sector;
 } CRYPTO_MINALIGN_ATTR;
@@ -1037,26 +1036,17 @@ static void crypt_io_init(struct dm_crypt_io *io, struct crypt_config *cc,
 	io->sector = sector;
 	io->error = 0;
 	io->ctx.req = NULL;
-	atomic_set(&io->io_pending, 0);
-}
-
-static void crypt_inc_pending(struct dm_crypt_io *io)
-{
-	atomic_inc(&io->io_pending);
 }
 
 /*
  * One of the bios was finished. Check for completion of
  * the whole request and correctly clean up the buffer.
  */
-static void crypt_dec_pending(struct dm_crypt_io *io)
+static void crypt_end_io(struct dm_crypt_io *io)
 {
 	struct crypt_config *cc = io->cc;
 	struct bio *base_bio = io->base_bio;
 	int error = io->error;
-
-	if (!atomic_dec_and_test(&io->io_pending))
-		return;
 
 	if (io->ctx.req)
 		crypt_free_req(cc, io->ctx.req, base_bio);
@@ -1106,7 +1096,7 @@ static void crypt_endio(struct bio *clone, int error)
 	if (unlikely(error))
 		io->error = error;
 
-	crypt_dec_pending(io);
+	crypt_end_io(io);
 }
 
 static void clone_init(struct dm_crypt_io *io, struct bio *clone)
@@ -1134,8 +1124,6 @@ static int kcryptd_io_read(struct dm_crypt_io *io, gfp_t gfp)
 	if (!clone)
 		return 1;
 
-	crypt_inc_pending(io);
-
 	clone_init(io, clone);
 	clone->bi_iter.bi_sector = cc->start + io->sector;
 
@@ -1154,10 +1142,10 @@ static void kcryptd_io(struct work_struct *work)
 	struct dm_crypt_io *io = container_of(work, struct dm_crypt_io, work);
 
 	if (bio_data_dir(io->base_bio) == READ) {
-		crypt_inc_pending(io);
-		if (kcryptd_io_read(io, GFP_NOIO))
+		if (kcryptd_io_read(io, GFP_NOIO)) {
 			io->error = -ENOMEM;
-		crypt_dec_pending(io);
+			crypt_end_io(io);
+		}
 	} else
 		kcryptd_io_write(io);
 }
@@ -1178,7 +1166,7 @@ static void kcryptd_crypt_write_io_submit(struct dm_crypt_io *io, int async)
 	if (unlikely(io->error < 0)) {
 		crypt_free_buffer_pages(cc, clone);
 		bio_put(clone);
-		crypt_dec_pending(io);
+		crypt_end_io(io);
 		return;
 	}
 
@@ -1201,16 +1189,13 @@ static void kcryptd_crypt_write_convert(struct dm_crypt_io *io)
 	sector_t sector = io->sector;
 	int r;
 
-	/*
-	 * Prevent io from disappearing until this function completes.
-	 */
-	crypt_inc_pending(io);
 	crypt_convert_init(cc, &io->ctx, NULL, io->base_bio, sector);
 
 	clone = crypt_alloc_buffer(io, io->base_bio->bi_iter.bi_size);
 	if (unlikely(!clone)) {
 		io->error = -EIO;
-		goto dec;
+		crypt_end_io(io);
+		return;
 	}
 
 	io->ctx.bio_out = clone;
@@ -1218,7 +1203,6 @@ static void kcryptd_crypt_write_convert(struct dm_crypt_io *io)
 
 	sector += bio_sectors(clone);
 
-	crypt_inc_pending(io);
 	r = crypt_convert(cc, &io->ctx);
 	if (r)
 		io->error = -EIO;
@@ -1229,22 +1213,17 @@ static void kcryptd_crypt_write_convert(struct dm_crypt_io *io)
 		kcryptd_crypt_write_io_submit(io, 0);
 		io->sector = sector;
 	}
-
-dec:
-	crypt_dec_pending(io);
 }
 
 static void kcryptd_crypt_read_done(struct dm_crypt_io *io)
 {
-	crypt_dec_pending(io);
+	crypt_end_io(io);
 }
 
 static void kcryptd_crypt_read_convert(struct dm_crypt_io *io)
 {
 	struct crypt_config *cc = io->cc;
 	int r = 0;
-
-	crypt_inc_pending(io);
 
 	crypt_convert_init(cc, &io->ctx, io->base_bio, io->base_bio,
 			   io->sector);
@@ -1255,8 +1234,6 @@ static void kcryptd_crypt_read_convert(struct dm_crypt_io *io)
 
 	if (atomic_dec_and_test(&io->ctx.cc_pending))
 		kcryptd_crypt_read_done(io);
-
-	crypt_dec_pending(io);
 }
 
 static void kcryptd_async_done(struct crypto_async_request *async_req,
