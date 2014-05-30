@@ -1,6 +1,7 @@
 #ifndef ASM_X86_CMPXCHG_H
 #define ASM_X86_CMPXCHG_H
 
+#include <linux/asan.h>
 #include <linux/compiler.h>
 #include <asm/alternative.h> /* Provides LOCK_PREFIX */
 
@@ -40,6 +41,7 @@ extern void __add_wrong_size(void)
 #define __xchg_op(ptr, arg, op, lock)					\
 	({								\
 	        __typeof__ (*(ptr)) __ret = (arg);			\
+		asan_check((ptr), sizeof(*(ptr)), true);		\
 		switch (sizeof(*(ptr))) {				\
 		case __X86_CASE_B:					\
 			asm volatile (lock #op "b %b0, %1\n"		\
@@ -85,6 +87,7 @@ extern void __add_wrong_size(void)
 	__typeof__(*(ptr)) __ret;					\
 	__typeof__(*(ptr)) __old = (old);				\
 	__typeof__(*(ptr)) __new = (new);				\
+	asan_check((ptr), sizeof(*(ptr)), true);			\
 	switch (size) {							\
 	case __X86_CASE_B:						\
 	{								\
@@ -170,6 +173,7 @@ extern void __add_wrong_size(void)
 #define __add(ptr, inc, lock)						\
 	({								\
 	        __typeof__ (*(ptr)) __ret = (inc);			\
+		asan_check((ptr), sizeof(*(ptr)), true);		\
 		switch (sizeof(*(ptr))) {				\
 		case __X86_CASE_B:					\
 			asm volatile (lock "addb %b1, %0\n"		\
@@ -216,6 +220,7 @@ extern void __add_wrong_size(void)
 	BUILD_BUG_ON(sizeof(*(p2)) != sizeof(long));			\
 	VM_BUG_ON((unsigned long)(p1) % (2 * sizeof(long)));		\
 	VM_BUG_ON((unsigned long)((p1) + 1) != (unsigned long)(p2));	\
+	asan_check((p1), sizeof(*(p1)), true);				\
 	asm volatile(pfx "cmpxchg%c4b %2; sete %0"			\
 		     : "=a" (__ret), "+d" (__old2),			\
 		       "+m" (*(p1)), "+m" (*(p2))			\

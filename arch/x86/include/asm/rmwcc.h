@@ -1,10 +1,13 @@
 #ifndef _ASM_X86_RMWcc
 #define _ASM_X86_RMWcc
 
+#include <linux/asan.h>
+
 #ifdef CC_HAVE_ASM_GOTO
 
 #define __GEN_RMWcc(fullop, var, cc, ...)				\
 do {									\
+	asan_check(&(var), sizeof(var), true);				\
 	asm_volatile_goto (fullop "; j" cc " %l[cc_label]"		\
 			: : "m" (var), ## __VA_ARGS__ 			\
 			: "memory" : cc_label);				\
@@ -24,6 +27,7 @@ cc_label:								\
 #define __GEN_RMWcc(fullop, var, cc, ...)				\
 do {									\
 	char c;								\
+	asan_check(&(var), sizeof(var), true);				\
 	asm volatile (fullop "; set" cc " %1"				\
 			: "+m" (var), "=qm" (c)				\
 			: __VA_ARGS__ : "memory");			\

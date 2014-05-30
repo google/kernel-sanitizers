@@ -1,6 +1,7 @@
 #ifndef _ASM_X86_ATOMIC_H
 #define _ASM_X86_ATOMIC_H
 
+#include <linux/asan.h>
 #include <linux/compiler.h>
 #include <linux/types.h>
 #include <asm/processor.h>
@@ -47,6 +48,7 @@ static inline void atomic_set(atomic_t *v, int i)
  */
 static inline void atomic_add(int i, atomic_t *v)
 {
+	asan_check(v, sizeof(*v), true);
 	asm volatile(LOCK_PREFIX "addl %1,%0"
 		     : "+m" (v->counter)
 		     : "ir" (i));
@@ -61,6 +63,7 @@ static inline void atomic_add(int i, atomic_t *v)
  */
 static inline void atomic_sub(int i, atomic_t *v)
 {
+	asan_check(v, sizeof(*v), true);
 	asm volatile(LOCK_PREFIX "subl %1,%0"
 		     : "+m" (v->counter)
 		     : "ir" (i));
@@ -88,6 +91,7 @@ static inline int atomic_sub_and_test(int i, atomic_t *v)
  */
 static inline void atomic_inc(atomic_t *v)
 {
+	asan_check(v, sizeof(*v), true);
 	asm volatile(LOCK_PREFIX "incl %0"
 		     : "+m" (v->counter));
 }
@@ -100,6 +104,7 @@ static inline void atomic_inc(atomic_t *v)
  */
 static inline void atomic_dec(atomic_t *v)
 {
+	asan_check(v, sizeof(*v), true);
 	asm volatile(LOCK_PREFIX "decl %0"
 		     : "+m" (v->counter));
 }
@@ -214,6 +219,7 @@ static inline int __atomic_add_unless(atomic_t *v, int a, int u)
  */
 static inline short int atomic_inc_short(short int *v)
 {
+	asan_check(v, sizeof(*v), true);
 	asm(LOCK_PREFIX "addw $1, %0" : "+m" (*v));
 	return *v;
 }
@@ -229,19 +235,24 @@ static inline short int atomic_inc_short(short int *v)
  */
 static inline void atomic_or_long(unsigned long *v1, unsigned long v2)
 {
+	asan_check(v1, sizeof(*v1), true);
 	asm(LOCK_PREFIX "orq %1, %0" : "+m" (*v1) : "r" (v2));
 }
 #endif
 
 /* These are x86-specific, used by some header files */
-#define atomic_clear_mask(mask, addr)				\
+#define atomic_clear_mask(mask, addr) do {			\
+	asan_check((addr), sizeof(*(addr)), true);		\
 	asm volatile(LOCK_PREFIX "andl %0,%1"			\
-		     : : "r" (~(mask)), "m" (*(addr)) : "memory")
+		     : : "r" (~(mask)), "m" (*(addr)) : "memory");	\
+	} while (0)
 
-#define atomic_set_mask(mask, addr)				\
+#define atomic_set_mask(mask, addr) do {			\
+	asan_check((addr), sizeof(*(addr)), true);		\
 	asm volatile(LOCK_PREFIX "orl %0,%1"			\
 		     : : "r" ((unsigned)(mask)), "m" (*(addr))	\
-		     : "memory")
+		     : "memory");				\
+	} while (0)
 
 /* Atomic operations are already serializing on x86 */
 #define smp_mb__before_atomic_dec()	barrier()

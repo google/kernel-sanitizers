@@ -42,6 +42,7 @@ static inline void atomic64_set(atomic64_t *v, long i)
  */
 static inline void atomic64_add(long i, atomic64_t *v)
 {
+	asan_check(v, sizeof(*v), true);
 	asm volatile(LOCK_PREFIX "addq %1,%0"
 		     : "=m" (v->counter)
 		     : "er" (i), "m" (v->counter));
@@ -56,6 +57,7 @@ static inline void atomic64_add(long i, atomic64_t *v)
  */
 static inline void atomic64_sub(long i, atomic64_t *v)
 {
+	asan_check(v, sizeof(*v), true);
 	asm volatile(LOCK_PREFIX "subq %1,%0"
 		     : "=m" (v->counter)
 		     : "er" (i), "m" (v->counter));
@@ -83,6 +85,7 @@ static inline int atomic64_sub_and_test(long i, atomic64_t *v)
  */
 static inline void atomic64_inc(atomic64_t *v)
 {
+	asan_check(v, sizeof(*v), true);
 	asm volatile(LOCK_PREFIX "incq %0"
 		     : "=m" (v->counter)
 		     : "m" (v->counter));
@@ -96,6 +99,7 @@ static inline void atomic64_inc(atomic64_t *v)
  */
 static inline void atomic64_dec(atomic64_t *v)
 {
+	asan_check(v, sizeof(*v), true);
 	asm volatile(LOCK_PREFIX "decq %0"
 		     : "=m" (v->counter)
 		     : "m" (v->counter));

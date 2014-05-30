@@ -1,3 +1,4 @@
+#include <asm/atomic.h>
 #include <asm/uaccess.h>
 #include <linux/fs.h>
 #include <linux/kernel.h>
@@ -169,6 +170,28 @@ void asan_do_user_memory_access(void)
 	kfree(ptr2);
 }
 
+/* Expected to produce a report. */
+void asan_do_bo_atomic(void)
+{
+	atomic_t *ptr;
+
+	pr_err("TEST: out-of-bounds in atomic:\n");
+	ptr = kmalloc(sizeof(atomic_t), GFP_KERNEL);
+	atomic_dec(ptr + 1);
+	kfree(ptr);
+}
+
+/* Expected to produce a report. */
+void asan_do_bo_atomic_rmwcc(void)
+{
+	atomic_t *ptr;
+
+	pr_err("TEST: out-of-bounds in atomic with RMWcc:\n");
+	ptr = kmalloc(sizeof(atomic_t), GFP_KERNEL);
+	atomic_dec_and_test(ptr + 1);
+	kfree(ptr);
+}
+
 void asan_run_tests(void)
 {
 	asan_do_bo();
@@ -185,6 +208,8 @@ void asan_run_tests(void)
 	asan_do_uaf_memset();
 	asan_do_uaf_quarantine();
 	/* asan_do_user_memory_access(); */
+	asan_do_bo_atomic();
+	asan_do_bo_atomic_rmwcc();
 }
 
 static ssize_t asan_tests_write(struct file *file, const char __user *buf,

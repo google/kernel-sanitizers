@@ -624,3 +624,9 @@ void __kasan_write16(unsigned long addr)
 	check_memory_region(addr, 16, true);
 }
 EXPORT_SYMBOL(__kasan_write16);
+
+void asan_check(const volatile void *ptr, size_t sz, bool wr)
+{
+	check_memory_region((unsigned long)ptr, sz, wr);
+}
+EXPORT_SYMBOL(asan_check);
