@@ -2274,8 +2274,8 @@ static int rcu_nocb_kthread(void *arg)
 		tail = xchg(&rdp->nocb_tail, &rdp->nocb_head);
 		c = atomic_long_xchg(&rdp->nocb_q_count, 0);
 		cl = atomic_long_xchg(&rdp->nocb_q_count_lazy, 0);
-		ACCESS_ONCE(rdp->nocb_p_count) += c;
-		ACCESS_ONCE(rdp->nocb_p_count_lazy) += cl;
+		rdp->nocb_p_count += c;
+		rdp->nocb_p_count_lazy += cl;
 		rcu_nocb_wait_gp(rdp);
 
 		/* Each pass through the following loop invokes a callback. */
