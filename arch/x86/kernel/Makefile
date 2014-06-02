@@ -116,3 +116,7 @@ ifeq ($(CONFIG_X86_64),y)
 	obj-$(CONFIG_PCI_MMCONFIG)	+= mmconf-fam10h_64.o
 	obj-y				+= vsmp_64.o
 endif
+
+CFLAGS_REMOVE_stacktrace.o = -fsanitize=kernel-address
+CFLAGS_REMOVE_dumpstack.o = -fsanitize=kernel-address
+CFLAGS_REMOVE_dumpstack_$(BITS).o = -fsanitize=kernel-address
