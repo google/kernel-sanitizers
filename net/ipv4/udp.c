@@ -1004,8 +1004,11 @@ int udp_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 		if ((rt->rt_flags & RTCF_BROADCAST) &&
 		    !sock_flag(sk, SOCK_BROADCAST))
 			goto out;
-		if (connected)
-			sk_dst_set(sk, dst_clone(&rt->dst));
+		if (connected) {
+			spin_lock_bh(&sk->sk_lock.slock);
+			__sk_dst_set(sk, dst_clone(&rt->dst));
+			spin_unlock_bh(&sk->sk_lock.slock);
+		}
 	}
 
 	if (msg->msg_flags&MSG_CONFIRM)
