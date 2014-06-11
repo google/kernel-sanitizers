@@ -18,6 +18,7 @@
 #ifndef __MACH_TEGRA_PMC_H
 #define __MACH_TEGRA_PMC_H
 
+#include <linux/io.h>
 #include <linux/reboot.h>
 
 enum tegra_suspend_mode {
@@ -36,6 +37,18 @@ void tegra_pmc_resume(void);
 void tegra_pmc_pm_set(enum tegra_suspend_mode mode);
 void tegra_pmc_suspend_init(void);
 #endif
+
+extern void __iomem *tegra_pmc_base;
+
+static inline u32 tegra_pmc_readl(u32 reg)
+{
+	return readl(tegra_pmc_base + reg);
+}
+
+static inline void tegra_pmc_writel(u32 val, u32 reg)
+{
+	writel(val, tegra_pmc_base + reg);
+}
 
 bool tegra_pmc_cpu_is_powered(int cpuid);
 int tegra_pmc_cpu_power_on(int cpuid);
