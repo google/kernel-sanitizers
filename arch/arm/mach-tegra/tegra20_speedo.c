@@ -16,6 +16,7 @@
 
 #include <linux/kernel.h>
 #include <linux/bug.h>
+#include <linux/tegra-soc.h>
 
 #include "fuse.h"
 

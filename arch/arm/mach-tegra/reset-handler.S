@@ -19,9 +19,9 @@
 
 #include <asm/cache.h>
 #include <asm/asm-offsets.h>
+#include <linux/tegra-soc.h>
 
 #include "flowctrl.h"
-#include "fuse.h"
 #include "iomap.h"
 #include "reset.h"
 #include "sleep.h"

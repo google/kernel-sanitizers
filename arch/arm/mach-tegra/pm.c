@@ -26,6 +26,7 @@
 #include <linux/err.h>
 #include <linux/slab.h>
 #include <linux/clk/tegra.h>
+#include <linux/tegra-soc.h>
 
 #include <asm/smp_plat.h>
 #include <asm/cacheflush.h>
@@ -37,7 +38,6 @@
 #include "iomap.h"
 #include "reset.h"
 #include "flowctrl.h"
-#include "fuse.h"
 #include "pm.h"
 #include "pmc.h"
 #include "sleep.h"

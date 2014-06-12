@@ -34,6 +34,7 @@
 #include <linux/usb/tegra_usb_phy.h>
 #include <linux/clk/tegra.h>
 #include <linux/irqchip.h>
+#include <linux/tegra-soc.h>
 
 #include <asm/hardware/cache-l2x0.h>
 #include <asm/mach-types.h>
@@ -46,7 +47,6 @@
 #include "board.h"
 #include "common.h"
 #include "cpuidle.h"
-#include "fuse.h"
 #include "iomap.h"
 #include "irq.h"
 #include "pmc.h"
