@@ -98,6 +98,16 @@ static void tegra_enable_fuse_clk(void __iomem *base)
 	writel(reg, base + 0x14);
 }
 
+int tegra_fuse_readl(u32 offset, u32 *val)
+{
+	if (!fuse_readl)
+		return -EPROBE_DEFER;
+
+	*val = fuse_readl(offset);
+
+	return 0;
+}
+
 int tegra_fuse_create_sysfs(struct device *dev, int size,
 		     u32 (*readl)(const unsigned int offset))
 {

@@ -54,9 +54,9 @@ struct tegra_sku_info {
 u32 tegra_read_straps(void);
 u32 tegra_read_chipid(void);
 void tegra_init_fuse(void);
+int tegra_fuse_readl(u32 offset, u32 *val);
 
 extern int tegra_chip_id;
-extern enum tegra_revision tegra_revision;
 extern struct tegra_sku_info tegra_sku_info;
 
 #if defined(CONFIG_TEGRA20_APB_DMA)
