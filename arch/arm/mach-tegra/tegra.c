@@ -43,7 +43,6 @@
 #include <asm/setup.h>
 #include <asm/trusted_foundations.h>
 
-#include "apbio.h"
 #include "board.h"
 #include "common.h"
 #include "cpuidle.h"
@@ -73,7 +72,6 @@ u32 tegra_uart_config[3] = {
 static void __init tegra_init_early(void)
 {
 	of_register_trusted_foundations();
-	tegra_apb_io_init();
 	tegra_init_fuse();
 	tegra_cpu_reset_handler_init();
 	tegra_powergate_init();
