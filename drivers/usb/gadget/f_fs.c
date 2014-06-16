@@ -33,35 +33,10 @@
 #include <linux/poll.h>
 
 #include "u_fs.h"
+#include "u_f.h"
 #include "configfs.h"
 
 #define FUNCTIONFS_MAGIC	0xa647361 /* Chosen by a honest dice roll ;) */
-
-/* Variable Length Array Macros **********************************************/
-#define vla_group(groupname) size_t groupname##__next = 0
-#define vla_group_size(groupname) groupname##__next
-
-#define vla_item(groupname, type, name, n) \
-	size_t groupname##_##name##__offset = ({			       \
-		size_t align_mask = __alignof__(type) - 1;		       \
-		size_t offset = (groupname##__next + align_mask) & ~align_mask;\
-		size_t size = (n) * sizeof(type);			       \
-		groupname##__next = offset + size;			       \
-		offset;							       \
-	})
-
-#define vla_item_with_sz(groupname, type, name, n) \
-	size_t groupname##_##name##__sz = (n) * sizeof(type);		       \
-	size_t groupname##_##name##__offset = ({			       \
-		size_t align_mask = __alignof__(type) - 1;		       \
-		size_t offset = (groupname##__next + align_mask) & ~align_mask;\
-		size_t size = groupname##_##name##__sz;			       \
-		groupname##__next = offset + size;			       \
-		offset;							       \
-	})
-
-#define vla_ptr(ptr, groupname, name) \
-	((void *) ((char *)ptr + groupname##_##name##__offset))
 
 /* Reference counter handling */
 static void ffs_data_get(struct ffs_data *ffs);
@@ -190,7 +165,7 @@ ffs_sb_create_file(struct super_block *sb, const char *name, void *data,
 /* Devices management *******************************************************/
 
 DEFINE_MUTEX(ffs_lock);
-EXPORT_SYMBOL(ffs_lock);
+EXPORT_SYMBOL_GPL(ffs_lock);
 
 static struct ffs_dev *_ffs_find_dev(const char *name);
 static struct ffs_dev *_ffs_alloc_dev(void);
@@ -745,6 +720,12 @@ static ssize_t ffs_epfile_io(struct file *file, struct ffs_io_data *io_data)
 		 */
 		struct usb_gadget *gadget = epfile->ffs->gadget;
 
+		spin_lock_irq(&epfile->ffs->eps_lock);
+		/* In the meantime, endpoint got disabled or changed. */
+		if (epfile->ep != ep) {
+			spin_unlock_irq(&epfile->ffs->eps_lock);
+			return -ESHUTDOWN;
+		}
 		/*
 		 * Controller may require buffer size to be aligned to
 		 * maxpacketsize of an out endpoint.
@@ -752,6 +733,7 @@ static ssize_t ffs_epfile_io(struct file *file, struct ffs_io_data *io_data)
 		data_len = io_data->read ?
 			   usb_ep_align_maybe(gadget, ep->ep, io_data->len) :
 			   io_data->len;
+		spin_unlock_irq(&epfile->ffs->eps_lock);
 
 		data = kmalloc(data_len, GFP_KERNEL);
 		if (unlikely(!data))
@@ -2876,7 +2858,7 @@ int ffs_name_dev(struct ffs_dev *dev, const char *name)
 
 	return ret;
 }
-EXPORT_SYMBOL(ffs_name_dev);
+EXPORT_SYMBOL_GPL(ffs_name_dev);
 
 int ffs_single_dev(struct ffs_dev *dev)
 {
@@ -2893,7 +2875,7 @@ int ffs_single_dev(struct ffs_dev *dev)
 	ffs_dev_unlock();
 	return ret;
 }
-EXPORT_SYMBOL(ffs_single_dev);
+EXPORT_SYMBOL_GPL(ffs_single_dev);
 
 /*
  * ffs_lock must be taken by the caller of this function

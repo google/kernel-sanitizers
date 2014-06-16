@@ -95,8 +95,11 @@ static int radeon_process_aux_ch(struct radeon_i2c_chan *chan,
 	int index = GetIndexIntoMasterTable(COMMAND, ProcessAuxChannelTransaction);
 	unsigned char *base;
 	int recv_bytes;
+	int r = 0;
 
 	memset(&args, 0, sizeof(args));
+
+	mutex_lock(&chan->mutex);
 
 	base = (unsigned char *)(rdev->mode_info.atom_context->scratch + 1);
 
@@ -117,19 +120,22 @@ static int radeon_process_aux_ch(struct radeon_i2c_chan *chan,
 	/* timeout */
 	if (args.v1.ucReplyStatus == 1) {
 		DRM_DEBUG_KMS("dp_aux_ch timeout\n");
-		return -ETIMEDOUT;
+		r = -ETIMEDOUT;
+		goto done;
 	}
 
 	/* flags not zero */
 	if (args.v1.ucReplyStatus == 2) {
 		DRM_DEBUG_KMS("dp_aux_ch flags not zero\n");
-		return -EBUSY;
+		r = -EBUSY;
+		goto done;
 	}
 
 	/* error */
 	if (args.v1.ucReplyStatus == 3) {
 		DRM_DEBUG_KMS("dp_aux_ch error\n");
-		return -EIO;
+		r = -EIO;
+		goto done;
 	}
 
 	recv_bytes = args.v1.ucDataOutLen;
@@ -139,10 +145,15 @@ static int radeon_process_aux_ch(struct radeon_i2c_chan *chan,
 	if (recv && recv_size)
 		radeon_atom_copy_swap(recv, base + 16, recv_bytes, false);
 
-	return recv_bytes;
+	r = recv_bytes;
+done:
+	mutex_unlock(&chan->mutex);
+
+	return r;
 }
 
-#define HEADER_SIZE 4
+#define BARE_ADDRESS_SIZE 3
+#define HEADER_SIZE (BARE_ADDRESS_SIZE + 1)
 
 static ssize_t
 radeon_dp_aux_transfer(struct drm_dp_aux *aux, struct drm_dp_aux_msg *msg)
@@ -160,13 +171,19 @@ radeon_dp_aux_transfer(struct drm_dp_aux *aux, struct drm_dp_aux_msg *msg)
 	tx_buf[0] = msg->address & 0xff;
 	tx_buf[1] = msg->address >> 8;
 	tx_buf[2] = msg->request << 4;
-	tx_buf[3] = msg->size - 1;
+	tx_buf[3] = msg->size ? (msg->size - 1) : 0;
 
 	switch (msg->request & ~DP_AUX_I2C_MOT) {
 	case DP_AUX_NATIVE_WRITE:
 	case DP_AUX_I2C_WRITE:
+		/* tx_size needs to be 4 even for bare address packets since the atom
+		 * table needs the info in tx_buf[3].
+		 */
 		tx_size = HEADER_SIZE + msg->size;
-		tx_buf[3] |= tx_size << 4;
+		if (msg->size == 0)
+			tx_buf[3] |= BARE_ADDRESS_SIZE << 4;
+		else
+			tx_buf[3] |= tx_size << 4;
 		memcpy(tx_buf + HEADER_SIZE, msg->buffer, msg->size);
 		ret = radeon_process_aux_ch(chan,
 					    tx_buf, tx_size, NULL, 0, delay, &ack);
@@ -176,8 +193,14 @@ radeon_dp_aux_transfer(struct drm_dp_aux *aux, struct drm_dp_aux_msg *msg)
 		break;
 	case DP_AUX_NATIVE_READ:
 	case DP_AUX_I2C_READ:
+		/* tx_size needs to be 4 even for bare address packets since the atom
+		 * table needs the info in tx_buf[3].
+		 */
 		tx_size = HEADER_SIZE;
-		tx_buf[3] |= tx_size << 4;
+		if (msg->size == 0)
+			tx_buf[3] |= BARE_ADDRESS_SIZE << 4;
+		else
+			tx_buf[3] |= tx_size << 4;
 		ret = radeon_process_aux_ch(chan,
 					    tx_buf, tx_size, msg->buffer, msg->size, delay, &ack);
 		break;
@@ -186,7 +209,7 @@ radeon_dp_aux_transfer(struct drm_dp_aux *aux, struct drm_dp_aux_msg *msg)
 		break;
 	}
 
-	if (ret > 0)
+	if (ret >= 0)
 		msg->reply = ack >> 4;
 
 	return ret;
@@ -194,98 +217,17 @@ radeon_dp_aux_transfer(struct drm_dp_aux *aux, struct drm_dp_aux_msg *msg)
 
 void radeon_dp_aux_init(struct radeon_connector *radeon_connector)
 {
-	struct radeon_connector_atom_dig *dig_connector = radeon_connector->con_priv;
-
-	dig_connector->dp_i2c_bus->aux.dev = radeon_connector->base.kdev;
-	dig_connector->dp_i2c_bus->aux.transfer = radeon_dp_aux_transfer;
-}
-
-int radeon_dp_i2c_aux_ch(struct i2c_adapter *adapter, int mode,
-			 u8 write_byte, u8 *read_byte)
-{
-	struct i2c_algo_dp_aux_data *algo_data = adapter->algo_data;
-	struct radeon_i2c_chan *auxch = i2c_get_adapdata(adapter);
-	u16 address = algo_data->address;
-	u8 msg[5];
-	u8 reply[2];
-	unsigned retry;
-	int msg_bytes;
-	int reply_bytes = 1;
 	int ret;
-	u8 ack;
 
-	/* Set up the address */
-	msg[0] = address;
-	msg[1] = address >> 8;
+	radeon_connector->ddc_bus->rec.hpd = radeon_connector->hpd.hpd;
+	radeon_connector->ddc_bus->aux.dev = radeon_connector->base.kdev;
+	radeon_connector->ddc_bus->aux.transfer = radeon_dp_aux_transfer;
 
-	/* Set up the command byte */
-	if (mode & MODE_I2C_READ) {
-		msg[2] = DP_AUX_I2C_READ << 4;
-		msg_bytes = 4;
-		msg[3] = msg_bytes << 4;
-	} else {
-		msg[2] = DP_AUX_I2C_WRITE << 4;
-		msg_bytes = 5;
-		msg[3] = msg_bytes << 4;
-		msg[4] = write_byte;
-	}
+	ret = drm_dp_aux_register(&radeon_connector->ddc_bus->aux);
+	if (!ret)
+		radeon_connector->ddc_bus->has_aux = true;
 
-	/* special handling for start/stop */
-	if (mode & (MODE_I2C_START | MODE_I2C_STOP))
-		msg[3] = 3 << 4;
-
-	/* Set MOT bit for all but stop */
-	if ((mode & MODE_I2C_STOP) == 0)
-		msg[2] |= DP_AUX_I2C_MOT << 4;
-
-	for (retry = 0; retry < 7; retry++) {
-		ret = radeon_process_aux_ch(auxch,
-					    msg, msg_bytes, reply, reply_bytes, 0, &ack);
-		if (ret == -EBUSY)
-			continue;
-		else if (ret < 0) {
-			DRM_DEBUG_KMS("aux_ch failed %d\n", ret);
-			return ret;
-		}
-
-		switch ((ack >> 4) & DP_AUX_NATIVE_REPLY_MASK) {
-		case DP_AUX_NATIVE_REPLY_ACK:
-			/* I2C-over-AUX Reply field is only valid
-			 * when paired with AUX ACK.
-			 */
-			break;
-		case DP_AUX_NATIVE_REPLY_NACK:
-			DRM_DEBUG_KMS("aux_ch native nack\n");
-			return -EREMOTEIO;
-		case DP_AUX_NATIVE_REPLY_DEFER:
-			DRM_DEBUG_KMS("aux_ch native defer\n");
-			usleep_range(500, 600);
-			continue;
-		default:
-			DRM_ERROR("aux_ch invalid native reply 0x%02x\n", ack);
-			return -EREMOTEIO;
-		}
-
-		switch ((ack >> 4) & DP_AUX_I2C_REPLY_MASK) {
-		case DP_AUX_I2C_REPLY_ACK:
-			if (mode == MODE_I2C_READ)
-				*read_byte = reply[0];
-			return ret;
-		case DP_AUX_I2C_REPLY_NACK:
-			DRM_DEBUG_KMS("aux_i2c nack\n");
-			return -EREMOTEIO;
-		case DP_AUX_I2C_REPLY_DEFER:
-			DRM_DEBUG_KMS("aux_i2c defer\n");
-			usleep_range(400, 500);
-			break;
-		default:
-			DRM_ERROR("aux_i2c invalid reply 0x%02x\n", ack);
-			return -EREMOTEIO;
-		}
-	}
-
-	DRM_DEBUG_KMS("aux i2c too many retries, giving up\n");
-	return -EREMOTEIO;
+	WARN(ret, "drm_dp_aux_register() failed with error %d\n", ret);
 }
 
 /***** general DP utility functions *****/
@@ -350,6 +292,19 @@ static int dp_get_max_dp_pix_clock(int link_rate,
 
 /***** radeon specific DP functions *****/
 
+static int radeon_dp_get_max_link_rate(struct drm_connector *connector,
+				       u8 dpcd[DP_DPCD_SIZE])
+{
+	int max_link_rate;
+
+	if (radeon_connector_is_dp12_capable(connector))
+		max_link_rate = min(drm_dp_max_link_rate(dpcd), 540000);
+	else
+		max_link_rate = min(drm_dp_max_link_rate(dpcd), 270000);
+
+	return max_link_rate;
+}
+
 /* First get the min lane# when low rate is used according to pixel clock
  * (prefer low rate), second check max lane# supported by DP panel,
  * if the max lane# < low rate lane# then use max lane# instead.
@@ -359,7 +314,7 @@ static int radeon_dp_get_dp_lane_number(struct drm_connector *connector,
 					int pix_clock)
 {
 	int bpp = convert_bpc_to_bpp(radeon_get_monitor_bpc(connector));
-	int max_link_rate = drm_dp_max_link_rate(dpcd);
+	int max_link_rate = radeon_dp_get_max_link_rate(connector, dpcd);
 	int max_lane_num = drm_dp_max_lane_count(dpcd);
 	int lane_num;
 	int max_dp_pix_clock;
@@ -397,7 +352,7 @@ static int radeon_dp_get_dp_link_clock(struct drm_connector *connector,
 			return 540000;
 	}
 
-	return drm_dp_max_link_rate(dpcd);
+	return radeon_dp_get_max_link_rate(connector, dpcd);
 }
 
 static u8 radeon_dp_encoder_service(struct radeon_device *rdev,
@@ -420,12 +375,11 @@ static u8 radeon_dp_encoder_service(struct radeon_device *rdev,
 
 u8 radeon_dp_getsinktype(struct radeon_connector *radeon_connector)
 {
-	struct radeon_connector_atom_dig *dig_connector = radeon_connector->con_priv;
 	struct drm_device *dev = radeon_connector->base.dev;
 	struct radeon_device *rdev = dev->dev_private;
 
 	return radeon_dp_encoder_service(rdev, ATOM_DP_ACTION_GET_SINK_TYPE, 0,
-					 dig_connector->dp_i2c_bus->rec.i2c_id, 0);
+					 radeon_connector->ddc_bus->rec.i2c_id, 0);
 }
 
 static void radeon_dp_probe_oui(struct radeon_connector *radeon_connector)
@@ -436,11 +390,11 @@ static void radeon_dp_probe_oui(struct radeon_connector *radeon_connector)
 	if (!(dig_connector->dpcd[DP_DOWN_STREAM_PORT_COUNT] & DP_OUI_SUPPORT))
 		return;
 
-	if (drm_dp_dpcd_read(&dig_connector->dp_i2c_bus->aux, DP_SINK_OUI, buf, 3))
+	if (drm_dp_dpcd_read(&radeon_connector->ddc_bus->aux, DP_SINK_OUI, buf, 3) == 3)
 		DRM_DEBUG_KMS("Sink OUI: %02hx%02hx%02hx\n",
 			      buf[0], buf[1], buf[2]);
 
-	if (drm_dp_dpcd_read(&dig_connector->dp_i2c_bus->aux, DP_BRANCH_OUI, buf, 3))
+	if (drm_dp_dpcd_read(&radeon_connector->ddc_bus->aux, DP_BRANCH_OUI, buf, 3) == 3)
 		DRM_DEBUG_KMS("Branch OUI: %02hx%02hx%02hx\n",
 			      buf[0], buf[1], buf[2]);
 }
@@ -451,7 +405,7 @@ bool radeon_dp_getdpcd(struct radeon_connector *radeon_connector)
 	u8 msg[DP_DPCD_SIZE];
 	int ret, i;
 
-	ret = drm_dp_dpcd_read(&dig_connector->dp_i2c_bus->aux, DP_DPCD_REV, msg,
+	ret = drm_dp_dpcd_read(&radeon_connector->ddc_bus->aux, DP_DPCD_REV, msg,
 			       DP_DPCD_SIZE);
 	if (ret > 0) {
 		memcpy(dig_connector->dpcd, msg, DP_DPCD_SIZE);
@@ -489,21 +443,23 @@ int radeon_dp_get_panel_mode(struct drm_encoder *encoder,
 
 	if (dp_bridge != ENCODER_OBJECT_ID_NONE) {
 		/* DP bridge chips */
-		drm_dp_dpcd_readb(&dig_connector->dp_i2c_bus->aux,
-				  DP_EDP_CONFIGURATION_CAP, &tmp);
-		if (tmp & 1)
-			panel_mode = DP_PANEL_MODE_INTERNAL_DP2_MODE;
-		else if ((dp_bridge == ENCODER_OBJECT_ID_NUTMEG) ||
-			 (dp_bridge == ENCODER_OBJECT_ID_TRAVIS))
-			panel_mode = DP_PANEL_MODE_INTERNAL_DP1_MODE;
-		else
-			panel_mode = DP_PANEL_MODE_EXTERNAL_DP_MODE;
+		if (drm_dp_dpcd_readb(&radeon_connector->ddc_bus->aux,
+				      DP_EDP_CONFIGURATION_CAP, &tmp) == 1) {
+			if (tmp & 1)
+				panel_mode = DP_PANEL_MODE_INTERNAL_DP2_MODE;
+			else if ((dp_bridge == ENCODER_OBJECT_ID_NUTMEG) ||
+				 (dp_bridge == ENCODER_OBJECT_ID_TRAVIS))
+				panel_mode = DP_PANEL_MODE_INTERNAL_DP1_MODE;
+			else
+				panel_mode = DP_PANEL_MODE_EXTERNAL_DP_MODE;
+		}
 	} else if (connector->connector_type == DRM_MODE_CONNECTOR_eDP) {
 		/* eDP */
-		drm_dp_dpcd_readb(&dig_connector->dp_i2c_bus->aux,
-				  DP_EDP_CONFIGURATION_CAP, &tmp);
-		if (tmp & 1)
-			panel_mode = DP_PANEL_MODE_INTERNAL_DP2_MODE;
+		if (drm_dp_dpcd_readb(&radeon_connector->ddc_bus->aux,
+				      DP_EDP_CONFIGURATION_CAP, &tmp) == 1) {
+			if (tmp & 1)
+				panel_mode = DP_PANEL_MODE_INTERNAL_DP2_MODE;
+		}
 	}
 
 	return panel_mode;
@@ -554,7 +510,8 @@ bool radeon_dp_needs_link_train(struct radeon_connector *radeon_connector)
 	u8 link_status[DP_LINK_STATUS_SIZE];
 	struct radeon_connector_atom_dig *dig = radeon_connector->con_priv;
 
-	if (drm_dp_dpcd_read_link_status(&dig->dp_i2c_bus->aux, link_status) <= 0)
+	if (drm_dp_dpcd_read_link_status(&radeon_connector->ddc_bus->aux, link_status)
+	    <= 0)
 		return false;
 	if (drm_dp_channel_eq_ok(link_status, dig->dp_lane_count))
 		return false;
@@ -574,7 +531,7 @@ void radeon_dp_set_rx_power_state(struct drm_connector *connector,
 
 	/* power up/down the sink */
 	if (dig_connector->dpcd[0] >= 0x11) {
-		drm_dp_dpcd_writeb(&dig_connector->dp_i2c_bus->aux,
+		drm_dp_dpcd_writeb(&radeon_connector->ddc_bus->aux,
 				   DP_SET_POWER, power_state);
 		usleep_range(1000, 2000);
 	}
@@ -878,11 +835,15 @@ void radeon_dp_link_train(struct drm_encoder *encoder,
 	else
 		dp_info.enc_id |= ATOM_DP_CONFIG_LINK_A;
 
-	drm_dp_dpcd_readb(&dig_connector->dp_i2c_bus->aux, DP_MAX_LANE_COUNT, &tmp);
-	if (ASIC_IS_DCE5(rdev) && (tmp & DP_TPS3_SUPPORTED))
-		dp_info.tp3_supported = true;
-	else
+	if (drm_dp_dpcd_readb(&radeon_connector->ddc_bus->aux, DP_MAX_LANE_COUNT, &tmp)
+	    == 1) {
+		if (ASIC_IS_DCE5(rdev) && (tmp & DP_TPS3_SUPPORTED))
+			dp_info.tp3_supported = true;
+		else
+			dp_info.tp3_supported = false;
+	} else {
 		dp_info.tp3_supported = false;
+	}
 
 	memcpy(dp_info.dpcd, dig_connector->dpcd, DP_RECEIVER_CAP_SIZE);
 	dp_info.rdev = rdev;
@@ -890,7 +851,7 @@ void radeon_dp_link_train(struct drm_encoder *encoder,
 	dp_info.connector = connector;
 	dp_info.dp_lane_count = dig_connector->dp_lane_count;
 	dp_info.dp_clock = dig_connector->dp_clock;
-	dp_info.aux = &dig_connector->dp_i2c_bus->aux;
+	dp_info.aux = &radeon_connector->ddc_bus->aux;
 
 	if (radeon_dp_link_train_init(&dp_info))
 		goto done;

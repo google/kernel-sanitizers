@@ -914,7 +914,7 @@ void nf_conntrack_free(struct nf_conn *ct)
 	nf_ct_ext_destroy(ct);
 	nf_ct_ext_free(ct);
 	kmem_cache_free(net->ct.nf_conntrack_cachep, ct);
-	smp_mb__before_atomic_dec();
+	smp_mb__before_atomic();
 	atomic_dec(&net->ct.count);
 }
 EXPORT_SYMBOL_GPL(nf_conntrack_free);
@@ -1795,6 +1795,7 @@ int nf_conntrack_init_net(struct net *net)
 	int cpu;
 
 	atomic_set(&net->ct.count, 0);
+	seqcount_init(&net->ct.generation);
 
 	net->ct.pcpu_lists = alloc_percpu(struct ct_pcpu);
 	if (!net->ct.pcpu_lists)

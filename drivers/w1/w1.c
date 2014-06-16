@@ -614,27 +614,11 @@ end:
 	return err;
 }
 
-/*
- * Handle sysfs file creation and removal here, before userspace is told that
- * the device is added / removed from the system
- */
-static int w1_bus_notify(struct notifier_block *nb, unsigned long action,
-			 void *data)
+static int w1_family_notify(unsigned long action, struct w1_slave *sl)
 {
-	struct device *dev = data;
-	struct w1_slave *sl;
 	struct w1_family_ops *fops;
 	int err;
 
-	/*
-	 * Only care about slave devices at the moment.  Yes, we should use a
-	 * separate "type" for this, but for now, look at the release function
-	 * to know which type it is...
-	 */
-	if (dev->release != w1_slave_release)
-		return 0;
-
-	sl = dev_to_w1_slave(dev);
 	fops = sl->family->fops;
 
 	if (!fops)
@@ -673,10 +657,6 @@ static int w1_bus_notify(struct notifier_block *nb, unsigned long action,
 	return 0;
 }
 
-static struct notifier_block w1_bus_nb = {
-	.notifier_call = w1_bus_notify,
-};
-
 static int __w1_attach_slave_device(struct w1_slave *sl)
 {
 	int err;
@@ -698,6 +678,9 @@ static int __w1_attach_slave_device(struct w1_slave *sl)
 	dev_dbg(&sl->dev, "%s: registering %s as %p.\n", __func__,
 		dev_name(&sl->dev), sl);
 
+	/* suppress for w1_family_notify before sending KOBJ_ADD */
+	dev_set_uevent_suppress(&sl->dev, true);
+
 	err = device_register(&sl->dev);
 	if (err < 0) {
 		dev_err(&sl->dev,
@@ -705,7 +688,7 @@ static int __w1_attach_slave_device(struct w1_slave *sl)
 			dev_name(&sl->dev), err);
 		return err;
 	}
-
+	w1_family_notify(BUS_NOTIFY_ADD_DEVICE, sl);
 
 	dev_set_uevent_suppress(&sl->dev, false);
 	kobject_uevent(&sl->dev.kobj, KOBJ_ADD);
@@ -799,6 +782,7 @@ int w1_unref_slave(struct w1_slave *sl)
 		msg.type = W1_SLAVE_REMOVE;
 		w1_netlink_send(sl->master, &msg);
 
+		w1_family_notify(BUS_NOTIFY_DEL_DEVICE, sl);
 		device_unregister(&sl->dev);
 		#ifdef DEBUG
 		memset(sl, 0, sizeof(*sl));
@@ -1094,6 +1078,8 @@ static void w1_search_process(struct w1_master *dev, u8 search_type)
  * w1_process_callbacks() - execute each dev->async_list callback entry
  * @dev: w1_master device
  *
+ * The w1 master list_mutex must be held.
+ *
  * Return: 1 if there were commands to executed 0 otherwise
  */
 int w1_process_callbacks(struct w1_master *dev)
@@ -1185,10 +1171,6 @@ static int __init w1_init(void)
 		printk(KERN_ERR "Failed to register bus. err=%d.\n", retval);
 		goto err_out_exit_init;
 	}
-
-	retval = bus_register_notifier(&w1_bus_type, &w1_bus_nb);
-	if (retval)
-		goto err_out_bus_unregister;
 
 	retval = driver_register(&w1_master_driver);
 	if (retval) {

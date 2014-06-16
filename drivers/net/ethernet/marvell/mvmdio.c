@@ -195,11 +195,10 @@ static int orion_mdio_probe(struct platform_device *pdev)
 		return -ENODEV;
 	}
 
-	bus = mdiobus_alloc_size(sizeof(struct orion_mdio_dev));
-	if (!bus) {
-		dev_err(&pdev->dev, "Cannot allocate MDIO bus\n");
+	bus = devm_mdiobus_alloc_size(&pdev->dev,
+				      sizeof(struct orion_mdio_dev));
+	if (!bus)
 		return -ENOMEM;
-	}
 
 	bus->name = "orion_mdio_bus";
 	bus->read = orion_mdio_read;
@@ -208,11 +207,10 @@ static int orion_mdio_probe(struct platform_device *pdev)
 		 dev_name(&pdev->dev));
 	bus->parent = &pdev->dev;
 
-	bus->irq = kmalloc(sizeof(int) * PHY_MAX_ADDR, GFP_KERNEL);
-	if (!bus->irq) {
-		mdiobus_free(bus);
+	bus->irq = devm_kmalloc_array(&pdev->dev, PHY_MAX_ADDR, sizeof(int),
+				      GFP_KERNEL);
+	if (!bus->irq)
 		return -ENOMEM;
-	}
 
 	for (i = 0; i < PHY_MAX_ADDR; i++)
 		bus->irq[i] = PHY_POLL;
@@ -232,7 +230,7 @@ static int orion_mdio_probe(struct platform_device *pdev)
 		clk_prepare_enable(dev->clk);
 
 	dev->err_interrupt = platform_get_irq(pdev, 0);
-	if (dev->err_interrupt != -ENXIO) {
+	if (dev->err_interrupt > 0) {
 		ret = devm_request_irq(&pdev->dev, dev->err_interrupt,
 					orion_mdio_err_irq,
 					IRQF_SHARED, pdev->name, dev);
@@ -241,6 +239,9 @@ static int orion_mdio_probe(struct platform_device *pdev)
 
 		writel(MVMDIO_ERR_INT_SMI_DONE,
 			dev->regs + MVMDIO_ERR_INT_MASK);
+
+	} else if (dev->err_interrupt == -EPROBE_DEFER) {
+		return -EPROBE_DEFER;
 	}
 
 	mutex_init(&dev->lock);
@@ -261,8 +262,6 @@ static int orion_mdio_probe(struct platform_device *pdev)
 out_mdio:
 	if (!IS_ERR(dev->clk))
 		clk_disable_unprepare(dev->clk);
-	kfree(bus->irq);
-	mdiobus_free(bus);
 	return ret;
 }
 
@@ -273,8 +272,6 @@ static int orion_mdio_remove(struct platform_device *pdev)
 
 	writel(0, dev->regs + MVMDIO_ERR_INT_MASK);
 	mdiobus_unregister(bus);
-	kfree(bus->irq);
-	mdiobus_free(bus);
 	if (!IS_ERR(dev->clk))
 		clk_disable_unprepare(dev->clk);
 

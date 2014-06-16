@@ -134,7 +134,8 @@ static int create_cq(struct c4iw_rdev *rdev, struct t4_cq *cq,
 			V_FW_RI_RES_WR_IQANUS(0) |
 			V_FW_RI_RES_WR_IQANUD(1) |
 			F_FW_RI_RES_WR_IQANDST |
-			V_FW_RI_RES_WR_IQANDSTINDEX(*rdev->lldi.rxq_ids));
+			V_FW_RI_RES_WR_IQANDSTINDEX(
+				rdev->lldi.ciq_ids[cq->vector]));
 	res->u.cq.iqdroprss_to_iqesize = cpu_to_be16(
 			F_FW_RI_RES_WR_IQDROPRSS |
 			V_FW_RI_RES_WR_IQPCIECH(2) |
@@ -235,27 +236,21 @@ int c4iw_flush_sq(struct c4iw_qp *qhp)
 	struct t4_cq *cq = &chp->cq;
 	int idx;
 	struct t4_swsqe *swsqe;
-	int error = (qhp->attr.state != C4IW_QP_STATE_CLOSING &&
-			qhp->attr.state != C4IW_QP_STATE_IDLE);
 
 	if (wq->sq.flush_cidx == -1)
 		wq->sq.flush_cidx = wq->sq.cidx;
 	idx = wq->sq.flush_cidx;
 	BUG_ON(idx >= wq->sq.size);
 	while (idx != wq->sq.pidx) {
-		if (error) {
-			swsqe = &wq->sq.sw_sq[idx];
-			BUG_ON(swsqe->flushed);
-			swsqe->flushed = 1;
-			insert_sq_cqe(wq, cq, swsqe);
-			if (wq->sq.oldest_read == swsqe) {
-				BUG_ON(swsqe->opcode != FW_RI_READ_REQ);
-				advance_oldest_read(wq);
-			}
-			flushed++;
-		} else {
-			t4_sq_consume(wq);
+		swsqe = &wq->sq.sw_sq[idx];
+		BUG_ON(swsqe->flushed);
+		swsqe->flushed = 1;
+		insert_sq_cqe(wq, cq, swsqe);
+		if (wq->sq.oldest_read == swsqe) {
+			BUG_ON(swsqe->opcode != FW_RI_READ_REQ);
+			advance_oldest_read(wq);
 		}
+		flushed++;
 		if (++idx == wq->sq.size)
 			idx = 0;
 	}
@@ -678,7 +673,7 @@ skip_cqe:
 static int c4iw_poll_cq_one(struct c4iw_cq *chp, struct ib_wc *wc)
 {
 	struct c4iw_qp *qhp = NULL;
-	struct t4_cqe cqe = {0, 0}, *rd_cqe;
+	struct t4_cqe uninitialized_var(cqe), *rd_cqe;
 	struct t4_wq *wq;
 	u32 credit = 0;
 	u8 cqe_flushed;
@@ -876,6 +871,9 @@ struct ib_cq *c4iw_create_cq(struct ib_device *ibdev, int entries,
 
 	rhp = to_c4iw_dev(ibdev);
 
+	if (vector >= rhp->rdev.lldi.nciq)
+		return ERR_PTR(-EINVAL);
+
 	chp = kzalloc(sizeof(*chp), GFP_KERNEL);
 	if (!chp)
 		return ERR_PTR(-ENOMEM);
@@ -921,6 +919,7 @@ struct ib_cq *c4iw_create_cq(struct ib_device *ibdev, int entries,
 	}
 	chp->cq.size = hwentries;
 	chp->cq.memsize = memsize;
+	chp->cq.vector = vector;
 
 	ret = create_cq(&rhp->rdev, &chp->cq,
 			ucontext ? &ucontext->uctx : &rhp->rdev.uctx);
@@ -946,7 +945,6 @@ struct ib_cq *c4iw_create_cq(struct ib_device *ibdev, int entries,
 		if (!mm2)
 			goto err4;
 
-		memset(&uresp, 0, sizeof(uresp));
 		uresp.qid_mask = rhp->rdev.cqmask;
 		uresp.cqid = chp->cq.cqid;
 		uresp.size = chp->cq.size;
@@ -957,7 +955,8 @@ struct ib_cq *c4iw_create_cq(struct ib_device *ibdev, int entries,
 		uresp.gts_key = ucontext->key;
 		ucontext->key += PAGE_SIZE;
 		spin_unlock(&ucontext->mmap_lock);
-		ret = ib_copy_to_udata(udata, &uresp, sizeof uresp);
+		ret = ib_copy_to_udata(udata, &uresp,
+				       sizeof(uresp) - sizeof(uresp.reserved));
 		if (ret)
 			goto err5;
 

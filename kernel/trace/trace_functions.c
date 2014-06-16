@@ -26,8 +26,6 @@ function_trace_call(unsigned long ip, unsigned long parent_ip,
 static void
 function_stack_trace_call(unsigned long ip, unsigned long parent_ip,
 			  struct ftrace_ops *op, struct pt_regs *pt_regs);
-static struct ftrace_ops trace_ops;
-static struct ftrace_ops trace_stack_ops;
 static struct tracer_flags func_flags;
 
 /* Our option */
@@ -58,12 +56,16 @@ int ftrace_create_function_files(struct trace_array *tr,
 {
 	int ret;
 
-	/* The top level array uses the "global_ops". */
-	if (!(tr->flags & TRACE_ARRAY_FL_GLOBAL)) {
-		ret = allocate_ftrace_ops(tr);
-		if (ret)
-			return ret;
-	}
+	/*
+	 * The top level array uses the "global_ops", and the files are
+	 * created on boot up.
+	 */
+	if (tr->flags & TRACE_ARRAY_FL_GLOBAL)
+		return 0;
+
+	ret = allocate_ftrace_ops(tr);
+	if (ret)
+		return ret;
 
 	ftrace_create_filter_files(tr->ops, parent);
 
@@ -79,28 +81,24 @@ void ftrace_destroy_function_files(struct trace_array *tr)
 
 static int function_trace_init(struct trace_array *tr)
 {
-	struct ftrace_ops *ops;
+	ftrace_func_t func;
 
-	if (tr->flags & TRACE_ARRAY_FL_GLOBAL) {
-		/* There's only one global tr */
-		if (!trace_ops.private) {
-			trace_ops.private = tr;
-			trace_stack_ops.private = tr;
-		}
-
-		if (func_flags.val & TRACE_FUNC_OPT_STACK)
-			ops = &trace_stack_ops;
-		else
-			ops = &trace_ops;
-		tr->ops = ops;
-	} else if (!tr->ops) {
-		/*
-		 * Instance trace_arrays get their ops allocated
-		 * at instance creation. Unless it failed
-		 * the allocation.
-		 */
+	/*
+	 * Instance trace_arrays get their ops allocated
+	 * at instance creation. Unless it failed
+	 * the allocation.
+	 */
+	if (!tr->ops)
 		return -ENOMEM;
-	}
+
+	/* Currently only the global instance can do stack tracing */
+	if (tr->flags & TRACE_ARRAY_FL_GLOBAL &&
+	    func_flags.val & TRACE_FUNC_OPT_STACK)
+		func = function_stack_trace_call;
+	else
+		func = function_trace_call;
+
+	ftrace_init_array_ops(tr, func);
 
 	tr->trace_buffer.cpu = get_cpu();
 	put_cpu();
@@ -114,6 +112,7 @@ static void function_trace_reset(struct trace_array *tr)
 {
 	tracing_stop_function_trace(tr);
 	tracing_stop_cmdline_record();
+	ftrace_reset_array_ops(tr);
 }
 
 static void function_trace_start(struct trace_array *tr)
@@ -195,18 +194,6 @@ function_stack_trace_call(unsigned long ip, unsigned long parent_ip,
 	local_irq_restore(flags);
 }
 
-static struct ftrace_ops trace_ops __read_mostly =
-{
-	.func = function_trace_call,
-	.flags = FTRACE_OPS_FL_GLOBAL | FTRACE_OPS_FL_RECURSION_SAFE,
-};
-
-static struct ftrace_ops trace_stack_ops __read_mostly =
-{
-	.func = function_stack_trace_call,
-	.flags = FTRACE_OPS_FL_GLOBAL | FTRACE_OPS_FL_RECURSION_SAFE,
-};
-
 static struct tracer_opt func_opts[] = {
 #ifdef CONFIG_STACKTRACE
 	{ TRACER_OPT(func_stack_trace, TRACE_FUNC_OPT_STACK) },
@@ -244,10 +231,10 @@ func_set_flag(struct trace_array *tr, u32 old_flags, u32 bit, int set)
 		unregister_ftrace_function(tr->ops);
 
 		if (set) {
-			tr->ops = &trace_stack_ops;
+			tr->ops->func = function_stack_trace_call;
 			register_ftrace_function(tr->ops);
 		} else {
-			tr->ops = &trace_ops;
+			tr->ops->func = function_trace_call;
 			register_ftrace_function(tr->ops);
 		}
 
@@ -265,7 +252,6 @@ static struct tracer function_trace __tracer_data =
 	.init		= function_trace_init,
 	.reset		= function_trace_reset,
 	.start		= function_trace_start,
-	.wait_pipe	= poll_wait_pipe,
 	.flags		= &func_flags,
 	.set_flag	= func_set_flag,
 	.allow_instances = true,

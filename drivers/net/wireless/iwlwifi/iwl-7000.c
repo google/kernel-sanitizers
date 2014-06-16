@@ -67,16 +67,16 @@
 #include "iwl-agn-hw.h"
 
 /* Highest firmware API version supported */
-#define IWL7260_UCODE_API_MAX	8
-#define IWL3160_UCODE_API_MAX	8
+#define IWL7260_UCODE_API_MAX	9
+#define IWL3160_UCODE_API_MAX	9
 
 /* Oldest version we won't warn about */
-#define IWL7260_UCODE_API_OK	8
-#define IWL3160_UCODE_API_OK	8
+#define IWL7260_UCODE_API_OK	9
+#define IWL3160_UCODE_API_OK	9
 
 /* Lowest firmware API version supported */
-#define IWL7260_UCODE_API_MIN	7
-#define IWL3160_UCODE_API_MIN	7
+#define IWL7260_UCODE_API_MIN	8
+#define IWL3160_UCODE_API_MIN	8
 
 /* NVM versions */
 #define IWL7260_NVM_VERSION		0x0a1d
@@ -98,7 +98,7 @@
 #define NVM_HW_SECTION_NUM_FAMILY_7000		0
 
 static const struct iwl_base_params iwl7000_base_params = {
-	.eeprom_size = OTP_LOW_IMAGE_SIZE,
+	.eeprom_size = OTP_LOW_IMAGE_SIZE_FAMILY_7000,
 	.num_of_queues = IWLAGN_NUM_QUEUES,
 	.pll_cfg_val = 0,
 	.shadow_ram_support = true,
@@ -107,6 +107,7 @@ static const struct iwl_base_params iwl7000_base_params = {
 	.max_event_log_size = 512,
 	.shadow_reg_enable = true,
 	.pcie_l1_allowed = true,
+	.apmg_wake_up_wa = true,
 };
 
 static const struct iwl_ht_params iwl7000_ht_params = {
@@ -244,3 +245,4 @@ const struct iwl_cfg iwl7265_n_cfg = {
 
 MODULE_FIRMWARE(IWL7260_MODULE_FIRMWARE(IWL7260_UCODE_API_OK));
 MODULE_FIRMWARE(IWL3160_MODULE_FIRMWARE(IWL3160_UCODE_API_OK));
+MODULE_FIRMWARE(IWL7265_MODULE_FIRMWARE(IWL7260_UCODE_API_OK));

@@ -53,6 +53,29 @@
 
 #include "samsung.h"
 
+#if	defined(CONFIG_SERIAL_SAMSUNG_DEBUG) &&	\
+	defined(CONFIG_DEBUG_LL) &&		\
+	!defined(MODULE)
+
+extern void printascii(const char *);
+
+__printf(1, 2)
+static void dbg(const char *fmt, ...)
+{
+	va_list va;
+	char buff[256];
+
+	va_start(va, fmt);
+	vscnprintf(buff, sizeof(buf), fmt, va);
+	va_end(va);
+
+	printascii(buff);
+}
+
+#else
+#define dbg(fmt, ...) do { if (0) no_printk(fmt, ##__VA_ARGS__); } while (0)
+#endif
+
 /* UART name and device definitions */
 
 #define S3C24XX_SERIAL_NAME	"ttySAC"
@@ -468,8 +491,8 @@ static int s3c24xx_serial_startup(struct uart_port *port)
 	struct s3c24xx_uart_port *ourport = to_ourport(port);
 	int ret;
 
-	dbg("s3c24xx_serial_startup: port=%p (%08lx,%p)\n",
-	    port->mapbase, port->membase);
+	dbg("s3c24xx_serial_startup: port=%p (%08llx,%p)\n",
+	    port, (unsigned long long)port->mapbase, port->membase);
 
 	rx_enabled(port) = 1;
 
@@ -514,8 +537,8 @@ static int s3c64xx_serial_startup(struct uart_port *port)
 	struct s3c24xx_uart_port *ourport = to_ourport(port);
 	int ret;
 
-	dbg("s3c64xx_serial_startup: port=%p (%08lx,%p)\n",
-	    port->mapbase, port->membase);
+	dbg("s3c64xx_serial_startup: port=%p (%08llx,%p)\n",
+	    port, (unsigned long long)port->mapbase, port->membase);
 
 	wr_regl(port, S3C64XX_UINTM, 0xf);
 
@@ -1160,7 +1183,7 @@ static int s3c24xx_serial_init_port(struct s3c24xx_uart_port *ourport,
 		return -EINVAL;
 	}
 
-	dbg("resource %p (%lx..%lx)\n", res, res->start, res->end);
+	dbg("resource %pR)\n", res);
 
 	port->membase = devm_ioremap(port->dev, res->start, resource_size(res));
 	if (!port->membase) {
@@ -1203,7 +1226,7 @@ static int s3c24xx_serial_init_port(struct s3c24xx_uart_port *ourport,
 		wr_regl(port, S3C64XX_UINTSP, 0xf);
 	}
 
-	dbg("port: map=%08x, mem=%08x, irq=%d (%d,%d), clock=%ld\n",
+	dbg("port: map=%08x, mem=%p, irq=%d (%d,%d), clock=%u\n",
 	    port->mapbase, port->membase, port->irq,
 	    ourport->rx_irq, ourport->tx_irq, port->uartclk);
 
@@ -1446,8 +1469,8 @@ static int s3c24xx_serial_get_poll_char(struct uart_port *port)
 static void s3c24xx_serial_put_poll_char(struct uart_port *port,
 		unsigned char c)
 {
-	unsigned int ufcon = rd_regl(cons_uart, S3C2410_UFCON);
-	unsigned int ucon = rd_regl(cons_uart, S3C2410_UCON);
+	unsigned int ufcon = rd_regl(port, S3C2410_UFCON);
+	unsigned int ucon = rd_regl(port, S3C2410_UCON);
 
 	/* not possible to xmit on unconfigured port */
 	if (!s3c24xx_port_configured(ucon))
@@ -1455,7 +1478,7 @@ static void s3c24xx_serial_put_poll_char(struct uart_port *port,
 
 	while (!s3c24xx_serial_console_txrdy(port, ufcon))
 		cpu_relax();
-	wr_regb(cons_uart, S3C2410_UTXH, c);
+	wr_regb(port, S3C2410_UTXH, c);
 }
 
 #endif /* CONFIG_CONSOLE_POLL */
@@ -1463,22 +1486,23 @@ static void s3c24xx_serial_put_poll_char(struct uart_port *port,
 static void
 s3c24xx_serial_console_putchar(struct uart_port *port, int ch)
 {
-	unsigned int ufcon = rd_regl(cons_uart, S3C2410_UFCON);
-	unsigned int ucon = rd_regl(cons_uart, S3C2410_UCON);
-
-	/* not possible to xmit on unconfigured port */
-	if (!s3c24xx_port_configured(ucon))
-		return;
+	unsigned int ufcon = rd_regl(port, S3C2410_UFCON);
 
 	while (!s3c24xx_serial_console_txrdy(port, ufcon))
-		barrier();
-	wr_regb(cons_uart, S3C2410_UTXH, ch);
+		cpu_relax();
+	wr_regb(port, S3C2410_UTXH, ch);
 }
 
 static void
 s3c24xx_serial_console_write(struct console *co, const char *s,
 			     unsigned int count)
 {
+	unsigned int ucon = rd_regl(cons_uart, S3C2410_UCON);
+
+	/* not possible to xmit on unconfigured port */
+	if (!s3c24xx_port_configured(ucon))
+		return;
+
 	uart_console_write(cons_uart, s, count, s3c24xx_serial_console_putchar);
 }
 

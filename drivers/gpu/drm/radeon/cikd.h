@@ -482,6 +482,7 @@
 #define		READ_PROTECTION_FAULT_ENABLE_DEFAULT		(1 << 16)
 #define		WRITE_PROTECTION_FAULT_ENABLE_INTERRUPT		(1 << 18)
 #define		WRITE_PROTECTION_FAULT_ENABLE_DEFAULT		(1 << 19)
+#define		PAGE_TABLE_BLOCK_SIZE(x)			(((x) & 0xF) << 24)
 #define VM_CONTEXT1_CNTL				0x1414
 #define VM_CONTEXT0_CNTL2				0x1430
 #define VM_CONTEXT1_CNTL2				0x1434
@@ -887,6 +888,15 @@
 #       define DC_HPD6_INTERRUPT                        (1 << 17)
 #       define DC_HPD6_RX_INTERRUPT                     (1 << 18)
 #define DISP_INTERRUPT_STATUS_CONTINUE6                 0x6780
+
+/* 0x6858, 0x7458, 0x10058, 0x10c58, 0x11858, 0x12458 */
+#define GRPH_INT_STATUS                                 0x6858
+#       define GRPH_PFLIP_INT_OCCURRED                  (1 << 0)
+#       define GRPH_PFLIP_INT_CLEAR                     (1 << 8)
+/* 0x685c, 0x745c, 0x1005c, 0x10c5c, 0x1185c, 0x1245c */
+#define GRPH_INT_CONTROL                                0x685c
+#       define GRPH_PFLIP_INT_MASK                      (1 << 0)
+#       define GRPH_PFLIP_INT_TYPE                      (1 << 8)
 
 #define	DAC_AUTODETECT_INT_CONTROL			0x67c8
 

@@ -308,6 +308,9 @@ static int cirrus_crtc_mode_set(struct drm_crtc *crtc,
 
 	WREG_HDR(hdr);
 	cirrus_crtc_do_set_base(crtc, old_fb, x, y, 0);
+
+	/* Unblank (needed on S3 resume, vgabios doesn't do it then) */
+	outb(0x20, 0x3c0);
 	return 0;
 }
 
@@ -502,13 +505,6 @@ static int cirrus_vga_get_modes(struct drm_connector *connector)
 	return count;
 }
 
-static int cirrus_vga_mode_valid(struct drm_connector *connector,
-				 struct drm_display_mode *mode)
-{
-	/* Any mode we've added is valid */
-	return MODE_OK;
-}
-
 static struct drm_encoder *cirrus_connector_best_encoder(struct drm_connector
 						  *connector)
 {
@@ -543,7 +539,6 @@ static void cirrus_connector_destroy(struct drm_connector *connector)
 
 struct drm_connector_helper_funcs cirrus_vga_connector_helper_funcs = {
 	.get_modes = cirrus_vga_get_modes,
-	.mode_valid = cirrus_vga_mode_valid,
 	.best_encoder = cirrus_connector_best_encoder,
 };
 

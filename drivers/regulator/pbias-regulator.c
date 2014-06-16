@@ -38,85 +38,24 @@ struct pbias_reg_info {
 struct pbias_regulator_data {
 	struct regulator_desc desc;
 	void __iomem *pbias_addr;
-	unsigned int pbias_reg;
 	struct regulator_dev *dev;
 	struct regmap *syscon;
 	const struct pbias_reg_info *info;
 	int voltage;
 };
 
-static int pbias_regulator_set_voltage(struct regulator_dev *dev,
-			int min_uV, int max_uV, unsigned *selector)
-{
-	struct pbias_regulator_data *data = rdev_get_drvdata(dev);
-	const struct pbias_reg_info *info = data->info;
-	int ret, vmode;
-
-	if (min_uV <= 1800000)
-		vmode = 0;
-	else if (min_uV > 1800000)
-		vmode = info->vmode;
-
-	ret = regmap_update_bits(data->syscon, data->pbias_reg,
-						info->vmode, vmode);
-
-	return ret;
-}
-
-static int pbias_regulator_get_voltage(struct regulator_dev *rdev)
-{
-	struct pbias_regulator_data *data = rdev_get_drvdata(rdev);
-	const struct pbias_reg_info *info = data->info;
-	int value, voltage;
-
-	regmap_read(data->syscon, data->pbias_reg, &value);
-	value &= info->vmode;
-
-	voltage = value ? 3000000 : 1800000;
-
-	return voltage;
-}
-
-static int pbias_regulator_enable(struct regulator_dev *rdev)
-{
-	struct pbias_regulator_data *data = rdev_get_drvdata(rdev);
-	const struct pbias_reg_info *info = data->info;
-	int ret;
-
-	ret = regmap_update_bits(data->syscon, data->pbias_reg,
-					info->enable_mask, info->enable);
-
-	return ret;
-}
-
-static int pbias_regulator_disable(struct regulator_dev *rdev)
-{
-	struct pbias_regulator_data *data = rdev_get_drvdata(rdev);
-	const struct pbias_reg_info *info = data->info;
-	int ret;
-
-	ret = regmap_update_bits(data->syscon, data->pbias_reg,
-						info->enable_mask, 0);
-	return ret;
-}
-
-static int pbias_regulator_is_enable(struct regulator_dev *rdev)
-{
-	struct pbias_regulator_data *data = rdev_get_drvdata(rdev);
-	const struct pbias_reg_info *info = data->info;
-	int value;
-
-	regmap_read(data->syscon, data->pbias_reg, &value);
-
-	return (value & info->enable_mask) == info->enable_mask;
-}
+static const unsigned int pbias_volt_table[] = {
+	1800000,
+	3000000
+};
 
 static struct regulator_ops pbias_regulator_voltage_ops = {
-	.set_voltage	= pbias_regulator_set_voltage,
-	.get_voltage	= pbias_regulator_get_voltage,
-	.enable		= pbias_regulator_enable,
-	.disable	= pbias_regulator_disable,
-	.is_enabled	= pbias_regulator_is_enable,
+	.list_voltage = regulator_list_voltage_table,
+	.get_voltage_sel = regulator_get_voltage_sel_regmap,
+	.set_voltage_sel = regulator_set_voltage_sel_regmap,
+	.enable = regulator_enable_regmap,
+	.disable = regulator_disable_regmap,
+	.is_enabled = regulator_is_enabled_regmap,
 };
 
 static const struct pbias_reg_info pbias_mmc_omap2430 = {
@@ -183,15 +122,14 @@ static int pbias_regulator_probe(struct platform_device *pdev)
 
 	drvdata = devm_kzalloc(&pdev->dev, sizeof(struct pbias_regulator_data)
 			       * count, GFP_KERNEL);
-	if (drvdata == NULL) {
-		dev_err(&pdev->dev, "Failed to allocate device data\n");
+	if (!drvdata)
 		return -ENOMEM;
-	}
 
 	syscon = syscon_regmap_lookup_by_phandle(np, "syscon");
 	if (IS_ERR(syscon))
 		return PTR_ERR(syscon);
 
+	cfg.regmap = syscon;
 	cfg.dev = &pdev->dev;
 
 	for (idx = 0; idx < PBIAS_NUM_REGS && data_idx < count; idx++) {
@@ -207,15 +145,20 @@ static int pbias_regulator_probe(struct platform_device *pdev)
 		if (!res)
 			return -EINVAL;
 
-		drvdata[data_idx].pbias_reg = res->start;
 		drvdata[data_idx].syscon = syscon;
 		drvdata[data_idx].info = info;
 		drvdata[data_idx].desc.name = info->name;
 		drvdata[data_idx].desc.owner = THIS_MODULE;
 		drvdata[data_idx].desc.type = REGULATOR_VOLTAGE;
 		drvdata[data_idx].desc.ops = &pbias_regulator_voltage_ops;
+		drvdata[data_idx].desc.volt_table = pbias_volt_table;
 		drvdata[data_idx].desc.n_voltages = 2;
 		drvdata[data_idx].desc.enable_time = info->enable_time;
+		drvdata[data_idx].desc.vsel_reg = res->start;
+		drvdata[data_idx].desc.vsel_mask = info->vmode;
+		drvdata[data_idx].desc.enable_reg = res->start;
+		drvdata[data_idx].desc.enable_mask = info->enable_mask;
+		drvdata[data_idx].desc.enable_val = info->enable;
 
 		cfg.init_data = pbias_matches[idx].init_data;
 		cfg.driver_data = &drvdata[data_idx];

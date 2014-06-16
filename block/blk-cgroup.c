@@ -185,7 +185,7 @@ static struct blkcg_gq *blkg_create(struct blkcg *blkcg,
 	lockdep_assert_held(q->queue_lock);
 
 	/* blkg holds a reference to blkcg */
-	if (!css_tryget(&blkcg->css)) {
+	if (!css_tryget_online(&blkcg->css)) {
 		ret = -EINVAL;
 		goto err_free_blkg;
 	}
@@ -451,7 +451,20 @@ static int blkcg_reset_stats(struct cgroup_subsys_state *css,
 	struct blkcg_gq *blkg;
 	int i;
 
-	mutex_lock(&blkcg_pol_mutex);
+	/*
+	 * XXX: We invoke cgroup_add/rm_cftypes() under blkcg_pol_mutex
+	 * which ends up putting cgroup's internal cgroup_tree_mutex under
+	 * it; however, cgroup_tree_mutex is nested above cgroup file
+	 * active protection and grabbing blkcg_pol_mutex from a cgroup
+	 * file operation creates a possible circular dependency.  cgroup
+	 * internal locking is planned to go through further simplification
+	 * and this issue should go away soon.  For now, let's trylock
+	 * blkcg_pol_mutex and restart the write on failure.
+	 *
+	 * http://lkml.kernel.org/g/5363C04B.4010400@oracle.com
+	 */
+	if (!mutex_trylock(&blkcg_pol_mutex))
+		return restart_syscall();
 	spin_lock_irq(&blkcg->lock);
 
 	/*
@@ -1080,7 +1093,7 @@ EXPORT_SYMBOL_GPL(blkcg_deactivate_policy);
  * Register @pol with blkcg core.  Might sleep and @pol may be modified on
  * successful registration.  Returns 0 on success and -errno on failure.
  */
-int blkcg_policy_register(struct blkcg_policy *pol)
+int __init blkcg_policy_register(struct blkcg_policy *pol)
 {
 	int i, ret;
 

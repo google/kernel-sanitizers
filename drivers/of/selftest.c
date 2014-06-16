@@ -10,6 +10,7 @@
 #include <linux/module.h>
 #include <linux/of.h>
 #include <linux/of_irq.h>
+#include <linux/of_platform.h>
 #include <linux/list.h>
 #include <linux/mutex.h>
 #include <linux/slab.h>
@@ -28,6 +29,51 @@ static struct selftest_results {
 		selftest_results.passed++; \
 		pr_debug("pass %s():%i\n", __func__, __LINE__); \
 	} \
+}
+
+static void __init of_selftest_find_node_by_name(void)
+{
+	struct device_node *np;
+
+	np = of_find_node_by_path("/testcase-data");
+	selftest(np && !strcmp("/testcase-data", np->full_name),
+		"find /testcase-data failed\n");
+	of_node_put(np);
+
+	/* Test if trailing '/' works */
+	np = of_find_node_by_path("/testcase-data/");
+	selftest(!np, "trailing '/' on /testcase-data/ should fail\n");
+
+	np = of_find_node_by_path("/testcase-data/phandle-tests/consumer-a");
+	selftest(np && !strcmp("/testcase-data/phandle-tests/consumer-a", np->full_name),
+		"find /testcase-data/phandle-tests/consumer-a failed\n");
+	of_node_put(np);
+
+	np = of_find_node_by_path("testcase-alias");
+	selftest(np && !strcmp("/testcase-data", np->full_name),
+		"find testcase-alias failed\n");
+	of_node_put(np);
+
+	/* Test if trailing '/' works on aliases */
+	np = of_find_node_by_path("testcase-alias/");
+	selftest(!np, "trailing '/' on testcase-alias/ should fail\n");
+
+	np = of_find_node_by_path("testcase-alias/phandle-tests/consumer-a");
+	selftest(np && !strcmp("/testcase-data/phandle-tests/consumer-a", np->full_name),
+		"find testcase-alias/phandle-tests/consumer-a failed\n");
+	of_node_put(np);
+
+	np = of_find_node_by_path("/testcase-data/missing-path");
+	selftest(!np, "non-existent path returned node %s\n", np->full_name);
+	of_node_put(np);
+
+	np = of_find_node_by_path("missing-alias");
+	selftest(!np, "non-existent alias returned node %s\n", np->full_name);
+	of_node_put(np);
+
+	np = of_find_node_by_path("testcase-alias/missing-path");
+	selftest(!np, "non-existent alias with relative path returned node %s\n", np->full_name);
+	of_node_put(np);
 }
 
 static void __init of_selftest_dynamic(void)
@@ -427,6 +473,50 @@ static void __init of_selftest_match_node(void)
 	}
 }
 
+static void __init of_selftest_platform_populate(void)
+{
+	int irq;
+	struct device_node *np, *child;
+	struct platform_device *pdev;
+	struct of_device_id match[] = {
+		{ .compatible = "test-device", },
+		{}
+	};
+
+	np = of_find_node_by_path("/testcase-data");
+	of_platform_populate(np, of_default_bus_match_table, NULL, NULL);
+
+	/* Test that a missing irq domain returns -EPROBE_DEFER */
+	np = of_find_node_by_path("/testcase-data/testcase-device1");
+	pdev = of_find_device_by_node(np);
+	selftest(pdev, "device 1 creation failed\n");
+
+	irq = platform_get_irq(pdev, 0);
+	selftest(irq == -EPROBE_DEFER, "device deferred probe failed - %d\n", irq);
+
+	/* Test that a parsing failure does not return -EPROBE_DEFER */
+	np = of_find_node_by_path("/testcase-data/testcase-device2");
+	pdev = of_find_device_by_node(np);
+	selftest(pdev, "device 2 creation failed\n");
+	irq = platform_get_irq(pdev, 0);
+	selftest(irq < 0 && irq != -EPROBE_DEFER, "device parsing error failed - %d\n", irq);
+
+	np = of_find_node_by_path("/testcase-data/platform-tests");
+	if (!np) {
+		pr_err("No testcase data in device tree\n");
+		return;
+	}
+
+	for_each_child_of_node(np, child) {
+		struct device_node *grandchild;
+		of_platform_populate(child, match, NULL, NULL);
+		for_each_child_of_node(child, grandchild)
+			selftest(of_find_device_by_node(grandchild),
+				 "Could not create device for node '%s'\n",
+				 grandchild->name);
+	}
+}
+
 static int __init of_selftest(void)
 {
 	struct device_node *np;
@@ -439,12 +529,14 @@ static int __init of_selftest(void)
 	of_node_put(np);
 
 	pr_info("start of selftest - you will see error messages\n");
+	of_selftest_find_node_by_name();
 	of_selftest_dynamic();
 	of_selftest_parse_phandle_with_args();
 	of_selftest_property_match_string();
 	of_selftest_parse_interrupts();
 	of_selftest_parse_interrupts_extended();
 	of_selftest_match_node();
+	of_selftest_platform_populate();
 	pr_info("end of selftest - %i passed, %i failed\n",
 		selftest_results.passed, selftest_results.failed);
 	return 0;

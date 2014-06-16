@@ -68,7 +68,6 @@
 			};
 
 			serial@12000 {
-				clock-frequency = <200000000>;
 				status = "okay";
 			};
 
@@ -77,6 +76,11 @@
 					marvell,pins = "mpp44", "mpp45";
 					marvell,function = "gpio";
 				};
+			};
+
+			sata@a0000 {
+				status = "okay";
+				nr-ports = <2>;
 			};
 
 			nand: nand@d0000 {
@@ -100,6 +104,14 @@
 					label = "Filesystem";
 					reg = <0x1000000 0x3f000000>;
 				};
+			};
+
+			usb@54000 {
+				status = "okay";
+			};
+
+			usb3@58000 {
+				status = "okay";
 			};
 
 			mvsdio@d4000 {

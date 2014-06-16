@@ -121,6 +121,7 @@ static irqreturn_t gfar_error(int irq, void *dev_id);
 static irqreturn_t gfar_transmit(int irq, void *dev_id);
 static irqreturn_t gfar_interrupt(int irq, void *dev_id);
 static void adjust_link(struct net_device *dev);
+static noinline void gfar_update_link_state(struct gfar_private *priv);
 static int init_phy(struct net_device *dev);
 static int gfar_probe(struct platform_device *ofdev);
 static int gfar_remove(struct platform_device *ofdev);
@@ -888,6 +889,17 @@ static int gfar_of_init(struct platform_device *ofdev, struct net_device **pdev)
 
 	priv->phy_node = of_parse_phandle(np, "phy-handle", 0);
 
+	/* In the case of a fixed PHY, the DT node associated
+	 * to the PHY is the Ethernet MAC DT node.
+	 */
+	if (of_phy_is_fixed_link(np)) {
+		err = of_phy_register_fixed_link(np);
+		if (err)
+			goto err_grp_init;
+
+		priv->phy_node = np;
+	}
+
 	/* Find the TBI PHY.  If it's not there, we don't support SGMII */
 	priv->tbi_node = of_parse_phandle(np, "tbi-handle", 0);
 
@@ -1230,7 +1242,7 @@ static void gfar_hw_init(struct gfar_private *priv)
 		gfar_write_isrg(priv);
 }
 
-static void __init gfar_init_addr_hash_table(struct gfar_private *priv)
+static void gfar_init_addr_hash_table(struct gfar_private *priv)
 {
 	struct gfar __iomem *regs = priv->gfargrp[0].regs;
 
@@ -1372,15 +1384,15 @@ static int gfar_probe(struct platform_device *ofdev)
 
 	gfar_hw_init(priv);
 
+	/* Carrier starts down, phylib will bring it up */
+	netif_carrier_off(dev);
+
 	err = register_netdev(dev);
 
 	if (err) {
 		pr_err("%s: Cannot register net device, aborting\n", dev->name);
 		goto register_fail;
 	}
-
-	/* Carrier starts down, phylib will bring it up */
-	netif_carrier_off(dev);
 
 	device_init_wakeup(&dev->dev,
 			   priv->device_flags &
@@ -1659,9 +1671,6 @@ static int init_phy(struct net_device *dev)
 
 	priv->phydev = of_phy_connect(dev, priv->phy_node, &adjust_link, 0,
 				      interface);
-	if (!priv->phydev)
-		priv->phydev = of_phy_connect_fixed_link(dev, &adjust_link,
-							 interface);
 	if (!priv->phydev) {
 		dev_err(&dev->dev, "could not attach to PHY\n");
 		return -ENODEV;
@@ -1797,9 +1806,9 @@ void stop_gfar(struct net_device *dev)
 
 	netif_tx_stop_all_queues(dev);
 
-	smp_mb__before_clear_bit();
+	smp_mb__before_atomic();
 	set_bit(GFAR_DOWN, &priv->state);
-	smp_mb__after_clear_bit();
+	smp_mb__after_atomic();
 
 	disable_napi(priv);
 
@@ -2042,9 +2051,9 @@ int startup_gfar(struct net_device *ndev)
 
 	gfar_init_tx_rx_base(priv);
 
-	smp_mb__before_clear_bit();
+	smp_mb__before_atomic();
 	clear_bit(GFAR_DOWN, &priv->state);
-	smp_mb__after_clear_bit();
+	smp_mb__after_atomic();
 
 	/* Start Rx/Tx DMA and enable the interrupts */
 	gfar_start(priv);
@@ -3076,41 +3085,6 @@ static irqreturn_t gfar_interrupt(int irq, void *grp_id)
 	return IRQ_HANDLED;
 }
 
-static u32 gfar_get_flowctrl_cfg(struct gfar_private *priv)
-{
-	struct phy_device *phydev = priv->phydev;
-	u32 val = 0;
-
-	if (!phydev->duplex)
-		return val;
-
-	if (!priv->pause_aneg_en) {
-		if (priv->tx_pause_en)
-			val |= MACCFG1_TX_FLOW;
-		if (priv->rx_pause_en)
-			val |= MACCFG1_RX_FLOW;
-	} else {
-		u16 lcl_adv, rmt_adv;
-		u8 flowctrl;
-		/* get link partner capabilities */
-		rmt_adv = 0;
-		if (phydev->pause)
-			rmt_adv = LPA_PAUSE_CAP;
-		if (phydev->asym_pause)
-			rmt_adv |= LPA_PAUSE_ASYM;
-
-		lcl_adv = mii_advertise_flowctrl(phydev->advertising);
-
-		flowctrl = mii_resolve_flowctrl_fdx(lcl_adv, rmt_adv);
-		if (flowctrl & FLOW_CTRL_TX)
-			val |= MACCFG1_TX_FLOW;
-		if (flowctrl & FLOW_CTRL_RX)
-			val |= MACCFG1_RX_FLOW;
-	}
-
-	return val;
-}
-
 /* Called every time the controller might need to be made
  * aware of new link state.  The PHY code conveys this
  * information through variables in the phydev structure, and this
@@ -3120,83 +3094,12 @@ static u32 gfar_get_flowctrl_cfg(struct gfar_private *priv)
 static void adjust_link(struct net_device *dev)
 {
 	struct gfar_private *priv = netdev_priv(dev);
-	struct gfar __iomem *regs = priv->gfargrp[0].regs;
 	struct phy_device *phydev = priv->phydev;
-	int new_state = 0;
 
-	if (test_bit(GFAR_RESETTING, &priv->state))
-		return;
-
-	if (phydev->link) {
-		u32 tempval1 = gfar_read(&regs->maccfg1);
-		u32 tempval = gfar_read(&regs->maccfg2);
-		u32 ecntrl = gfar_read(&regs->ecntrl);
-
-		/* Now we make sure that we can be in full duplex mode.
-		 * If not, we operate in half-duplex mode.
-		 */
-		if (phydev->duplex != priv->oldduplex) {
-			new_state = 1;
-			if (!(phydev->duplex))
-				tempval &= ~(MACCFG2_FULL_DUPLEX);
-			else
-				tempval |= MACCFG2_FULL_DUPLEX;
-
-			priv->oldduplex = phydev->duplex;
-		}
-
-		if (phydev->speed != priv->oldspeed) {
-			new_state = 1;
-			switch (phydev->speed) {
-			case 1000:
-				tempval =
-				    ((tempval & ~(MACCFG2_IF)) | MACCFG2_GMII);
-
-				ecntrl &= ~(ECNTRL_R100);
-				break;
-			case 100:
-			case 10:
-				tempval =
-				    ((tempval & ~(MACCFG2_IF)) | MACCFG2_MII);
-
-				/* Reduced mode distinguishes
-				 * between 10 and 100
-				 */
-				if (phydev->speed == SPEED_100)
-					ecntrl |= ECNTRL_R100;
-				else
-					ecntrl &= ~(ECNTRL_R100);
-				break;
-			default:
-				netif_warn(priv, link, dev,
-					   "Ack!  Speed (%d) is not 10/100/1000!\n",
-					   phydev->speed);
-				break;
-			}
-
-			priv->oldspeed = phydev->speed;
-		}
-
-		tempval1 &= ~(MACCFG1_TX_FLOW | MACCFG1_RX_FLOW);
-		tempval1 |= gfar_get_flowctrl_cfg(priv);
-
-		gfar_write(&regs->maccfg1, tempval1);
-		gfar_write(&regs->maccfg2, tempval);
-		gfar_write(&regs->ecntrl, ecntrl);
-
-		if (!priv->oldlink) {
-			new_state = 1;
-			priv->oldlink = 1;
-		}
-	} else if (priv->oldlink) {
-		new_state = 1;
-		priv->oldlink = 0;
-		priv->oldspeed = 0;
-		priv->oldduplex = -1;
-	}
-
-	if (new_state && netif_msg_link(priv))
-		phy_print_status(phydev);
+	if (unlikely(phydev->link != priv->oldlink ||
+		     phydev->duplex != priv->oldduplex ||
+		     phydev->speed != priv->oldspeed))
+		gfar_update_link_state(priv);
 }
 
 /* Update the hash table based on the current list of multicast
@@ -3440,6 +3343,114 @@ static irqreturn_t gfar_error(int irq, void *grp_id)
 		netif_dbg(priv, tx_err, dev, "babbling TX error\n");
 	}
 	return IRQ_HANDLED;
+}
+
+static u32 gfar_get_flowctrl_cfg(struct gfar_private *priv)
+{
+	struct phy_device *phydev = priv->phydev;
+	u32 val = 0;
+
+	if (!phydev->duplex)
+		return val;
+
+	if (!priv->pause_aneg_en) {
+		if (priv->tx_pause_en)
+			val |= MACCFG1_TX_FLOW;
+		if (priv->rx_pause_en)
+			val |= MACCFG1_RX_FLOW;
+	} else {
+		u16 lcl_adv, rmt_adv;
+		u8 flowctrl;
+		/* get link partner capabilities */
+		rmt_adv = 0;
+		if (phydev->pause)
+			rmt_adv = LPA_PAUSE_CAP;
+		if (phydev->asym_pause)
+			rmt_adv |= LPA_PAUSE_ASYM;
+
+		lcl_adv = mii_advertise_flowctrl(phydev->advertising);
+
+		flowctrl = mii_resolve_flowctrl_fdx(lcl_adv, rmt_adv);
+		if (flowctrl & FLOW_CTRL_TX)
+			val |= MACCFG1_TX_FLOW;
+		if (flowctrl & FLOW_CTRL_RX)
+			val |= MACCFG1_RX_FLOW;
+	}
+
+	return val;
+}
+
+static noinline void gfar_update_link_state(struct gfar_private *priv)
+{
+	struct gfar __iomem *regs = priv->gfargrp[0].regs;
+	struct phy_device *phydev = priv->phydev;
+
+	if (unlikely(test_bit(GFAR_RESETTING, &priv->state)))
+		return;
+
+	if (phydev->link) {
+		u32 tempval1 = gfar_read(&regs->maccfg1);
+		u32 tempval = gfar_read(&regs->maccfg2);
+		u32 ecntrl = gfar_read(&regs->ecntrl);
+
+		if (phydev->duplex != priv->oldduplex) {
+			if (!(phydev->duplex))
+				tempval &= ~(MACCFG2_FULL_DUPLEX);
+			else
+				tempval |= MACCFG2_FULL_DUPLEX;
+
+			priv->oldduplex = phydev->duplex;
+		}
+
+		if (phydev->speed != priv->oldspeed) {
+			switch (phydev->speed) {
+			case 1000:
+				tempval =
+				    ((tempval & ~(MACCFG2_IF)) | MACCFG2_GMII);
+
+				ecntrl &= ~(ECNTRL_R100);
+				break;
+			case 100:
+			case 10:
+				tempval =
+				    ((tempval & ~(MACCFG2_IF)) | MACCFG2_MII);
+
+				/* Reduced mode distinguishes
+				 * between 10 and 100
+				 */
+				if (phydev->speed == SPEED_100)
+					ecntrl |= ECNTRL_R100;
+				else
+					ecntrl &= ~(ECNTRL_R100);
+				break;
+			default:
+				netif_warn(priv, link, priv->ndev,
+					   "Ack!  Speed (%d) is not 10/100/1000!\n",
+					   phydev->speed);
+				break;
+			}
+
+			priv->oldspeed = phydev->speed;
+		}
+
+		tempval1 &= ~(MACCFG1_TX_FLOW | MACCFG1_RX_FLOW);
+		tempval1 |= gfar_get_flowctrl_cfg(priv);
+
+		gfar_write(&regs->maccfg1, tempval1);
+		gfar_write(&regs->maccfg2, tempval);
+		gfar_write(&regs->ecntrl, ecntrl);
+
+		if (!priv->oldlink)
+			priv->oldlink = 1;
+
+	} else if (priv->oldlink) {
+		priv->oldlink = 0;
+		priv->oldspeed = 0;
+		priv->oldduplex = -1;
+	}
+
+	if (netif_msg_link(priv))
+		phy_print_status(phydev);
 }
 
 static struct of_device_id gfar_match[] =

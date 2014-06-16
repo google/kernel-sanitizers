@@ -39,6 +39,7 @@
 #include <linux/dmi.h>
 #include <linux/pci-ats.h>
 #include <linux/memblock.h>
+#include <linux/dma-contiguous.h>
 #include <asm/irq_remapping.h>
 #include <asm/cacheflush.h>
 #include <asm/iommu.h>
@@ -1009,11 +1010,13 @@ static struct page *dma_pte_list_pagetables(struct dmar_domain *domain,
 	if (level == 1)
 		return freelist;
 
-	for (pte = page_address(pg); !first_pte_in_page(pte); pte++) {
+	pte = page_address(pg);
+	do {
 		if (dma_pte_present(pte) && !dma_pte_superpage(pte))
 			freelist = dma_pte_list_pagetables(domain, level - 1,
 							   pte, freelist);
-	}
+		pte++;
+	} while (!first_pte_in_page(pte));
 
 	return freelist;
 }
@@ -2235,7 +2238,9 @@ static struct dmar_domain *get_domain_for_dev(struct device *dev, int gaw)
 				bridge_devfn = dev_tmp->devfn;
 			}
 			spin_lock_irqsave(&device_domain_lock, flags);
-			info = dmar_search_domain_by_dev_info(segment, bus, devfn);
+			info = dmar_search_domain_by_dev_info(segment,
+							      bridge_bus,
+							      bridge_devfn);
 			if (info) {
 				iommu = info->iommu;
 				domain = info->domain;
@@ -3189,7 +3194,7 @@ static void *intel_alloc_coherent(struct device *dev, size_t size,
 				  dma_addr_t *dma_handle, gfp_t flags,
 				  struct dma_attrs *attrs)
 {
-	void *vaddr;
+	struct page *page = NULL;
 	int order;
 
 	size = PAGE_ALIGN(size);
@@ -3204,17 +3209,31 @@ static void *intel_alloc_coherent(struct device *dev, size_t size,
 			flags |= GFP_DMA32;
 	}
 
-	vaddr = (void *)__get_free_pages(flags, order);
-	if (!vaddr)
-		return NULL;
-	memset(vaddr, 0, size);
+	if (flags & __GFP_WAIT) {
+		unsigned int count = size >> PAGE_SHIFT;
 
-	*dma_handle = __intel_map_single(dev, virt_to_bus(vaddr), size,
+		page = dma_alloc_from_contiguous(dev, count, order);
+		if (page && iommu_no_mapping(dev) &&
+		    page_to_phys(page) + size > dev->coherent_dma_mask) {
+			dma_release_from_contiguous(dev, page, count);
+			page = NULL;
+		}
+	}
+
+	if (!page)
+		page = alloc_pages(flags, order);
+	if (!page)
+		return NULL;
+	memset(page_address(page), 0, size);
+
+	*dma_handle = __intel_map_single(dev, page_to_phys(page), size,
 					 DMA_BIDIRECTIONAL,
 					 dev->coherent_dma_mask);
 	if (*dma_handle)
-		return vaddr;
-	free_pages((unsigned long)vaddr, order);
+		return page_address(page);
+	if (!dma_release_from_contiguous(dev, page, size >> PAGE_SHIFT))
+		__free_pages(page, order);
+
 	return NULL;
 }
 
@@ -3222,12 +3241,14 @@ static void intel_free_coherent(struct device *dev, size_t size, void *vaddr,
 				dma_addr_t dma_handle, struct dma_attrs *attrs)
 {
 	int order;
+	struct page *page = virt_to_page(vaddr);
 
 	size = PAGE_ALIGN(size);
 	order = get_order(size);
 
 	intel_unmap_page(dev, dma_handle, size, DMA_BIDIRECTIONAL, NULL);
-	free_pages((unsigned long)vaddr, order);
+	if (!dma_release_from_contiguous(dev, page, size >> PAGE_SHIFT))
+		__free_pages(page, order);
 }
 
 static void intel_unmap_sg(struct device *dev, struct scatterlist *sglist,

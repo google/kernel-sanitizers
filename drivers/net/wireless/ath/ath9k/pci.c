@@ -686,7 +686,7 @@ static bool ath_pci_eeprom_read(struct ath_common *common, u32 off, u16 *data)
 	struct ath_softc *sc = (struct ath_softc *) common->priv;
 	struct ath9k_platform_data *pdata = sc->dev->platform_data;
 
-	if (pdata) {
+	if (pdata && !pdata->use_eeprom) {
 		if (off >= (ARRAY_SIZE(pdata->eeprom_data))) {
 			ath_err(common,
 				"%s: eeprom read failed, offset %08x is out of range\n",
@@ -784,7 +784,6 @@ static int ath_pci_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 {
 	struct ath_softc *sc;
 	struct ieee80211_hw *hw;
-	struct ath_common *common;
 	u8 csz;
 	u32 val;
 	int ret = 0;
@@ -877,10 +876,6 @@ static int ath_pci_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	wiphy_info(hw->wiphy, "%s mem=0x%lx, irq=%d\n",
 		   hw_name, (unsigned long)sc->mem, pdev->irq);
 
-	/* Will be cleared in ath9k_start() */
-	common = ath9k_hw_common(sc->sc_ah);
-	set_bit(ATH_OP_INVALID, &common->op_flags);
-
 	return 0;
 
 err_init:
@@ -919,6 +914,7 @@ static int ath_pci_suspend(struct device *device)
 	 */
 	ath9k_stop_btcoex(sc);
 	ath9k_hw_disable(sc->sc_ah);
+	del_timer_sync(&sc->sleep_timer);
 	ath9k_hw_setpower(sc->sc_ah, ATH9K_PM_FULL_SLEEP);
 
 	return 0;

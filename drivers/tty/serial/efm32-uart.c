@@ -798,6 +798,9 @@ static int efm32_uart_remove(struct platform_device *pdev)
 
 static const struct of_device_id efm32_uart_dt_ids[] = {
 	{
+		.compatible = "energymicro,efm32-uart",
+	}, {
+		/* doesn't follow the "vendor,device" scheme, don't use */
 		.compatible = "efm32,uart",
 	}, {
 		/* sentinel */
@@ -839,6 +842,7 @@ static void __exit efm32_uart_exit(void)
 	platform_driver_unregister(&efm32_uart_driver);
 	uart_unregister_driver(&efm32_uart_reg);
 }
+module_exit(efm32_uart_exit);
 
 MODULE_AUTHOR("Uwe Kleine-Koenig <u.kleine-koenig@pengutronix.de>");
 MODULE_DESCRIPTION("EFM32 UART/USART driver");

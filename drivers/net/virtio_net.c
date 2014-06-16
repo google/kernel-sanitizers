@@ -1285,7 +1285,7 @@ static int virtnet_set_channels(struct net_device *dev,
 	if (channels->rx_count || channels->tx_count || channels->other_count)
 		return -EINVAL;
 
-	if (queue_pairs > vi->max_queue_pairs)
+	if (queue_pairs > vi->max_queue_pairs || queue_pairs == 0)
 		return -EINVAL;
 
 	get_online_cpus();
@@ -1646,7 +1646,7 @@ static int virtnet_probe(struct virtio_device *vdev)
 	dev->netdev_ops = &virtnet_netdev;
 	dev->features = NETIF_F_HIGHDMA;
 
-	SET_ETHTOOL_OPS(dev, &virtnet_ethtool_ops);
+	dev->ethtool_ops = &virtnet_ethtool_ops;
 	SET_NETDEV_DEV(dev, &vdev->dev);
 
 	/* Do we support "hardware" checksums? */
@@ -1723,6 +1723,13 @@ static int virtnet_probe(struct virtio_device *vdev)
 
 	if (virtio_has_feature(vdev, VIRTIO_NET_F_CTRL_VQ))
 		vi->has_cvq = true;
+
+	if (vi->any_header_sg) {
+		if (vi->mergeable_rx_bufs)
+			dev->needed_headroom = sizeof(struct virtio_net_hdr_mrg_rxbuf);
+		else
+			dev->needed_headroom = sizeof(struct virtio_net_hdr);
+	}
 
 	/* Use single tx/rx queue pair as default */
 	vi->curr_queue_pairs = 1;

@@ -467,7 +467,6 @@ static int mei_ioctl_connect_client(struct file *file,
 	}
 
 	cl->me_client_id = dev->me_clients[i].client_id;
-	cl->state = MEI_FILE_CONNECTING;
 
 	dev_dbg(&dev->pdev->dev, "Connect to FW Client ID = %d\n",
 			cl->me_client_id);
@@ -644,8 +643,7 @@ static unsigned int mei_poll(struct file *file, poll_table *wait)
 		goto out;
 	}
 
-	if (MEI_WRITE_COMPLETE == cl->writing_state)
-		mask |= (POLLIN | POLLRDNORM);
+	mask |= (POLLIN | POLLRDNORM);
 
 out:
 	mutex_unlock(&dev->device_lock);

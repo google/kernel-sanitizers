@@ -975,14 +975,39 @@ xfs_vm_writepage(
 	 * Given that we do not allow direct reclaim to call us, we should
 	 * never be called while in a filesystem transaction.
 	 */
-	if (WARN_ON(current->flags & PF_FSTRANS))
+	if (WARN_ON_ONCE(current->flags & PF_FSTRANS))
 		goto redirty;
 
 	/* Is this page beyond the end of the file? */
 	offset = i_size_read(inode);
 	end_index = offset >> PAGE_CACHE_SHIFT;
 	last_index = (offset - 1) >> PAGE_CACHE_SHIFT;
-	if (page->index >= end_index) {
+
+	/*
+	 * The page index is less than the end_index, adjust the end_offset
+	 * to the highest offset that this page should represent.
+	 * -----------------------------------------------------
+	 * |			file mapping	       | <EOF> |
+	 * -----------------------------------------------------
+	 * | Page ... | Page N-2 | Page N-1 |  Page N  |       |
+	 * ^--------------------------------^----------|--------
+	 * |     desired writeback range    |      see else    |
+	 * ---------------------------------^------------------|
+	 */
+	if (page->index < end_index)
+		end_offset = (xfs_off_t)(page->index + 1) << PAGE_CACHE_SHIFT;
+	else {
+		/*
+		 * Check whether the page to write out is beyond or straddles
+		 * i_size or not.
+		 * -------------------------------------------------------
+		 * |		file mapping		        | <EOF>  |
+		 * -------------------------------------------------------
+		 * | Page ... | Page N-2 | Page N-1 |  Page N   | Beyond |
+		 * ^--------------------------------^-----------|---------
+		 * |				    |      Straddles     |
+		 * ---------------------------------^-----------|--------|
+		 */
 		unsigned offset_into_page = offset & (PAGE_CACHE_SIZE - 1);
 
 		/*
@@ -990,24 +1015,36 @@ xfs_vm_writepage(
 		 * truncate operation that is in progress. We must redirty the
 		 * page so that reclaim stops reclaiming it. Otherwise
 		 * xfs_vm_releasepage() is called on it and gets confused.
+		 *
+		 * Note that the end_index is unsigned long, it would overflow
+		 * if the given offset is greater than 16TB on 32-bit system
+		 * and if we do check the page is fully outside i_size or not
+		 * via "if (page->index >= end_index + 1)" as "end_index + 1"
+		 * will be evaluated to 0.  Hence this page will be redirtied
+		 * and be written out repeatedly which would result in an
+		 * infinite loop, the user program that perform this operation
+		 * will hang.  Instead, we can verify this situation by checking
+		 * if the page to write is totally beyond the i_size or if it's
+		 * offset is just equal to the EOF.
 		 */
-		if (page->index >= end_index + 1 || offset_into_page == 0)
+		if (page->index > end_index ||
+		    (page->index == end_index && offset_into_page == 0))
 			goto redirty;
 
 		/*
 		 * The page straddles i_size.  It must be zeroed out on each
 		 * and every writepage invocation because it may be mmapped.
 		 * "A file is mapped in multiples of the page size.  For a file
-		 * that is not a multiple of the  page size, the remaining
+		 * that is not a multiple of the page size, the remaining
 		 * memory is zeroed when mapped, and writes to that region are
 		 * not written out to the file."
 		 */
 		zero_user_segment(page, offset_into_page, PAGE_CACHE_SIZE);
+
+		/* Adjust the end_offset to the end of file */
+		end_offset = offset;
 	}
 
-	end_offset = min_t(unsigned long long,
-			(xfs_off_t)(page->index + 1) << PAGE_CACHE_SHIFT,
-			offset);
 	len = 1 << inode->i_blkbits;
 
 	bh = head = page_buffers(page);
@@ -1188,9 +1225,9 @@ xfs_vm_releasepage(
 
 	xfs_count_page_state(page, &delalloc, &unwritten);
 
-	if (WARN_ON(delalloc))
+	if (WARN_ON_ONCE(delalloc))
 		return 0;
-	if (WARN_ON(unwritten))
+	if (WARN_ON_ONCE(unwritten))
 		return 0;
 
 	return try_to_free_buffers(page);
@@ -1344,6 +1381,14 @@ __xfs_get_blocks(
 	/*
 	 * If this is O_DIRECT or the mpage code calling tell them how large
 	 * the mapping is, so that we can avoid repeated get_blocks calls.
+	 *
+	 * If the mapping spans EOF, then we have to break the mapping up as the
+	 * mapping for blocks beyond EOF must be marked new so that sub block
+	 * regions can be correctly zeroed. We can't do this for mappings within
+	 * EOF unless the mapping was just allocated or is unwritten, otherwise
+	 * the callers would overwrite existing data with zeros. Hence we have
+	 * to split the mapping into a range up to and including EOF, and a
+	 * second mapping for beyond EOF.
 	 */
 	if (direct || size > (1 << inode->i_blkbits)) {
 		xfs_off_t		mapping_size;
@@ -1354,6 +1399,12 @@ __xfs_get_blocks(
 		ASSERT(mapping_size > 0);
 		if (mapping_size > size)
 			mapping_size = size;
+		if (offset < i_size_read(inode) &&
+		    offset + mapping_size >= i_size_read(inode)) {
+			/* limit mapping to block that spans EOF */
+			mapping_size = roundup_64(i_size_read(inode) - offset,
+						  1 << inode->i_blkbits);
+		}
 		if (mapping_size > LONG_MAX)
 			mapping_size = LONG_MAX;
 
@@ -1435,9 +1486,8 @@ STATIC ssize_t
 xfs_vm_direct_IO(
 	int			rw,
 	struct kiocb		*iocb,
-	const struct iovec	*iov,
-	loff_t			offset,
-	unsigned long		nr_segs)
+	struct iov_iter		*iter,
+	loff_t			offset)
 {
 	struct inode		*inode = iocb->ki_filp->f_mapping->host;
 	struct block_device	*bdev = xfs_find_bdev_for_inode(inode);
@@ -1445,7 +1495,7 @@ xfs_vm_direct_IO(
 	ssize_t			ret;
 
 	if (rw & WRITE) {
-		size_t size = iov_length(iov, nr_segs);
+		size_t size = iov_iter_count(iter);
 
 		/*
 		 * We cannot preallocate a size update transaction here as we
@@ -1457,17 +1507,15 @@ xfs_vm_direct_IO(
 		if (offset + size > XFS_I(inode)->i_d.di_size)
 			ioend->io_isdirect = 1;
 
-		ret = __blockdev_direct_IO(rw, iocb, inode, bdev, iov,
-					    offset, nr_segs,
-					    xfs_get_blocks_direct,
+		ret = __blockdev_direct_IO(rw, iocb, inode, bdev, iter,
+					    offset, xfs_get_blocks_direct,
 					    xfs_end_io_direct_write, NULL,
 					    DIO_ASYNC_EXTEND);
 		if (ret != -EIOCBQUEUED && iocb->private)
 			goto out_destroy_ioend;
 	} else {
-		ret = __blockdev_direct_IO(rw, iocb, inode, bdev, iov,
-					    offset, nr_segs,
-					    xfs_get_blocks_direct,
+		ret = __blockdev_direct_IO(rw, iocb, inode, bdev, iter,
+					    offset, xfs_get_blocks_direct,
 					    NULL, NULL, 0);
 	}
 
@@ -1566,6 +1614,16 @@ xfs_vm_write_failed(
 
 		xfs_vm_kill_delalloc_range(inode, block_offset,
 					   block_offset + bh->b_size);
+
+		/*
+		 * This buffer does not contain data anymore. make sure anyone
+		 * who finds it knows that for certain.
+		 */
+		clear_buffer_delay(bh);
+		clear_buffer_uptodate(bh);
+		clear_buffer_mapped(bh);
+		clear_buffer_new(bh);
+		clear_buffer_dirty(bh);
 	}
 
 }
@@ -1599,12 +1657,21 @@ xfs_vm_write_begin(
 	status = __block_write_begin(page, pos, len, xfs_get_blocks);
 	if (unlikely(status)) {
 		struct inode	*inode = mapping->host;
+		size_t		isize = i_size_read(inode);
 
 		xfs_vm_write_failed(inode, page, pos, len);
 		unlock_page(page);
 
-		if (pos + len > i_size_read(inode))
-			truncate_pagecache(inode, i_size_read(inode));
+		/*
+		 * If the write is beyond EOF, we only want to kill blocks
+		 * allocated in this write, not blocks that were previously
+		 * written successfully.
+		 */
+		if (pos + len > isize) {
+			ssize_t start = max_t(ssize_t, pos, isize);
+
+			truncate_pagecache_range(inode, start, pos + len);
+		}
 
 		page_cache_release(page);
 		page = NULL;
@@ -1615,9 +1682,12 @@ xfs_vm_write_begin(
 }
 
 /*
- * On failure, we only need to kill delalloc blocks beyond EOF because they
- * will never be written. For blocks within EOF, generic_write_end() zeros them
- * so they are safe to leave alone and be written with all the other valid data.
+ * On failure, we only need to kill delalloc blocks beyond EOF in the range of
+ * this specific write because they will never be written. Previous writes
+ * beyond EOF where block allocation succeeded do not need to be trashed, so
+ * only new blocks from this write should be trashed. For blocks within
+ * EOF, generic_write_end() zeros them so they are safe to leave alone and be
+ * written with all the other valid data.
  */
 STATIC int
 xfs_vm_write_end(
@@ -1640,8 +1710,11 @@ xfs_vm_write_end(
 		loff_t		to = pos + len;
 
 		if (to > isize) {
-			truncate_pagecache(inode, isize);
+			/* only kill blocks in this write beyond EOF */
+			if (pos > isize)
+				isize = pos;
 			xfs_vm_kill_delalloc_range(inode, isize, to);
+			truncate_pagecache_range(inode, isize, to);
 		}
 	}
 	return ret;

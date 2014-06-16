@@ -17,7 +17,6 @@
 #include <linux/acpi.h>
 #include <linux/gpio/consumer.h>
 #include <linux/gpio_keys.h>
-#include <linux/input.h>
 #include <linux/platform_device.h>
 #include <linux/pnp.h>
 
@@ -169,6 +168,7 @@ static int soc_button_pnp_probe(struct pnp_dev *pdev,
 				soc_button_remove(pdev);
 				return error;
 			}
+			continue;
 		}
 
 		priv->children[i] = pd;

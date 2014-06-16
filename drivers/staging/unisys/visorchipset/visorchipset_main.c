@@ -1,6 +1,6 @@
 /* visorchipset_main.c
  *
- * Copyright � 2010 - 2013 UNISYS CORPORATION
+ * Copyright (C) 2010 - 2013 UNISYS CORPORATION
  * All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
@@ -26,14 +26,13 @@
 #include "parser.h"
 #include "uniklog.h"
 #include "uisutils.h"
-#include "guidutils.h"
 #include "controlvmcompletionstatus.h"
 #include "guestlinuxdebug.h"
-#include "filexfer.h"
 
 #include <linux/nls.h>
 #include <linux/netdevice.h>
 #include <linux/platform_device.h>
+#include <linux/uuid.h>
 
 #define CURRENT_FILE_PC VISOR_CHIPSET_PC_visorchipset_main_c
 #define TEST_VNIC_PHYSITF "eth0"	/* physical network itf for
@@ -82,7 +81,7 @@ typedef struct {
 static CONTROLVM_MESSAGE_HEADER g_DiagMsgHdr;
 static CONTROLVM_MESSAGE_HEADER g_ChipSetMsgHdr;
 static CONTROLVM_MESSAGE_HEADER g_DelDumpMsgHdr;
-static const GUID UltraDiagPoolChannelProtocolGuid =
+static const uuid_le UltraDiagPoolChannelProtocolGuid =
 	ULTRA_DIAG_POOL_CHANNEL_PROTOCOL_GUID;
 /* 0xffffff is an invalid Bus/Device number */
 static ulong g_diagpoolBusNo = 0xffffff;
@@ -93,15 +92,12 @@ static CONTROLVM_MESSAGE_PACKET g_DeviceChangeStatePacket;
  * "visorhackbus")
  */
 #define FOR_VISORHACKBUS(channel_type_guid) \
-	((memcmp(&channel_type_guid, &UltraVnicChannelProtocolGuid, \
-		 sizeof(GUID)) == 0) ||				    \
-	 (memcmp(&channel_type_guid, &UltraVhbaChannelProtocolGuid, \
-		 sizeof(GUID)) == 0))
+	(((uuid_le_cmp(channel_type_guid, UltraVnicChannelProtocolGuid) == 0)\
+	|| (uuid_le_cmp(channel_type_guid, UltraVhbaChannelProtocolGuid) == 0)))
 #define FOR_VISORBUS(channel_type_guid) (!(FOR_VISORHACKBUS(channel_type_guid)))
 
 #define is_diagpool_channel(channel_type_guid) \
-	 (memcmp(&channel_type_guid, \
-		 &UltraDiagPoolChannelProtocolGuid, sizeof(GUID)) == 0)
+	 (uuid_le_cmp(channel_type_guid, UltraDiagPoolChannelProtocolGuid) == 0)
 
 typedef enum {
 	PARTPROP_invalid,
@@ -605,16 +601,16 @@ EXPORT_SYMBOL_GPL(visorchipset_register_busdev_client);
 static void
 cleanup_controlvm_structures(void)
 {
-	VISORCHIPSET_BUS_INFO *bi;
-	VISORCHIPSET_DEVICE_INFO *di;
+	VISORCHIPSET_BUS_INFO *bi, *tmp_bi;
+	VISORCHIPSET_DEVICE_INFO *di, *tmp_di;
 
-	list_for_each_entry(bi, &BusInfoList, entry) {
+	list_for_each_entry_safe(bi, tmp_bi, &BusInfoList, entry) {
 		busInfo_clear(bi);
 		list_del(&bi->entry);
 		kfree(bi);
 	}
 
-	list_for_each_entry(di, &DevInfoList, entry) {
+	list_for_each_entry_safe(di, tmp_di, &DevInfoList, entry) {
 		devInfo_clear(di);
 		list_del(&di->entry);
 		kfree(di);
@@ -1189,7 +1185,7 @@ bus_configure(CONTROLVM_MESSAGE *inmsg, PARSER_CONTEXT *parser_ctx)
 	parser_param_start(parser_ctx, PARSERSTRING_NAME);
 	pBusInfo->name = parser_string_get(parser_ctx);
 
-	visorchannel_GUID_id(&pBusInfo->partitionGuid, s);
+	visorchannel_uuid_id(&pBusInfo->partitionGuid, s);
 	pBusInfo->procObject =
 	    visor_proc_CreateObject(PartitionType, s, (void *) (pBusInfo));
 	if (pBusInfo->procObject == NULL) {
@@ -2699,6 +2695,9 @@ visorchipset_init(void)
 	struct proc_dir_entry *toolaction_file;
 	struct proc_dir_entry *bootToTool_file;
 
+	if (!unisys_spar_platform)
+		return -ENODEV;
+
 	LOGINF("chipset driver version %s loaded", VERSION);
 	/* process module options */
 	POSTCODE_LINUX_2(DRIVER_ENTRY_PC, POSTCODE_SEVERITY_INFO);
@@ -2773,12 +2772,6 @@ visorchipset_init(void)
 			ProcDir, &parahotplug_proc_fops);
 	memset(&g_DelDumpMsgHdr, 0, sizeof(CONTROLVM_MESSAGE_HEADER));
 
-	if (filexfer_constructor(sizeof(struct putfile_request)) < 0) {
-		ERRDRV("filexfer_constructor failed: (status=-1)\n");
-		POSTCODE_LINUX_2(CHIPSET_INIT_FAILURE_PC, DIAG_SEVERITY_ERR);
-		rc = -1;
-		goto Away;
-	}
 	Putfile_buffer_list_pool =
 	    kmem_cache_create(Putfile_buffer_list_pool_name,
 			      sizeof(struct putfile_buffer_entry),
@@ -2862,7 +2855,6 @@ visorchipset_exit(void)
 		kmem_cache_destroy(Putfile_buffer_list_pool);
 		Putfile_buffer_list_pool = NULL;
 	}
-	filexfer_destructor();
 	if (ControlVmObject) {
 		visor_proc_DestroyObject(ControlVmObject);
 		ControlVmObject = NULL;

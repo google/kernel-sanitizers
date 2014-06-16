@@ -147,15 +147,17 @@ hv_get_ringbuffer_availbytes(struct hv_ring_buffer_info *rbi,
  * 0 . 13 (Windows Server 2008)
  * 1 . 1  (Windows 7)
  * 2 . 4  (Windows 8)
+ * 3 . 0  (Windows 8 R2)
  */
 
 #define VERSION_WS2008  ((0 << 16) | (13))
 #define VERSION_WIN7    ((1 << 16) | (1))
 #define VERSION_WIN8    ((2 << 16) | (4))
+#define VERSION_WIN8_1    ((3 << 16) | (0))
 
 #define VERSION_INVAL -1
 
-#define VERSION_CURRENT VERSION_WIN8
+#define VERSION_CURRENT VERSION_WIN8_1
 
 /* Make maximum size of pipe payload of 16K */
 #define MAX_PIPE_DATA_PAYLOAD		(sizeof(u8) * 16384)
@@ -694,6 +696,8 @@ struct vmbus_channel {
 	 * preserve the earlier behavior.
 	 */
 	u32 target_vp;
+	/* The corresponding CPUID in the guest */
+	u32 target_cpu;
 	/*
 	 * Support for sub-channels. For high performance devices,
 	 * it will be useful to have multiple sub-channels to support
@@ -730,6 +734,11 @@ struct vmbus_channel {
 	 * Support per-channel state for use by vmbus drivers.
 	 */
 	void *per_channel_state;
+	/*
+	 * To support per-cpu lookup mapping of relid to channel,
+	 * link up channels based on their CPU affinity.
+	 */
+	struct list_head percpu_list;
 };
 
 static inline void set_channel_read_state(struct vmbus_channel *c, bool state)

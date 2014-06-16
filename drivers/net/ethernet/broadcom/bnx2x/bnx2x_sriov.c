@@ -12,9 +12,9 @@
  * license other than the GPL, without Broadcom's express prior written
  * consent.
  *
- * Maintained by: Eilon Greenstein <eilong@broadcom.com>
- * Written by: Shmulik Ravid <shmulikr@broadcom.com>
- *	       Ariel Elior <ariele@broadcom.com>
+ * Maintained by: Ariel Elior <ariel.elior@qlogic.com>
+ * Written by: Shmulik Ravid
+ *	       Ariel Elior <ariel.elior@qlogic.com>
  *
  */
 #include "bnx2x.h"
@@ -427,7 +427,9 @@ static int bnx2x_vf_mac_vlan_config(struct bnx2x *bp,
 	if (filter->add && filter->type == BNX2X_VF_FILTER_VLAN &&
 	    (atomic_read(&bnx2x_vfq(vf, qid, vlan_count)) >=
 	     vf_vlan_rules_cnt(vf))) {
-		BNX2X_ERR("No credits for vlan\n");
+		BNX2X_ERR("No credits for vlan [%d >= %d]\n",
+			  atomic_read(&bnx2x_vfq(vf, qid, vlan_count)),
+			  vf_vlan_rules_cnt(vf));
 		return -ENOMEM;
 	}
 
@@ -610,6 +612,7 @@ int bnx2x_vf_mcast(struct bnx2x *bp, struct bnx2x_virtf *vf,
 		}
 
 		/* add new mcasts */
+		mcast.mcast_list_len = mc_num;
 		rc = bnx2x_config_mcast(bp, &mcast, BNX2X_MCAST_CMD_ADD);
 		if (rc)
 			BNX2X_ERR("Faled to add multicasts\n");
@@ -837,6 +840,29 @@ int bnx2x_vf_flr_clnup_epilog(struct bnx2x *bp, u8 abs_vfid)
 	return 0;
 }
 
+static void bnx2x_iov_re_set_vlan_filters(struct bnx2x *bp,
+					  struct bnx2x_virtf *vf,
+					  int new)
+{
+	int num = vf_vlan_rules_cnt(vf);
+	int diff = new - num;
+	bool rc = true;
+
+	DP(BNX2X_MSG_IOV, "vf[%d] - %d vlan filter credits [previously %d]\n",
+	   vf->abs_vfid, new, num);
+
+	if (diff > 0)
+		rc = bp->vlans_pool.get(&bp->vlans_pool, diff);
+	else if (diff < 0)
+		rc = bp->vlans_pool.put(&bp->vlans_pool, -diff);
+
+	if (rc)
+		vf_vlan_rules_cnt(vf) = new;
+	else
+		DP(BNX2X_MSG_IOV, "vf[%d] - Failed to configure vlan filter credits change\n",
+		   vf->abs_vfid);
+}
+
 /* must be called after the number of PF queues and the number of VFs are
  * both known
  */
@@ -854,9 +880,11 @@ bnx2x_iov_static_resc(struct bnx2x *bp, struct bnx2x_virtf *vf)
 	resc->num_mac_filters = 1;
 
 	/* divvy up vlan rules */
+	bnx2x_iov_re_set_vlan_filters(bp, vf, 0);
 	vlan_count = bp->vlans_pool.check(&bp->vlans_pool);
 	vlan_count = 1 << ilog2(vlan_count);
-	resc->num_vlan_filters = vlan_count / BNX2X_NR_VIRTFN(bp);
+	bnx2x_iov_re_set_vlan_filters(bp, vf,
+				      vlan_count / BNX2X_NR_VIRTFN(bp));
 
 	/* no real limitation */
 	resc->num_mc_filters = 0;
@@ -1043,8 +1071,10 @@ void bnx2x_iov_init_dq(struct bnx2x *bp)
 	REG_WR(bp, DORQ_REG_VF_TYPE_MIN_MCID_0, 0);
 	REG_WR(bp, DORQ_REG_VF_TYPE_MAX_MCID_0, 0x1ffff);
 
-	/* set the VF doorbell threshold */
-	REG_WR(bp, DORQ_REG_VF_USAGE_CT_LIMIT, 4);
+	/* set the VF doorbell threshold. This threshold represents the amount
+	 * of doorbells allowed in the main DORQ fifo for a specific VF.
+	 */
+	REG_WR(bp, DORQ_REG_VF_USAGE_CT_LIMIT, 64);
 }
 
 void bnx2x_iov_init_dmae(struct bnx2x *bp)
@@ -1478,10 +1508,6 @@ int bnx2x_iov_nic_init(struct bnx2x *bp)
 		bnx2x_iov_static_resc(bp, vf);
 
 		/* queues are initialized during VF-ACQUIRE */
-
-		/* reserve the vf vlan credit */
-		bp->vlans_pool.get(&bp->vlans_pool, vf_vlan_rules_cnt(vf));
-
 		vf->filter_state = 0;
 		vf->sp_cl_id = bnx2x_fp(bp, 0, cl_id);
 
@@ -1626,9 +1652,9 @@ static
 void bnx2x_vf_handle_filters_eqe(struct bnx2x *bp,
 				 struct bnx2x_virtf *vf)
 {
-	smp_mb__before_clear_bit();
+	smp_mb__before_atomic();
 	clear_bit(BNX2X_FILTER_RX_MODE_PENDING, &vf->filter_state);
-	smp_mb__after_clear_bit();
+	smp_mb__after_atomic();
 }
 
 static void bnx2x_vf_handle_rss_update_eqe(struct bnx2x *bp,
@@ -1912,11 +1938,12 @@ int bnx2x_vf_chk_avail_resc(struct bnx2x *bp, struct bnx2x_virtf *vf,
 	u8 rxq_cnt = vf_rxq_count(vf) ? : bnx2x_vf_max_queue_cnt(bp, vf);
 	u8 txq_cnt = vf_txq_count(vf) ? : bnx2x_vf_max_queue_cnt(bp, vf);
 
+	/* Save a vlan filter for the Hypervisor */
 	return ((req_resc->num_rxqs <= rxq_cnt) &&
 		(req_resc->num_txqs <= txq_cnt) &&
 		(req_resc->num_sbs <= vf_sb_count(vf))   &&
 		(req_resc->num_mac_filters <= vf_mac_rules_cnt(vf)) &&
-		(req_resc->num_vlan_filters <= vf_vlan_rules_cnt(vf)));
+		(req_resc->num_vlan_filters <= vf_vlan_rules_visible_cnt(vf)));
 }
 
 /* CORE VF API */
@@ -1972,14 +1999,14 @@ int bnx2x_vf_acquire(struct bnx2x *bp, struct bnx2x_virtf *vf,
 	vf_txq_count(vf) = resc->num_txqs ? : bnx2x_vf_max_queue_cnt(bp, vf);
 	if (resc->num_mac_filters)
 		vf_mac_rules_cnt(vf) = resc->num_mac_filters;
-	if (resc->num_vlan_filters)
-		vf_vlan_rules_cnt(vf) = resc->num_vlan_filters;
+	/* Add an additional vlan filter credit for the hypervisor */
+	bnx2x_iov_re_set_vlan_filters(bp, vf, resc->num_vlan_filters + 1);
 
 	DP(BNX2X_MSG_IOV,
 	   "Fulfilling vf request: sb count %d, tx_count %d, rx_count %d, mac_rules_count %d, vlan_rules_count %d\n",
 	   vf_sb_count(vf), vf_rxq_count(vf),
 	   vf_txq_count(vf), vf_mac_rules_cnt(vf),
-	   vf_vlan_rules_cnt(vf));
+	   vf_vlan_rules_visible_cnt(vf));
 
 	/* Initialize the queues */
 	if (!vf->vfqs) {
@@ -2551,7 +2578,8 @@ int bnx2x_get_vf_config(struct net_device *dev, int vfidx,
 
 	ivi->vf = vfidx;
 	ivi->qos = 0;
-	ivi->tx_rate = 10000; /* always 10G. TBA take from link struct */
+	ivi->max_tx_rate = 10000; /* always 10G. TBA take from link struct */
+	ivi->min_tx_rate = 0;
 	ivi->spoofchk = 1; /*always enabled */
 	if (vf->state == VF_ENABLED) {
 		/* mac and vlan are in vlan_mac objects */
@@ -2670,7 +2698,7 @@ out:
 		bnx2x_unlock_vf_pf_channel(bp, vf, CHANNEL_TLV_PF_SET_MAC);
 	}
 
-	return 0;
+	return rc;
 }
 
 int bnx2x_set_vf_vlan(struct net_device *dev, int vfidx, u16 vlan, u8 qos)
@@ -2896,6 +2924,14 @@ void __iomem *bnx2x_vf_doorbells(struct bnx2x *bp)
 	return bp->regview + PXP_VF_ADDR_DB_START;
 }
 
+void bnx2x_vf_pci_dealloc(struct bnx2x *bp)
+{
+	BNX2X_PCI_FREE(bp->vf2pf_mbox, bp->vf2pf_mbox_mapping,
+		       sizeof(struct bnx2x_vf_mbx_msg));
+	BNX2X_PCI_FREE(bp->vf2pf_mbox, bp->pf2vf_bulletin_mapping,
+		       sizeof(union pf_vf_bulletin));
+}
+
 int bnx2x_vf_pci_alloc(struct bnx2x *bp)
 {
 	mutex_init(&bp->vf2pf_mutex);
@@ -2915,10 +2951,7 @@ int bnx2x_vf_pci_alloc(struct bnx2x *bp)
 	return 0;
 
 alloc_mem_err:
-	BNX2X_PCI_FREE(bp->vf2pf_mbox, bp->vf2pf_mbox_mapping,
-		       sizeof(struct bnx2x_vf_mbx_msg));
-	BNX2X_PCI_FREE(bp->vf2pf_mbox, bp->pf2vf_bulletin_mapping,
-		       sizeof(union pf_vf_bulletin));
+	bnx2x_vf_pci_dealloc(bp);
 	return -ENOMEM;
 }
 
@@ -2960,9 +2993,9 @@ void bnx2x_iov_task(struct work_struct *work)
 
 void bnx2x_schedule_iov_task(struct bnx2x *bp, enum bnx2x_iov_flag flag)
 {
-	smp_mb__before_clear_bit();
+	smp_mb__before_atomic();
 	set_bit(flag, &bp->iov_task_state);
-	smp_mb__after_clear_bit();
+	smp_mb__after_atomic();
 	DP(BNX2X_MSG_IOV, "Scheduling iov task [Flag: %d]\n", flag);
 	queue_delayed_work(bnx2x_iov_wq, &bp->iov_task, 0);
 }

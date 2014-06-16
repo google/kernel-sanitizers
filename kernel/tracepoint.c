@@ -188,7 +188,6 @@ static int tracepoint_add_func(struct tracepoint *tp,
 		WARN_ON_ONCE(1);
 		return PTR_ERR(old);
 	}
-	release_probes(old);
 
 	/*
 	 * rcu_assign_pointer has a smp_wmb() which makes sure that the new
@@ -200,6 +199,7 @@ static int tracepoint_add_func(struct tracepoint *tp,
 	rcu_assign_pointer(tp->funcs, tp_funcs);
 	if (!static_key_enabled(&tp->key))
 		static_key_slow_inc(&tp->key);
+	release_probes(old);
 	return 0;
 }
 
@@ -221,7 +221,6 @@ static int tracepoint_remove_func(struct tracepoint *tp,
 		WARN_ON_ONCE(1);
 		return PTR_ERR(old);
 	}
-	release_probes(old);
 
 	if (!tp_funcs) {
 		/* Removed last function */
@@ -232,6 +231,7 @@ static int tracepoint_remove_func(struct tracepoint *tp,
 			static_key_slow_dec(&tp->key);
 	}
 	rcu_assign_pointer(tp->funcs, tp_funcs);
+	release_probes(old);
 	return 0;
 }
 
@@ -239,6 +239,7 @@ static int tracepoint_remove_func(struct tracepoint *tp,
  * tracepoint_probe_register -  Connect a probe to a tracepoint
  * @tp: tracepoint
  * @probe: probe handler
+ * @data: tracepoint data
  *
  * Returns 0 if ok, error value on error.
  * Note: if @tp is within a module, the caller is responsible for
@@ -264,6 +265,7 @@ EXPORT_SYMBOL_GPL(tracepoint_probe_register);
  * tracepoint_probe_unregister -  Disconnect a probe from a tracepoint
  * @tp: tracepoint
  * @probe: probe function pointer
+ * @data: tracepoint data
  *
  * Returns 0 if ok, error value on error.
  */

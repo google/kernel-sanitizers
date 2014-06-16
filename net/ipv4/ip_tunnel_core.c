@@ -46,7 +46,7 @@
 #include <net/netns/generic.h>
 #include <net/rtnetlink.h>
 
-int iptunnel_xmit(struct rtable *rt, struct sk_buff *skb,
+int iptunnel_xmit(struct sock *sk, struct rtable *rt, struct sk_buff *skb,
 		  __be32 src, __be32 dst, __u8 proto,
 		  __u8 tos, __u8 ttl, __be16 df, bool xnet)
 {
@@ -74,9 +74,9 @@ int iptunnel_xmit(struct rtable *rt, struct sk_buff *skb,
 	iph->daddr	=	dst;
 	iph->saddr	=	src;
 	iph->ttl	=	ttl;
-	__ip_select_ident(iph, &rt->dst, (skb_shinfo(skb)->gso_segs ?: 1) - 1);
+	__ip_select_ident(iph, skb_shinfo(skb)->gso_segs ?: 1);
 
-	err = ip_local_out(skb);
+	err = ip_local_out_sk(sk, skb);
 	if (unlikely(net_xmit_eval(err)))
 		pkt_len = 0;
 	return pkt_len;
@@ -134,6 +134,14 @@ struct sk_buff *iptunnel_handle_offloads(struct sk_buff *skb,
 		skb_shinfo(skb)->gso_type |= gso_type_mask;
 		return skb;
 	}
+
+	/* If packet is not gso and we are resolving any partial checksum,
+	 * clear encapsulation flag. This allows setting CHECKSUM_PARTIAL
+	 * on the outer header without confusing devices that implement
+	 * NETIF_F_IP_CSUM with encapsulation.
+	 */
+	if (csum_help)
+		skb->encapsulation = 0;
 
 	if (skb->ip_summed == CHECKSUM_PARTIAL && csum_help) {
 		err = skb_checksum_help(skb);

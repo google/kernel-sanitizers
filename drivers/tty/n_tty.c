@@ -2041,7 +2041,7 @@ static int canon_copy_from_read_buf(struct tty_struct *tty,
 
 	if (found)
 		clear_bit(eol, ldata->read_flags);
-	smp_mb__after_clear_bit();
+	smp_mb__after_atomic();
 	ldata->read_tail += c;
 
 	if (found) {
@@ -2353,8 +2353,12 @@ static ssize_t n_tty_write(struct tty_struct *tty, struct file *file,
 			if (tty->ops->flush_chars)
 				tty->ops->flush_chars(tty);
 		} else {
+			struct n_tty_data *ldata = tty->disc_data;
+
 			while (nr > 0) {
+				mutex_lock(&ldata->output_lock);
 				c = tty->ops->write(tty, b, nr);
+				mutex_unlock(&ldata->output_lock);
 				if (c < 0) {
 					retval = c;
 					goto break_out;

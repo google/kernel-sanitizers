@@ -511,12 +511,12 @@ static int convert_variable(Dwarf_Die *vr_die, struct probe_finder *pf)
 
 	ret = convert_variable_location(vr_die, pf->addr, pf->fb_ops,
 					&pf->sp_die, pf->tvar);
-	if (ret == -ENOENT)
+	if (ret == -ENOENT || ret == -EINVAL)
 		pr_err("Failed to find the location of %s at this address.\n"
 		       " Perhaps, it has been optimized out.\n", pf->pvar->var);
 	else if (ret == -ENOTSUP)
 		pr_err("Sorry, we don't support this variable location yet.\n");
-	else if (pf->pvar->field) {
+	else if (ret == 0 && pf->pvar->field) {
 		ret = convert_variable_fields(vr_die, pf->pvar->var,
 					      pf->pvar->field, &pf->tvar->ref,
 					      &die_mem);
@@ -985,7 +985,7 @@ static int debuginfo__find_probes(struct debuginfo *dbg,
 
 #if _ELFUTILS_PREREQ(0, 142)
 	/* Get the call frame information from this dwarf */
-	pf->cfi = dwarf_getcfi(dbg->dbg);
+	pf->cfi = dwarf_getcfi_elf(dwarf_getelf(dbg->dbg));
 #endif
 
 	off = 0;
@@ -1441,13 +1441,15 @@ static int line_range_walk_cb(const char *fname, int lineno,
 			      void *data)
 {
 	struct line_finder *lf = data;
+	int err;
 
 	if ((strtailcmp(fname, lf->fname) != 0) ||
 	    (lf->lno_s > lineno || lf->lno_e < lineno))
 		return 0;
 
-	if (line_range_add_line(fname, lineno, lf->lr) < 0)
-		return -EINVAL;
+	err = line_range_add_line(fname, lineno, lf->lr);
+	if (err < 0 && err != -EEXIST)
+		return err;
 
 	return 0;
 }
@@ -1473,14 +1475,15 @@ static int find_line_range_by_line(Dwarf_Die *sp_die, struct line_finder *lf)
 
 static int line_range_inline_cb(Dwarf_Die *in_die, void *data)
 {
-	find_line_range_by_line(in_die, data);
+	int ret = find_line_range_by_line(in_die, data);
 
 	/*
 	 * We have to check all instances of inlined function, because
 	 * some execution paths can be optimized out depends on the
-	 * function argument of instances
+	 * function argument of instances. However, if an error occurs,
+	 * it should be handled by the caller.
 	 */
-	return 0;
+	return ret < 0 ? ret : 0;
 }
 
 /* Search function definition from function name */

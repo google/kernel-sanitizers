@@ -214,8 +214,8 @@ static int gs_download_image(struct fpgaimage *fimage, enum wbus bus_bytes)
 {
 	char *bitdata;
 	int size, i, cnt;
-	cnt = 0;
 
+	cnt = 0;
 	bitdata = (char *)fimage->fpgadata;
 	size = fimage->lendata;
 
@@ -373,7 +373,6 @@ static int __init gs_fpgaboot_init(void)
 	r = -1;
 
 	pr_info("FPGA DOWNLOAD --->\n");
-	pr_info("built at %s UTC\n", __TIMESTAMP__);
 
 	pr_info("FPGA image file name: %s\n", file);
 

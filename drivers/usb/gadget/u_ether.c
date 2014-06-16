@@ -48,8 +48,6 @@
 
 #define UETH__VERSION	"29-May-2008"
 
-#define GETHER_NAPI_WEIGHT	32
-
 struct eth_dev {
 	/* lock is held while accessing port_usb
 	 */
@@ -74,7 +72,6 @@ struct eth_dev {
 						struct sk_buff_head *list);
 
 	struct work_struct	work;
-	struct napi_struct	rx_napi;
 
 	unsigned long		todo;
 #define	WORK_RX_MEMORY		0
@@ -256,16 +253,18 @@ enomem:
 		DBG(dev, "rx submit --> %d\n", retval);
 		if (skb)
 			dev_kfree_skb_any(skb);
+		spin_lock_irqsave(&dev->req_lock, flags);
+		list_add(&req->list, &dev->rx_reqs);
+		spin_unlock_irqrestore(&dev->req_lock, flags);
 	}
 	return retval;
 }
 
 static void rx_complete(struct usb_ep *ep, struct usb_request *req)
 {
-	struct sk_buff	*skb = req->context;
+	struct sk_buff	*skb = req->context, *skb2;
 	struct eth_dev	*dev = ep->driver_data;
 	int		status = req->status;
-	bool		rx_queue = 0;
 
 	switch (status) {
 
@@ -289,8 +288,30 @@ static void rx_complete(struct usb_ep *ep, struct usb_request *req)
 		} else {
 			skb_queue_tail(&dev->rx_frames, skb);
 		}
-		if (!status)
-			rx_queue = 1;
+		skb = NULL;
+
+		skb2 = skb_dequeue(&dev->rx_frames);
+		while (skb2) {
+			if (status < 0
+					|| ETH_HLEN > skb2->len
+					|| skb2->len > VLAN_ETH_FRAME_LEN) {
+				dev->net->stats.rx_errors++;
+				dev->net->stats.rx_length_errors++;
+				DBG(dev, "rx length %d\n", skb2->len);
+				dev_kfree_skb_any(skb2);
+				goto next_frame;
+			}
+			skb2->protocol = eth_type_trans(skb2, dev->net);
+			dev->net->stats.rx_packets++;
+			dev->net->stats.rx_bytes += skb2->len;
+
+			/* no buffer copies needed, unless hardware can't
+			 * use skb buffers.
+			 */
+			status = netif_rx(skb2);
+next_frame:
+			skb2 = skb_dequeue(&dev->rx_frames);
+		}
 		break;
 
 	/* software-driven interface shutdown */
@@ -313,20 +334,22 @@ quiesce:
 		/* FALLTHROUGH */
 
 	default:
-		rx_queue = 1;
-		dev_kfree_skb_any(skb);
 		dev->net->stats.rx_errors++;
 		DBG(dev, "rx status %d\n", status);
 		break;
 	}
 
+	if (skb)
+		dev_kfree_skb_any(skb);
+	if (!netif_running(dev->net)) {
 clean:
 		spin_lock(&dev->req_lock);
 		list_add(&req->list, &dev->rx_reqs);
 		spin_unlock(&dev->req_lock);
-
-	if (rx_queue && likely(napi_schedule_prep(&dev->rx_napi)))
-		__napi_schedule(&dev->rx_napi);
+		req = NULL;
+	}
+	if (req)
+		rx_submit(dev, req, GFP_ATOMIC);
 }
 
 static int prealloc(struct list_head *list, struct usb_ep *ep, unsigned n)
@@ -391,24 +414,16 @@ static void rx_fill(struct eth_dev *dev, gfp_t gfp_flags)
 {
 	struct usb_request	*req;
 	unsigned long		flags;
-	int			rx_counts = 0;
 
 	/* fill unused rxq slots with some skb */
 	spin_lock_irqsave(&dev->req_lock, flags);
 	while (!list_empty(&dev->rx_reqs)) {
-
-		if (++rx_counts > qlen(dev->gadget, dev->qmult))
-			break;
-
 		req = container_of(dev->rx_reqs.next,
 				struct usb_request, list);
 		list_del_init(&req->list);
 		spin_unlock_irqrestore(&dev->req_lock, flags);
 
 		if (rx_submit(dev, req, gfp_flags) < 0) {
-			spin_lock_irqsave(&dev->req_lock, flags);
-			list_add(&req->list, &dev->rx_reqs);
-			spin_unlock_irqrestore(&dev->req_lock, flags);
 			defer_kevent(dev, WORK_RX_MEMORY);
 			return;
 		}
@@ -416,41 +431,6 @@ static void rx_fill(struct eth_dev *dev, gfp_t gfp_flags)
 		spin_lock_irqsave(&dev->req_lock, flags);
 	}
 	spin_unlock_irqrestore(&dev->req_lock, flags);
-}
-
-static int gether_poll(struct napi_struct *napi, int budget)
-{
-	struct eth_dev  *dev = container_of(napi, struct eth_dev, rx_napi);
-	struct sk_buff	*skb;
-	unsigned int	work_done = 0;
-	int		status = 0;
-
-	while ((skb = skb_dequeue(&dev->rx_frames))) {
-		if (status < 0
-				|| ETH_HLEN > skb->len
-				|| skb->len > VLAN_ETH_FRAME_LEN) {
-			dev->net->stats.rx_errors++;
-			dev->net->stats.rx_length_errors++;
-			DBG(dev, "rx length %d\n", skb->len);
-			dev_kfree_skb_any(skb);
-			continue;
-		}
-		skb->protocol = eth_type_trans(skb, dev->net);
-		dev->net->stats.rx_packets++;
-		dev->net->stats.rx_bytes += skb->len;
-
-		status = netif_rx_ni(skb);
-	}
-
-	if (netif_running(dev->net)) {
-		rx_fill(dev, GFP_KERNEL);
-		work_done++;
-	}
-
-	if (work_done < budget)
-		napi_complete(&dev->rx_napi);
-
-	return work_done;
 }
 
 static void eth_work(struct work_struct *work)
@@ -645,7 +625,6 @@ static void eth_start(struct eth_dev *dev, gfp_t gfp_flags)
 	/* and open the tx floodgates */
 	atomic_set(&dev->tx_qlen, 0);
 	netif_wake_queue(dev->net);
-	napi_enable(&dev->rx_napi);
 }
 
 static int eth_open(struct net_device *net)
@@ -672,7 +651,6 @@ static int eth_stop(struct net_device *net)
 	unsigned long	flags;
 
 	VDBG(dev, "%s\n", __func__);
-	napi_disable(&dev->rx_napi);
 	netif_stop_queue(net);
 
 	DBG(dev, "stop stats: rx/tx %ld/%ld, errs %ld/%ld\n",
@@ -790,7 +768,6 @@ struct eth_dev *gether_setup_name(struct usb_gadget *g,
 		return ERR_PTR(-ENOMEM);
 
 	dev = netdev_priv(net);
-	netif_napi_add(net, &dev->rx_napi, gether_poll, GETHER_NAPI_WEIGHT);
 	spin_lock_init(&dev->lock);
 	spin_lock_init(&dev->req_lock);
 	INIT_WORK(&dev->work, eth_work);
@@ -816,7 +793,7 @@ struct eth_dev *gether_setup_name(struct usb_gadget *g,
 
 	net->netdev_ops = &eth_netdev_ops;
 
-	SET_ETHTOOL_OPS(net, &ops);
+	net->ethtool_ops = &ops;
 
 	dev->gadget = g;
 	SET_NETDEV_DEV(net, &g->dev);
@@ -841,7 +818,7 @@ struct eth_dev *gether_setup_name(struct usb_gadget *g,
 
 	return dev;
 }
-EXPORT_SYMBOL(gether_setup_name);
+EXPORT_SYMBOL_GPL(gether_setup_name);
 
 struct net_device *gether_setup_name_default(const char *netname)
 {
@@ -853,7 +830,6 @@ struct net_device *gether_setup_name_default(const char *netname)
 		return ERR_PTR(-ENOMEM);
 
 	dev = netdev_priv(net);
-	netif_napi_add(net, &dev->rx_napi, gether_poll, GETHER_NAPI_WEIGHT);
 	spin_lock_init(&dev->lock);
 	spin_lock_init(&dev->req_lock);
 	INIT_WORK(&dev->work, eth_work);
@@ -874,12 +850,12 @@ struct net_device *gether_setup_name_default(const char *netname)
 
 	net->netdev_ops = &eth_netdev_ops;
 
-	SET_ETHTOOL_OPS(net, &ops);
+	net->ethtool_ops = &ops;
 	SET_NETDEV_DEVTYPE(net, &gadget_type);
 
 	return net;
 }
-EXPORT_SYMBOL(gether_setup_name_default);
+EXPORT_SYMBOL_GPL(gether_setup_name_default);
 
 int gether_register_netdev(struct net_device *net)
 {
@@ -917,7 +893,7 @@ int gether_register_netdev(struct net_device *net)
 
 	return status;
 }
-EXPORT_SYMBOL(gether_register_netdev);
+EXPORT_SYMBOL_GPL(gether_register_netdev);
 
 void gether_set_gadget(struct net_device *net, struct usb_gadget *g)
 {
@@ -927,7 +903,7 @@ void gether_set_gadget(struct net_device *net, struct usb_gadget *g)
 	dev->gadget = g;
 	SET_NETDEV_DEV(net, &g->dev);
 }
-EXPORT_SYMBOL(gether_set_gadget);
+EXPORT_SYMBOL_GPL(gether_set_gadget);
 
 int gether_set_dev_addr(struct net_device *net, const char *dev_addr)
 {
@@ -940,7 +916,7 @@ int gether_set_dev_addr(struct net_device *net, const char *dev_addr)
 	memcpy(dev->dev_mac, new_addr, ETH_ALEN);
 	return 0;
 }
-EXPORT_SYMBOL(gether_set_dev_addr);
+EXPORT_SYMBOL_GPL(gether_set_dev_addr);
 
 int gether_get_dev_addr(struct net_device *net, char *dev_addr, int len)
 {
@@ -949,7 +925,7 @@ int gether_get_dev_addr(struct net_device *net, char *dev_addr, int len)
 	dev = netdev_priv(net);
 	return get_ether_addr_str(dev->dev_mac, dev_addr, len);
 }
-EXPORT_SYMBOL(gether_get_dev_addr);
+EXPORT_SYMBOL_GPL(gether_get_dev_addr);
 
 int gether_set_host_addr(struct net_device *net, const char *host_addr)
 {
@@ -962,7 +938,7 @@ int gether_set_host_addr(struct net_device *net, const char *host_addr)
 	memcpy(dev->host_mac, new_addr, ETH_ALEN);
 	return 0;
 }
-EXPORT_SYMBOL(gether_set_host_addr);
+EXPORT_SYMBOL_GPL(gether_set_host_addr);
 
 int gether_get_host_addr(struct net_device *net, char *host_addr, int len)
 {
@@ -971,7 +947,7 @@ int gether_get_host_addr(struct net_device *net, char *host_addr, int len)
 	dev = netdev_priv(net);
 	return get_ether_addr_str(dev->host_mac, host_addr, len);
 }
-EXPORT_SYMBOL(gether_get_host_addr);
+EXPORT_SYMBOL_GPL(gether_get_host_addr);
 
 int gether_get_host_addr_cdc(struct net_device *net, char *host_addr, int len)
 {
@@ -985,7 +961,7 @@ int gether_get_host_addr_cdc(struct net_device *net, char *host_addr, int len)
 
 	return strlen(host_addr);
 }
-EXPORT_SYMBOL(gether_get_host_addr_cdc);
+EXPORT_SYMBOL_GPL(gether_get_host_addr_cdc);
 
 void gether_get_host_addr_u8(struct net_device *net, u8 host_mac[ETH_ALEN])
 {
@@ -994,7 +970,7 @@ void gether_get_host_addr_u8(struct net_device *net, u8 host_mac[ETH_ALEN])
 	dev = netdev_priv(net);
 	memcpy(host_mac, dev->host_mac, ETH_ALEN);
 }
-EXPORT_SYMBOL(gether_get_host_addr_u8);
+EXPORT_SYMBOL_GPL(gether_get_host_addr_u8);
 
 void gether_set_qmult(struct net_device *net, unsigned qmult)
 {
@@ -1003,7 +979,7 @@ void gether_set_qmult(struct net_device *net, unsigned qmult)
 	dev = netdev_priv(net);
 	dev->qmult = qmult;
 }
-EXPORT_SYMBOL(gether_set_qmult);
+EXPORT_SYMBOL_GPL(gether_set_qmult);
 
 unsigned gether_get_qmult(struct net_device *net)
 {
@@ -1012,7 +988,7 @@ unsigned gether_get_qmult(struct net_device *net)
 	dev = netdev_priv(net);
 	return dev->qmult;
 }
-EXPORT_SYMBOL(gether_get_qmult);
+EXPORT_SYMBOL_GPL(gether_get_qmult);
 
 int gether_get_ifname(struct net_device *net, char *name, int len)
 {
@@ -1021,7 +997,7 @@ int gether_get_ifname(struct net_device *net, char *name, int len)
 	rtnl_unlock();
 	return strlen(name);
 }
-EXPORT_SYMBOL(gether_get_ifname);
+EXPORT_SYMBOL_GPL(gether_get_ifname);
 
 /**
  * gether_cleanup - remove Ethernet-over-USB device
@@ -1038,7 +1014,7 @@ void gether_cleanup(struct eth_dev *dev)
 	flush_work(&dev->work);
 	free_netdev(dev->net);
 }
-EXPORT_SYMBOL(gether_cleanup);
+EXPORT_SYMBOL_GPL(gether_cleanup);
 
 /**
  * gether_connect - notify network layer that USB link is active
@@ -1119,7 +1095,7 @@ fail0:
 		return ERR_PTR(result);
 	return dev->net;
 }
-EXPORT_SYMBOL(gether_connect);
+EXPORT_SYMBOL_GPL(gether_connect);
 
 /**
  * gether_disconnect - notify network layer that USB link is inactive
@@ -1137,7 +1113,6 @@ void gether_disconnect(struct gether *link)
 {
 	struct eth_dev		*dev = link->ioport;
 	struct usb_request	*req;
-	struct sk_buff		*skb;
 
 	WARN_ON(!dev);
 	if (!dev)
@@ -1164,12 +1139,6 @@ void gether_disconnect(struct gether *link)
 		spin_lock(&dev->req_lock);
 	}
 	spin_unlock(&dev->req_lock);
-
-	spin_lock(&dev->rx_frames.lock);
-	while ((skb = __skb_dequeue(&dev->rx_frames)))
-		dev_kfree_skb_any(skb);
-	spin_unlock(&dev->rx_frames.lock);
-
 	link->in_ep->driver_data = NULL;
 	link->in_ep->desc = NULL;
 
@@ -1197,7 +1166,7 @@ void gether_disconnect(struct gether *link)
 	dev->port_usb = NULL;
 	spin_unlock(&dev->lock);
 }
-EXPORT_SYMBOL(gether_disconnect);
+EXPORT_SYMBOL_GPL(gether_disconnect);
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("David Brownell");

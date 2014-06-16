@@ -14,6 +14,7 @@
 
 / {
 	aliases {
+		ethernet0 = &fec;
 		gpio0 = &gpio1;
 		gpio1 = &gpio2;
 		gpio2 = &gpio3;
@@ -68,8 +69,6 @@
 	intc: interrupt-controller@00a01000 {
 		compatible = "arm,cortex-a9-gic";
 		#interrupt-cells = <3>;
-		#address-cells = <1>;
-		#size-cells = <1>;
 		interrupt-controller;
 		reg = <0x00a01000 0x1000>,
 		      <0x00a00100 0x100>;
@@ -81,11 +80,13 @@
 
 		ckil {
 			compatible = "fixed-clock";
+			#clock-cells = <0>;
 			clock-frequency = <32768>;
 		};
 
 		osc {
 			compatible = "fixed-clock";
+			#clock-cells = <0>;
 			clock-frequency = <24000000>;
 		};
 	};

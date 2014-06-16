@@ -152,7 +152,8 @@ dmar_alloc_pci_notify_info(struct pci_dev *dev, unsigned long event)
 	info->seg = pci_domain_nr(dev->bus);
 	info->level = level;
 	if (event == BUS_NOTIFY_ADD_DEVICE) {
-		for (tmp = dev, level--; tmp; tmp = tmp->bus->self) {
+		for (tmp = dev; tmp; tmp = tmp->bus->self) {
+			level--;
 			info->path[level].device = PCI_SLOT(tmp->devfn);
 			info->path[level].function = PCI_FUNC(tmp->devfn);
 			if (pci_is_root_bus(tmp->bus))
@@ -993,7 +994,7 @@ static void free_iommu(struct intel_iommu *iommu)
 	if (iommu->irq) {
 		free_irq(iommu->irq, iommu);
 		irq_set_handler_data(iommu->irq, NULL);
-		destroy_irq(iommu->irq);
+		dmar_free_hwirq(iommu->irq);
 	}
 
 	if (iommu->qi) {
@@ -1549,8 +1550,8 @@ int dmar_set_interrupt(struct intel_iommu *iommu)
 	if (iommu->irq)
 		return 0;
 
-	irq = create_irq();
-	if (!irq) {
+	irq = dmar_alloc_hwirq();
+	if (irq <= 0) {
 		pr_err("IOMMU: no free vectors\n");
 		return -EINVAL;
 	}
@@ -1562,7 +1563,7 @@ int dmar_set_interrupt(struct intel_iommu *iommu)
 	if (ret) {
 		irq_set_handler_data(irq, NULL);
 		iommu->irq = 0;
-		destroy_irq(irq);
+		dmar_free_hwirq(irq);
 		return ret;
 	}
 

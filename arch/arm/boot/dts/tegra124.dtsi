@@ -51,6 +51,18 @@
 			nvidia,head = <1>;
 		};
 
+		hdmi@0,54280000 {
+			compatible = "nvidia,tegra124-hdmi";
+			reg = <0x0 0x54280000 0x0 0x00040000>;
+			interrupts = <GIC_SPI 75 IRQ_TYPE_LEVEL_HIGH>;
+			clocks = <&tegra_car TEGRA124_CLK_HDMI>,
+				 <&tegra_car TEGRA124_CLK_PLL_D2_OUT0>;
+			clock-names = "hdmi", "parent";
+			resets = <&tegra_car 51>;
+			reset-names = "hdmi";
+			status = "disabled";
+		};
+
 		sor@0,54540000 {
 			compatible = "nvidia,tegra124-sor";
 			reg = <0x0 0x54540000 0x0 0x00040000>;
@@ -229,19 +241,6 @@
 		resets = <&tegra_car 65>;
 		reset-names = "serial";
 		dmas = <&apbdma 19>, <&apbdma 19>;
-		dma-names = "rx", "tx";
-		status = "disabled";
-	};
-
-	serial@0,70006400 {
-		compatible = "nvidia,tegra124-uart", "nvidia,tegra20-uart";
-		reg = <0x0 0x70006400 0x0 0x40>;
-		reg-shift = <2>;
-		interrupts = <GIC_SPI 91 IRQ_TYPE_LEVEL_HIGH>;
-		clocks = <&tegra_car TEGRA124_CLK_UARTE>;
-		resets = <&tegra_car 66>;
-		reset-names = "serial";
-		dmas = <&apbdma 20>, <&apbdma 20>;
 		dma-names = "rx", "tx";
 		status = "disabled";
 	};

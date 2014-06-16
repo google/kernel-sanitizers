@@ -65,7 +65,8 @@ struct msm_pingroup {
 	const unsigned *pins;
 	unsigned npins;
 
-	unsigned funcs[8];
+	unsigned *funcs;
+	unsigned nfuncs;
 
 	s16 ctl_reg;
 	s16 io_reg;
@@ -84,6 +85,7 @@ struct msm_pingroup {
 
 	unsigned intr_enable_bit:5;
 	unsigned intr_status_bit:5;
+	unsigned intr_ack_high:1;
 
 	unsigned intr_target_bit:5;
 	unsigned intr_raw_status_bit:5;

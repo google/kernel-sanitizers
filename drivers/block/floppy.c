@@ -2351,7 +2351,7 @@ static void rw_interrupt(void)
 	}
 
 	if (CT(COMMAND) != FD_READ ||
-	    raw_cmd->kernel_data == current_req->buffer) {
+	    raw_cmd->kernel_data == bio_data(current_req->bio)) {
 		/* transfer directly from buffer */
 		cont->done(1);
 	} else if (CT(COMMAND) == FD_READ) {
@@ -2640,7 +2640,7 @@ static int make_raw_rw_request(void)
 		raw_cmd->flags &= ~FD_RAW_WRITE;
 		raw_cmd->flags |= FD_RAW_READ;
 		COMMAND = FM_MODE(_floppy, FD_READ);
-	} else if ((unsigned long)current_req->buffer < MAX_DMA_ADDRESS) {
+	} else if ((unsigned long)bio_data(current_req->bio) < MAX_DMA_ADDRESS) {
 		unsigned long dma_limit;
 		int direct, indirect;
 
@@ -2654,13 +2654,13 @@ static int make_raw_rw_request(void)
 		 */
 		max_size = buffer_chain_size();
 		dma_limit = (MAX_DMA_ADDRESS -
-			     ((unsigned long)current_req->buffer)) >> 9;
+			     ((unsigned long)bio_data(current_req->bio))) >> 9;
 		if ((unsigned long)max_size > dma_limit)
 			max_size = dma_limit;
 		/* 64 kb boundaries */
-		if (CROSS_64KB(current_req->buffer, max_size << 9))
+		if (CROSS_64KB(bio_data(current_req->bio), max_size << 9))
 			max_size = (K_64 -
-				    ((unsigned long)current_req->buffer) %
+				    ((unsigned long)bio_data(current_req->bio)) %
 				    K_64) >> 9;
 		direct = transfer_size(ssize, max_sector, max_size) - fsector_t;
 		/*
@@ -2677,7 +2677,7 @@ static int make_raw_rw_request(void)
 		       (DP->read_track & (1 << DRS->probed_format)))))) {
 			max_size = blk_rq_sectors(current_req);
 		} else {
-			raw_cmd->kernel_data = current_req->buffer;
+			raw_cmd->kernel_data = bio_data(current_req->bio);
 			raw_cmd->length = current_count_sectors << 9;
 			if (raw_cmd->length == 0) {
 				DPRINT("%s: zero dma transfer attempted\n", __func__);
@@ -2731,7 +2731,7 @@ static int make_raw_rw_request(void)
 	raw_cmd->length = ((raw_cmd->length - 1) | (ssize - 1)) + 1;
 	raw_cmd->length <<= 9;
 	if ((raw_cmd->length < current_count_sectors << 9) ||
-	    (raw_cmd->kernel_data != current_req->buffer &&
+	    (raw_cmd->kernel_data != bio_data(current_req->bio) &&
 	     CT(COMMAND) == FD_WRITE &&
 	     (aligned_sector_t + (raw_cmd->length >> 9) > buffer_max ||
 	      aligned_sector_t < buffer_min)) ||
@@ -2739,7 +2739,7 @@ static int make_raw_rw_request(void)
 	    raw_cmd->length <= 0 || current_count_sectors <= 0) {
 		DPRINT("fractionary current count b=%lx s=%lx\n",
 		       raw_cmd->length, current_count_sectors);
-		if (raw_cmd->kernel_data != current_req->buffer)
+		if (raw_cmd->kernel_data != bio_data(current_req->bio))
 			pr_info("addr=%d, length=%ld\n",
 				(int)((raw_cmd->kernel_data -
 				       floppy_track_buffer) >> 9),
@@ -2756,7 +2756,7 @@ static int make_raw_rw_request(void)
 		return 0;
 	}
 
-	if (raw_cmd->kernel_data != current_req->buffer) {
+	if (raw_cmd->kernel_data != bio_data(current_req->bio)) {
 		if (raw_cmd->kernel_data < floppy_track_buffer ||
 		    current_count_sectors < 0 ||
 		    raw_cmd->length < 0 ||
@@ -3067,7 +3067,10 @@ static int raw_cmd_copyout(int cmd, void __user *param,
 	int ret;
 
 	while (ptr) {
-		ret = copy_to_user(param, ptr, sizeof(*ptr));
+		struct floppy_raw_cmd cmd = *ptr;
+		cmd.next = NULL;
+		cmd.kernel_data = NULL;
+		ret = copy_to_user(param, &cmd, sizeof(cmd));
 		if (ret)
 			return -EFAULT;
 		param += sizeof(struct floppy_raw_cmd);
@@ -3121,10 +3124,11 @@ loop:
 		return -ENOMEM;
 	*rcmd = ptr;
 	ret = copy_from_user(ptr, param, sizeof(*ptr));
-	if (ret)
-		return -EFAULT;
 	ptr->next = NULL;
 	ptr->buffer_length = 0;
+	ptr->kernel_data = NULL;
+	if (ret)
+		return -EFAULT;
 	param += sizeof(struct floppy_raw_cmd);
 	if (ptr->cmd_count > 33)
 			/* the command may now also take up the space
@@ -3140,7 +3144,6 @@ loop:
 	for (i = 0; i < 16; i++)
 		ptr->reply[i] = 0;
 	ptr->resultcode = 0;
-	ptr->kernel_data = NULL;
 
 	if (ptr->flags & (FD_RAW_READ | FD_RAW_WRITE)) {
 		if (ptr->length <= 0)
@@ -3809,7 +3812,7 @@ static int __floppy_read_block_0(struct block_device *bdev, int drive)
 	bio.bi_iter.bi_size = size;
 	bio.bi_bdev = bdev;
 	bio.bi_iter.bi_sector = 0;
-	bio.bi_flags = (1 << BIO_QUIET);
+	bio.bi_flags |= (1 << BIO_QUIET);
 	bio.bi_private = &cbdata;
 	bio.bi_end_io = floppy_rb0_cb;
 

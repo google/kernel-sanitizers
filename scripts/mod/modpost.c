@@ -316,7 +316,7 @@ static struct symbol *sym_add_exported(const char *name, struct module *mod,
 			     s->module->name,
 			     is_vmlinux(s->module->name) ?"":".ko");
 		} else {
-			/* In case Modules.symvers was out of date */
+			/* In case Module.symvers was out of date */
 			s->module = mod;
 		}
 	}
@@ -2113,8 +2113,10 @@ static void read_dump(const char *fname, unsigned int kernel)
 		s->preloaded = 1;
 		sym_update_crc(symname, mod, crc, export_no(export));
 	}
+	release_file(file, size);
 	return;
 fail:
+	release_file(file, size);
 	fatal("parse error in symbol dump file\n");
 }
 

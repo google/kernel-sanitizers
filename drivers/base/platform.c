@@ -13,6 +13,7 @@
 #include <linux/string.h>
 #include <linux/platform_device.h>
 #include <linux/of_device.h>
+#include <linux/of_irq.h>
 #include <linux/module.h>
 #include <linux/init.h>
 #include <linux/dma-mapping.h>
@@ -87,7 +88,11 @@ int platform_get_irq(struct platform_device *dev, unsigned int num)
 		return -ENXIO;
 	return dev->archdata.irqs[num];
 #else
-	struct resource *r = platform_get_resource(dev, IORESOURCE_IRQ, num);
+	struct resource *r;
+	if (IS_ENABLED(CONFIG_OF_IRQ) && dev->dev.of_node)
+		return of_irq_get(dev->dev.of_node, num);
+
+	r = platform_get_resource(dev, IORESOURCE_IRQ, num);
 
 	return r ? r->start : -ENXIO;
 #endif
@@ -126,9 +131,12 @@ EXPORT_SYMBOL_GPL(platform_get_resource_byname);
  */
 int platform_get_irq_byname(struct platform_device *dev, const char *name)
 {
-	struct resource *r = platform_get_resource_byname(dev, IORESOURCE_IRQ,
-							  name);
+	struct resource *r;
 
+	if (IS_ENABLED(CONFIG_OF_IRQ) && dev->dev.of_node)
+		return of_irq_get_byname(dev->dev.of_node, name);
+
+	r = platform_get_resource_byname(dev, IORESOURCE_IRQ, name);
 	return r ? r->start : -ENXIO;
 }
 EXPORT_SYMBOL_GPL(platform_get_irq_byname);

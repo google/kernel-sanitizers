@@ -201,10 +201,6 @@ xfs_mount_validate_sb(
 	 * write validation, we don't need to check feature masks.
 	 */
 	if (check_version && XFS_SB_VERSION_NUM(sbp) == XFS_SB_VERSION_5) {
-		xfs_alert(mp,
-"Version 5 superblock detected. This kernel has EXPERIMENTAL support enabled!\n"
-"Use of these features in this kernel is at your own risk!");
-
 		if (xfs_sb_has_compat_feature(sbp,
 					XFS_SB_FEAT_COMPAT_UNKNOWN)) {
 			xfs_warn(mp,
@@ -295,7 +291,8 @@ xfs_mount_validate_sb(
 	    (sbp->sb_imax_pct > 100 /* zero sb_imax_pct is valid */)	||
 	    sbp->sb_dblocks == 0					||
 	    sbp->sb_dblocks > XFS_MAX_DBLOCKS(sbp)			||
-	    sbp->sb_dblocks < XFS_MIN_DBLOCKS(sbp))) {
+	    sbp->sb_dblocks < XFS_MIN_DBLOCKS(sbp)			||
+	    sbp->sb_shared_vn != 0)) {
 		xfs_notice(mp, "SB sanity check failed");
 		return XFS_ERROR(EFSCORRUPTED);
 	}
@@ -337,15 +334,6 @@ xfs_mount_validate_sb(
 		xfs_warn(mp, "Offline file system operation in progress!");
 		return XFS_ERROR(EFSCORRUPTED);
 	}
-
-	/*
-	 * Version 1 directory format has never worked on Linux.
-	 */
-	if (unlikely(!xfs_sb_version_hasdirv2(sbp))) {
-		xfs_warn(mp, "file system using version 1 directory format");
-		return XFS_ERROR(ENOSYS);
-	}
-
 	return 0;
 }
 

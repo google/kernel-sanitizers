@@ -902,6 +902,7 @@ void add_disk_randomness(struct gendisk *disk)
 	add_timer_randomness(disk->random, 0x100 + disk_devt(disk));
 	trace_add_disk_randomness(disk_devt(disk), ENTROPY_BITS(&input_pool));
 }
+EXPORT_SYMBOL_GPL(add_disk_randomness);
 #endif
 
 /*********************************************************************
@@ -995,8 +996,11 @@ retry:
 		ibytes = min_t(size_t, ibytes, have_bytes - reserved);
 	if (ibytes < min)
 		ibytes = 0;
-	entropy_count = max_t(int, 0,
-			      entropy_count - (ibytes << (ENTROPY_SHIFT + 3)));
+	if (have_bytes >= ibytes + reserved)
+		entropy_count -= ibytes << (ENTROPY_SHIFT + 3);
+	else
+		entropy_count = reserved << (ENTROPY_SHIFT + 3);
+
 	if (cmpxchg(&r->entropy_count, orig, entropy_count) != orig)
 		goto retry;
 
@@ -1578,10 +1582,10 @@ static int proc_do_uuid(struct ctl_table *table, int write,
 /*
  * Return entropy available scaled to integral bits
  */
-static int proc_do_entropy(ctl_table *table, int write,
+static int proc_do_entropy(struct ctl_table *table, int write,
 			   void __user *buffer, size_t *lenp, loff_t *ppos)
 {
-	ctl_table fake_table;
+	struct ctl_table fake_table;
 	int entropy_count;
 
 	entropy_count = *(int *)table->data >> ENTROPY_SHIFT;

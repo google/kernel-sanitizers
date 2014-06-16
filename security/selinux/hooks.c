@@ -2123,11 +2123,13 @@ static int selinux_bprm_set_creds(struct linux_binprm *bprm)
 		new_tsec->exec_sid = 0;
 
 		/*
-		 * Minimize confusion: if no_new_privs and a transition is
-		 * explicitly requested, then fail the exec.
+		 * Minimize confusion: if no_new_privs or nosuid and a
+		 * transition is explicitly requested, then fail the exec.
 		 */
 		if (bprm->unsafe & LSM_UNSAFE_NO_NEW_PRIVS)
 			return -EPERM;
+		if (bprm->file->f_path.mnt->mnt_flags & MNT_NOSUID)
+			return -EACCES;
 	} else {
 		/* Check for a default transition on this program. */
 		rc = security_transition_sid(old_tsec->sid, isec->sid,
@@ -2770,6 +2772,7 @@ static int selinux_inode_follow_link(struct dentry *dentry, struct nameidata *na
 
 static noinline int audit_inode_permission(struct inode *inode,
 					   u32 perms, u32 audited, u32 denied,
+					   int result,
 					   unsigned flags)
 {
 	struct common_audit_data ad;
@@ -2780,7 +2783,7 @@ static noinline int audit_inode_permission(struct inode *inode,
 	ad.u.inode = inode;
 
 	rc = slow_avc_audit(current_sid(), isec->sid, isec->sclass, perms,
-			    audited, denied, &ad, flags);
+			    audited, denied, result, &ad, flags);
 	if (rc)
 		return rc;
 	return 0;
@@ -2822,7 +2825,7 @@ static int selinux_inode_permission(struct inode *inode, int mask)
 	if (likely(!audited))
 		return rc;
 
-	rc2 = audit_inode_permission(inode, perms, audited, denied, flags);
+	rc2 = audit_inode_permission(inode, perms, audited, denied, rc, flags);
 	if (rc2)
 		return rc2;
 	return rc;
@@ -3317,9 +3320,9 @@ static int selinux_file_fcntl(struct file *file, unsigned int cmd,
 	case F_GETLK:
 	case F_SETLK:
 	case F_SETLKW:
-	case F_GETLKP:
-	case F_SETLKP:
-	case F_SETLKPW:
+	case F_OFD_GETLK:
+	case F_OFD_SETLK:
+	case F_OFD_SETLKW:
 #if BITS_PER_LONG == 32
 	case F_GETLK64:
 	case F_SETLK64:
@@ -5722,7 +5725,7 @@ static void selinux_key_free(struct key *k)
 
 static int selinux_key_permission(key_ref_t key_ref,
 				  const struct cred *cred,
-				  key_perm_t perm)
+				  unsigned perm)
 {
 	struct key *key;
 	struct key_security_struct *ksec;

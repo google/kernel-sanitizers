@@ -6916,8 +6916,8 @@ bnx2_get_settings(struct net_device *dev, struct ethtool_cmd *cmd)
 		}
 	}
 	else {
-		ethtool_cmd_speed_set(cmd, -1);
-		cmd->duplex = -1;
+		ethtool_cmd_speed_set(cmd, SPEED_UNKNOWN);
+		cmd->duplex = DUPLEX_UNKNOWN;
 	}
 	spin_unlock_bh(&bp->phy_lock);
 
@@ -8627,6 +8627,7 @@ bnx2_remove_one(struct pci_dev *pdev)
 	pci_disable_device(pdev);
 }
 
+#ifdef CONFIG_PM_SLEEP
 static int
 bnx2_suspend(struct device *device)
 {
@@ -8665,7 +8666,6 @@ bnx2_resume(struct device *device)
 	return 0;
 }
 
-#ifdef CONFIG_PM_SLEEP
 static SIMPLE_DEV_PM_OPS(bnx2_pm_ops, bnx2_suspend, bnx2_resume);
 #define BNX2_PM_OPS (&bnx2_pm_ops)
 
