@@ -1302,9 +1302,8 @@ static int task_numa_migrate(struct task_struct *p)
 	groupimp = group_weight(p, env.dst_nid) - groupweight;
 	update_numa_stats(&env.dst_stats, env.dst_nid);
 
-	/* If the preferred nid has free capacity, try to use it. */
-	if (env.dst_stats.has_free_capacity)
-		task_numa_find_cpu(&env, taskimp, groupimp);
+	/* Try to find a spot on the preferred nid. */
+	task_numa_find_cpu(&env, taskimp, groupimp);
 
 	/* No space available on the preferred nid. Look elsewhere. */
 	if (env.best_cpu == -1) {
@@ -1614,11 +1613,13 @@ static void task_numa_placement(struct task_struct *p)
 		spin_unlock_irq(group_lock);
 	}
 
-	/* Preferred node as the node with the most faults */
-	if (max_faults && max_nid != p->numa_preferred_nid) {
-		/* Update the preferred nid and migrate task if possible */
-		sched_setnuma(p, max_nid);
-		numa_migrate_preferred(p);
+	if (max_faults) {
+		/* Set the new preferred node */
+		if (max_nid != p->numa_preferred_nid)
+			sched_setnuma(p, max_nid);
+
+		if (task_node(p) != p->numa_preferred_nid)
+			numa_migrate_preferred(p);
 	}
 }
 
@@ -5094,8 +5095,7 @@ static void move_task(struct task_struct *p, struct lb_env *env)
 /*
  * Is this task likely cache-hot:
  */
-static int
-task_hot(struct task_struct *p, u64 now)
+static int task_hot(struct task_struct *p, struct lb_env *env)
 {
 	s64 delta;
 
@@ -5108,7 +5108,7 @@ task_hot(struct task_struct *p, u64 now)
 	/*
 	 * Buddy candidates are cache hot:
 	 */
-	if (sched_feat(CACHE_HOT_BUDDY) && this_rq()->nr_running &&
+	if (sched_feat(CACHE_HOT_BUDDY) && env->dst_rq->nr_running &&
 			(&p->se == cfs_rq_of(&p->se)->next ||
 			 &p->se == cfs_rq_of(&p->se)->last))
 		return 1;
@@ -5118,7 +5118,7 @@ task_hot(struct task_struct *p, u64 now)
 	if (sysctl_sched_migration_cost == 0)
 		return 0;
 
-	delta = now - p->se.exec_start;
+	delta = rq_clock_task(env->src_rq) - p->se.exec_start;
 
 	return delta < (s64)sysctl_sched_migration_cost;
 }
@@ -5272,7 +5272,7 @@ int can_migrate_task(struct task_struct *p, struct lb_env *env)
 	 * 2) task is cache cold, or
 	 * 3) too many balance attempts have failed.
 	 */
-	tsk_cache_hot = task_hot(p, rq_clock_task(env->src_rq));
+	tsk_cache_hot = task_hot(p, env);
 	if (!tsk_cache_hot)
 		tsk_cache_hot = migrate_degrades_locality(p, env);
 
