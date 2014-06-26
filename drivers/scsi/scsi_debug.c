@@ -228,9 +228,9 @@ struct sdebug_dev_info {
 	unsigned char sense_buff[SDEBUG_SENSE_LEN];	/* weak nexus */
 	unsigned int channel;
 	unsigned int target;
-	unsigned int lun;
+	u64 lun;
 	struct sdebug_host_info *sdbg_host;
-	unsigned int wlun;
+	u64 wlun;
 	char reset;
 	char stopped;
 	char used;
@@ -2278,7 +2278,8 @@ static int resp_report_luns(struct scsi_cmnd * scp,
 			    struct sdebug_dev_info * devip)
 {
 	unsigned int alloc_len;
-	int lun_cnt, i, upper, num, n, wlun, lun;
+	int lun_cnt, i, upper, num, n;
+	u64 wlun, lun;
 	unsigned char *cmd = (unsigned char *)scp->cmnd;
 	int select_report = (int)cmd[2];
 	struct scsi_lun *one_lun;
@@ -2462,7 +2463,7 @@ static struct sdebug_dev_info * devInfoReg(struct scsi_device * sdev)
 static int scsi_debug_slave_alloc(struct scsi_device *sdp)
 {
 	if (SCSI_DEBUG_OPT_NOISE & scsi_debug_opts)
-		printk(KERN_INFO "scsi_debug: slave_alloc <%u %u %u %u>\n",
+		printk(KERN_INFO "scsi_debug: slave_alloc <%u %u %u %llu>\n",
 		       sdp->host->host_no, sdp->channel, sdp->id, sdp->lun);
 	queue_flag_set_unlocked(QUEUE_FLAG_BIDI, sdp->request_queue);
 	return 0;
@@ -2473,7 +2474,7 @@ static int scsi_debug_slave_configure(struct scsi_device *sdp)
 	struct sdebug_dev_info *devip;
 
 	if (SCSI_DEBUG_OPT_NOISE & scsi_debug_opts)
-		printk(KERN_INFO "scsi_debug: slave_configure <%u %u %u %u>\n",
+		printk(KERN_INFO "scsi_debug: slave_configure <%u %u %u %llu>\n",
 		       sdp->host->host_no, sdp->channel, sdp->id, sdp->lun);
 	if (sdp->host->max_cmd_len != SCSI_DEBUG_MAX_CMD_LEN)
 		sdp->host->max_cmd_len = SCSI_DEBUG_MAX_CMD_LEN;
@@ -2484,7 +2485,7 @@ static int scsi_debug_slave_configure(struct scsi_device *sdp)
 	if (sdp->host->cmd_per_lun)
 		scsi_adjust_queue_depth(sdp, SDEBUG_TAGGED_QUEUING,
 					sdp->host->cmd_per_lun);
-	blk_queue_max_segment_size(sdp->request_queue, 256 * 1024);
+	blk_queue_max_segment_size(sdp->request_queue, -1U);
 	if (scsi_debug_no_uld)
 		sdp->no_uld_attach = 1;
 	return 0;
@@ -2496,7 +2497,7 @@ static void scsi_debug_slave_destroy(struct scsi_device *sdp)
 		(struct sdebug_dev_info *)sdp->hostdata;
 
 	if (SCSI_DEBUG_OPT_NOISE & scsi_debug_opts)
-		printk(KERN_INFO "scsi_debug: slave_destroy <%u %u %u %u>\n",
+		printk(KERN_INFO "scsi_debug: slave_destroy <%u %u %u %llu>\n",
 		       sdp->host->host_no, sdp->channel, sdp->id, sdp->lun);
 	if (devip) {
 		/* make this slot available for re-use */
@@ -2708,7 +2709,7 @@ static int schedule_resp(struct scsi_cmnd * cmnd,
 		if (scsi_result) {
 			struct scsi_device * sdp = cmnd->device;
 
-			printk(KERN_INFO "scsi_debug:    <%u %u %u %u> "
+			printk(KERN_INFO "scsi_debug:    <%u %u %u %llu> "
 			       "non-zero result=0x%x\n", sdp->host->host_no,
 			       sdp->channel, sdp->id, sdp->lun, scsi_result);
 		}
@@ -3946,9 +3947,9 @@ static struct scsi_host_template sdebug_driver_template = {
 	.bios_param =		scsi_debug_biosparam,
 	.can_queue =		SCSI_DEBUG_CANQUEUE,
 	.this_id =		7,
-	.sg_tablesize =		256,
+	.sg_tablesize =		SCSI_MAX_SG_CHAIN_SEGMENTS,
 	.cmd_per_lun =		16,
-	.max_sectors =		0xffff,
+	.max_sectors =		-1U,
 	.use_clustering = 	DISABLE_CLUSTERING,
 	.module =		THIS_MODULE,
 };
