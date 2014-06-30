@@ -355,21 +355,28 @@ static inline bool rcu_lockdep_current_cpu_online(void)
 
 #ifdef CONFIG_DEBUG_LOCK_ALLOC
 
-static inline void rcu_lock_acquire(struct lockdep_map *map)
-{
-	lock_acquire(map, 0, 0, 2, 0, NULL, _THIS_IP_);
-}
-
-static inline void rcu_lock_release(struct lockdep_map *map)
-{
-	lock_release(map, 1, _THIS_IP_);
-}
-
 extern struct lockdep_map rcu_lock_map;
 extern struct lockdep_map rcu_bh_lock_map;
 extern struct lockdep_map rcu_sched_lock_map;
 extern struct lockdep_map rcu_callback_map;
 int debug_lockdep_rcu_enabled(void);
+
+static inline void __rcu_lock_acquire(struct lockdep_map *map, unsigned long ip)
+{
+	lock_acquire(map, 0, 0, 2, 0, NULL, ip);
+}
+
+static inline void __rcu_lock_release(struct lockdep_map *map, unsigned long ip)
+{
+	lock_release(map, 1, ip);
+}
+
+extern void rcu_lock_acquire(void);
+extern void rcu_lock_release(void);
+extern void rcu_lock_acquire_bh(void);
+extern void rcu_lock_release_bh(void);
+extern void rcu_lock_acquire_sched(void);
+extern void rcu_lock_release_sched(void);
 
 /**
  * rcu_read_lock_held() - might we be in RCU read-side critical section?
@@ -463,8 +470,15 @@ static inline int rcu_read_lock_sched_held(void)
 
 #else /* #ifdef CONFIG_DEBUG_LOCK_ALLOC */
 
-# define rcu_lock_acquire(a)		do { } while (0)
-# define rcu_lock_release(a)		do { } while (0)
+#define __rcu_lock_acquire(map, ip)	do { } while (0)
+#define __rcu_lock_release(map, ip)	do { } while (0)
+
+#define rcu_lock_acquire()		do { } while (0)
+#define rcu_lock_release()		do { } while (0)
+#define rcu_lock_acquire_bh()		do { } while (0)
+#define rcu_lock_release_bh()		do { } while (0)
+#define rcu_lock_acquire_sched()	do { } while (0)
+#define rcu_lock_release_sched()	do { } while (0)
 
 static inline int rcu_read_lock_held(void)
 {
@@ -839,9 +853,7 @@ static inline void rcu_read_lock(void)
 {
 	__rcu_read_lock();
 	__acquire(RCU);
-	rcu_lock_acquire(&rcu_lock_map);
-	rcu_lockdep_assert(rcu_is_watching(),
-			   "rcu_read_lock() used illegally while idle");
+	rcu_lock_acquire();
 }
 
 /*
@@ -889,9 +901,7 @@ static inline void rcu_read_lock(void)
  */
 static inline void rcu_read_unlock(void)
 {
-	rcu_lockdep_assert(rcu_is_watching(),
-			   "rcu_read_unlock() used illegally while idle");
-	rcu_lock_release(&rcu_lock_map);
+	rcu_lock_release();
 	__release(RCU);
 	__rcu_read_unlock();
 }
@@ -917,9 +927,7 @@ static inline void rcu_read_lock_bh(void)
 {
 	local_bh_disable();
 	__acquire(RCU_BH);
-	rcu_lock_acquire(&rcu_bh_lock_map);
-	rcu_lockdep_assert(rcu_is_watching(),
-			   "rcu_read_lock_bh() used illegally while idle");
+	rcu_lock_acquire_bh();
 }
 
 /*
@@ -929,9 +937,7 @@ static inline void rcu_read_lock_bh(void)
  */
 static inline void rcu_read_unlock_bh(void)
 {
-	rcu_lockdep_assert(rcu_is_watching(),
-			   "rcu_read_unlock_bh() used illegally while idle");
-	rcu_lock_release(&rcu_bh_lock_map);
+	rcu_lock_release_bh();
 	__release(RCU_BH);
 	local_bh_enable();
 }
@@ -953,9 +959,7 @@ static inline void rcu_read_lock_sched(void)
 {
 	preempt_disable();
 	__acquire(RCU_SCHED);
-	rcu_lock_acquire(&rcu_sched_lock_map);
-	rcu_lockdep_assert(rcu_is_watching(),
-			   "rcu_read_lock_sched() used illegally while idle");
+	rcu_lock_acquire_sched();
 }
 
 /* Used by lockdep and tracing: cannot be traced, cannot call lockdep. */
@@ -972,9 +976,7 @@ static inline notrace void rcu_read_lock_sched_notrace(void)
  */
 static inline void rcu_read_unlock_sched(void)
 {
-	rcu_lockdep_assert(rcu_is_watching(),
-			   "rcu_read_unlock_sched() used illegally while idle");
-	rcu_lock_release(&rcu_sched_lock_map);
+	rcu_lock_release_sched();
 	__release(RCU_SCHED);
 	preempt_enable();
 }

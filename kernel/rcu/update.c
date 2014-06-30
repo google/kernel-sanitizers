@@ -163,6 +163,59 @@ int rcu_read_lock_bh_held(void)
 }
 EXPORT_SYMBOL_GPL(rcu_read_lock_bh_held);
 
+static void rcu_lockdep_assert_watching(void)
+{
+	rcu_lockdep_assert(rcu_is_watching(), "RCU used illegally while idle");
+}
+
+static void rcu_acquire_map(struct lockdep_map *map, unsigned long ip)
+{
+	__rcu_lock_acquire(map, ip);
+	rcu_lockdep_assert_watching();
+}
+
+static void rcu_release_map(struct lockdep_map *map, unsigned long ip)
+{
+	rcu_lockdep_assert_watching();
+	__rcu_lock_release(map, ip);
+}
+
+void rcu_lock_acquire(void)
+{
+	rcu_acquire_map(&rcu_lock_map, _RET_IP_);
+}
+EXPORT_SYMBOL(rcu_lock_acquire);
+
+void rcu_lock_release(void)
+{
+	rcu_release_map(&rcu_lock_map, _RET_IP_);
+}
+EXPORT_SYMBOL(rcu_lock_release);
+
+void rcu_lock_acquire_bh(void)
+{
+	rcu_acquire_map(&rcu_bh_lock_map, _RET_IP_);
+}
+EXPORT_SYMBOL(rcu_lock_acquire_bh);
+
+void rcu_lock_release_bh(void)
+{
+	rcu_release_map(&rcu_bh_lock_map, _RET_IP_);
+}
+EXPORT_SYMBOL(rcu_lock_release_bh);
+
+void rcu_lock_acquire_sched(void)
+{
+	rcu_acquire_map(&rcu_sched_lock_map, _RET_IP_);
+}
+EXPORT_SYMBOL(rcu_lock_acquire_sched);
+
+void rcu_lock_release_sched(void)
+{
+	rcu_release_map(&rcu_sched_lock_map, _RET_IP_);
+}
+EXPORT_SYMBOL(rcu_lock_release_sched);
+
 #endif /* #ifdef CONFIG_DEBUG_LOCK_ALLOC */
 
 struct rcu_synchronize {

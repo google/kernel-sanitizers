@@ -219,7 +219,7 @@ static inline int srcu_read_lock(struct srcu_struct *sp) __acquires(sp)
 {
 	int retval = __srcu_read_lock(sp);
 
-	rcu_lock_acquire(&(sp)->dep_map);
+	__rcu_lock_acquire(&(sp)->dep_map, _THIS_IP_);
 	return retval;
 }
 
@@ -233,7 +233,7 @@ static inline int srcu_read_lock(struct srcu_struct *sp) __acquires(sp)
 static inline void srcu_read_unlock(struct srcu_struct *sp, int idx)
 	__releases(sp)
 {
-	rcu_lock_release(&(sp)->dep_map);
+	__rcu_lock_release(&(sp)->dep_map, _THIS_IP_);
 	__srcu_read_unlock(sp, idx);
 }
 
