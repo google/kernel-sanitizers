@@ -404,7 +404,7 @@ static const struct samsung_pwm_variant s3c64xx_variant = {
 	.tclk_mask	= BIT(7) | BIT(6) | BIT(5),
 };
 
-static const struct samsung_pwm_variant s5p64x0_variant = {
+static const struct samsung_pwm_variant exynos4210_variant = {
 	.bits		= 32,
 	.div_base	= 0,
 	.has_tint_cstat	= true,
@@ -421,9 +421,8 @@ static const struct samsung_pwm_variant s5pc100_variant = {
 static const struct of_device_id samsung_pwm_matches[] = {
 	{ .compatible = "samsung,s3c2410-pwm", .data = &s3c24xx_variant },
 	{ .compatible = "samsung,s3c6400-pwm", .data = &s3c64xx_variant },
-	{ .compatible = "samsung,s5p6440-pwm", .data = &s5p64x0_variant },
 	{ .compatible = "samsung,s5pc100-pwm", .data = &s5pc100_variant },
-	{ .compatible = "samsung,exynos4210-pwm", .data = &s5p64x0_variant },
+	{ .compatible = "samsung,exynos4210-pwm", .data = &exynos4210_variant },
 	{},
 };
 
