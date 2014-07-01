@@ -480,16 +480,4 @@ static void __init s3c64xx_pwm_clocksource_init(struct device_node *np)
 }
 CLOCKSOURCE_OF_DECLARE(s3c6400_pwm, "samsung,s3c6400-pwm", s3c64xx_pwm_clocksource_init);
 
-static const struct samsung_pwm_variant s5p_variant = {
-	.bits		= 32,
-	.div_base	= 0,
-	.has_tint_cstat	= true,
-	.tclk_mask	= (1 << 5),
-};
-
-static void __init s5p_pwm_clocksource_init(struct device_node *np)
-{
-	samsung_pwm_alloc(np, &s5p_variant);
-}
-CLOCKSOURCE_OF_DECLARE(s5pc100_pwm, "samsung,s5pc100-pwm", s5p_pwm_clocksource_init);
 #endif
