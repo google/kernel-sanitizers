@@ -2596,7 +2596,7 @@ SYSCALL_DEFINE5(remap_file_pages, unsigned long, start, unsigned long, size,
 
 	struct mm_struct *mm = current->mm;
 	struct vm_area_struct *vma;
-	unsigned long populate;
+	unsigned long populate = 0;
 	unsigned long ret = -EINVAL;
 
 	pr_warn_once("%s (%d) uses deprecated remap_file_pages() syscall. "
