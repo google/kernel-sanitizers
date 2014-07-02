@@ -11,7 +11,6 @@ static inline int is_vm_hugetlb_page(struct vm_area_struct *vma)
 }
 
 int PageHuge(struct page *page);
-unsigned int huge_page_size_order(struct page *page);
 
 #else
 
@@ -21,11 +20,6 @@ static inline int is_vm_hugetlb_page(struct vm_area_struct *vma)
 }
 
 static inline int PageHuge(struct page *page)
-{
-	return 0;
-}
-
-static inline unsigned int huge_page_size_order(struct page *page)
 {
 	return 0;
 }

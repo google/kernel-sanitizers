@@ -411,10 +411,22 @@ static inline loff_t page_file_offset(struct page *page)
 	return ((loff_t)page_file_index(page)) << PAGE_CACHE_SHIFT;
 }
 
+/*
+ * Getting page order of a given page in the context of the pagecache which
+ * each page belongs to.
+ *
+ * Pagecache unit size is not a fixed value (hugetlbfs is an example), but
+ * vma_interval_tree and anon_vma_internval_tree APIs assume that its indices
+ * are in PAGE_SIZE unit. So this routine helps us to get normalized indices.
+ *
+ * This page should be called only for pagecache pages/hugepages and anonymous
+ * pages/hugepages, because pagecache unit size is irrelevant except for those
+ * pages.
+ */
 static inline unsigned int page_size_order(struct page *page)
 {
 	return unlikely(PageHuge(page)) ?
-		huge_page_size_order(page) :
+		compound_order(compound_head(page)) :
 		(PAGE_CACHE_SHIFT - PAGE_SHIFT);
 }
 
@@ -424,7 +436,7 @@ static inline unsigned int page_size_order(struct page *page)
  */
 static inline pgoff_t page_pgoff(struct page *page)
 {
-        return page->index << page_size_order(page);
+	return page->index << page_size_order(page);
 }
 
 extern pgoff_t linear_hugepage_index(struct vm_area_struct *vma,
