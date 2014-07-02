@@ -521,7 +521,7 @@ static void slab_set_debugobj_lock_classes(struct kmem_cache *cachep)
 	int node;
 	struct kmem_cache_node *n;
 
-	for_each_kmem_cache_node(cachep, node, h)
+	for_each_kmem_cache_node(cachep, node, n)
 		slab_set_debugobj_lock_classes_node(cachep, n);
 }
 
@@ -1305,7 +1305,7 @@ static int cpuup_prepare(long cpu)
 		kfree(shared);
 		free_alien_cache(alien);
 		if (cachep->flags & SLAB_DEBUG_OBJECTS)
-			slab_set_debugobj_lock_classes_node(cachep, node);
+			slab_set_debugobj_lock_classes_node(cachep, n);
 		else if (!OFF_SLAB(cachep) &&
 			 !(cachep->flags & SLAB_DESTROY_BY_RCU))
 			on_slab_lock_classes_node(cachep, n);
