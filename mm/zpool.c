@@ -76,6 +76,7 @@ static struct zpool_driver *zpool_get_driver(char *type)
 	list_for_each_entry(driver, &drivers_head, list) {
 		if (!strcmp(driver->type, type)) {
 			bool got = try_module_get(driver->owner);
+
 			spin_unlock(&drivers_lock);
 			return got ? driver : NULL;
 		}
