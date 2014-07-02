@@ -155,7 +155,7 @@ static void get_atrandom_bytes(unsigned char *buf, size_t nbytes)
 
 	while (nbytes) {
 		unsigned int random_variable;
-		size_t chunk = min(nbytes, sizeof(random_variable));
+		size_t chunk = min_t(size_t, nbytes, sizeof(random_variable));
 
 		random_variable = get_random_int();
 		memcpy(p, &random_variable, chunk);
