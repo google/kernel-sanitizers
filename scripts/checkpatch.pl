@@ -2295,6 +2295,7 @@ sub process {
 # check for missing blank lines after struct/union declarations
 # with exceptions for various attributes and macros
 		if ($prevline =~ /^[\+ ]};?\s*$/ &&
+		    $line =~ /^\+/ &&
 		    !($line =~ /^\+\s*$/ ||
 		      $line =~ /^\+\s*EXPORT_SYMBOL/ ||
 		      $line =~ /^\+\s*MODULE_/i ||
