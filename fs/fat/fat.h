@@ -291,6 +291,9 @@ extern int fat_get_cluster(struct inode *inode, int cluster,
 			   int *fclus, int *dclus);
 extern int fat_bmap(struct inode *inode, sector_t sector, sector_t *phys,
 		    unsigned long *mapped_blocks, int create);
+extern int fat_bmap2(struct inode *inode, sector_t sector,
+		     unsigned long *mapped_blocks,
+		     struct buffer_head *bh_result, int create, sector_t *bmap);
 
 /* fat/dir.c */
 extern const struct file_operations fat_dir_operations;
