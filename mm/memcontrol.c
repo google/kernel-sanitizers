@@ -3241,7 +3241,7 @@ static void memcg_unregister_all_caches(struct mem_cgroup *memcg)
 	list_for_each_entry_safe(params, tmp, &memcg->memcg_slab_caches, list) {
 		cachep = memcg_params_to_cache(params);
 		kmem_cache_shrink(cachep);
-		if (atomic_read(&cachep->memcg_params->nr_pages) == 0)
+		if (atomic_long_read(&cachep->memcg_params->refcnt) == 0)
 			memcg_unregister_cache(cachep);
 	}
 	mutex_unlock(&memcg_slab_mutex);
@@ -3315,14 +3315,14 @@ int __memcg_charge_slab(struct kmem_cache *cachep, gfp_t gfp, int order)
 	res = memcg_charge_kmem(cachep->memcg_params->memcg, gfp,
 				PAGE_SIZE << order);
 	if (!res)
-		atomic_add(1 << order, &cachep->memcg_params->nr_pages);
+		atomic_long_inc(&cachep->memcg_params->refcnt);
 	return res;
 }
 
 void __memcg_uncharge_slab(struct kmem_cache *cachep, int order)
 {
 	memcg_uncharge_kmem(cachep->memcg_params->memcg, PAGE_SIZE << order);
-	atomic_sub(1 << order, &cachep->memcg_params->nr_pages);
+	atomic_long_dec(&cachep->memcg_params->refcnt);
 }
 
 /*
