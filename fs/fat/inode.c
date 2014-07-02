@@ -292,6 +292,13 @@ static ssize_t fat_direct_IO(int rw, struct kiocb *iocb,
 		loff_t size = offset + count;
 		if (MSDOS_I(inode)->mmu_private < size)
 			return 0;
+
+		/*
+		 * In case of writing in fallocated region, return 0 and
+		 * fallback to buffered write.
+		 */
+		if (MSDOS_I(inode)->i_disksize > MSDOS_I(inode)->mmu_private)
+			return 0;
 	}
 
 	/*
