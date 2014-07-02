@@ -2250,9 +2250,10 @@ static inline bool should_continue_reclaim(struct zone *zone,
 	}
 }
 
-static void shrink_zone(struct zone *zone, struct scan_control *sc)
+static unsigned long shrink_zone(struct zone *zone, struct scan_control *sc)
 {
 	unsigned long nr_reclaimed, nr_scanned;
+	unsigned long zone_reclaimed = 0;
 
 	do {
 		struct mem_cgroup *root = sc->target_mem_cgroup;
@@ -2296,8 +2297,12 @@ static void shrink_zone(struct zone *zone, struct scan_control *sc)
 			   sc->nr_scanned - nr_scanned,
 			   sc->nr_reclaimed - nr_reclaimed);
 
+		zone_reclaimed += sc->nr_reclaimed - nr_reclaimed;
+
 	} while (should_continue_reclaim(zone, sc->nr_reclaimed - nr_reclaimed,
 					 sc->nr_scanned - nr_scanned, sc));
+
+	return zone_reclaimed;
 }
 
 /* Returns true if compaction should go ahead for a high-order request */
@@ -2346,8 +2351,10 @@ static inline bool compaction_ready(struct zone *zone, int order)
  *
  * If a zone is deemed to be full of pinned pages then just give it a light
  * scan then give up on it.
+ *
+ * Returns whether the zones overall are reclaimable or not.
  */
-static void shrink_zones(struct zonelist *zonelist, struct scan_control *sc)
+static bool shrink_zones(struct zonelist *zonelist, struct scan_control *sc)
 {
 	struct zoneref *z;
 	struct zone *zone;
@@ -2360,6 +2367,7 @@ static void shrink_zones(struct zonelist *zonelist, struct scan_control *sc)
 		.gfp_mask = sc->gfp_mask,
 	};
 	enum zone_type requested_highidx = gfp_zone(sc->gfp_mask);
+	bool all_unreclaimable = true;
 
 	/*
 	 * If the number of buffer_heads in the machine exceeds the maximum
@@ -2374,6 +2382,8 @@ static void shrink_zones(struct zonelist *zonelist, struct scan_control *sc)
 
 	for_each_zone_zonelist_nodemask(zone, z, zonelist,
 					gfp_zone(sc->gfp_mask), sc->nodemask) {
+		unsigned long zone_reclaimed = 0;
+
 		if (!populated_zone(zone))
 			continue;
 		/*
@@ -2420,10 +2430,15 @@ static void shrink_zones(struct zonelist *zonelist, struct scan_control *sc)
 						&nr_soft_scanned);
 			sc->nr_reclaimed += nr_soft_reclaimed;
 			sc->nr_scanned += nr_soft_scanned;
+			zone_reclaimed += nr_soft_reclaimed;
 			/* need some check for avoid more shrink_zone() */
 		}
 
-		shrink_zone(zone, sc);
+		zone_reclaimed += shrink_zone(zone, sc);
+
+		if (zone_reclaimed ||
+		    (global_reclaim(sc) && zone_reclaimable(zone)))
+			all_unreclaimable = false;
 	}
 
 	/*
@@ -2445,26 +2460,8 @@ static void shrink_zones(struct zonelist *zonelist, struct scan_control *sc)
 	 * promoted it to __GFP_HIGHMEM.
 	 */
 	sc->gfp_mask = orig_mask;
-}
 
-/* All zones in zonelist are unreclaimable? */
-static bool all_unreclaimable(struct zonelist *zonelist,
-		struct scan_control *sc)
-{
-	struct zoneref *z;
-	struct zone *zone;
-
-	for_each_zone_zonelist_nodemask(zone, z, zonelist,
-			gfp_zone(sc->gfp_mask), sc->nodemask) {
-		if (!populated_zone(zone))
-			continue;
-		if (!cpuset_zone_allowed_hardwall(zone, GFP_KERNEL))
-			continue;
-		if (zone_reclaimable(zone))
-			return false;
-	}
-
-	return true;
+	return !all_unreclaimable;
 }
 
 /*
@@ -2488,6 +2485,7 @@ static unsigned long do_try_to_free_pages(struct zonelist *zonelist,
 {
 	unsigned long total_scanned = 0;
 	unsigned long writeback_threshold;
+	bool zones_reclaimable;
 
 	delayacct_freepages_start();
 
@@ -2498,7 +2496,7 @@ static unsigned long do_try_to_free_pages(struct zonelist *zonelist,
 		vmpressure_prio(sc->gfp_mask, sc->target_mem_cgroup,
 				sc->priority);
 		sc->nr_scanned = 0;
-		shrink_zones(zonelist, sc);
+		zones_reclaimable = shrink_zones(zonelist, sc);
 
 		total_scanned += sc->nr_scanned;
 		if (sc->nr_reclaimed >= sc->nr_to_reclaim)
@@ -2539,8 +2537,8 @@ out:
 	if (sc->compaction_ready)
 		return 1;
 
-	/* top priority shrink_zones still had more to do? don't OOM, then */
-	if (global_reclaim(sc) && !all_unreclaimable(zonelist, sc))
+	/* Any of the zones still reclaimable?  Don't OOM. */
+	if (zones_reclaimable)
 		return 1;
 
 	return 0;
