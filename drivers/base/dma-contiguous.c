@@ -160,7 +160,7 @@ static DEFINE_MUTEX(cma_mutex);
 
 static unsigned long cma_bitmap_aligned_mask(struct cma *cma, int align_order)
 {
-	return (1 << (align_order >> cma->order_per_bit)) - 1;
+	return (1UL << (align_order >> cma->order_per_bit)) - 1;
 }
 
 static unsigned long cma_bitmap_maxno(struct cma *cma)
@@ -171,7 +171,7 @@ static unsigned long cma_bitmap_maxno(struct cma *cma)
 static unsigned long cma_bitmap_pages_to_bits(struct cma *cma,
 						unsigned long pages)
 {
-	return ALIGN(pages, 1 << cma->order_per_bit) >> cma->order_per_bit;
+	return ALIGN(pages, 1UL << cma->order_per_bit) >> cma->order_per_bit;
 }
 
 static void cma_clear_bitmap(struct cma *cma, unsigned long pfn, int count)
