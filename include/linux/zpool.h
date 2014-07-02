@@ -176,6 +176,7 @@ u64 zpool_get_total_size(struct zpool *pool);
  */
 struct zpool_driver {
 	char *type;
+	struct module *owner;
 	struct list_head list;
 
 	void *(*create)(gfp_t gfp, struct zpool_ops *ops);
@@ -203,6 +204,10 @@ void zpool_register_driver(struct zpool_driver *driver);
 /**
  * zpool_unregister_driver() - unregister a zpool implementation.
  * @driver:	driver to unregister.
+ *
+ * Module usage counting is used to prevent using a driver
+ * while/after unloading.  Please only call unregister from
+ * module exit function.
  */
 void zpool_unregister_driver(struct zpool_driver *driver);
 

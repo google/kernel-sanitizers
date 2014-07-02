@@ -72,13 +72,22 @@ static struct zpool_driver *zpool_get_driver(char *type)
 {
 	struct zpool_driver *driver;
 
-	assert_spin_locked(&drivers_lock);
+	spin_lock(&drivers_lock);
 	list_for_each_entry(driver, &drivers_head, list) {
-		if (!strcmp(driver->type, type))
-			return driver;
+		if (!strcmp(driver->type, type)) {
+			bool got = try_module_get(driver->owner);
+			spin_unlock(&drivers_lock);
+			return got ? driver : NULL;
+		}
 	}
 
+	spin_unlock(&drivers_lock);
 	return NULL;
+}
+
+static void zpool_put_driver(struct zpool_driver *driver)
+{
+	module_put(driver->owner);
 }
 
 struct zpool *zpool_create_pool(char *type, gfp_t flags,
@@ -89,15 +98,11 @@ struct zpool *zpool_create_pool(char *type, gfp_t flags,
 
 	pr_info("creating pool type %s\n", type);
 
-	spin_lock(&drivers_lock);
 	driver = zpool_get_driver(type);
-	spin_unlock(&drivers_lock);
 
 	if (!driver) {
 		request_module(type);
-		spin_lock(&drivers_lock);
 		driver = zpool_get_driver(type);
-		spin_unlock(&drivers_lock);
 	}
 
 	if (!driver) {
@@ -108,6 +113,7 @@ struct zpool *zpool_create_pool(char *type, gfp_t flags,
 	zpool = kmalloc(sizeof(*zpool), GFP_KERNEL);
 	if (!zpool) {
 		pr_err("couldn't create zpool - out of memory\n");
+		zpool_put_driver(driver);
 		return NULL;
 	}
 
@@ -118,6 +124,7 @@ struct zpool *zpool_create_pool(char *type, gfp_t flags,
 
 	if (!zpool->pool) {
 		pr_err("couldn't create %s pool\n", type);
+		zpool_put_driver(driver);
 		kfree(zpool);
 		return NULL;
 	}
@@ -139,6 +146,7 @@ void zpool_destroy_pool(struct zpool *zpool)
 	list_del(&zpool->list);
 	spin_unlock(&pools_lock);
 	zpool->driver->destroy(zpool->pool);
+	zpool_put_driver(zpool->driver);
 	kfree(zpool);
 }
 

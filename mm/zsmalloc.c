@@ -303,6 +303,7 @@ u64 zs_zpool_total_size(void *pool)
 
 static struct zpool_driver zs_zpool_driver = {
 	.type =		"zsmalloc",
+	.owner =	THIS_MODULE,
 	.create =	zs_zpool_create,
 	.destroy =	zs_zpool_destroy,
 	.malloc =	zs_zpool_malloc,
