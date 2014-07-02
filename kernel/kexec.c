@@ -331,7 +331,7 @@ out_free_image:
 static int copy_file_from_fd(int fd, void **buf, unsigned long *buf_len)
 {
 	struct fd f = fdget(fd);
-	int ret = 0;
+	int ret;
 	struct kstat stat;
 	loff_t pos;
 	ssize_t bytes = 0;
@@ -373,6 +373,12 @@ static int copy_file_from_fd(int fd, void **buf, unsigned long *buf_len)
 		if (bytes == 0)
 			break;
 		pos += bytes;
+	}
+
+	if (pos != stat.size) {
+		ret = -EBADF;
+		vfree(*buf);
+		goto out;
 	}
 
 	*buf_len = pos;
