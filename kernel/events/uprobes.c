@@ -179,6 +179,7 @@ static int __replace_page(struct vm_area_struct *vma, unsigned long addr,
 
 	get_page(kpage);
 	page_add_new_anon_rmap(kpage, vma, addr);
+	lru_cache_add_active_or_unevictable(kpage, vma);
 
 	if (!PageAnon(page)) {
 		dec_mm_counter(mm, MM_FILEPAGES);
