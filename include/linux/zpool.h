@@ -118,7 +118,7 @@ int zpool_shrink(struct zpool *pool, unsigned int pages,
  * @mm	How the memory should be mapped
  *
  * This maps a previously allocated handle into memory.  The @mm
- * param indicates to the implemenation how the memory will be
+ * param indicates to the implementation how the memory will be
  * used, i.e. read-only, write-only, read-write.  If the
  * implementation does not support it, the memory will be treated
  * as read-write.
@@ -141,7 +141,7 @@ void *zpool_map_handle(struct zpool *pool, unsigned long handle,
  * @handle	The handle to unmap
  *
  * This unmaps a previously mapped handle.  Any locks or other
- * actions that the implemenation took in zpool_map_handle()
+ * actions that the implementation took in zpool_map_handle()
  * will be undone here.  The memory area returned from
  * zpool_map_handle() should no longer be used after this.
  */
