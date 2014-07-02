@@ -121,6 +121,26 @@ static inline bool is_root_cache(struct kmem_cache *s)
 	return !s->memcg_params || s->memcg_params->is_root_cache;
 }
 
+static inline bool memcg_cache_dead(struct kmem_cache *s)
+{
+	if (is_root_cache(s))
+		return false;
+
+	/*
+	 * Since this function can be called without holding any locks, it
+	 * needs a barrier here to guarantee the read won't be reordered.
+	 */
+	smp_rmb();
+	return s->memcg_params->dead;
+}
+
+static inline void memcg_cache_mark_dead(struct kmem_cache *s)
+{
+	BUG_ON(is_root_cache(s));
+	s->memcg_params->dead = true;
+	smp_wmb();		/* matches rmb in memcg_cache_dead() */
+}
+
 static inline bool slab_equal_or_root(struct kmem_cache *s,
 					struct kmem_cache *p)
 {
@@ -201,6 +221,11 @@ static __always_inline void memcg_uncharge_slab(struct kmem_cache *s, int order)
 static inline bool is_root_cache(struct kmem_cache *s)
 {
 	return true;
+}
+
+static inline bool memcg_cache_dead(struct kmem_cache *s)
+{
+	return false;
 }
 
 static inline bool slab_equal_or_root(struct kmem_cache *s,
