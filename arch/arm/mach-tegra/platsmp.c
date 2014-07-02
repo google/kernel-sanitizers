@@ -19,13 +19,13 @@
 #include <linux/smp.h>
 #include <linux/io.h>
 #include <linux/clk/tegra.h>
+#include <linux/tegra-soc.h>
 
 #include <asm/cacheflush.h>
 #include <asm/mach-types.h>
 #include <asm/smp_scu.h>
 #include <asm/smp_plat.h>
 
-#include "fuse.h"
 #include "flowctrl.h"
 #include "reset.h"
 #include "pmc.h"

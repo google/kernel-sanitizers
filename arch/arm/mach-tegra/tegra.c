@@ -34,6 +34,7 @@
 #include <linux/usb/tegra_usb_phy.h>
 #include <linux/clk/tegra.h>
 #include <linux/irqchip.h>
+#include <linux/tegra-soc.h>
 
 #include <asm/hardware/cache-l2x0.h>
 #include <asm/mach-types.h>
@@ -42,11 +43,9 @@
 #include <asm/setup.h>
 #include <asm/trusted_foundations.h>
 
-#include "apbio.h"
 #include "board.h"
 #include "common.h"
 #include "cpuidle.h"
-#include "fuse.h"
 #include "iomap.h"
 #include "irq.h"
 #include "pmc.h"
@@ -73,7 +72,6 @@ u32 tegra_uart_config[3] = {
 static void __init tegra_init_early(void)
 {
 	of_register_trusted_foundations();
-	tegra_apb_io_init();
 	tegra_init_fuse();
 	tegra_cpu_reset_handler_init();
 	tegra_powergate_init();
@@ -103,7 +101,8 @@ static void __init tegra_dt_init(void)
 		goto out;
 
 	soc_dev_attr->family = kasprintf(GFP_KERNEL, "Tegra");
-	soc_dev_attr->revision = kasprintf(GFP_KERNEL, "%d", tegra_revision);
+	soc_dev_attr->revision = kasprintf(GFP_KERNEL, "%d",
+					tegra_sku_info.revision);
 	soc_dev_attr->soc_id = kasprintf(GFP_KERNEL, "%d", tegra_chip_id);
 
 	soc_dev = soc_device_register(soc_dev_attr);

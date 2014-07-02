@@ -22,10 +22,10 @@
 #include <linux/kernel.h>
 #include <linux/io.h>
 #include <linux/cpumask.h>
+#include <linux/tegra-soc.h>
 
 #include "flowctrl.h"
 #include "iomap.h"
-#include "fuse.h"
 
 static u8 flowctrl_offset_halt_cpu[] = {
 	FLOW_CTRL_HALT_CPU0_EVENTS,
