@@ -134,21 +134,21 @@ static void *zbud_zpool_create(gfp_t gfp, struct zpool_ops *zpool_ops)
 	return zbud_create_pool(gfp, &zbud_zpool_ops);
 }
 
-void zbud_zpool_destroy(void *pool)
+static void zbud_zpool_destroy(void *pool)
 {
 	zbud_destroy_pool(pool);
 }
 
-int zbud_zpool_malloc(void *pool, size_t size, unsigned long *handle)
+static int zbud_zpool_malloc(void *pool, size_t size, unsigned long *handle)
 {
 	return zbud_alloc(pool, size, handle);
 }
-void zbud_zpool_free(void *pool, unsigned long handle)
+static void zbud_zpool_free(void *pool, unsigned long handle)
 {
 	zbud_free(pool, handle);
 }
 
-int zbud_zpool_shrink(void *pool, unsigned int pages,
+static int zbud_zpool_shrink(void *pool, unsigned int pages,
 			unsigned int *reclaimed)
 {
 	unsigned int total = 0;
@@ -167,17 +167,17 @@ int zbud_zpool_shrink(void *pool, unsigned int pages,
 	return ret;
 }
 
-void *zbud_zpool_map(void *pool, unsigned long handle,
+static void *zbud_zpool_map(void *pool, unsigned long handle,
 			enum zpool_mapmode mm)
 {
 	return zbud_map(pool, handle);
 }
-void zbud_zpool_unmap(void *pool, unsigned long handle)
+static void zbud_zpool_unmap(void *pool, unsigned long handle)
 {
 	zbud_unmap(pool, handle);
 }
 
-u64 zbud_zpool_total_size(void *pool)
+static u64 zbud_zpool_total_size(void *pool)
 {
 	return zbud_get_pool_size(pool) * PAGE_SIZE;
 }
