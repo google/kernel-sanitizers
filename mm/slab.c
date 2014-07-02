@@ -3499,6 +3499,12 @@ static inline void __cache_free(struct kmem_cache *cachep, void *objp,
 {
 	struct array_cache *ac = cpu_cache_get(cachep);
 
+	/*
+	 * Since we free objects with irqs and therefore preemption disabled,
+	 * we can use synchronize_sched() to wait for all currently executing
+	 * kfree's to finish. This is necessary to avoid use-after-free on
+	 * per memcg cache destruction.
+	 */
 	check_irq_off();
 	kmemleak_free_recursive(objp, cachep->flags);
 	objp = cache_free_debugcheck(cachep, objp, caller);
