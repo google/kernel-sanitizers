@@ -116,6 +116,25 @@ static int fat_add_cluster(struct inode *inode)
 	return err;
 }
 
+static void check_fallocated_region(struct inode *inode, sector_t iblock,
+		unsigned long *max_blocks, struct buffer_head *bh_result)
+{
+	struct super_block *sb = inode->i_sb;
+	sector_t last_block, disk_block;
+	const unsigned long blocksize = sb->s_blocksize;
+	const unsigned char blocksize_bits = sb->s_blocksize_bits;
+
+	last_block = (MSDOS_I(inode)->mmu_private + (blocksize - 1))
+		>> blocksize_bits;
+	disk_block = (MSDOS_I(inode)->i_disksize + (blocksize - 1))
+		>> blocksize_bits;
+	if (iblock >= last_block && iblock <= disk_block) {
+		MSDOS_I(inode)->mmu_private += *max_blocks << blocksize_bits;
+		set_buffer_new(bh_result);
+	}
+
+}
+
 static inline int __fat_get_block(struct inode *inode, sector_t iblock,
 				  unsigned long *max_blocks,
 				  struct buffer_head *bh_result, int create)
@@ -130,8 +149,11 @@ static inline int __fat_get_block(struct inode *inode, sector_t iblock,
 	if (err)
 		return err;
 	if (phys) {
-		map_bh(bh_result, sb, phys);
 		*max_blocks = min(mapped_blocks, *max_blocks);
+		if (create)
+			check_fallocated_region(inode, iblock, max_blocks,
+				bh_result);
+		map_bh(bh_result, sb, phys);
 		return 0;
 	}
 	if (!create)
