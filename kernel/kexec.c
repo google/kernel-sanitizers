@@ -2021,8 +2021,7 @@ static int locate_mem_hole_callback(u64 start, u64 end, void *arg)
 	 */
 	if (kbuf->top_down)
 		return locate_mem_hole_top_down(start, end, kbuf);
-	else
-		return locate_mem_hole_bottom_up(start, end, kbuf);
+	return locate_mem_hole_bottom_up(start, end, kbuf);
 }
 
 /*
