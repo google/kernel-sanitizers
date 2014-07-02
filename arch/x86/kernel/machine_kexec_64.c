@@ -329,7 +329,7 @@ int arch_kimage_file_post_load_cleanup(struct kimage *image)
 	if (!image->fops || !image->fops->cleanup)
 		return 0;
 
-	return image->fops->cleanup(image);
+	return image->fops->cleanup(image->image_loader_data);
 }
 
 /*

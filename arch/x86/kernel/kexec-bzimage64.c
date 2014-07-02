@@ -355,9 +355,9 @@ out_free_params:
 }
 
 /* This cleanup function is called after various segments have been loaded */
-int bzImage64_cleanup(struct kimage *image)
+int bzImage64_cleanup(void *loader_data)
 {
-	struct bzimage64_data *ldata = image->image_loader_data;
+	struct bzimage64_data *ldata = loader_data;
 
 	if (!ldata)
 		return 0;
