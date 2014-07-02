@@ -474,7 +474,7 @@ About use_hierarchy, see Section 6.
   memory.kmem.usage_in_bytes == memory.usage_in_bytes.
 
   Please note that this knob is considered deprecated and will be removed
-  in future.
+  in the future.
 
   About use_hierarchy, see Section 6.
 
