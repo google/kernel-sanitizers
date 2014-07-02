@@ -3216,7 +3216,6 @@ static inline int kmem_cache_close(struct kmem_cache *s)
 	flush_all(s);
 	/* Attempt to free all objects */
 	for_each_kmem_cache_node(s, node, n) {
-
 		free_partial(s, n);
 		if (n->nr_partial || slabs_node(s, node))
 			return 1;
@@ -3402,6 +3401,8 @@ int __kmem_cache_shrink(struct kmem_cache *s)
 
 	flush_all(s);
 	for_each_kmem_cache_node(s, node, n) {
+		if (!n->nr_partial)
+			continue;
 
 		for (i = 0; i < objects; i++)
 			INIT_LIST_HEAD(slabs_by_inuse + i);
@@ -4334,7 +4335,6 @@ static ssize_t show_slab_objects(struct kmem_cache *s,
 		struct kmem_cache_node *n;
 
 		for_each_kmem_cache_node(s, node, n) {
-
 			if (flags & SO_TOTAL)
 				x = count_partial(n, count_total);
 			else if (flags & SO_OBJECTS)
@@ -5324,7 +5324,6 @@ void get_slabinfo(struct kmem_cache *s, struct slabinfo *sinfo)
 	struct kmem_cache_node *n;
 
 	for_each_kmem_cache_node(s, node, n) {
-
 		nr_slabs += node_nr_slabs(n);
 		nr_objs += node_nr_objs(n);
 		nr_free += count_partial(n, count_free);
