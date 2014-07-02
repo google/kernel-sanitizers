@@ -184,6 +184,12 @@ dentry names:
 	equivalent of %s dentry->d_name.name we used to use, %pd<n> prints
 	n last components.  %pD does the same thing for struct file.
 
+task_struct comm name:
+
+        %pT
+
+        For printing task_struct->comm.
+
 struct va_format:
 
 	%pV
