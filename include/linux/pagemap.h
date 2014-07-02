@@ -411,18 +411,21 @@ static inline loff_t page_file_offset(struct page *page)
 	return ((loff_t)page_file_index(page)) << PAGE_CACHE_SHIFT;
 }
 
-extern pgoff_t hugepage_pgoff(struct page *page);
+static inline unsigned int page_size_order(struct page *page)
+{
+	return unlikely(PageHuge(page)) ?
+		huge_page_size_order(page) :
+		(PAGE_CACHE_SHIFT - PAGE_SHIFT);
+}
 
 /*
  * page->index stores pagecache index whose unit is not always PAGE_SIZE.
  * This function converts it into PAGE_SIZE offset.
  */
-#define page_pgoff(page)					\
-({								\
-	unlikely(PageHuge(page)) ?				\
-		hugepage_pgoff(page) :				\
-		page->index >> (PAGE_CACHE_SHIFT - PAGE_SHIFT);	\
-})
+static inline pgoff_t page_pgoff(struct page *page)
+{
+        return page->index << page_size_order(page);
+}
 
 extern pgoff_t linear_hugepage_index(struct vm_area_struct *vma,
 				     unsigned long address);
