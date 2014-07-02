@@ -527,6 +527,7 @@ static __always_inline void *kmalloc_node(size_t size, gfp_t flags, int node)
  * @list: list_head for the list of all caches in this memcg
  * @root_cache: pointer to the global, root cache, this cache was derived from
  * @refcnt: reference counter
+ * @unregister_work: worker to destroy the cache
  */
 struct memcg_cache_params {
 	bool is_root_cache;
@@ -540,6 +541,7 @@ struct memcg_cache_params {
 			struct list_head list;
 			struct kmem_cache *root_cache;
 			atomic_long_t refcnt;
+			struct work_struct unregister_work;
 		};
 	};
 };
