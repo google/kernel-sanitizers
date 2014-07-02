@@ -178,6 +178,15 @@ comment "Input Device Drivers"
 
 source "drivers/input/keyboard/Kconfig"
 
+config INPUT_LEDS
+	bool "LED Support"
+	depends on LEDS_CLASS = INPUT || LEDS_CLASS = y
+	select LEDS_TRIGGERS
+	default y
+	help
+	  This option enables support for LEDs on keyboards managed
+	  by the input layer.
+
 source "drivers/input/mouse/Kconfig"
 
 source "drivers/input/joystick/Kconfig"

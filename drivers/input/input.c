@@ -708,6 +708,9 @@ static void input_disconnect_device(struct input_dev *dev)
 		handle->open = 0;
 
 	spin_unlock_irq(&dev->event_lock);
+
+	if (is_event_supported(EV_LED, dev->evbit, EV_MAX))
+		input_led_disconnect(dev);
 }
 
 /**
@@ -2133,6 +2136,9 @@ int input_register_device(struct input_dev *dev)
 		goto err_device_del;
 
 	list_add_tail(&dev->node, &input_dev_list);
+
+	if (is_event_supported(EV_LED, dev->evbit, EV_MAX))
+		input_led_connect(dev);
 
 	list_for_each_entry(handler, &input_handler_list, node)
 		input_attach_handler(dev, handler);
