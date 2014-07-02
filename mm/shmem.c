@@ -594,7 +594,7 @@ static int shmem_unuse_inode(struct shmem_inode_info *info,
 	radswap = swp_to_radix_entry(swap);
 	index = radix_tree_locate_item(&mapping->page_tree, radswap);
 	if (index == -1)
-		return 0;
+		return -EAGAIN;
 
 	/*
 	 * Move _head_ to start search for next from here.
@@ -653,7 +653,6 @@ static int shmem_unuse_inode(struct shmem_inode_info *info,
 			spin_unlock(&info->lock);
 			swap_free(swap);
 		}
-		error = 1;	/* not an error, but entry was found */
 	}
 	return error;
 }
@@ -666,7 +665,6 @@ int shmem_unuse(swp_entry_t swap, struct page *page)
 	struct list_head *this, *next;
 	struct shmem_inode_info *info;
 	struct mem_cgroup *memcg;
-	int found = 0;
 	int error = 0;
 
 	/*
@@ -685,22 +683,24 @@ int shmem_unuse(swp_entry_t swap, struct page *page)
 	if (error)
 		goto out;
 	/* No radix_tree_preload: swap entry keeps a place for page in tree */
+	error = -EAGAIN;
 
 	mutex_lock(&shmem_swaplist_mutex);
 	list_for_each_safe(this, next, &shmem_swaplist) {
 		info = list_entry(this, struct shmem_inode_info, swaplist);
 		if (info->swapped)
-			found = shmem_unuse_inode(info, swap, &page);
+			error = shmem_unuse_inode(info, swap, &page);
 		else
 			list_del_init(&info->swaplist);
 		cond_resched();
-		if (found)
+		if (error != -EAGAIN)
 			break;
 	}
 	mutex_unlock(&shmem_swaplist_mutex);
 
-	if (found < 0) {
-		error = found;
+	if (error) {
+		if (error != -ENOMEM)
+			error = 0;
 		mem_cgroup_cancel_charge(page, memcg);
 	} else
 		mem_cgroup_commit_charge(page, memcg, true);
