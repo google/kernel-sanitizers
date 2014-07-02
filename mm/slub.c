@@ -2034,6 +2034,14 @@ static void put_cpu_partial(struct kmem_cache *s, struct page *page, int drain)
 
 	} while (this_cpu_cmpxchg(s->cpu_slab->partial, oldpage, page)
 								!= oldpage);
+
+	if (memcg_cache_dead(s)) {
+		unsigned long flags;
+
+		local_irq_save(flags);
+		unfreeze_partials(s, this_cpu_ptr(s->cpu_slab));
+		local_irq_restore(flags);
+	}
 #endif
 }
 
@@ -3371,6 +3379,9 @@ int __kmem_cache_shrink(struct kmem_cache *s)
 	struct list_head *slabs_by_inuse =
 		kmalloc(sizeof(struct list_head) * objects, GFP_KERNEL);
 	unsigned long flags;
+
+	if (memcg_cache_dead(s))
+		s->min_partial = 0;
 
 	if (!slabs_by_inuse) {
 		/*
