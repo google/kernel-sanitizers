@@ -450,7 +450,7 @@ static inline void hlist_add_before_rcu(struct hlist_node *n,
  * problems on Alpha CPUs.
  */
 static inline void hlist_add_behind_rcu(struct hlist_node *n,
-				        struct hlist_node *prev)
+					struct hlist_node *prev)
 {
 	n->next = prev->next;
 	n->pprev = &prev->next;
