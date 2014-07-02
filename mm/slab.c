@@ -561,8 +561,8 @@ static inline void on_slab_lock_classes(struct kmem_cache *cachep)
 	struct kmem_cache_node *n;
 
 	VM_BUG_ON(OFF_SLAB(cachep));
-	for_each_kmem_cache_node(cachep, node, h)
-		on_slab_lock_classes_node(cachep, h);
+	for_each_kmem_cache_node(cachep, node, n)
+		on_slab_lock_classes_node(cachep, n);
 }
 
 static inline void __init init_lock_keys(void)
@@ -586,7 +586,7 @@ static inline void on_slab_lock_classes(struct kmem_cache *cachep)
 }
 
 static inline void on_slab_lock_classes_node(struct kmem_cache *cachep,
-	int node, struct kmem_cache_node *n)
+	struct kmem_cache_node *n)
 {
 }
 
@@ -823,7 +823,7 @@ static inline bool is_slab_pfmemalloc(struct page *page)
 static void recheck_pfmemalloc_active(struct kmem_cache *cachep,
 						struct array_cache *ac)
 {
-	struct kmem_cache_node *n = get_node(cachep,numa_mem_id());
+	struct kmem_cache_node *n = get_node(cachep, numa_mem_id());
 	struct page *page;
 	unsigned long flags;
 
@@ -1308,7 +1308,7 @@ static int cpuup_prepare(long cpu)
 			slab_set_debugobj_lock_classes_node(cachep, node);
 		else if (!OFF_SLAB(cachep) &&
 			 !(cachep->flags & SLAB_DESTROY_BY_RCU))
-			on_slab_lock_classes_node(cachep, node, n);
+			on_slab_lock_classes_node(cachep, n);
 	}
 	init_node_lock_keys(node);
 
@@ -3807,9 +3807,8 @@ fail:
 		/* Cache is not active yet. Roll back what we did */
 		node--;
 		while (node >= 0) {
-			if (get_node(cachep, node)) {
-				n = get_node(cachep, node);
-
+			n = get_node(cachep, node);
+			if (n) {
 				kfree(n->shared);
 				free_alien_cache(n->alien);
 				kfree(n);
