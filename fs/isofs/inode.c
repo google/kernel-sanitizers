@@ -10,6 +10,8 @@
  *	2004  Paul Serice - Inode Support pushed out from 4GB to 128GB
  *	2004  Paul Serice - NFS Export Operations
  */
+#define DEBUG
+#define pr_fmt(fmt) "ISOFS: " fmt
 
 #include <linux/init.h>
 #include <linux/module.h>
@@ -528,23 +530,25 @@ static unsigned int isofs_get_last_session(struct super_block *sb, s32 session)
 		Te.cdte_format=CDROM_LBA;
 		i = ioctl_by_bdev(bdev, CDROMREADTOCENTRY, (unsigned long) &Te);
 		if (!i) {
-			printk(KERN_DEBUG "ISOFS: Session %d start %d type %d\n",
+			pr_debug("Session %d start %d type %d\n",
 				session, Te.cdte_addr.lba,
 				Te.cdte_ctrl&CDROM_DATA_TRACK);
 			if ((Te.cdte_ctrl&CDROM_DATA_TRACK) == 4)
 				return Te.cdte_addr.lba;
 		}
 
-		printk(KERN_ERR "ISOFS: Invalid session number or type of track\n");
+		pr_err("Invalid session number or type of track\n");
 	}
 	i = ioctl_by_bdev(bdev, CDROMMULTISESSION, (unsigned long) &ms_info);
 	if (session > 0)
-		printk(KERN_ERR "ISOFS: Invalid session number\n");
+		pr_err("Invalid session number\n");
 #if 0
-	printk(KERN_DEBUG "isofs.inode: CDROMMULTISESSION: rc=%d\n",i);
+	pr_debug("isofs.inode: CDROMMULTISESSION: rc=%d\n", i);
 	if (i==0) {
-		printk(KERN_DEBUG "isofs.inode: XA disk: %s\n",ms_info.xa_flag?"yes":"no");
-		printk(KERN_DEBUG "isofs.inode: vol_desc_start = %d\n", ms_info.addr.lba);
+		pr_debug("isofs.inode: XA disk: %s\n",
+			 ms_info.xa_flag?"yes":"no");
+		pr_debug("isofs.inode: vol_desc_start = %d\n",
+			 ms_info.addr.lba);
 	}
 #endif
 	if (i==0)
@@ -672,8 +676,7 @@ static int isofs_fill_super(struct super_block *s, void *data, int silent)
 						else if (sec->escape[2] == 0x45)
 							joliet_level = 3;
 
-						printk(KERN_DEBUG "ISO 9660 Extensions: "
-							"Microsoft Joliet Level %d\n",
+						pr_debug("ISO 9660 Extensions: Microsoft Joliet Level %d\n",
 							joliet_level);
 					}
 					goto root_found;
@@ -771,11 +774,11 @@ root_found:
 			  isonum_711(rootp->ext_attr_length);
 	sbi->s_firstdatazone = first_data_zone;
 #ifndef BEQUIET
-	printk(KERN_DEBUG "ISOFS: Max size:%ld   Log zone size:%ld\n",
+	pr_debug("Max size:%ld   Log zone size:%ld\n",
 		sbi->s_max_size, 1UL << sbi->s_log_zone_size);
-	printk(KERN_DEBUG "ISOFS: First datazone:%ld\n", sbi->s_firstdatazone);
+	pr_debug("First datazone:%ld\n", sbi->s_firstdatazone);
 	if(sbi->s_high_sierra)
-		printk(KERN_DEBUG "ISOFS: Disc in High Sierra format.\n");
+		pr_debug("Disc in High Sierra format.\n");
 #endif
 
 	/*
@@ -878,9 +881,7 @@ root_found:
 	 */
 	if (sbi->s_rock == 1 && joliet_level &&
 				rootdir_empty(s, sbi->s_firstdatazone)) {
-		printk(KERN_NOTICE
-			"ISOFS: primary root directory is empty. "
-			"Disabling Rock Ridge and switching to Joliet.");
+		pr_notice("primary root directory is empty. Disabling Rock Ridge and switching to Joliet.");
 		sbi->s_rock = 0;
 	}
 
@@ -898,8 +899,7 @@ root_found:
 		sbi->s_rock = 0;
 		if (sbi->s_firstdatazone != first_data_zone) {
 			sbi->s_firstdatazone = first_data_zone;
-			printk(KERN_DEBUG
-				"ISOFS: changing to secondary root\n");
+			pr_debug("changing to secondary root\n");
 			iput(inode);
 			inode = isofs_iget(s, sbi->s_firstdatazone, 0);
 			if (IS_ERR(inode))
@@ -918,9 +918,8 @@ root_found:
 
 	/* Make sure the root inode is a directory */
 	if (!S_ISDIR(inode->i_mode)) {
-		printk(KERN_WARNING
-			"isofs_fill_super: root inode is not a directory. "
-			"Corrupted media?\n");
+		pr_warn("%s: root inode is not a directory. Corrupted media?\n",
+			__func__);
 		goto out_iput;
 	}
 
@@ -952,27 +951,26 @@ out_iput:
 out_no_root:
 	error = PTR_ERR(inode);
 	if (error != -ENOMEM)
-		printk(KERN_WARNING "%s: get root inode failed\n", __func__);
+		pr_warn("%s: get root inode failed\n", __func__);
 out_no_inode:
 #ifdef CONFIG_JOLIET
 	unload_nls(sbi->s_nls_iocharset);
 #endif
 	goto out_freesbi;
 out_no_read:
-	printk(KERN_WARNING "%s: bread failed, dev=%s, iso_blknum=%d, block=%d\n",
+	pr_warn("%s: bread failed, dev=%s, iso_blknum=%d, block=%d\n",
 		__func__, s->s_id, iso_blknum, block);
 	goto out_freebh;
 out_bad_zone_size:
-	printk(KERN_WARNING "ISOFS: Bad logical zone size %ld\n",
-		sbi->s_log_zone_size);
+	pr_warn("Bad logical zone size %ld\n", sbi->s_log_zone_size);
 	goto out_freebh;
 out_bad_size:
-	printk(KERN_WARNING "ISOFS: Logical zone size(%d) < hardware blocksize(%u)\n",
+	pr_warn("Logical zone size(%d) < hardware blocksize(%u)\n",
 		orig_zonesize, opt.blocksize);
 	goto out_freebh;
 out_unknown_format:
 	if (!silent)
-		printk(KERN_WARNING "ISOFS: Unable to identify CD-ROM format.\n");
+		pr_warn("Unable to identify CD-ROM format.\n");
 
 out_freebh:
 	brelse(bh);
@@ -1021,7 +1019,7 @@ int isofs_get_blocks(struct inode *inode, sector_t iblock,
 	error = -EIO;
 	rv = 0;
 	if (iblock != b_off) {
-		printk(KERN_DEBUG "%s: block number too large\n", __func__);
+		pr_debug("%s: block number too large\n", __func__);
 		goto abort;
 	}
 
@@ -1042,7 +1040,7 @@ int isofs_get_blocks(struct inode *inode, sector_t iblock,
 		 * I/O errors.
 		 */
 		if (b_off > ((inode->i_size + PAGE_CACHE_SIZE - 1) >> ISOFS_BUFFER_BITS(inode))) {
-			printk(KERN_DEBUG "%s: block >= EOF (%lu, %llu)\n",
+			pr_debug("%s: block >= EOF (%lu, %llu)\n",
 				__func__, b_off,
 				(unsigned long long)inode->i_size);
 			goto abort;
@@ -1068,12 +1066,11 @@ int isofs_get_blocks(struct inode *inode, sector_t iblock,
 			iput(ninode);
 
 			if (++section > 100) {
-				printk(KERN_DEBUG "%s: More than 100 file sections ?!?"
-					" aborting...\n", __func__);
-				printk(KERN_DEBUG "%s: block=%lu firstext=%u sect_size=%u "
-					"nextblk=%lu nextoff=%lu\n", __func__,
-					b_off, firstext, (unsigned) sect_size,
-					nextblk, nextoff);
+				pr_debug("%s: More than 100 file sections ?!? aborting...\n",
+					 __func__);
+				pr_debug("%s: block=%lu firstext=%u sect_size=%u nextblk=%lu nextoff=%lu\n",
+					__func__, b_off, firstext,
+					(unsigned) sect_size, nextblk, nextoff);
 				goto abort;
 			}
 		}
@@ -1105,7 +1102,7 @@ static int isofs_get_block(struct inode *inode, sector_t iblock,
 	int ret;
 
 	if (create) {
-		printk(KERN_DEBUG "%s: Kernel tries to allocate a block\n", __func__);
+		pr_debug("%s: Kernel tries to allocate a block\n", __func__);
 		return -EROFS;
 	}
 
@@ -1248,13 +1245,12 @@ out_nomem:
 	return -ENOMEM;
 
 out_noread:
-	printk(KERN_INFO "ISOFS: unable to read i-node block %lu\n", block);
+	pr_info("unable to read i-node block %lu\n", block);
 	kfree(tmpde);
 	return -EIO;
 
 out_toomany:
-	printk(KERN_INFO "%s: More than 100 file sections ?!?, aborting...\n"
-		"isofs_read_level3_size: inode=%lu\n",
+	pr_info("%s: More than 100 file sections ?!?, aborting...\n isofs_read_level3_size: inode=%lu\n",
 		__func__, inode->i_ino);
 	goto out;
 }
@@ -1289,7 +1285,7 @@ static int isofs_read_inode(struct inode *inode)
 
 		tmpde = kmalloc(de_len, GFP_KERNEL);
 		if (tmpde == NULL) {
-			printk(KERN_INFO "%s: out of memory\n", __func__);
+			pr_info("%s: out of memory\n", __func__);
 			ret = -ENOMEM;
 			goto fail;
 		}
@@ -1364,24 +1360,23 @@ static int isofs_read_inode(struct inode *inode)
 		inode->i_size &= 0x00ffffff;
 
 	if (de->interleave[0]) {
-		printk(KERN_DEBUG "ISOFS: Interleaved files not (yet) supported.\n");
+		pr_debug("Interleaved files not (yet) supported.\n");
 		inode->i_size = 0;
 	}
 
 	/* I have no idea what file_unit_size is used for, so
 	   we will flag it for now */
 	if (de->file_unit_size[0] != 0) {
-		printk(KERN_DEBUG "ISOFS: File unit size != 0 for ISO file (%ld).\n",
-			inode->i_ino);
+		pr_debug("File unit size != 0 for ISO file (%ld).\n",
+			 inode->i_ino);
 	}
 
 	/* I have no idea what other flag bits are used for, so
 	   we will flag it for now */
-#ifdef DEBUG
+#ifdef DEBUG_FLAGS
 	if((de->flags[-high_sierra] & ~2)!= 0){
-		printk(KERN_DEBUG "ISOFS: Unusual flag settings for ISO file "
-				"(%ld %x).\n",
-			inode->i_ino, de->flags[-high_sierra]);
+		pr_debug("Unusual flag settings for ISO file (%ld %x).\n",
+			 inode->i_ino, de->flags[-high_sierra]);
 	}
 #endif
 
@@ -1450,7 +1445,7 @@ out:
 	return ret;
 
 out_badread:
-	printk(KERN_WARNING "ISOFS: unable to read i-node block\n");
+	pr_warn("unable to read i-node block\n");
 fail:
 	goto out;
 }
@@ -1541,6 +1536,7 @@ MODULE_ALIAS("iso9660");
 static int __init init_iso9660_fs(void)
 {
 	int err = init_inodecache();
+
 	if (err)
 		goto out;
 #ifdef CONFIG_ZISOFS
