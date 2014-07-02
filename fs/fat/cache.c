@@ -329,10 +329,10 @@ int fat_bmap(struct inode *inode, sector_t sector, sector_t *phys,
 			return 0;
 
 		/*
-		 * ->mmu_private can access on only allocation path.
-		 * (caller must hold ->i_mutex)
+		 * Both ->mmu_private and ->i_disksize can access
+		 * on only allocation path. (caller must hold ->i_mutex)
 		 */
-		last_block = (MSDOS_I(inode)->mmu_private + (blocksize - 1))
+		last_block = (MSDOS_I(inode)->i_disksize + (blocksize - 1))
 			>> blocksize_bits;
 		if (sector >= last_block)
 			return 0;
