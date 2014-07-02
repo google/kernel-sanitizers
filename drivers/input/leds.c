@@ -1,7 +1,7 @@
 /*
  * LED support for the input layer
  *
- * Copyright 2010-2013 Samuel Thibault <samuel.thibault@ens-lyon.org>
+ * Copyright 2010-2014 Samuel Thibault <samuel.thibault@ens-lyon.org>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -159,7 +159,7 @@ int input_led_connect(struct input_dev *dev)
 	int i, error = 0;
 	struct led_classdev *leds;
 
-	dev->leds = leds = kzalloc(sizeof(*leds) * LED_CNT, GFP_KERNEL);
+	dev->leds = leds = kcalloc(LED_CNT, sizeof(*leds), GFP_KERNEL);
 	if (!dev->leds)
 		return -ENOMEM;
 
@@ -212,8 +212,8 @@ err:
 }
 
 /*
- * Disconnected input device. Clean it, and deregister now-useless VT LEDs and
- * triggers.
+ * Disconnected input device. Clean it, and deregister now-useless VT LEDs
+ * and triggers.
  */
 void input_led_disconnect(struct input_dev *dev)
 {
