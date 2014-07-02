@@ -128,8 +128,7 @@ void list_sort(void *priv, struct list_head *head,
 		}
 		if (lev > max_lev) {
 			if (unlikely(lev >= ARRAY_SIZE(part)-1)) {
-				pr_debug_once("list passed to list_sort() too "
-					      "long for efficiency\n");
+				printk_once(KERN_DEBUG "list too long for efficiency\n");
 				lev--;
 			}
 			max_lev = lev;
