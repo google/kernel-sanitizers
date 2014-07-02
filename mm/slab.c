@@ -590,7 +590,8 @@ static inline void on_slab_lock_classes_node(struct kmem_cache *cachep,
 {
 }
 
-static void slab_set_debugobj_lock_classes_node(struct kmem_cache *cachep, int node)
+static void slab_set_debugobj_lock_classes_node(struct kmem_cache *cachep,
+	struct kmem_cache_node *n)
 {
 }
 
