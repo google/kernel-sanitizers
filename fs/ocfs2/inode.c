@@ -1194,7 +1194,7 @@ int ocfs2_drop_inode(struct inode *inode)
 	struct ocfs2_inode_info *oi = OCFS2_I(inode);
 	trace_ocfs2_drop_inode((unsigned long long)oi->ip_blkno,
 				inode->i_nlink, oi->ip_flags);
-	return 1; 
+	return 1;
 }
 
 /*
