@@ -594,7 +594,7 @@ static int shmem_unuse_inode(struct shmem_inode_info *info,
 	radswap = swp_to_radix_entry(swap);
 	index = radix_tree_locate_item(&mapping->page_tree, radswap);
 	if (index == -1)
-		return -EAGAIN;
+		return -EAGAIN;	/* tell shmem_unuse we found nothing */
 
 	/*
 	 * Move _head_ to start search for next from here.
@@ -695,6 +695,7 @@ int shmem_unuse(swp_entry_t swap, struct page *page)
 		cond_resched();
 		if (error != -EAGAIN)
 			break;
+		/* found nothing in this: move on to search the next */
 	}
 	mutex_unlock(&shmem_swaplist_mutex);
 
