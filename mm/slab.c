@@ -1156,11 +1156,13 @@ static int init_cache_node_node(int node)
 			cachep->node[node] = n;
 		}
 
-		spin_lock_irq(&n->list_lock);
-		n->free_limit =
-			(1 + nr_cpus_node(node)) *
-			cachep->batchcount + cachep->num;
-		spin_unlock_irq(&n->list_lock);
+		if (!memcg_cache_dead(cachep)) {
+			spin_lock_irq(&n->list_lock);
+			n->free_limit =
+				(1 + nr_cpus_node(node)) *
+				cachep->batchcount + cachep->num;
+			spin_unlock_irq(&n->list_lock);
+		}
 	}
 	return 0;
 }
@@ -1194,7 +1196,8 @@ static void cpuup_canceled(long cpu)
 		spin_lock_irq(&n->list_lock);
 
 		/* Free limit for this kmem_cache_node */
-		n->free_limit -= cachep->batchcount;
+		if (!memcg_cache_dead(cachep))
+			n->free_limit -= cachep->batchcount;
 		if (nc)
 			free_block(cachep, nc->entry, nc->avail, node);
 
@@ -2545,6 +2548,12 @@ int __kmem_cache_shrink(struct kmem_cache *cachep)
 
 	check_irq_on();
 	for_each_kmem_cache_node(cachep, node, n) {
+		if (memcg_cache_dead(cachep)) {
+			spin_lock_irq(&n->list_lock);
+			n->free_limit = 0;
+			spin_unlock_irq(&n->list_lock);
+		}
+
 		drain_freelist(cachep, n, slabs_tofree(cachep, n));
 
 		ret += !list_empty(&n->slabs_full) ||
@@ -3427,8 +3436,7 @@ static void free_block(struct kmem_cache *cachep, void **objpp, int nr_objects,
 
 		/* fixup slab chains */
 		if (page->active == 0) {
-			if (n->free_objects > n->free_limit ||
-			    memcg_cache_dead(cachep)) {
+			if (n->free_objects > n->free_limit) {
 				n->free_objects -= cachep->num;
 				/* No need to drop any previously held
 				 * lock here, even if we have a off-slab slab
