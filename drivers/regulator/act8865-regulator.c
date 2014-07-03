@@ -252,6 +252,22 @@ static inline int act8865_pdata_from_dt(struct device *dev,
 }
 #endif
 
+static struct regulator_init_data
+*act8865_get_init_data(int id, struct act8865_platform_data *pdata)
+{
+	int i;
+
+	if (!pdata)
+		return NULL;
+
+	for (i = 0; i < pdata->num_regulators; i++) {
+		if (pdata->regulators[i].id == id)
+			return pdata->regulators[i].platform_data;
+	}
+
+	return NULL;
+}
+
 static int act8865_pmic_probe(struct i2c_client *client,
 			   const struct i2c_device_id *i2c_id)
 {
@@ -261,9 +277,8 @@ static int act8865_pmic_probe(struct i2c_client *client,
 	struct regulator_config config = { };
 	struct act8865 *act8865;
 	struct device_node *of_node[ACT8865_REG_NUM];
-	int i, id;
-	int ret = -EINVAL;
-	int error;
+	int i;
+	int ret;
 
 	if (dev->of_node && !pdata) {
 		const struct of_device_id *id;
@@ -291,28 +306,25 @@ static int act8865_pmic_probe(struct i2c_client *client,
 
 	act8865->regmap = devm_regmap_init_i2c(client, &act8865_regmap_config);
 	if (IS_ERR(act8865->regmap)) {
-		error = PTR_ERR(act8865->regmap);
+		ret = PTR_ERR(act8865->regmap);
 		dev_err(&client->dev, "Failed to allocate register map: %d\n",
-			error);
-		return error;
+			ret);
+		return ret;
 	}
 
 	/* Finally register devices */
 	for (i = 0; i < ACT8865_REG_NUM; i++) {
-
-		id = pdata->regulators[i].id;
+		const struct regulator_desc *desc = &act8865_reg[i];
 
 		config.dev = dev;
-		config.init_data = pdata->regulators[i].platform_data;
+		config.init_data = act8865_get_init_data(desc->id, pdata);
 		config.of_node = of_node[i];
 		config.driver_data = act8865;
 		config.regmap = act8865->regmap;
 
-		rdev = devm_regulator_register(&client->dev, &act8865_reg[i],
-					       &config);
+		rdev = devm_regulator_register(&client->dev, desc, &config);
 		if (IS_ERR(rdev)) {
-			dev_err(dev, "failed to register %s\n",
-				act8865_reg[id].name);
+			dev_err(dev, "failed to register %s\n", desc->name);
 			return PTR_ERR(rdev);
 		}
 	}
