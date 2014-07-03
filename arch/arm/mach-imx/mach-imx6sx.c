@@ -12,6 +12,7 @@
 #include <asm/mach/map.h>
 
 #include "common.h"
+#include "cpuidle.h"
 
 static void __init imx6sx_init_machine(void)
 {
@@ -26,6 +27,7 @@ static void __init imx6sx_init_machine(void)
 	of_platform_populate(NULL, of_default_bus_match_table, NULL, parent);
 
 	imx_anatop_init();
+	imx6sx_pm_init();
 }
 
 static void __init imx6sx_init_irq(void)
@@ -35,6 +37,11 @@ static void __init imx6sx_init_irq(void)
 	imx_src_init();
 	imx_gpc_init();
 	irqchip_init();
+}
+
+static void __init imx6sx_init_late(void)
+{
+	imx6q_cpuidle_init();
 }
 
 static const char *imx6sx_dt_compat[] __initconst = {
@@ -47,5 +54,6 @@ DT_MACHINE_START(IMX6SX, "Freescale i.MX6 SoloX (Device Tree)")
 	.init_irq	= imx6sx_init_irq,
 	.init_machine	= imx6sx_init_machine,
 	.dt_compat	= imx6sx_dt_compat,
+	.init_late	= imx6sx_init_late,
 	.restart	= mxc_restart,
 MACHINE_END

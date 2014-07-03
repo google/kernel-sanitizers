@@ -18,10 +18,53 @@
 #include <linux/of_irq.h>
 #include <dt-bindings/clock/imx5-clock.h>
 
-#include "crm-regs-imx5.h"
 #include "clk.h"
 #include "common.h"
 #include "hardware.h"
+
+#define MX51_DPLL1_BASE		0x83f80000
+#define MX51_DPLL2_BASE		0x83f84000
+#define MX51_DPLL3_BASE		0x83f88000
+
+#define MX53_DPLL1_BASE		0x63f80000
+#define MX53_DPLL2_BASE		0x63f84000
+#define MX53_DPLL3_BASE		0x63f88000
+#define MX53_DPLL4_BASE		0x63f8c000
+
+#define MXC_CCM_CCR		(ccm_base + 0x00)
+#define MXC_CCM_CCDR		(ccm_base + 0x04)
+#define MXC_CCM_CSR		(ccm_base + 0x08)
+#define MXC_CCM_CCSR		(ccm_base + 0x0c)
+#define MXC_CCM_CACRR		(ccm_base + 0x10)
+#define MXC_CCM_CBCDR		(ccm_base + 0x14)
+#define MXC_CCM_CBCMR		(ccm_base + 0x18)
+#define MXC_CCM_CSCMR1		(ccm_base + 0x1c)
+#define MXC_CCM_CSCMR2		(ccm_base + 0x20)
+#define MXC_CCM_CSCDR1		(ccm_base + 0x24)
+#define MXC_CCM_CS1CDR		(ccm_base + 0x28)
+#define MXC_CCM_CS2CDR		(ccm_base + 0x2c)
+#define MXC_CCM_CDCDR		(ccm_base + 0x30)
+#define MXC_CCM_CHSCDR		(ccm_base + 0x34)
+#define MXC_CCM_CSCDR2		(ccm_base + 0x38)
+#define MXC_CCM_CSCDR3		(ccm_base + 0x3c)
+#define MXC_CCM_CSCDR4		(ccm_base + 0x40)
+#define MXC_CCM_CWDR		(ccm_base + 0x44)
+#define MXC_CCM_CDHIPR		(ccm_base + 0x48)
+#define MXC_CCM_CDCR		(ccm_base + 0x4c)
+#define MXC_CCM_CTOR		(ccm_base + 0x50)
+#define MXC_CCM_CLPCR		(ccm_base + 0x54)
+#define MXC_CCM_CISR		(ccm_base + 0x58)
+#define MXC_CCM_CIMR		(ccm_base + 0x5c)
+#define MXC_CCM_CCOSR		(ccm_base + 0x60)
+#define MXC_CCM_CGPR		(ccm_base + 0x64)
+#define MXC_CCM_CCGR0		(ccm_base + 0x68)
+#define MXC_CCM_CCGR1		(ccm_base + 0x6c)
+#define MXC_CCM_CCGR2		(ccm_base + 0x70)
+#define MXC_CCM_CCGR3		(ccm_base + 0x74)
+#define MXC_CCM_CCGR4		(ccm_base + 0x78)
+#define MXC_CCM_CCGR5		(ccm_base + 0x7c)
+#define MXC_CCM_CCGR6		(ccm_base + 0x80)
+#define MXC_CCM_CCGR7		(ccm_base + 0x84)
 
 /* Low-power Audio Playback Mode clock */
 static const char *lp_apm_sel[] = { "osc", };
@@ -86,17 +129,15 @@ static const char *mx51_spdif1_com_sel[] = { "spdif1_podf", "ssi2_root_gate", };
 static struct clk *clk[IMX5_CLK_END];
 static struct clk_onecell_data clk_data;
 
-static void __init mx5_clocks_common_init(unsigned long rate_ckil,
-		unsigned long rate_osc, unsigned long rate_ckih1,
-		unsigned long rate_ckih2)
+static void __init mx5_clocks_common_init(void __iomem *ccm_base)
 {
-	int i;
+	imx5_pm_set_ccm_base(ccm_base);
 
 	clk[IMX5_CLK_DUMMY]		= imx_clk_fixed("dummy", 0);
-	clk[IMX5_CLK_CKIL]		= imx_obtain_fixed_clock("ckil", rate_ckil);
-	clk[IMX5_CLK_OSC]		= imx_obtain_fixed_clock("osc", rate_osc);
-	clk[IMX5_CLK_CKIH1]		= imx_obtain_fixed_clock("ckih1", rate_ckih1);
-	clk[IMX5_CLK_CKIH2]		= imx_obtain_fixed_clock("ckih2", rate_ckih2);
+	clk[IMX5_CLK_CKIL]		= imx_obtain_fixed_clock("ckil", 0);
+	clk[IMX5_CLK_OSC]		= imx_obtain_fixed_clock("osc", 0);
+	clk[IMX5_CLK_CKIH1]		= imx_obtain_fixed_clock("ckih1", 0);
+	clk[IMX5_CLK_CKIH2]		= imx_obtain_fixed_clock("ckih2", 0);
 
 	clk[IMX5_CLK_PERIPH_APM]	= imx_clk_mux("periph_apm", MXC_CCM_CBCMR, 12, 2,
 						periph_apm_sel, ARRAY_SIZE(periph_apm_sel));
@@ -244,13 +285,6 @@ static void __init mx5_clocks_common_init(unsigned long rate_ckil,
 	clk[IMX5_CLK_SAHARA_IPG_GATE]	= imx_clk_gate2("sahara_ipg_gate", "ipg", MXC_CCM_CCGR4, 14);
 	clk[IMX5_CLK_SATA_REF]		= imx_clk_fixed_factor("sata_ref", "usb_phy1_gate", 1, 1);
 
-	for (i = 0; i < ARRAY_SIZE(clk); i++)
-		if (IS_ERR(clk[i]))
-			pr_err("i.MX5 clk %d: register failed with %ld\n",
-				i, PTR_ERR(clk[i]));
-
-	clk_register_clkdev(clk[IMX5_CLK_GPT_HF_GATE], "per", "imx-gpt.0");
-	clk_register_clkdev(clk[IMX5_CLK_GPT_IPG_GATE], "ipg", "imx-gpt.0");
 	clk_register_clkdev(clk[IMX5_CLK_UART1_PER_GATE], "per", "imx21-uart.0");
 	clk_register_clkdev(clk[IMX5_CLK_UART1_IPG_GATE], "ipg", "imx21-uart.0");
 	clk_register_clkdev(clk[IMX5_CLK_UART2_PER_GATE], "per", "imx21-uart.1");
@@ -322,12 +356,26 @@ static void __init mx5_clocks_common_init(unsigned long rate_ckil,
 
 static void __init mx50_clocks_init(struct device_node *np)
 {
+	void __iomem *ccm_base;
+	void __iomem *pll_base;
 	unsigned long r;
-	int i;
 
-	clk[IMX5_CLK_PLL1_SW]		= imx_clk_pllv2("pll1_sw", "osc", MX53_DPLL1_BASE);
-	clk[IMX5_CLK_PLL2_SW]		= imx_clk_pllv2("pll2_sw", "osc", MX53_DPLL2_BASE);
-	clk[IMX5_CLK_PLL3_SW]		= imx_clk_pllv2("pll3_sw", "osc", MX53_DPLL3_BASE);
+	pll_base = ioremap(MX53_DPLL1_BASE, SZ_16K);
+	WARN_ON(!pll_base);
+	clk[IMX5_CLK_PLL1_SW]		= imx_clk_pllv2("pll1_sw", "osc", pll_base);
+
+	pll_base = ioremap(MX53_DPLL2_BASE, SZ_16K);
+	WARN_ON(!pll_base);
+	clk[IMX5_CLK_PLL2_SW]		= imx_clk_pllv2("pll2_sw", "osc", pll_base);
+
+	pll_base = ioremap(MX53_DPLL3_BASE, SZ_16K);
+	WARN_ON(!pll_base);
+	clk[IMX5_CLK_PLL3_SW]		= imx_clk_pllv2("pll3_sw", "osc", pll_base);
+
+	ccm_base = of_iomap(np, 0);
+	WARN_ON(!ccm_base);
+
+	mx5_clocks_common_init(ccm_base);
 
 	clk[IMX5_CLK_LP_APM]		= imx_clk_mux("lp_apm", MXC_CCM_CCSR, 10, 1,
 						lp_apm_sel, ARRAY_SIZE(lp_apm_sel));
@@ -349,16 +397,11 @@ static void __init mx50_clocks_init(struct device_node *np)
 	clk[IMX5_CLK_CKO2_PODF]		= imx_clk_divider("cko2_podf", "cko2_sel", MXC_CCM_CCOSR, 21, 3);
 	clk[IMX5_CLK_CKO2]		= imx_clk_gate2("cko2", "cko2_podf", MXC_CCM_CCOSR, 24);
 
-	for (i = 0; i < ARRAY_SIZE(clk); i++)
-		if (IS_ERR(clk[i]))
-			pr_err("i.MX50 clk %d: register failed with %ld\n",
-				i, PTR_ERR(clk[i]));
+	imx_check_clocks(clk, ARRAY_SIZE(clk));
 
 	clk_data.clks = clk;
 	clk_data.clk_num = ARRAY_SIZE(clk);
 	of_clk_add_provider(np, of_clk_src_onecell_get, &clk_data);
-
-	mx5_clocks_common_init(0, 0, 0, 0);
 
 	/* set SDHC root clock to 200MHZ*/
 	clk_set_rate(clk[IMX5_CLK_ESDHC_A_PODF], 200000000);
@@ -375,16 +418,29 @@ static void __init mx50_clocks_init(struct device_node *np)
 }
 CLK_OF_DECLARE(imx50_ccm, "fsl,imx50-ccm", mx50_clocks_init);
 
-int __init mx51_clocks_init(unsigned long rate_ckil, unsigned long rate_osc,
-			unsigned long rate_ckih1, unsigned long rate_ckih2)
+static void __init mx51_clocks_init(struct device_node *np)
 {
-	int i;
+	void __iomem *ccm_base;
+	void __iomem *pll_base;
 	u32 val;
-	struct device_node *np;
 
-	clk[IMX5_CLK_PLL1_SW]		= imx_clk_pllv2("pll1_sw", "osc", MX51_DPLL1_BASE);
-	clk[IMX5_CLK_PLL2_SW]		= imx_clk_pllv2("pll2_sw", "osc", MX51_DPLL2_BASE);
-	clk[IMX5_CLK_PLL3_SW]		= imx_clk_pllv2("pll3_sw", "osc", MX51_DPLL3_BASE);
+	pll_base = ioremap(MX51_DPLL1_BASE, SZ_16K);
+	WARN_ON(!pll_base);
+	clk[IMX5_CLK_PLL1_SW]		= imx_clk_pllv2("pll1_sw", "osc", pll_base);
+
+	pll_base = ioremap(MX51_DPLL2_BASE, SZ_16K);
+	WARN_ON(!pll_base);
+	clk[IMX5_CLK_PLL2_SW]		= imx_clk_pllv2("pll2_sw", "osc", pll_base);
+
+	pll_base = ioremap(MX51_DPLL3_BASE, SZ_16K);
+	WARN_ON(!pll_base);
+	clk[IMX5_CLK_PLL3_SW]		= imx_clk_pllv2("pll3_sw", "osc", pll_base);
+
+	ccm_base = of_iomap(np, 0);
+	WARN_ON(!ccm_base);
+
+	mx5_clocks_common_init(ccm_base);
+
 	clk[IMX5_CLK_LP_APM]		= imx_clk_mux("lp_apm", MXC_CCM_CCSR, 9, 1,
 						lp_apm_sel, ARRAY_SIZE(lp_apm_sel));
 	clk[IMX5_CLK_IPU_DI0_SEL]	= imx_clk_mux("ipu_di0_sel", MXC_CCM_CSCMR2, 26, 3,
@@ -417,17 +473,11 @@ int __init mx51_clocks_init(unsigned long rate_ckil, unsigned long rate_osc,
 						mx51_spdif1_com_sel, ARRAY_SIZE(mx51_spdif1_com_sel));
 	clk[IMX5_CLK_SPDIF1_GATE]	= imx_clk_gate2("spdif1_gate", "spdif1_com_sel", MXC_CCM_CCGR5, 28);
 
-	for (i = 0; i < ARRAY_SIZE(clk); i++)
-		if (IS_ERR(clk[i]))
-			pr_err("i.MX51 clk %d: register failed with %ld\n",
-				i, PTR_ERR(clk[i]));
+	imx_check_clocks(clk, ARRAY_SIZE(clk));
 
-	np = of_find_compatible_node(NULL, NULL, "fsl,imx51-ccm");
 	clk_data.clks = clk;
 	clk_data.clk_num = ARRAY_SIZE(clk);
 	of_clk_add_provider(np, of_clk_src_onecell_get, &clk_data);
-
-	mx5_clocks_common_init(rate_ckil, rate_osc, rate_ckih1, rate_ckih2);
 
 	clk_register_clkdev(clk[IMX5_CLK_HSI2C_GATE], NULL, "imx21-i2c.2");
 	clk_register_clkdev(clk[IMX5_CLK_MX51_MIPI], "mipi_hsp", NULL);
@@ -454,7 +504,7 @@ int __init mx51_clocks_init(unsigned long rate_ckil, unsigned long rate_osc,
 	clk_set_rate(clk[IMX5_CLK_ESDHC_B_PODF], 166250000);
 
 	/* System timer */
-	mxc_timer_init(MX51_IO_ADDRESS(MX51_GPT1_BASE_ADDR), MX51_INT_GPT);
+	mxc_timer_init_dt(of_find_compatible_node(NULL, NULL, "fsl,imx51-gpt"));
 
 	clk_prepare_enable(clk[IMX5_CLK_IIM_GATE]);
 	imx_print_silicon_rev("i.MX51", mx51_revision());
@@ -474,25 +524,35 @@ int __init mx51_clocks_init(unsigned long rate_ckil, unsigned long rate_osc,
 	val = readl(MXC_CCM_CLPCR);
 	val |= 1 << 23;
 	writel(val, MXC_CCM_CLPCR);
-
-	return 0;
 }
-
-static void __init mx51_clocks_init_dt(struct device_node *np)
-{
-	mx51_clocks_init(0, 0, 0, 0);
-}
-CLK_OF_DECLARE(imx51_ccm, "fsl,imx51-ccm", mx51_clocks_init_dt);
+CLK_OF_DECLARE(imx51_ccm, "fsl,imx51-ccm", mx51_clocks_init);
 
 static void __init mx53_clocks_init(struct device_node *np)
 {
-	int i;
+	void __iomem *ccm_base;
+	void __iomem *pll_base;
 	unsigned long r;
 
-	clk[IMX5_CLK_PLL1_SW]		= imx_clk_pllv2("pll1_sw", "osc", MX53_DPLL1_BASE);
-	clk[IMX5_CLK_PLL2_SW]		= imx_clk_pllv2("pll2_sw", "osc", MX53_DPLL2_BASE);
-	clk[IMX5_CLK_PLL3_SW]		= imx_clk_pllv2("pll3_sw", "osc", MX53_DPLL3_BASE);
-	clk[IMX5_CLK_PLL4_SW]		= imx_clk_pllv2("pll4_sw", "osc", MX53_DPLL4_BASE);
+	pll_base = ioremap(MX53_DPLL1_BASE, SZ_16K);
+	WARN_ON(!pll_base);
+	clk[IMX5_CLK_PLL1_SW]		= imx_clk_pllv2("pll1_sw", "osc", pll_base);
+
+	pll_base = ioremap(MX53_DPLL2_BASE, SZ_16K);
+	WARN_ON(!pll_base);
+	clk[IMX5_CLK_PLL2_SW]		= imx_clk_pllv2("pll2_sw", "osc", pll_base);
+
+	pll_base = ioremap(MX53_DPLL3_BASE, SZ_16K);
+	WARN_ON(!pll_base);
+	clk[IMX5_CLK_PLL3_SW]		= imx_clk_pllv2("pll3_sw", "osc", pll_base);
+
+	pll_base = ioremap(MX53_DPLL4_BASE, SZ_16K);
+	WARN_ON(!pll_base);
+	clk[IMX5_CLK_PLL4_SW]		= imx_clk_pllv2("pll4_sw", "osc", pll_base);
+
+	ccm_base = of_iomap(np, 0);
+	WARN_ON(!ccm_base);
+
+	mx5_clocks_common_init(ccm_base);
 
 	clk[IMX5_CLK_LP_APM]		= imx_clk_mux("lp_apm", MXC_CCM_CCSR, 10, 1,
 						lp_apm_sel, ARRAY_SIZE(lp_apm_sel));
@@ -543,16 +603,11 @@ static void __init mx53_clocks_init(struct device_node *np)
 	clk[IMX5_CLK_SPDIF_XTAL_SEL]	= imx_clk_mux("spdif_xtal_sel", MXC_CCM_CSCMR1, 2, 2,
 						mx53_spdif_xtal_sel, ARRAY_SIZE(mx53_spdif_xtal_sel));
 
-	for (i = 0; i < ARRAY_SIZE(clk); i++)
-		if (IS_ERR(clk[i]))
-			pr_err("i.MX53 clk %d: register failed with %ld\n",
-				i, PTR_ERR(clk[i]));
+	imx_check_clocks(clk, ARRAY_SIZE(clk));
 
 	clk_data.clks = clk;
 	clk_data.clk_num = ARRAY_SIZE(clk);
 	of_clk_add_provider(np, of_clk_src_onecell_get, &clk_data);
-
-	mx5_clocks_common_init(0, 0, 0, 0);
 
 	clk_register_clkdev(clk[IMX5_CLK_I2C3_GATE], NULL, "imx21-i2c.2");
 	clk_register_clkdev(clk[IMX5_CLK_FEC_GATE], NULL, "imx25-fec.0");

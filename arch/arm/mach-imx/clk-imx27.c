@@ -1,32 +1,31 @@
 #include <linux/clk.h>
-#include <linux/io.h>
-#include <linux/module.h>
+#include <linux/clk-provider.h>
 #include <linux/clkdev.h>
 #include <linux/err.h>
-#include <linux/clk-provider.h>
 #include <linux/of.h>
+#include <linux/of_address.h>
 
 #include "clk.h"
 #include "common.h"
 #include "hardware.h"
 
-#define IO_ADDR_CCM(off)	(MX27_IO_ADDRESS(MX27_CCM_BASE_ADDR + (off)))
+static void __iomem *ccm __initdata;
 
 /* Register offsets */
-#define CCM_CSCR		IO_ADDR_CCM(0x0)
-#define CCM_MPCTL0		IO_ADDR_CCM(0x4)
-#define CCM_MPCTL1		IO_ADDR_CCM(0x8)
-#define CCM_SPCTL0		IO_ADDR_CCM(0xc)
-#define CCM_SPCTL1		IO_ADDR_CCM(0x10)
-#define CCM_OSC26MCTL		IO_ADDR_CCM(0x14)
-#define CCM_PCDR0		IO_ADDR_CCM(0x18)
-#define CCM_PCDR1		IO_ADDR_CCM(0x1c)
-#define CCM_PCCR0		IO_ADDR_CCM(0x20)
-#define CCM_PCCR1		IO_ADDR_CCM(0x24)
-#define CCM_CCSR		IO_ADDR_CCM(0x28)
-#define CCM_PMCTL		IO_ADDR_CCM(0x2c)
-#define CCM_PMCOUNT		IO_ADDR_CCM(0x30)
-#define CCM_WKGDCTL		IO_ADDR_CCM(0x34)
+#define CCM_CSCR		(ccm + 0x00)
+#define CCM_MPCTL0		(ccm + 0x04)
+#define CCM_MPCTL1		(ccm + 0x08)
+#define CCM_SPCTL0		(ccm + 0x0c)
+#define CCM_SPCTL1		(ccm + 0x10)
+#define CCM_OSC26MCTL		(ccm + 0x14)
+#define CCM_PCDR0		(ccm + 0x18)
+#define CCM_PCDR1		(ccm + 0x1c)
+#define CCM_PCCR0		(ccm + 0x20)
+#define CCM_PCCR1		(ccm + 0x24)
+#define CCM_CCSR		(ccm + 0x28)
+#define CCM_PMCTL		(ccm + 0x2c)
+#define CCM_PMCOUNT		(ccm + 0x30)
+#define CCM_WKGDCTL		(ccm + 0x34)
 
 #define CCM_CSCR_UPDATE_DIS	(1 << 31)
 #define CCM_CSCR_SSI2		(1 << 23)
@@ -89,10 +88,9 @@ enum mx27_clks {
 static struct clk *clk[clk_max];
 static struct clk_onecell_data clk_data;
 
-int __init mx27_clocks_init(unsigned long fref)
+static void __init _mx27_clocks_init(unsigned long fref)
 {
-	int i;
-	struct device_node *np;
+	BUG_ON(!ccm);
 
 	clk[dummy] = imx_clk_fixed("dummy", 0);
 	clk[ckih] = imx_clk_fixed("ckih", fref);
@@ -201,17 +199,20 @@ int __init mx27_clocks_init(unsigned long fref)
 	clk[uart2_ipg_gate] = imx_clk_gate("uart2_ipg_gate", "ipg", CCM_PCCR1, 30);
 	clk[uart1_ipg_gate] = imx_clk_gate("uart1_ipg_gate", "ipg", CCM_PCCR1, 31);
 
-	for (i = 0; i < ARRAY_SIZE(clk); i++)
-		if (IS_ERR(clk[i]))
-			pr_err("i.MX27 clk %d: register failed with %ld\n",
-				i, PTR_ERR(clk[i]));
+	imx_check_clocks(clk, ARRAY_SIZE(clk));
 
-	np = of_find_compatible_node(NULL, NULL, "fsl,imx27-ccm");
-	if (np) {
-		clk_data.clks = clk;
-		clk_data.clk_num = ARRAY_SIZE(clk);
-		of_clk_add_provider(np, of_clk_src_onecell_get, &clk_data);
-	}
+	clk_register_clkdev(clk[cpu_div], NULL, "cpu0");
+
+	clk_prepare_enable(clk[emi_ahb_gate]);
+
+	imx_print_silicon_rev("i.MX27", mx27_revision());
+}
+
+int __init mx27_clocks_init(unsigned long fref)
+{
+	ccm = ioremap(MX27_CCM_BASE_ADDR, SZ_4K);
+
+	_mx27_clocks_init(fref);
 
 	clk_register_clkdev(clk[uart1_ipg_gate], "ipg", "imx21-uart.0");
 	clk_register_clkdev(clk[per1_gate], "per", "imx21-uart.0");
@@ -274,29 +275,33 @@ int __init mx27_clocks_init(unsigned long fref)
 	clk_register_clkdev(clk[emma_ipg_gate], "emma-ipg", "imx27-camera.0");
 	clk_register_clkdev(clk[emma_ahb_gate], "ahb", "m2m-emmaprp.0");
 	clk_register_clkdev(clk[emma_ipg_gate], "ipg", "m2m-emmaprp.0");
-	clk_register_clkdev(clk[cpu_div], NULL, "cpu0");
 
 	mxc_timer_init(MX27_IO_ADDRESS(MX27_GPT1_BASE_ADDR), MX27_INT_GPT1);
-
-	clk_prepare_enable(clk[emi_ahb_gate]);
-
-	imx_print_silicon_rev("i.MX27", mx27_revision());
 
 	return 0;
 }
 
-int __init mx27_clocks_init_dt(void)
+static void __init mx27_clocks_init_dt(struct device_node *np)
 {
-	struct device_node *np;
+	struct device_node *refnp;
 	u32 fref = 26000000; /* default */
 
-	for_each_compatible_node(np, NULL, "fixed-clock") {
-		if (!of_device_is_compatible(np, "fsl,imx-osc26m"))
+	for_each_compatible_node(refnp, NULL, "fixed-clock") {
+		if (!of_device_is_compatible(refnp, "fsl,imx-osc26m"))
 			continue;
 
-		if (!of_property_read_u32(np, "clock-frequency", &fref))
+		if (!of_property_read_u32(refnp, "clock-frequency", &fref))
 			break;
 	}
 
-	return mx27_clocks_init(fref);
+	ccm = of_iomap(np, 0);
+
+	_mx27_clocks_init(fref);
+
+	clk_data.clks = clk;
+	clk_data.clk_num = ARRAY_SIZE(clk);
+	of_clk_add_provider(np, of_clk_src_onecell_get, &clk_data);
+
+	mxc_timer_init_dt(of_find_compatible_node(NULL, NULL, "fsl,imx1-gpt"));
 }
+CLK_OF_DECLARE(imx27_ccm, "fsl,imx27-ccm", mx27_clocks_init_dt);

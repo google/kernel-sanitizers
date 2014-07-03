@@ -93,8 +93,6 @@ static struct clk *clk[clk_max];
 
 static int __init __mx25_clocks_init(unsigned long osc_rate)
 {
-	int i;
-
 	clk[dummy] = imx_clk_fixed("dummy", 0);
 	clk[osc] = imx_clk_fixed("osc", osc_rate);
 	clk[mpll] = imx_clk_pllv1("mpll", "osc", ccm(CCM_MPCTL));
@@ -224,18 +222,12 @@ static int __init __mx25_clocks_init(unsigned long osc_rate)
 	/* CCM_CGCR2(19): reserved in datasheet, but used as wdt in FSL kernel */
 	clk[wdt_ipg] = imx_clk_gate("wdt_ipg", "ipg", ccm(CCM_CGCR2), 19);
 
-	for (i = 0; i < ARRAY_SIZE(clk); i++)
-		if (IS_ERR(clk[i]))
-			pr_err("i.MX25 clk %d: register failed with %ld\n",
-				i, PTR_ERR(clk[i]));
+	imx_check_clocks(clk, ARRAY_SIZE(clk));
 
 	clk_prepare_enable(clk[emi_ahb]);
 
 	/* Clock source for gpt must be derived from AHB */
 	clk_set_parent(clk[per5_sel], clk[ahb]);
-
-	clk_register_clkdev(clk[ipg], "ipg", "imx-gpt.0");
-	clk_register_clkdev(clk[gpt_ipg_per], "per", "imx-gpt.0");
 
 	/*
 	 * Let's initially set up CLKO parent as ipg, since this configuration
@@ -250,6 +242,8 @@ int __init mx25_clocks_init(void)
 {
 	__mx25_clocks_init(24000000);
 
+	clk_register_clkdev(clk[ipg], "ipg", "imx-gpt.0");
+	clk_register_clkdev(clk[gpt_ipg_per], "per", "imx-gpt.0");
 	/* i.mx25 has the i.mx21 type uart */
 	clk_register_clkdev(clk[uart1_ipg], "ipg", "imx21-uart.0");
 	clk_register_clkdev(clk[uart_ipg_per], "per", "imx21-uart.0");
