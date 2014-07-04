@@ -121,6 +121,26 @@ static inline bool is_root_cache(struct kmem_cache *s)
 	return !s->memcg_params || s->memcg_params->is_root_cache;
 }
 
+static inline bool memcg_cache_dead(struct kmem_cache *s)
+{
+	if (is_root_cache(s))
+		return false;
+
+	/*
+	 * Since this function can be called without holding any locks, it
+	 * needs a barrier here to guarantee the read won't be reordered.
+	 */
+	smp_rmb();
+	return s->memcg_params->dead;
+}
+
+static inline void memcg_cache_mark_dead(struct kmem_cache *s)
+{
+	BUG_ON(is_root_cache(s));
+	s->memcg_params->dead = true;
+	smp_wmb();		/* matches rmb in memcg_cache_dead() */
+}
+
 static inline bool slab_equal_or_root(struct kmem_cache *s,
 					struct kmem_cache *p)
 {
@@ -203,6 +223,11 @@ static inline bool is_root_cache(struct kmem_cache *s)
 	return true;
 }
 
+static inline bool memcg_cache_dead(struct kmem_cache *s)
+{
+	return false;
+}
+
 static inline bool slab_equal_or_root(struct kmem_cache *s,
 				      struct kmem_cache *p)
 {
@@ -260,9 +285,8 @@ static inline struct kmem_cache *cache_from_obj(struct kmem_cache *s, void *x)
 	WARN_ON_ONCE(1);
 	return s;
 }
-#endif
 
-
+#ifndef CONFIG_SLOB
 /*
  * The slab lists for all objects.
  */
@@ -277,7 +301,7 @@ struct kmem_cache_node {
 	unsigned int free_limit;
 	unsigned int colour_next;	/* Per-node cache coloring */
 	struct array_cache *shared;	/* shared per node */
-	struct array_cache **alien;	/* on other nodes */
+	struct alien_cache **alien;	/* on other nodes */
 	unsigned long next_reap;	/* updated without locking */
 	int free_touched;		/* updated without locking */
 #endif
@@ -294,5 +318,22 @@ struct kmem_cache_node {
 
 };
 
+static inline struct kmem_cache_node *get_node(struct kmem_cache *s, int node)
+{
+	return s->node[node];
+}
+
+/*
+ * Iterator over all nodes. The body will be executed for each node that has
+ * a kmem_cache_node structure allocated (which is true for all online nodes)
+ */
+#define for_each_kmem_cache_node(__s, __node, __n) \
+	for (__node = 0; __n = get_node(__s, __node), __node < nr_node_ids; __node++) \
+		 if (__n)
+
+#endif
+
 void *slab_next(struct seq_file *m, void *p, loff_t *pos);
 void slab_stop(struct seq_file *m, void *p);
+
+#endif /* MM_SLAB_H */

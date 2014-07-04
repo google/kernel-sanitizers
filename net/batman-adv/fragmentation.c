@@ -184,7 +184,7 @@ static bool batadv_frag_insert_packet(struct batadv_orig_node *orig_node,
 
 	/* Reached the end of the list, so insert after 'frag_entry_curr'. */
 	if (likely(frag_entry_curr)) {
-		hlist_add_after(&frag_entry_curr->list, &frag_entry_new->list);
+		hlist_add_behind(&frag_entry_new->list, &frag_entry_curr->list);
 		chain->size += skb->len - hdr_size;
 		chain->timestamp = jiffies;
 		ret = true;

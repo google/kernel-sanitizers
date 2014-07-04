@@ -8,3 +8,5 @@ isofs-objs-y 			:= namei.o inode.o dir.o util.o rock.o export.o
 isofs-objs-$(CONFIG_JOLIET)	+= joliet.o
 isofs-objs-$(CONFIG_ZISOFS)	+= compress.o
 isofs-objs			:= $(isofs-objs-y)
+
+# ccflags-y := -DDEBUG_FLAGS=1

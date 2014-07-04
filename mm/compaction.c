@@ -325,14 +325,14 @@ static unsigned long isolate_freepages_block(struct compact_control *cc,
 
 		/* Found a free page, break it into order-0 pages */
 		isolated = split_free_page(page);
-		total_isolated += isolated;
-		for (i = 0; i < isolated; i++) {
-			list_add(&page->lru, freelist);
-			page++;
-		}
-
-		/* If a page was split, advance to the end of it */
 		if (isolated) {
+			total_isolated += isolated;
+			for (i = 0; i < isolated; i++) {
+				list_add(&page->lru, freelist);
+				page++;
+			}
+
+			/* If a page was split, advance to the end of it */
 			blockpfn += isolated - 1;
 			cursor += isolated - 1;
 			continue;
@@ -341,9 +341,6 @@ static unsigned long isolate_freepages_block(struct compact_control *cc,
 isolate_fail:
 		if (strict)
 			break;
-		else
-			continue;
-
 	}
 
 	trace_mm_compaction_isolate_freepages(nr_scanned, total_isolated);

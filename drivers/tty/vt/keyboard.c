@@ -33,6 +33,7 @@
 #include <linux/string.h>
 #include <linux/init.h>
 #include <linux/slab.h>
+#include <linux/leds.h>
 
 #include <linux/kbd_kern.h>
 #include <linux/kbd_diacr.h>
@@ -130,6 +131,7 @@ static char rep;					/* flag telling character repeat */
 static int shift_state = 0;
 
 static unsigned char ledstate = 0xff;			/* undefined */
+static unsigned char lockstate = 0xff;			/* undefined */
 static unsigned char ledioctl;
 
 /*
@@ -961,6 +963,41 @@ static void k_brl(struct vc_data *vc, unsigned char value, char up_flag)
 	}
 }
 
+/* We route VT keyboard "leds" through triggers */
+static void kbd_ledstate_trigger_activate(struct led_classdev *cdev);
+
+static struct led_trigger ledtrig_ledstate[] = {
+#define DEFINE_LEDSTATE_TRIGGER(kbd_led, nam) \
+	[kbd_led] = { \
+		.name = nam, \
+		.activate = kbd_ledstate_trigger_activate, \
+	}
+	DEFINE_LEDSTATE_TRIGGER(VC_SCROLLOCK, "kbd-scrollock"),
+	DEFINE_LEDSTATE_TRIGGER(VC_NUMLOCK,   "kbd-numlock"),
+	DEFINE_LEDSTATE_TRIGGER(VC_CAPSLOCK,  "kbd-capslock"),
+	DEFINE_LEDSTATE_TRIGGER(VC_KANALOCK,  "kbd-kanalock"),
+#undef DEFINE_LEDSTATE_TRIGGER
+};
+
+static void kbd_lockstate_trigger_activate(struct led_classdev *cdev);
+
+static struct led_trigger ledtrig_lockstate[] = {
+#define DEFINE_LOCKSTATE_TRIGGER(kbd_led, nam) \
+	[kbd_led] = { \
+		.name = nam, \
+		.activate = kbd_lockstate_trigger_activate, \
+	}
+	DEFINE_LOCKSTATE_TRIGGER(VC_SHIFTLOCK,  "kbd-shiftlock"),
+	DEFINE_LOCKSTATE_TRIGGER(VC_ALTGRLOCK,  "kbd-altgrlock"),
+	DEFINE_LOCKSTATE_TRIGGER(VC_CTRLLOCK,   "kbd-ctrllock"),
+	DEFINE_LOCKSTATE_TRIGGER(VC_ALTLOCK,    "kbd-altlock"),
+	DEFINE_LOCKSTATE_TRIGGER(VC_SHIFTLLOCK, "kbd-shiftllock"),
+	DEFINE_LOCKSTATE_TRIGGER(VC_SHIFTRLOCK, "kbd-shiftrlock"),
+	DEFINE_LOCKSTATE_TRIGGER(VC_CTRLLLOCK,  "kbd-ctrlllock"),
+	DEFINE_LOCKSTATE_TRIGGER(VC_CTRLRLOCK,  "kbd-ctrlrlock"),
+#undef DEFINE_LOCKSTATE_TRIGGER
+};
+
 /*
  * The leds display either (i) the status of NumLock, CapsLock, ScrollLock,
  * or (ii) whatever pattern of lights people want to show using KDSETLED,
@@ -995,18 +1032,25 @@ static inline unsigned char getleds(void)
 	return kbd->ledflagstate;
 }
 
-static int kbd_update_leds_helper(struct input_handle *handle, void *data)
+/* Called on trigger connection, to set initial state */
+static void kbd_ledstate_trigger_activate(struct led_classdev *cdev)
 {
-	unsigned char leds = *(unsigned char *)data;
+	struct led_trigger *trigger = cdev->trigger;
+	int led = trigger - ledtrig_ledstate;
 
-	if (test_bit(EV_LED, handle->dev->evbit)) {
-		input_inject_event(handle, EV_LED, LED_SCROLLL, !!(leds & 0x01));
-		input_inject_event(handle, EV_LED, LED_NUML,    !!(leds & 0x02));
-		input_inject_event(handle, EV_LED, LED_CAPSL,   !!(leds & 0x04));
-		input_inject_event(handle, EV_SYN, SYN_REPORT, 0);
-	}
+	tasklet_disable(&keyboard_tasklet);
+	led_trigger_event(trigger, ledstate & (1 << led) ? LED_FULL : LED_OFF);
+	tasklet_enable(&keyboard_tasklet);
+}
 
-	return 0;
+static void kbd_lockstate_trigger_activate(struct led_classdev *cdev)
+{
+	struct led_trigger *trigger = cdev->trigger;
+	int led = trigger - ledtrig_lockstate;
+
+	tasklet_disable(&keyboard_tasklet);
+	led_trigger_event(trigger, lockstate & (1 << led) ? LED_FULL : LED_OFF);
+	tasklet_enable(&keyboard_tasklet);
 }
 
 /**
@@ -1095,15 +1139,28 @@ static void kbd_bh(unsigned long dummy)
 {
 	unsigned char leds;
 	unsigned long flags;
-	
+	int i;
+
 	spin_lock_irqsave(&led_lock, flags);
 	leds = getleds();
 	spin_unlock_irqrestore(&led_lock, flags);
 
 	if (leds != ledstate) {
-		input_handler_for_each_handle(&kbd_handler, &leds,
-					      kbd_update_leds_helper);
+		for (i = 0; i < ARRAY_SIZE(ledtrig_ledstate); i++)
+			if ((leds ^ ledstate) & (1 << i))
+				led_trigger_event(&ledtrig_ledstate[i],
+						leds & (1 << i)
+						? LED_FULL : LED_OFF);
 		ledstate = leds;
+	}
+
+	if (kbd->lockstate != lockstate) {
+		for (i = 0; i < ARRAY_SIZE(ledtrig_lockstate); i++)
+			if ((kbd->lockstate ^ lockstate) & (1 << i))
+				led_trigger_event(&ledtrig_lockstate[i],
+						kbd->lockstate & (1 << i)
+						? LED_FULL : LED_OFF);
+		lockstate = kbd->lockstate;
 	}
 }
 
@@ -1442,20 +1499,6 @@ static void kbd_disconnect(struct input_handle *handle)
 	kfree(handle);
 }
 
-/*
- * Start keyboard handler on the new keyboard by refreshing LED state to
- * match the rest of the system.
- */
-static void kbd_start(struct input_handle *handle)
-{
-	tasklet_disable(&keyboard_tasklet);
-
-	if (ledstate != 0xff)
-		kbd_update_leds_helper(handle, &ledstate);
-
-	tasklet_enable(&keyboard_tasklet);
-}
-
 static const struct input_device_id kbd_ids[] = {
 	{
 		.flags = INPUT_DEVICE_ID_MATCH_EVBIT,
@@ -1477,7 +1520,6 @@ static struct input_handler kbd_handler = {
 	.match		= kbd_match,
 	.connect	= kbd_connect,
 	.disconnect	= kbd_disconnect,
-	.start		= kbd_start,
 	.name		= "kbd",
 	.id_table	= kbd_ids,
 };
@@ -1500,6 +1542,20 @@ int __init kbd_init(void)
 	error = input_register_handler(&kbd_handler);
 	if (error)
 		return error;
+
+	for (i = 0; i < ARRAY_SIZE(ledtrig_ledstate); i++) {
+		error = led_trigger_register(&ledtrig_ledstate[i]);
+		if (error)
+			pr_err("error %d while registering trigger %s\n",
+					error, ledtrig_ledstate[i].name);
+	}
+
+	for (i = 0; i < ARRAY_SIZE(ledtrig_lockstate); i++) {
+		error = led_trigger_register(&ledtrig_lockstate[i]);
+		if (error)
+			pr_err("error %d while registering trigger %s\n",
+					error, ledtrig_lockstate[i].name);
+	}
 
 	tasklet_enable(&keyboard_tasklet);
 	tasklet_schedule(&keyboard_tasklet);

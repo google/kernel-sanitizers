@@ -79,6 +79,7 @@ struct input_value {
  * @led: reflects current state of device's LEDs
  * @snd: reflects current state of sound effects
  * @sw: reflects current state of device's switches
+ * @leds: leds objects for the device's LEDs
  * @open: this method is called when the very first user calls
  *	input_open_device(). The driver must prepare the device
  *	to start generating events (start polling thread,
@@ -163,6 +164,8 @@ struct input_dev {
 	unsigned long led[BITS_TO_LONGS(LED_CNT)];
 	unsigned long snd[BITS_TO_LONGS(SND_CNT)];
 	unsigned long sw[BITS_TO_LONGS(SW_CNT)];
+
+	struct led_classdev *leds;
 
 	int (*open)(struct input_dev *dev);
 	void (*close)(struct input_dev *dev);
@@ -530,5 +533,23 @@ int input_ff_erase(struct input_dev *dev, int effect_id, struct file *file);
 
 int input_ff_create_memless(struct input_dev *dev, void *data,
 		int (*play_effect)(struct input_dev *, void *, struct ff_effect *));
+
+#ifdef CONFIG_INPUT_LEDS
+
+int input_led_connect(struct input_dev *dev);
+void input_led_disconnect(struct input_dev *dev);
+
+#else
+
+static inline int input_led_connect(struct input_dev *dev)
+{
+	return 0;
+}
+
+static inline void input_led_disconnect(struct input_dev *dev)
+{
+}
+
+#endif
 
 #endif

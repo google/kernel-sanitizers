@@ -13,6 +13,10 @@ config VT
 	bool "Virtual terminal" if EXPERT
 	depends on !S390 && !UML
 	select INPUT
+	select NEW_LEDS
+	select LEDS_CLASS
+	select LEDS_TRIGGERS
+	select INPUT_LEDS
 	default y
 	---help---
 	  If you say Y here, you will get support for terminal devices with

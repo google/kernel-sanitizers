@@ -113,9 +113,8 @@ isofs_find_entry(struct inode *dir, struct dentry *dentry,
 		dpnt = de->name;
 		/* Basic sanity check, whether name doesn't exceed dir entry */
 		if (de_len < dlen + sizeof(struct iso_directory_record)) {
-			printk(KERN_NOTICE "iso9660: Corrupted directory entry"
-			       " in block %lu of inode %lu\n", block,
-			       dir->i_ino);
+			pr_notice("Corrupted directory entry in block %lu of inode %lu\n",
+				  block, dir->i_ino);
 			return 0;
 		}
 
