@@ -62,12 +62,13 @@ struct nfs_pageio_ops {
 
 struct nfs_rw_ops {
 	const fmode_t rw_mode;
-	struct nfs_rw_header *(*rw_alloc_header)(void);
-	void (*rw_free_header)(struct nfs_rw_header *);
-	void (*rw_release)(struct nfs_pgio_data *);
-	int  (*rw_done)(struct rpc_task *, struct nfs_pgio_data *, struct inode *);
-	void (*rw_result)(struct rpc_task *, struct nfs_pgio_data *);
-	void (*rw_initiate)(struct nfs_pgio_data *, struct rpc_message *,
+	struct nfs_pgio_header *(*rw_alloc_header)(void);
+	void (*rw_free_header)(struct nfs_pgio_header *);
+	void (*rw_release)(struct nfs_pgio_header *);
+	int  (*rw_done)(struct rpc_task *, struct nfs_pgio_header *,
+			struct inode *);
+	void (*rw_result)(struct rpc_task *, struct nfs_pgio_header *);
+	void (*rw_initiate)(struct nfs_pgio_header *, struct rpc_message *,
 			    struct rpc_task_setup *, int);
 };
 
@@ -111,6 +112,8 @@ extern	void nfs_pageio_init(struct nfs_pageio_descriptor *desc,
 			     int how);
 extern	int nfs_pageio_add_request(struct nfs_pageio_descriptor *,
 				   struct nfs_page *);
+extern  int nfs_pageio_resend(struct nfs_pageio_descriptor *,
+			      struct nfs_pgio_header *);
 extern	void nfs_pageio_complete(struct nfs_pageio_descriptor *desc);
 extern	void nfs_pageio_cond_complete(struct nfs_pageio_descriptor *, pgoff_t);
 extern size_t nfs_generic_pg_test(struct nfs_pageio_descriptor *desc,
