@@ -1350,12 +1350,11 @@ static int ab8500_print_all_banks(struct seq_file *s, void *p)
 {
 	struct device *dev = s->private;
 	unsigned int i;
-	int err;
 
 	seq_printf(s, AB8500_NAME_STRING " register values:\n");
 
 	for (i = 0; i < AB8500_NUM_BANKS; i++) {
-		err = seq_printf(s, " bank 0x%02X:\n", i);
+		seq_printf(s, " bank 0x%02X:\n", i);
 
 		ab8500_registers_print(dev, i, s);
 	}
@@ -2504,13 +2503,13 @@ static ssize_t ab8500_gpadc_trig_timer_write(struct file *file,
 	if (err)
 		return err;
 
-	if ((user_trig_timer >= 0) && (user_trig_timer <= 255)) {
-		trig_timer = (u8) user_trig_timer;
-	} else {
-		dev_err(dev, "debugfs error input: "
-			"should be beetween 0 to 255\n");
+	if (user_trig_timer & ~0xFF) {
+		dev_err(dev,
+			"debugfs error input: should be beetween 0 to 255\n");
 		return -EINVAL;
 	}
+
+	trig_timer = (u8) user_trig_timer;
 
 	return count;
 }
@@ -2765,8 +2764,8 @@ static ssize_t show_irq(struct device *dev,
 	irq_index = name - irq_first;
 	if (irq_index >= num_irqs)
 		return -EINVAL;
-	else
-		return sprintf(buf, "%u\n", irq_count[irq_index]);
+
+	return sprintf(buf, "%u\n", irq_count[irq_index]);
 }
 
 static ssize_t ab8500_subscribe_write(struct file *file,
@@ -3192,8 +3191,7 @@ static int ab8500_debug_probe(struct platform_device *plf)
 	return 0;
 
 err:
-	if (ab8500_dir)
-		debugfs_remove_recursive(ab8500_dir);
+	debugfs_remove_recursive(ab8500_dir);
 	dev_err(&plf->dev, "failed to create debugfs entries.\n");
 
 	return -ENOMEM;
