@@ -1826,18 +1826,12 @@ static int __exit r8a66597_remove(struct platform_device *pdev)
 
 	usb_del_gadget_udc(&r8a66597->gadget);
 	del_timer_sync(&r8a66597->timer);
-	iounmap(r8a66597->reg);
-	if (r8a66597->pdata->sudmac)
-		iounmap(r8a66597->sudmac_reg);
-	free_irq(platform_get_irq(pdev, 0), r8a66597);
 	r8a66597_free_request(&r8a66597->ep[0].ep, r8a66597->ep0_req);
 
 	if (r8a66597->pdata->on_chip) {
 		clk_disable_unprepare(r8a66597->clk);
-		clk_put(r8a66597->clk);
 	}
 
-	kfree(r8a66597);
 	return 0;
 }
 
@@ -1845,28 +1839,24 @@ static void nop_completion(struct usb_ep *ep, struct usb_request *r)
 {
 }
 
-static int __init r8a66597_sudmac_ioremap(struct r8a66597 *r8a66597,
+static int r8a66597_sudmac_ioremap(struct r8a66597 *r8a66597,
 					  struct platform_device *pdev)
 {
 	struct resource *res;
 
 	res = platform_get_resource_byname(pdev, IORESOURCE_MEM, "sudmac");
-	if (!res) {
-		dev_err(&pdev->dev, "platform_get_resource error(sudmac).\n");
-		return -ENODEV;
-	}
-
-	r8a66597->sudmac_reg = ioremap(res->start, resource_size(res));
-	if (r8a66597->sudmac_reg == NULL) {
+	r8a66597->sudmac_reg = devm_ioremap_resource(&pdev->dev, res);
+	if (IS_ERR(r8a66597->sudmac_reg)) {
 		dev_err(&pdev->dev, "ioremap error(sudmac).\n");
-		return -ENOMEM;
+		return PTR_ERR(r8a66597->sudmac_reg);
 	}
 
 	return 0;
 }
 
-static int __init r8a66597_probe(struct platform_device *pdev)
+static int r8a66597_probe(struct platform_device *pdev)
 {
+	struct device *dev = &pdev->dev;
 	char clk_name[8];
 	struct resource *res, *ires;
 	int irq;
@@ -1877,39 +1867,27 @@ static int __init r8a66597_probe(struct platform_device *pdev)
 	unsigned long irq_trigger;
 
 	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
-	if (!res) {
-		ret = -ENODEV;
-		dev_err(&pdev->dev, "platform_get_resource error.\n");
-		goto clean_up;
-	}
+	reg = devm_ioremap_resource(&pdev->dev, res);
+	if (!reg)
+		return -ENODEV;
 
 	ires = platform_get_resource(pdev, IORESOURCE_IRQ, 0);
 	irq = ires->start;
 	irq_trigger = ires->flags & IRQF_TRIGGER_MASK;
 
 	if (irq < 0) {
-		ret = -ENODEV;
-		dev_err(&pdev->dev, "platform_get_irq error.\n");
-		goto clean_up;
-	}
-
-	reg = ioremap(res->start, resource_size(res));
-	if (reg == NULL) {
-		ret = -ENOMEM;
-		dev_err(&pdev->dev, "ioremap error.\n");
-		goto clean_up;
+		dev_err(dev, "platform_get_irq error.\n");
+		return -ENODEV;
 	}
 
 	/* initialize ucd */
-	r8a66597 = kzalloc(sizeof(struct r8a66597), GFP_KERNEL);
-	if (r8a66597 == NULL) {
-		ret = -ENOMEM;
-		goto clean_up;
-	}
+	r8a66597 = devm_kzalloc(dev, sizeof(struct r8a66597), GFP_KERNEL);
+	if (r8a66597 == NULL)
+		return -ENOMEM;
 
 	spin_lock_init(&r8a66597->lock);
 	platform_set_drvdata(pdev, r8a66597);
-	r8a66597->pdata = dev_get_platdata(&pdev->dev);
+	r8a66597->pdata = dev_get_platdata(dev);
 	r8a66597->irq_sense_low = irq_trigger == IRQF_TRIGGER_LOW;
 
 	r8a66597->gadget.ops = &r8a66597_gadget_ops;
@@ -1923,12 +1901,10 @@ static int __init r8a66597_probe(struct platform_device *pdev)
 
 	if (r8a66597->pdata->on_chip) {
 		snprintf(clk_name, sizeof(clk_name), "usb%d", pdev->id);
-		r8a66597->clk = clk_get(&pdev->dev, clk_name);
+		r8a66597->clk = devm_clk_get(dev, clk_name);
 		if (IS_ERR(r8a66597->clk)) {
-			dev_err(&pdev->dev, "cannot get clock \"%s\"\n",
-				clk_name);
-			ret = PTR_ERR(r8a66597->clk);
-			goto clean_up;
+			dev_err(dev, "cannot get clock \"%s\"\n", clk_name);
+			return PTR_ERR(r8a66597->clk);
 		}
 		clk_prepare_enable(r8a66597->clk);
 	}
@@ -1941,10 +1917,10 @@ static int __init r8a66597_probe(struct platform_device *pdev)
 
 	disable_controller(r8a66597); /* make sure controller is disabled */
 
-	ret = request_irq(irq, r8a66597_irq, IRQF_SHARED,
-			udc_name, r8a66597);
+	ret = devm_request_irq(dev, irq, r8a66597_irq, IRQF_SHARED,
+			       udc_name, r8a66597);
 	if (ret < 0) {
-		dev_err(&pdev->dev, "request_irq error (%d)\n", ret);
+		dev_err(dev, "request_irq error (%d)\n", ret);
 		goto clean_up2;
 	}
 
@@ -1978,37 +1954,25 @@ static int __init r8a66597_probe(struct platform_device *pdev)
 							GFP_KERNEL);
 	if (r8a66597->ep0_req == NULL) {
 		ret = -ENOMEM;
-		goto clean_up3;
+		goto clean_up2;
 	}
 	r8a66597->ep0_req->complete = nop_completion;
 
-	ret = usb_add_gadget_udc(&pdev->dev, &r8a66597->gadget);
+	ret = usb_add_gadget_udc(dev, &r8a66597->gadget);
 	if (ret)
 		goto err_add_udc;
 
-	dev_info(&pdev->dev, "version %s\n", DRIVER_VERSION);
+	dev_info(dev, "version %s\n", DRIVER_VERSION);
 	return 0;
 
 err_add_udc:
 	r8a66597_free_request(&r8a66597->ep[0].ep, r8a66597->ep0_req);
-clean_up3:
-	free_irq(irq, r8a66597);
 clean_up2:
-	if (r8a66597->pdata->on_chip) {
+	if (r8a66597->pdata->on_chip)
 		clk_disable_unprepare(r8a66597->clk);
-		clk_put(r8a66597->clk);
-	}
-clean_up:
-	if (r8a66597) {
-		if (r8a66597->sudmac_reg)
-			iounmap(r8a66597->sudmac_reg);
-		if (r8a66597->ep0_req)
-			r8a66597_free_request(&r8a66597->ep[0].ep,
-						r8a66597->ep0_req);
-		kfree(r8a66597);
-	}
-	if (reg)
-		iounmap(reg);
+
+	if (r8a66597->ep0_req)
+		r8a66597_free_request(&r8a66597->ep[0].ep, r8a66597->ep0_req);
 
 	return ret;
 }

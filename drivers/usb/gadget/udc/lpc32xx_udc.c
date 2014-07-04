@@ -3036,7 +3036,7 @@ struct lpc32xx_usbd_cfg lpc32xx_usbddata = {
 
 static u64 lpc32xx_usbd_dmamask = ~(u32) 0x7F;
 
-static int __init lpc32xx_udc_probe(struct platform_device *pdev)
+static int lpc32xx_udc_probe(struct platform_device *pdev)
 {
 	struct device *dev = &pdev->dev;
 	struct lpc32xx_udc *udc;
@@ -3045,11 +3045,10 @@ static int __init lpc32xx_udc_probe(struct platform_device *pdev)
 	dma_addr_t dma_handle;
 	struct device_node *isp1301_node;
 
-	udc = kzalloc(sizeof(*udc), GFP_KERNEL);
+	udc = kmemdup(&controller_template, sizeof(*udc), GFP_KERNEL);
 	if (!udc)
 		return -ENOMEM;
 
-	memcpy(udc, &controller_template, sizeof(*udc));
 	for (i = 0; i <= 15; i++)
 		udc->ep[i].udc = udc;
 	udc->gadget.ep0 = &udc->ep[0].ep;
@@ -3397,7 +3396,7 @@ static int lpc32xx_udc_resume(struct platform_device *pdev)
 #endif
 
 #ifdef CONFIG_OF
-static struct of_device_id lpc32xx_udc_of_match[] = {
+static const struct of_device_id lpc32xx_udc_of_match[] = {
 	{ .compatible = "nxp,lpc3220-udc", },
 	{ },
 };

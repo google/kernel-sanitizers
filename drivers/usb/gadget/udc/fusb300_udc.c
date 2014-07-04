@@ -1325,8 +1325,6 @@ static int fusb300_udc_stop(struct usb_gadget *g,
 {
 	struct fusb300 *fusb300 = to_fusb300(g);
 
-	driver->unbind(&fusb300->gadget);
-
 	init_controller(fusb300);
 	fusb300->driver = NULL;
 
@@ -1359,7 +1357,7 @@ static int __exit fusb300_remove(struct platform_device *pdev)
 	return 0;
 }
 
-static int __init fusb300_probe(struct platform_device *pdev)
+static int fusb300_probe(struct platform_device *pdev)
 {
 	struct resource *res, *ires, *ires1;
 	void __iomem *reg = NULL;

@@ -1492,8 +1492,6 @@ static int m66592_udc_stop(struct usb_gadget *g,
 
 	m66592_bclr(m66592, M66592_VBSE | M66592_URST, M66592_INTENB0);
 
-	driver->unbind(&m66592->gadget);
-
 	init_controller(m66592);
 	disable_controller(m66592);
 
@@ -1553,7 +1551,7 @@ static void nop_completion(struct usb_ep *ep, struct usb_request *r)
 {
 }
 
-static int __init m66592_probe(struct platform_device *pdev)
+static int m66592_probe(struct platform_device *pdev)
 {
 	struct resource *res, *ires;
 	void __iomem *reg = NULL;
