@@ -1,7 +1,7 @@
 /*
- * r8a7790 Power management support
+ * r8a7791 Power management support
  *
- * Copyright (C) 2013  Renesas Electronics Corporation
+ * Copyright (C) 2014  Renesas Electronics Corporation
  * Copyright (C) 2011  Renesas Solutions Corp.
  * Copyright (C) 2011  Magnus Damm
  *
@@ -15,17 +15,12 @@
 #include <asm/io.h>
 #include "common.h"
 #include "pm-rcar.h"
-#include "r8a7790.h"
+#include "r8a7791.h"
 
-/* RST */
 #define RST		0xe6160000
 #define CA15BAR		0x0020
-#define CA7BAR		0x0030
 #define CA15RESCNT	0x0040
-#define CA7RESCNT	0x0044
-
-/* On-chip RAM */
-#define MERAM          0xe8080000
+#define RAM		0xe6300000
 
 /* SYSC */
 #define SYSCIER 0x0c
@@ -33,7 +28,7 @@
 
 #if defined(CONFIG_SMP)
 
-static void __init r8a7790_sysc_init(void)
+static void __init r8a7791_sysc_init(void)
 {
 	void __iomem *base = rcar_sysc_init(0xe6180000);
 
@@ -44,11 +39,11 @@ static void __init r8a7790_sysc_init(void)
 
 #else /* CONFIG_SMP */
 
-static inline void r8a7790_sysc_init(void) {}
+static inline void r8a7791_sysc_init(void) {}
 
 #endif /* CONFIG_SMP */
 
-void __init r8a7790_pm_init(void)
+void __init r8a7791_pm_init(void)
 {
 	void __iomem *p;
 	u32 bar;
@@ -57,26 +52,22 @@ void __init r8a7790_pm_init(void)
 	if (once++)
 		return;
 
-	/* MERAM for jump stub, because BAR requires 256KB aligned address */
-	p = ioremap_nocache(MERAM, shmobile_boot_size);
+	/* RAM for jump stub, because BAR requires 256KB aligned address */
+	p = ioremap_nocache(RAM, shmobile_boot_size);
 	memcpy_toio(p, shmobile_boot_vector, shmobile_boot_size);
 	iounmap(p);
 
 	/* setup reset vectors */
 	p = ioremap_nocache(RST, 0x63);
-	bar = (MERAM >> 8) & 0xfffffc00;
+	bar = (RAM >> 8) & 0xfffffc00;
 	writel_relaxed(bar, p + CA15BAR);
-	writel_relaxed(bar, p + CA7BAR);
 	writel_relaxed(bar | 0x10, p + CA15BAR);
-	writel_relaxed(bar | 0x10, p + CA7BAR);
 
-	/* de-assert reset for all CPUs */
+	/* enable clocks to all CPUs */
 	writel_relaxed((readl_relaxed(p + CA15RESCNT) & ~0x0f) | 0xa5a50000,
 		       p + CA15RESCNT);
-	writel_relaxed((readl_relaxed(p + CA7RESCNT) & ~0x0f) | 0x5a5a0000,
-		       p + CA7RESCNT);
 	iounmap(p);
 
-	r8a7790_sysc_init();
+	r8a7791_sysc_init();
 	shmobile_smp_apmu_suspend_init();
 }
