@@ -424,6 +424,53 @@ struct mgmt_rp_get_conn_info {
 	__s8	max_tx_power;
 } __packed;
 
+#define MGMT_OP_GET_CLOCK_INFO		0x0032
+struct mgmt_cp_get_clock_info {
+	struct mgmt_addr_info addr;
+} __packed;
+#define MGMT_GET_CLOCK_INFO_SIZE	MGMT_ADDR_INFO_SIZE
+struct mgmt_rp_get_clock_info {
+	struct mgmt_addr_info addr;
+	__le32  local_clock;
+	__le32  piconet_clock;
+	__le16  accuracy;
+} __packed;
+
+#define MGMT_OP_ADD_DEVICE		0x0033
+struct mgmt_cp_add_device {
+	struct mgmt_addr_info addr;
+	__u8	action;
+} __packed;
+#define MGMT_ADD_DEVICE_SIZE		(MGMT_ADDR_INFO_SIZE + 1)
+
+#define MGMT_OP_REMOVE_DEVICE		0x0034
+struct mgmt_cp_remove_device {
+	struct mgmt_addr_info addr;
+} __packed;
+#define MGMT_REMOVE_DEVICE_SIZE		MGMT_ADDR_INFO_SIZE
+
+struct mgmt_conn_param {
+	struct mgmt_addr_info addr;
+	__le16 min_interval;
+	__le16 max_interval;
+	__le16 latency;
+	__le16 timeout;
+} __packed;
+
+#define MGMT_OP_LOAD_CONN_PARAM		0x0035
+struct mgmt_cp_load_conn_param {
+	__le16 param_count;
+	struct mgmt_conn_param params[0];
+} __packed;
+#define MGMT_LOAD_CONN_PARAM_SIZE	2
+
+#define MGMT_OP_READ_UNCONF_INDEX_LIST	0x0036
+#define MGMT_READ_UNCONF_INDEX_LIST_SIZE 0
+struct mgmt_rp_read_unconf_index_list {
+	__le16	num_controllers;
+	__le16	index[0];
+} __packed;
+
 #define MGMT_EV_CMD_COMPLETE		0x0001
 struct mgmt_ev_cmd_complete {
 	__le16	opcode;
@@ -522,6 +569,7 @@ struct mgmt_ev_auth_failed {
 
 #define MGMT_DEV_FOUND_CONFIRM_NAME    0x01
 #define MGMT_DEV_FOUND_LEGACY_PAIRING  0x02
+#define MGMT_DEV_FOUND_NOT_CONNECTABLE 0x04
 
 #define MGMT_EV_DEVICE_FOUND		0x0012
 struct mgmt_ev_device_found {
@@ -578,3 +626,28 @@ struct mgmt_ev_new_csrk {
 	__u8 store_hint;
 	struct mgmt_csrk_info key;
 } __packed;
+
+#define MGMT_EV_DEVICE_ADDED		0x001a
+struct mgmt_ev_device_added {
+	struct mgmt_addr_info addr;
+	__u8 action;
+} __packed;
+
+#define MGMT_EV_DEVICE_REMOVED		0x001b
+struct mgmt_ev_device_removed {
+	struct mgmt_addr_info addr;
+} __packed;
+
+#define MGMT_EV_NEW_CONN_PARAM		0x001c
+struct mgmt_ev_new_conn_param {
+	struct mgmt_addr_info addr;
+	__u8 store_hint;
+	__le16 min_interval;
+	__le16 max_interval;
+	__le16 latency;
+	__le16 timeout;
+} __packed;
+
+#define MGMT_EV_UNCONF_INDEX_ADDED	0x001d
+
+#define MGMT_EV_UNCONF_INDEX_REMOVED	0x001e
