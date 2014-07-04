@@ -38,6 +38,7 @@
 #include <linux/prefetch.h>
 #include <linux/ratelimit.h>
 #include <linux/list_lru.h>
+#include <linux/kasan.h>
 #include "internal.h"
 #include "mount.h"
 
@@ -1444,6 +1445,8 @@ struct dentry *__d_alloc(struct super_block *sb, const struct qstr *name)
 			kmem_cache_free(dentry_cache, dentry); 
 			return NULL;
 		}
+		unpoison_shadow(dname,
+				roundup(name->len + 1, sizeof(unsigned long)));
 	} else  {
 		dname = dentry->d_iname;
 	}	
