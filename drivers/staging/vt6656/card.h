@@ -45,24 +45,21 @@ typedef enum _CARD_PHY_TYPE {
 
 struct vnt_private;
 
-void CARDbSetMediaChannel(struct vnt_private *pDevice, u32 uConnectionChannel);
-void CARDvSetRSPINF(struct vnt_private *, u8);
-void vUpdateIFS(struct vnt_private *);
-void CARDvUpdateBasicTopRate(struct vnt_private *);
-void CARDbAddBasicRate(struct vnt_private *, u16);
-int CARDbIsOFDMinBasicRate(struct vnt_private *pDevice);
-void CARDvAdjustTSF(struct vnt_private *pDevice, u8 byRxRate,
-		u64 qwBSSTimestamp, u64 qwLocalTSF);
-bool CARDbGetCurrentTSF(struct vnt_private *pDevice, u64 *pqwCurrTSF);
-bool CARDbClearCurrentTSF(struct vnt_private *pDevice);
-void CARDvSetFirstNextTBTT(struct vnt_private *pDevice, u16 wBeaconInterval);
-void CARDvUpdateNextTBTT(struct vnt_private *pDevice, u64 qwTSF,
-			 u16 wBeaconInterval);
-u64 CARDqGetNextTBTT(u64 qwTSF, u16 wBeaconInterval);
-u64 CARDqGetTSFOffset(u8 byRxRate, u64 qwTSF1, u64 qwTSF2);
-int CARDbRadioPowerOff(struct vnt_private *pDevice);
-int CARDbRadioPowerOn(struct vnt_private *pDevice);
-u8 CARDbyGetPktType(struct vnt_private *pDevice);
-void CARDvSetBSSMode(struct vnt_private *pDevice);
+void vnt_set_channel(struct vnt_private *, u32);
+void vnt_set_rspinf(struct vnt_private *, u8);
+void vnt_update_ifs(struct vnt_private *);
+void vnt_update_top_rates(struct vnt_private *);
+int vnt_ofdm_min_rate(struct vnt_private *);
+void vnt_adjust_tsf(struct vnt_private *, u8, u64, u64);
+bool vnt_get_current_tsf(struct vnt_private *, u64 *);
+bool vnt_clear_current_tsf(struct vnt_private *);
+void vnt_reset_next_tbtt(struct vnt_private *, u16);
+void vnt_update_next_tbtt(struct vnt_private *, u64, u16);
+u64 vnt_get_next_tbtt(u64, u16);
+u64 vnt_get_tsf_offset(u8 byRxRate, u64 qwTSF1, u64 qwTSF2);
+int vnt_radio_power_off(struct vnt_private *);
+int vnt_radio_power_on(struct vnt_private *);
+u8 vnt_get_pkt_type(struct vnt_private *);
+void vnt_set_bss_mode(struct vnt_private *);
 
 #endif /* __CARD_H__ */

@@ -1,11 +1,9 @@
 r8188eu-y :=				\
 		core/rtw_ap.o		\
-		core/rtw_br_ext.o	\
 		core/rtw_cmd.o		\
 		core/rtw_debug.o	\
 		core/rtw_efuse.o	\
 		core/rtw_ieee80211.o	\
-		core/rtw_io.o		\
 		core/rtw_ioctl_set.o	\
 		core/rtw_iol.o		\
 		core/rtw_led.o		\
@@ -25,7 +23,6 @@ r8188eu-y :=				\
 		hal/HalHWImg8188E_MAC.o	\
 		hal/HalHWImg8188E_BB.o	\
 		hal/HalHWImg8188E_RF.o	\
-		hal/HalPhyRf.o		\
 		hal/HalPhyRf_8188e.o	\
 		hal/HalPwrSeqCmd.o	\
 		hal/Hal8188EPwrSeq.o	\
@@ -44,13 +41,11 @@ r8188eu-y :=				\
 		hal/rtl8188e_phycfg.o	\
 		hal/rtl8188e_rf6052.o	\
 		hal/rtl8188e_rxdesc.o	\
-		hal/rtl8188e_sreset.o	\
 		hal/rtl8188e_xmit.o	\
 		hal/rtl8188eu_led.o	\
 		hal/rtl8188eu_recv.o	\
 		hal/rtl8188eu_xmit.o	\
 		hal/usb_halinit.o	\
-		hal/usb_ops_linux.o	\
 		os_dep/ioctl_linux.o	\
 		os_dep/mlme_linux.o	\
 		os_dep/os_intfs.o	\

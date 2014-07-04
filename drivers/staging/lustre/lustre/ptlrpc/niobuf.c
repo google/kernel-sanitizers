@@ -505,11 +505,12 @@ int ptl_send_rpc(struct ptlrpc_request *request, int noreply)
 	/* If this is a re-transmit, we're required to have disengaged
 	 * cleanly from the previous attempt */
 	LASSERT(!request->rq_receiving_reply);
+	LASSERT(!((lustre_msg_get_flags(request->rq_reqmsg) & MSG_REPLAY) &&
+		(request->rq_import->imp_state == LUSTRE_IMP_FULL)));
 
-	if (request->rq_import->imp_obd &&
-	    request->rq_import->imp_obd->obd_fail) {
+	if (unlikely(obd != NULL && obd->obd_fail)) {
 		CDEBUG(D_HA, "muting rpc for failed imp obd %s\n",
-		       request->rq_import->imp_obd->obd_name);
+			obd->obd_name);
 		/* this prevents us from waiting in ptlrpc_queue_wait */
 		spin_lock(&request->rq_lock);
 		request->rq_err = 1;
@@ -579,8 +580,9 @@ int ptl_send_rpc(struct ptlrpc_request *request, int noreply)
 	spin_lock(&request->rq_lock);
 	/* If the MD attach succeeds, there _will_ be a reply_in callback */
 	request->rq_receiving_reply = !noreply;
+	request->rq_req_unlink = 1;
 	/* We are responsible for unlinking the reply buffer */
-	request->rq_must_unlink = !noreply;
+	request->rq_reply_unlink = !noreply;
 	/* Clear any flags that may be present from previous sends. */
 	request->rq_replied = 0;
 	request->rq_err = 0;
@@ -603,7 +605,7 @@ int ptl_send_rpc(struct ptlrpc_request *request, int noreply)
 		reply_md.user_ptr  = &request->rq_reply_cbid;
 		reply_md.eq_handle = ptlrpc_eq_h;
 
-		/* We must see the unlink callback to unset rq_must_unlink,
+		/* We must see the unlink callback to unset rq_reply_unlink,
 		   so we can't auto-unlink */
 		rc = LNetMDAttach(reply_me_h, reply_md, LNET_RETAIN,
 				  &request->rq_reply_md_h);
@@ -625,7 +627,7 @@ int ptl_send_rpc(struct ptlrpc_request *request, int noreply)
 
 	/* add references on request for request_out_callback */
 	ptlrpc_request_addref(request);
-	if (obd->obd_svc_stats != NULL)
+	if (obd != NULL && obd->obd_svc_stats != NULL)
 		lprocfs_counter_add(obd->obd_svc_stats, PTLRPC_REQACTIVE_CNTR,
 			atomic_read(&request->rq_import->imp_inflight));
 

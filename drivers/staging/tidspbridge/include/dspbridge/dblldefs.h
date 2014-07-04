@@ -130,7 +130,7 @@ typedef s32(*dbll_seek_fxn) (void *, long, int);
  *      FALSE:          Failed to find symbol.
  */
 typedef bool(*dbll_sym_lookup) (void *handle, void *parg, void *rmm_handle,
-				const char *name, struct dbll_sym_val ** sym);
+				const char *name, struct dbll_sym_val **sym);
 
 /*
  *  ======== dbll_tell_fxn ========
@@ -168,11 +168,11 @@ struct dbll_attrs {
 	 *  These file manipulation functions should be compatible with the
 	 *  "C" run time library functions of the same name.
 	 */
-	 s32(*fread) (void *, size_t, size_t, void *);
-	 s32(*fseek) (void *, long, int);
-	 s32(*ftell) (void *);
-	 s32(*fclose) (void *);
-	void *(*fopen) (const char *, const char *);
+	 s32 (*fread)(void *ptr, size_t size, size_t count, void *filp);
+	 s32 (*fseek)(void *filp, long offset, int origin);
+	 s32 (*ftell)(void *filp);
+	 s32 (*fclose)(void *filp);
+	 void *(*fopen)(const char *path, const char *mode);
 };
 
 /*
@@ -309,7 +309,7 @@ typedef bool(*dbll_get_c_addr_fxn) (struct dbll_library_obj *lib, char *name,
  *  Ensures:
  */
 typedef int(*dbll_get_sect_fxn) (struct dbll_library_obj *lib,
-					char *name, u32 * addr, u32 * size);
+					char *name, u32 *addr, u32 *size);
 
 /*
  *  ======== dbll_init ========

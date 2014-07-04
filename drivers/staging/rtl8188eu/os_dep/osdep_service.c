@@ -22,6 +22,7 @@
 #define _OSDEP_SERVICE_C_
 
 #include <osdep_service.h>
+#include <osdep_intf.h>
 #include <drv_types.h>
 #include <recv_osdep.h>
 #include <linux/vmalloc.h>
@@ -38,23 +39,6 @@ inline int RTW_STATUS_CODE(int error_code)
 	return _FAIL;
 }
 
-u32 rtw_atoi(u8 *s)
-{
-	int num = 0, flag = 0;
-	int i;
-	for (i = 0; i <= strlen(s); i++) {
-		if (s[i] >= '0' && s[i] <= '9')
-			num = num * 10 + s[i] - '0';
-		else if (s[0] == '-' && i == 0)
-			flag = 1;
-		else
-			break;
-	}
-	if (flag == 1)
-		num = num * -1;
-	return num;
-}
-
 u8 *_rtw_malloc(u32 sz)
 {
 	u8	*pbuf = NULL;
@@ -63,20 +47,11 @@ u8 *_rtw_malloc(u32 sz)
 	return pbuf;
 }
 
-u8 *_rtw_zmalloc(u32 sz)
-{
-	u8	*pbuf = _rtw_malloc(sz);
-
-	if (pbuf != NULL)
-		memset(pbuf, 0, sz);
-	return pbuf;
-}
-
 void *rtw_malloc2d(int h, int w, int size)
 {
 	int j;
 
-	void **a = (void **)rtw_zmalloc(h*sizeof(void *) + h*w*size);
+	void **a = (void **)kzalloc(h*sizeof(void *) + h*w*size, GFP_KERNEL);
 	if (a == NULL) {
 		pr_info("%s: alloc memory fail!\n", __func__);
 		return NULL;
@@ -88,48 +63,6 @@ void *rtw_malloc2d(int h, int w, int size)
 	return a;
 }
 
-void rtw_mfree2d(void *pbuf, int h, int w, int size)
-{
-	kfree(pbuf);
-}
-
-void _rtw_memset(void *pbuf, int c, u32 sz)
-{
-	memset(pbuf, c, sz);
-}
-
-void _rtw_init_listhead(struct list_head *list)
-{
-	INIT_LIST_HEAD(list);
-}
-
-/*
-For the following list_xxx operations,
-caller must guarantee the atomic context.
-Otherwise, there will be racing condition.
-*/
-u32	rtw_is_list_empty(struct list_head *phead)
-{
-	if (list_empty(phead))
-		return true;
-	else
-		return false;
-}
-
-void rtw_list_insert_head(struct list_head *plist, struct list_head *phead)
-{
-	list_add(plist, phead);
-}
-
-void rtw_list_insert_tail(struct list_head *plist, struct list_head *phead)
-{
-	list_add_tail(plist, phead);
-}
-
-/*
-Caller must check if the list is empty before calling rtw_list_delete
-*/
-
 u32 _rtw_down_sema(struct semaphore *sema)
 {
 	if (down_interruptible(sema))
@@ -140,21 +73,8 @@ u32 _rtw_down_sema(struct semaphore *sema)
 
 void	_rtw_init_queue(struct __queue *pqueue)
 {
-	_rtw_init_listhead(&(pqueue->queue));
+	INIT_LIST_HEAD(&(pqueue->queue));
 	spin_lock_init(&(pqueue->lock));
-}
-
-u32	  _rtw_queue_empty(struct __queue *pqueue)
-{
-	return rtw_is_list_empty(&(pqueue->queue));
-}
-
-u32 rtw_end_of_queue_search(struct list_head *head, struct list_head *plist)
-{
-	if (head == plist)
-		return true;
-	else
-		return false;
 }
 
 inline u32 rtw_systime_to_ms(u32 systime)
@@ -172,25 +92,6 @@ inline s32 rtw_get_passing_time_ms(u32 start)
 {
 	return rtw_systime_to_ms(jiffies-start);
 }
-
-inline s32 rtw_get_time_interval_ms(u32 start, u32 end)
-{
-	return rtw_systime_to_ms(end-start);
-}
-
-void rtw_sleep_schedulable(int ms)
-{
-	u32 delta;
-
-	delta = (ms * HZ)/1000;/* ms) */
-	if (delta == 0)
-		delta = 1;/*  1 ms */
-	set_current_state(TASK_INTERRUPTIBLE);
-	if (schedule_timeout(delta) != 0)
-		return;
-}
-
-#define RTW_SUSPEND_LOCK_NAME "rtw_wifi"
 
 struct net_device *rtw_alloc_etherdev_with_old_priv(int sizeof_priv,
 						    void *old_priv)
@@ -310,12 +211,6 @@ error:
 u64 rtw_modular64(u64 x, u64 y)
 {
 	return do_div(x, y);
-}
-
-u64 rtw_division64(u64 x, u64 y)
-{
-	do_div(x, y);
-	return x;
 }
 
 void rtw_buf_free(u8 **buf, u32 *buf_len)

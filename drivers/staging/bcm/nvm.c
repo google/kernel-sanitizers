@@ -3321,7 +3321,7 @@ int BcmSetActiveSection(struct bcm_mini_adapter *Adapter, enum bcm_flash2x_secti
 
 			SectImagePriority = ReadISOPriority(Adapter, HighestPriISO) + 1;
 
-			if ((SectImagePriority <= 0) && IsSectionWritable(Adapter, HighestPriISO)) {
+			if ((SectImagePriority == 0) && IsSectionWritable(Adapter, HighestPriISO)) {
 				/* This is a SPECIAL Case which will only happen if the current highest priority ISO has priority value = 0x7FFFFFFF.
 				 * We will write 1 to the current Highest priority ISO And then shall increase the priority of the requested ISO
 				 * by user
@@ -3381,7 +3381,7 @@ int BcmSetActiveSection(struct bcm_mini_adapter *Adapter, enum bcm_flash2x_secti
 			}
 
 			SectImagePriority = ReadDSDPriority(Adapter, HighestPriDSD) + 1;
-			if (SectImagePriority <= 0) {
+			if (SectImagePriority == 0) {
 				/* This is a SPECIAL Case which will only happen if the current highest priority DSD has priority value = 0x7FFFFFFF.
 				 * We will write 1 to the current Highest priority DSD And then shall increase the priority of the requested DSD
 				 * by user
@@ -3591,7 +3591,7 @@ int BcmCopyISO(struct bcm_mini_adapter *Adapter, struct bcm_flash2x_copy_section
 
 			if (IsThisHeaderSector == TRUE) {
 				/* If this is header sector write 0xFFFFFFFF at the sig time and in last write sig */
-				memcpy(SigBuff, Buff + sigOffset, MAX_RW_SIZE);
+				memcpy(SigBuff, Buff + sigOffset, sizeof(SigBuff));
 
 				for (i = 0; i < MAX_RW_SIZE; i++)
 					*(Buff + sigOffset + i) = 0xFF;
@@ -3704,7 +3704,7 @@ int BcmCopyISO(struct bcm_mini_adapter *Adapter, struct bcm_flash2x_copy_section
 
 			if (IsThisHeaderSector == TRUE) {
 				/* If this is header sector write 0xFFFFFFFF at the sig time and in last write sig */
-				memcpy(SigBuff, Buff + sigOffset, MAX_RW_SIZE);
+				memcpy(SigBuff, Buff + sigOffset, sizeof(SigBuff));
 
 				for (i = 0; i < MAX_RW_SIZE; i++)
 					*(Buff + sigOffset + i) = 0xFF;

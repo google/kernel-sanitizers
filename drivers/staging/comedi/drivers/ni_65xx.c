@@ -596,7 +596,7 @@ static int ni_65xx_auto_attach(struct comedi_device *dev,
 		return ret;
 	}
 
-	dev->irq = mite_irq(devpriv->mite);
+	dev->irq = pcidev->irq;
 	dev_info(dev->class_dev, "board: %s, ID=0x%02x", dev->board_name,
 	       readb(devpriv->mite->daq_io_addr + ID_Register));
 
@@ -716,12 +716,8 @@ static void ni_65xx_detach(struct comedi_device *dev)
 	}
 	if (dev->irq)
 		free_irq(dev->irq, dev);
-	if (devpriv) {
-		if (devpriv->mite) {
-			mite_unsetup(devpriv->mite);
-			mite_free(devpriv->mite);
-		}
-	}
+	if (devpriv)
+		mite_detach(devpriv->mite);
 	comedi_pci_disable(dev);
 }
 

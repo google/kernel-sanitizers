@@ -26,8 +26,8 @@
  * Date: Jun. 5, 2002
  *
  * Functions:
- *      BBuGetFrameTime        - Calculate data frame transmitting time
- *      BBvCalculateParameter   - Calculate PhyLength, PhyService and Phy Signal parameter for baseband Tx
+ *      vnt_get_frame_time        - Calculate data frame transmitting time
+ *      vnt_get_phy_field   - Calculate PhyLength, PhyService and Phy Signal parameter for baseband Tx
  *      BBbVT3184Init          - VIA VT3184 baseband chip init code
  *
  * Revision History:
@@ -35,13 +35,10 @@
  *
  */
 
-#include "tmacro.h"
-#include "tether.h"
 #include "mac.h"
 #include "baseband.h"
 #include "rf.h"
 #include "usbpipe.h"
-#include "datarate.h"
 
 static u8 abyVT3184_AGC[] = {
     0x00,   //0
@@ -646,7 +643,7 @@ static const u16 awcFrameTime[MAX_RATE] =
  * Return Value: FrameTime
  *
  */
-unsigned int BBuGetFrameTime(u8 preamble_type, u8 pkt_type,
+unsigned int vnt_get_frame_time(u8 preamble_type, u8 pkt_type,
 	unsigned int frame_length, u16 tx_rate)
 {
 	unsigned int frame_time;
@@ -705,7 +702,7 @@ unsigned int BBuGetFrameTime(u8 preamble_type, u8 pkt_type,
  * Return Value: none
  *
  */
-void BBvCalculateParameter(struct vnt_private *priv, u32 frame_length,
+void vnt_get_phy_field(struct vnt_private *priv, u32 frame_length,
 	u16 tx_rate, u8 pkt_type, struct vnt_phy_field *phy)
 {
 	u32 bit_count;
@@ -899,44 +896,7 @@ int BBbVT3184Init(struct vnt_private *priv)
 	if (status != STATUS_SUCCESS)
 		return false;
 
-	/* zonetype initial */
-	priv->byOriginalZonetype = priv->abyEEPROM[EEP_OFS_ZONETYPE];
-
-	if (priv->config_file.ZoneType >= 0) {
-		if ((priv->config_file.ZoneType == 0) &&
-			(priv->abyEEPROM[EEP_OFS_ZONETYPE] != 0x00)) {
-			priv->abyEEPROM[EEP_OFS_ZONETYPE] = 0;
-			priv->abyEEPROM[EEP_OFS_MAXCHANNEL] = 0x0B;
-
-			dev_dbg(&priv->usb->dev, "Init Zone Type :USA\n");
-		} else if ((priv->config_file.ZoneType == 1) &&
-			(priv->abyEEPROM[EEP_OFS_ZONETYPE] != 0x01)) {
-			priv->abyEEPROM[EEP_OFS_ZONETYPE] = 0x01;
-			priv->abyEEPROM[EEP_OFS_MAXCHANNEL] = 0x0D;
-
-			dev_dbg(&priv->usb->dev, "Init Zone Type :Japan\n");
-		} else if ((priv->config_file.ZoneType == 2) &&
-			(priv->abyEEPROM[EEP_OFS_ZONETYPE] != 0x02)) {
-			priv->abyEEPROM[EEP_OFS_ZONETYPE] = 0x02;
-			priv->abyEEPROM[EEP_OFS_MAXCHANNEL] = 0x0D;
-
-			dev_dbg(&priv->usb->dev, "Init Zone Type :Europe\n");
-		} else {
-			if (priv->config_file.ZoneType !=
-					priv->abyEEPROM[EEP_OFS_ZONETYPE])
-				printk("zonetype in file[%02x]\
-					 mismatch with in EEPROM[%02x]\n",
-					priv->config_file.ZoneType,
-					priv->abyEEPROM[EEP_OFS_ZONETYPE]);
-			else
-				printk("Read Zonetype file success,\
-					use default zonetype setting[%02x]\n",
-					priv->config_file.ZoneType);
-		}
-	}
-
-	if (!priv->bZoneRegExist)
-		priv->byZoneType = priv->abyEEPROM[EEP_OFS_ZONETYPE];
+	priv->byZoneType = priv->abyEEPROM[EEP_OFS_ZONETYPE];
 
 	priv->byRFType = priv->abyEEPROM[EEP_OFS_RFTYPE];
 
@@ -994,7 +954,7 @@ int BBbVT3184Init(struct vnt_private *priv)
 		priv->ldBmThreshold[2] = 0;
 		priv->ldBmThreshold[3] = 0;
 		/* Fix VT3226 DFC system timing issue */
-		MACvRegBitsOn(priv, MAC_REG_SOFTPWRCTL2, SOFTPWRCTL_RFLEOPT);
+		vnt_mac_reg_bits_on(priv, MAC_REG_SOFTPWRCTL2, SOFTPWRCTL_RFLEOPT);
 	} else if ((priv->byRFType == RF_VT3342A0)) {
 		priv->byBBRxConf = abyVT3184_VT3226D0[10];
 		length = sizeof(abyVT3184_VT3226D0);
@@ -1011,7 +971,7 @@ int BBbVT3184Init(struct vnt_private *priv)
 		priv->ldBmThreshold[2] = 0;
 		priv->ldBmThreshold[3] = 0;
 		/* Fix VT3226 DFC system timing issue */
-		MACvRegBitsOn(priv, MAC_REG_SOFTPWRCTL2, SOFTPWRCTL_RFLEOPT);
+		vnt_mac_reg_bits_on(priv, MAC_REG_SOFTPWRCTL2, SOFTPWRCTL_RFLEOPT);
 	} else {
 		return true;
 	}
@@ -1030,11 +990,11 @@ int BBbVT3184Init(struct vnt_private *priv)
 		(priv->byRFType == RF_VT3342A0)) {
 		vnt_control_out_u8(priv, MESSAGE_REQUEST_MACREG,
 						MAC_REG_ITRTMSET, 0x23);
-		MACvRegBitsOn(priv, MAC_REG_PAPEDELAY, 0x01);
+		vnt_mac_reg_bits_on(priv, MAC_REG_PAPEDELAY, 0x01);
 	} else if (priv->byRFType == RF_VT3226D0) {
 		vnt_control_out_u8(priv, MESSAGE_REQUEST_MACREG,
 						MAC_REG_ITRTMSET, 0x11);
-		MACvRegBitsOn(priv, MAC_REG_PAPEDELAY, 0x01);
+		vnt_mac_reg_bits_on(priv, MAC_REG_PAPEDELAY, 0x01);
 	}
 
 	vnt_control_out_u8(priv, MESSAGE_REQUEST_BBREG, 0x04, 0x7f);

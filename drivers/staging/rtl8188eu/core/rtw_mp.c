@@ -20,7 +20,7 @@
 #define _RTW_MP_C_
 
 #include <drv_types.h>
-
+#include <usb_ops_linux.h>
 #include "rtl8188e_hal.h"
 #include <linux/vmalloc.h>
 
@@ -30,13 +30,13 @@ u32 read_macreg(struct adapter *padapter, u32 addr, u32 sz)
 
 	switch (sz) {
 	case 1:
-		val = rtw_read8(padapter, addr);
+		val = usb_read8(padapter, addr);
 		break;
 	case 2:
-		val = rtw_read16(padapter, addr);
+		val = usb_read16(padapter, addr);
 		break;
 	case 4:
-		val = rtw_read32(padapter, addr);
+		val = usb_read32(padapter, addr);
 		break;
 	default:
 		val = 0xffffffff;
@@ -50,13 +50,13 @@ void write_macreg(struct adapter *padapter, u32 addr, u32 val, u32 sz)
 {
 	switch (sz) {
 	case 1:
-		rtw_write8(padapter, addr, (u8)val);
+		usb_write8(padapter, addr, (u8)val);
 		break;
 	case 2:
-		rtw_write16(padapter, addr, (u16)val);
+		usb_write16(padapter, addr, (u16)val);
 		break;
 	case 4:
-		rtw_write32(padapter, addr, val);
+		usb_write32(padapter, addr, val);
 		break;
 	default:
 		break;
@@ -97,7 +97,7 @@ static void _init_mp_priv_(struct mp_priv *pmp_priv)
 {
 	struct wlan_bssid_ex *pnetwork;
 
-	_rtw_memset(pmp_priv, 0, sizeof(struct mp_priv));
+	memset(pmp_priv, 0, sizeof(struct mp_priv));
 
 	pmp_priv->mode = MP_OFF;
 
@@ -138,12 +138,12 @@ static void mp_init_xmit_attrib(struct mp_tx *pmptx, struct adapter *padapter)
 
 	/*  init xmitframe attribute */
 	pattrib = &pmptx->attrib;
-	_rtw_memset(pattrib, 0, sizeof(struct pkt_attrib));
+	memset(pattrib, 0, sizeof(struct pkt_attrib));
 	desc = &pmptx->desc;
-	_rtw_memset(desc, 0, TXDESC_SIZE);
+	memset(desc, 0, TXDESC_SIZE);
 
 	pattrib->ether_type = 0x8712;
-	_rtw_memset(pattrib->dst, 0xFF, ETH_ALEN);
+	memset(pattrib->dst, 0xFF, ETH_ALEN);
 	pattrib->ack_policy = 0;
 	pattrib->hdrlen = WLAN_HDR_A3_LEN;
 	pattrib->subtype = WIFI_DATA;
@@ -221,7 +221,7 @@ s32 MPT_InitializeAdapter(struct adapter *pAdapter, u8 Channel)
 	/*  */
 
 	/*  Don't accept any packets */
-	rtw_write32(pAdapter, REG_RCR, 0);
+	usb_write32(pAdapter, REG_RCR, 0);
 
 	PHY_IQCalibrate(pAdapter, false);
 	dm_CheckTXPowerTracking(&pHalData->odmpriv);	/* trigger thermal meter */
@@ -234,8 +234,8 @@ s32 MPT_InitializeAdapter(struct adapter *pAdapter, u8 Channel)
 	pMptCtx->backup0x52_RF_B = (u8)PHY_QueryRFReg(pAdapter, RF_PATH_A, RF_0x52, 0x000F0);
 
 	/* set ant to wifi side in mp mode */
-	rtw_write16(pAdapter, 0x870, 0x300);
-	rtw_write16(pAdapter, 0x860, 0x110);
+	usb_write16(pAdapter, 0x870, 0x300);
+	usb_write16(pAdapter, 0x860, 0x110);
 
 	if (pAdapter->registrypriv.mp_mode == 1)
 		pmlmepriv->fw_state = WIFI_MP_STATE;
@@ -302,9 +302,9 @@ static void disable_dm(struct adapter *padapter)
 
 	/* 3 1. disable firmware dynamic mechanism */
 	/*  disable Power Training, Rate Adaptive */
-	v8 = rtw_read8(padapter, REG_BCN_CTRL);
+	v8 = usb_read8(padapter, REG_BCN_CTRL);
 	v8 &= ~EN_BCN_FUNCTION;
-	rtw_write8(padapter, REG_BCN_CTRL, v8);
+	usb_write8(padapter, REG_BCN_CTRL, v8);
 
 	/* 3 2. disable driver dynamic mechanism */
 	/*  disable Dynamic Initial Gain */
@@ -362,7 +362,6 @@ s32 mp_start_test(struct adapter *padapter)
 	mpt_ProStartTest(padapter);
 
 	/* 3 1. initialize a new struct wlan_bssid_ex */
-/*	_rtw_memset(&bssid, 0, sizeof(struct wlan_bssid_ex)); */
 	memcpy(bssid.MacAddress, pmppriv->network_macaddr, ETH_ALEN);
 	bssid.Ssid.SsidLength = strlen("mp_pseudo_adhoc");
 	memcpy(bssid.Ssid.Ssid, (u8 *)"mp_pseudo_adhoc", bssid.Ssid.SsidLength);
@@ -421,9 +420,9 @@ end_of_mp_start_test:
 
 	if (res == _SUCCESS) {
 		/*  set MSR to WIFI_FW_ADHOC_STATE */
-		val8 = rtw_read8(padapter, MSR) & 0xFC; /*  0x0102 */
+		val8 = usb_read8(padapter, MSR) & 0xFC; /*  0x0102 */
 		val8 |= WIFI_FW_ADHOC_STATE;
-		rtw_write8(padapter, MSR, val8); /*  Link in ad hoc network */
+		usb_write8(padapter, MSR, val8); /*  Link in ad hoc network */
 	}
 	return res;
 }
@@ -454,7 +453,7 @@ void mp_stop_test(struct adapter *padapter)
 		pmlmepriv->fw_state = pmppriv->prev_fw_state; /*  WIFI_STATION_STATE; */
 
 		/* flush the cur_network */
-		_rtw_memset(tgt_network, 0, sizeof(struct wlan_network));
+		memset(tgt_network, 0, sizeof(struct wlan_network));
 
 		_clr_fwstate_(pmlmepriv, WIFI_MP_STATE);
 
@@ -598,7 +597,7 @@ static int mp_xmit_packet_thread(void *context)
 	padapter = pmp_priv->papdater;
 	pxmitpriv = &(padapter->xmitpriv);
 
-	thread_enter("RTW_MP_THREAD");
+	allow_signal(SIGTERM);
 
 	/* DBG_88E("%s:pkTx Start\n", __func__); */
 	while (1) {
@@ -630,7 +629,8 @@ static int mp_xmit_packet_thread(void *context)
 		    (pmptx->count == pmptx->sended))
 			goto exit;
 
-		flush_signals_thread();
+		if (signal_pending(current))
+			flush_signals(current);
 	}
 
 exit:
@@ -688,7 +688,7 @@ void SetPacketTx(struct adapter *padapter)
 	kfree(pmp_priv->tx.pallocated_buf);
 	pmp_priv->tx.write_size = pkt_size;
 	pmp_priv->tx.buf_size = pkt_size + XMITBUF_ALIGN_SZ;
-	pmp_priv->tx.pallocated_buf = rtw_zmalloc(pmp_priv->tx.buf_size);
+	pmp_priv->tx.pallocated_buf = kzalloc(pmp_priv->tx.buf_size, GFP_KERNEL);
 	if (pmp_priv->tx.pallocated_buf == NULL) {
 		DBG_88E("%s: malloc(%d) fail!!\n", __func__, pmp_priv->tx.buf_size);
 		return;
@@ -697,7 +697,7 @@ void SetPacketTx(struct adapter *padapter)
 	ptr = pmp_priv->tx.buf;
 
 	desc = &(pmp_priv->tx.desc);
-	_rtw_memset(desc, 0, TXDESC_SIZE);
+	memset(desc, 0, TXDESC_SIZE);
 	pkt_start = ptr;
 	pkt_end = pkt_start + pkt_size;
 
@@ -770,7 +770,7 @@ void SetPacketTx(struct adapter *padapter)
 		break;
 	}
 
-	_rtw_memset(ptr, payload, pkt_end - ptr);
+	memset(ptr, payload, pkt_end - ptr);
 
 	/* 3 6. start thread */
 	pmp_priv->tx.PktTxThread = kthread_run(mp_xmit_packet_thread, pmp_priv, "RTW_MP_THREAD");
@@ -788,12 +788,12 @@ void SetPacketRx(struct adapter *pAdapter, u8 bStartRx)
 
 		pHalData->ReceiveConfig |= ACRC32;
 
-		rtw_write32(pAdapter, REG_RCR, pHalData->ReceiveConfig);
+		usb_write32(pAdapter, REG_RCR, pHalData->ReceiveConfig);
 
 		/*  Accept all data frames */
-		rtw_write16(pAdapter, REG_RXFLTMAP2, 0xFFFF);
+		usb_write16(pAdapter, REG_RXFLTMAP2, 0xFFFF);
 	} else {
-		rtw_write32(pAdapter, REG_RCR, 0);
+		usb_write32(pAdapter, REG_RCR, 0);
 	}
 }
 
@@ -805,7 +805,7 @@ void ResetPhyRxPktCount(struct adapter *pAdapter)
 		phyrx_set = 0;
 		phyrx_set |= _RXERR_RPT_SEL(i);	/* select */
 		phyrx_set |= RXERR_RPT_RST;	/*  set counter to zero */
-		rtw_write32(pAdapter, REG_RXERR_RPT, phyrx_set);
+		usb_write32(pAdapter, REG_RXERR_RPT, phyrx_set);
 	}
 }
 
@@ -815,10 +815,10 @@ static u32 GetPhyRxPktCounts(struct adapter *pAdapter, u32 selbit)
 	u32 phyrx_set = 0, count = 0;
 
 	phyrx_set = _RXERR_RPT_SEL(selbit & 0xF);
-	rtw_write32(pAdapter, REG_RXERR_RPT, phyrx_set);
+	usb_write32(pAdapter, REG_RXERR_RPT, phyrx_set);
 
 	/* Read packet count */
-	count = rtw_read32(pAdapter, REG_RXERR_RPT) & RXERR_COUNTER_MASK;
+	count = usb_read32(pAdapter, REG_RXERR_RPT) & RXERR_COUNTER_MASK;
 
 	return count;
 }
@@ -853,17 +853,17 @@ static u32 rtw_GetPSDData(struct adapter *pAdapter, u32 point)
 	int psd_val;
 
 
-	psd_val = rtw_read32(pAdapter, 0x808);
+	psd_val = usb_read32(pAdapter, 0x808);
 	psd_val &= 0xFFBFFC00;
 	psd_val |= point;
 
-	rtw_write32(pAdapter, 0x808, psd_val);
+	usb_write32(pAdapter, 0x808, psd_val);
 	mdelay(1);
 	psd_val |= 0x00400000;
 
-	rtw_write32(pAdapter, 0x808, psd_val);
+	usb_write32(pAdapter, 0x808, psd_val);
 	mdelay(1);
-	psd_val = rtw_read32(pAdapter, 0x8B4);
+	psd_val = usb_read32(pAdapter, 0x8B4);
 
 	psd_val &= 0x0000FFFF;
 
@@ -905,7 +905,7 @@ u32 mp_query_psd(struct adapter *pAdapter, u8 *data)
 			return 0;
 	}
 
-	_rtw_memset(data, '\0', sizeof(*data));
+	memset(data, '\0', sizeof(*data));
 
 	i = psd_start;
 	while (i < psd_stop) {
@@ -972,7 +972,7 @@ void _rtw_mp_xmit_priv(struct xmit_priv *pxmitpriv)
 	pxmitbuf = (struct xmit_buf *)pxmitpriv->pxmit_extbuf;
 
 	for (i = 0; i < num_xmit_extbuf; i++) {
-		_rtw_init_listhead(&pxmitbuf->list);
+		INIT_LIST_HEAD(&pxmitbuf->list);
 
 		pxmitbuf->priv_data = NULL;
 		pxmitbuf->padapter = padapter;
@@ -984,7 +984,7 @@ void _rtw_mp_xmit_priv(struct xmit_priv *pxmitpriv)
 			goto exit;
 		}
 
-		rtw_list_insert_tail(&pxmitbuf->list, &(pxmitpriv->free_xmit_extbuf_queue.queue));
+		list_add_tail(&pxmitbuf->list, &(pxmitpriv->free_xmit_extbuf_queue.queue));
 		pxmitbuf++;
 	}
 

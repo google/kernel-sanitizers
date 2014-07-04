@@ -26,7 +26,7 @@
 #include <recv_osdep.h>
 
 #include <osdep_intf.h>
-#include <usb_ops.h>
+#include <usb_ops_linux.h>
 
 /* alloc os related resource in struct recv_frame */
 int rtw_os_recv_resource_alloc(struct adapter *padapter,
@@ -73,7 +73,7 @@ void rtw_handle_tkip_mic_err(struct adapter *padapter, u8 bgroup)
 		}
 	}
 
-	_rtw_memset(&ev, 0x00, sizeof(ev));
+	memset(&ev, 0x00, sizeof(ev));
 	if (bgroup)
 		ev.flags |= IW_MICFAILURE_GROUP;
 	else
@@ -81,7 +81,7 @@ void rtw_handle_tkip_mic_err(struct adapter *padapter, u8 bgroup)
 
 	ev.src_addr.sa_family = ARPHRD_ETHER;
 	memcpy(ev.src_addr.sa_data, &pmlmepriv->assoc_bssid[0], ETH_ALEN);
-	_rtw_memset(&wrqu, 0x00, sizeof(wrqu));
+	memset(&wrqu, 0x00, sizeof(wrqu));
 	wrqu.data.length = sizeof(ev);
 	wireless_send_event(padapter->pnetdev, IWEVMICHAELMICFAILURE,
 			    &wrqu, (char *)&ev);
@@ -199,7 +199,7 @@ void rtw_os_read_port(struct adapter *padapter, struct recv_buf *precvbuf)
 	dev_kfree_skb_any(precvbuf->pskb);
 	precvbuf->pskb = NULL;
 	precvbuf->reuse = false;
-	rtw_read_port(padapter, precvpriv->ff_hwaddr, 0,
+	usb_read_port(padapter, precvpriv->ff_hwaddr, 0,
 			(unsigned char *)precvbuf);
 }
 

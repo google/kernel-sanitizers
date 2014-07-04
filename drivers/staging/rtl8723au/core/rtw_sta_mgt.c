@@ -22,6 +22,8 @@
 #include <sta_info.h>
 #include <rtl8723a_hal.h>
 
+static const u8 bc_addr[ETH_ALEN] = {0xff, 0xff, 0xff, 0xff, 0xff, 0xff};
+
 static void _rtw_init_stainfo(struct sta_info *psta)
 {
 	memset((u8 *)psta, 0, sizeof (struct sta_info));
@@ -107,7 +109,7 @@ int _rtw_free_sta_priv23a(struct sta_priv *pstapriv)
 }
 
 struct sta_info *
-rtw_alloc_stainfo23a(struct sta_priv *pstapriv, u8 *hwaddr, gfp_t gfp)
+rtw_alloc_stainfo23a(struct sta_priv *pstapriv, const u8 *hwaddr, gfp_t gfp)
 {
 	struct list_head	*phash_list;
 	struct sta_info	*psta;
@@ -126,7 +128,7 @@ rtw_alloc_stainfo23a(struct sta_priv *pstapriv, u8 *hwaddr, gfp_t gfp)
 
 	psta->padapter = pstapriv->padapter;
 
-	memcpy(psta->hwaddr, hwaddr, ETH_ALEN);
+	ether_addr_copy(psta->hwaddr, hwaddr);
 
 	index = wifi_mac_hash(hwaddr);
 
@@ -344,7 +346,6 @@ struct sta_info *rtw_get_stainfo23a(struct sta_priv *pstapriv, const u8 *hwaddr)
 	struct sta_info *psta = NULL;
 	u32	index;
 	const u8 *addr;
-	u8 bc_addr[ETH_ALEN] = {0xff, 0xff, 0xff, 0xff, 0xff, 0xff};
 
 	if (hwaddr == NULL)
 		return NULL;
@@ -363,10 +364,10 @@ struct sta_info *rtw_get_stainfo23a(struct sta_priv *pstapriv, const u8 *hwaddr)
 	list_for_each(plist, phead) {
 		psta = container_of(plist, struct sta_info, hash_list);
 
-		if (!memcmp(psta->hwaddr, addr, ETH_ALEN)) {
-			/*  if found the matched address */
+		/*  if found the matched address */
+		if (ether_addr_equal(psta->hwaddr, addr))
 			break;
-		}
+
 		psta = NULL;
 	}
 	spin_unlock_bh(&pstapriv->sta_hash_lock);
@@ -379,9 +380,8 @@ int rtw_init_bcmc_stainfo23a(struct rtw_adapter* padapter)
 	struct sta_info		*psta;
 	struct tx_servq	*ptxservq;
 	int res = _SUCCESS;
-	unsigned char bcast_addr[6] = {0xff, 0xff, 0xff, 0xff, 0xff, 0xff};
 
-	psta = rtw_alloc_stainfo23a(pstapriv, bcast_addr, GFP_KERNEL);
+	psta = rtw_alloc_stainfo23a(pstapriv, bc_addr, GFP_KERNEL);
 	if (psta == NULL) {
 		res = _FAIL;
 		RT_TRACE(_module_rtl871x_sta_mgt_c_, _drv_err_,
@@ -399,9 +399,8 @@ struct sta_info *rtw_get_bcmc_stainfo23a(struct rtw_adapter *padapter)
 {
 	struct sta_info		*psta;
 	struct sta_priv		*pstapriv = &padapter->stapriv;
-	u8 bc_addr[ETH_ALEN] = {0xff, 0xff, 0xff, 0xff, 0xff, 0xff};
 
-	 psta = rtw_get_stainfo23a(pstapriv, bc_addr);
+	psta = rtw_get_stainfo23a(pstapriv, bc_addr);
 	return psta;
 }
 
@@ -422,7 +421,7 @@ bool rtw_access_ctrl23a(struct rtw_adapter *padapter, u8 *mac_addr)
 	list_for_each(plist, phead) {
 		paclnode = container_of(plist, struct rtw_wlan_acl_node, list);
 
-		if (!memcmp(paclnode->addr, mac_addr, ETH_ALEN)) {
+		if (ether_addr_equal(paclnode->addr, mac_addr)) {
 			if (paclnode->valid) {
 				match = true;
 				break;

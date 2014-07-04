@@ -361,7 +361,7 @@ static int ni_pcidio_poll(struct comedi_device *dev, struct comedi_subdevice *s)
 	if (devpriv->di_mite_chan)
 		mite_sync_input_dma(devpriv->di_mite_chan, s);
 	spin_unlock(&devpriv->mite_channel_lock);
-	count = s->async->buf_write_count - s->async->buf_read_count;
+	count = comedi_buf_n_bytes_ready(s);
 	spin_unlock_irqrestore(&dev->spinlock, irq_flags);
 	return count;
 }
@@ -1024,7 +1024,7 @@ static int nidio_auto_attach(struct comedi_device *dev,
 	s->async_dma_dir = DMA_BIDIRECTIONAL;
 	s->poll = &ni_pcidio_poll;
 
-	irq = mite_irq(devpriv->mite);
+	irq = pcidev->irq;
 	if (irq) {
 		ret = request_irq(irq, nidio_interrupt, IRQF_SHARED,
 				  dev->board_name, dev);
@@ -1046,10 +1046,7 @@ static void nidio_detach(struct comedi_device *dev)
 			mite_free_ring(devpriv->di_mite_ring);
 			devpriv->di_mite_ring = NULL;
 		}
-		if (devpriv->mite) {
-			mite_unsetup(devpriv->mite);
-			mite_free(devpriv->mite);
-		}
+		mite_detach(devpriv->mite);
 	}
 	comedi_pci_disable(dev);
 }

@@ -20,33 +20,32 @@
  * Purpose: Provide functions to setup NIC operation mode
  * Functions:
  *      s_vSafeResetTx - Rest Tx
- *      CARDvSetRSPINF - Set RSPINF
- *      vUpdateIFS - Update slotTime,SIFS,DIFS, and EIFS
- *      CARDvUpdateBasicTopRate - Update BasicTopRate
- *      CARDbAddBasicRate - Add to BasicRateSet
+ *      vnt_set_rspinf - Set RSPINF
+ *      vnt_update_ifs - Update slotTime,SIFS,DIFS, and EIFS
+ *      vnt_update_top_rates - Update BasicTopRate
+ *      vnt_add_basic_rate - Add to BasicRateSet
  *      CARDbSetBasicRate - Set Basic Tx Rate
- *      CARDbIsOFDMinBasicRate - Check if any OFDM rate is in BasicRateSet
+ *      vnt_ofdm_min_rate - Check if any OFDM rate is in BasicRateSet
  *      CARDvSetLoopbackMode - Set Loopback mode
  *      CARDbSoftwareReset - Sortware reset NIC
- *      CARDqGetTSFOffset - Calculate TSFOffset
- *      CARDbGetCurrentTSF - Read Current NIC TSF counter
- *      CARDqGetNextTBTT - Calculate Next Beacon TSF counter
- *      CARDvSetFirstNextTBTT - Set NIC Beacon time
- *      CARDvUpdateNextTBTT - Sync. NIC Beacon time
- *      CARDbRadioPowerOff - Turn Off NIC Radio Power
- *      CARDbRadioPowerOn - Turn On NIC Radio Power
+ *      vnt_get_tsf_offset - Calculate TSFOffset
+ *      vnt_get_current_tsf - Read Current NIC TSF counter
+ *      vnt_get_next_tbtt - Calculate Next Beacon TSF counter
+ *      vnt_reset_next_tbtt - Set NIC Beacon time
+ *      vnt_update_next_tbtt - Sync. NIC Beacon time
+ *      vnt_radio_power_off - Turn Off NIC Radio Power
+ *      vnt_radio_power_on - Turn On NIC Radio Power
  *      CARDbSetWEPMode - Set NIC Wep mode
  *      CARDbSetTxPower - Set NIC tx power
  *
  * Revision History:
  *      06-10-2003 Bryan YC Fan:  Re-write codes to support VT3253 spec.
  *      08-26-2003 Kyle Hsu:      Modify the definition type of dwIoBase.
- *      09-01-2003 Bryan YC Fan:  Add vUpdateIFS().
+ *      09-01-2003 Bryan YC Fan:  Add vnt_update_ifs().
  *
  */
 
 #include "device.h"
-#include "tmacro.h"
 #include "card.h"
 #include "baseband.h"
 #include "mac.h"
@@ -54,9 +53,6 @@
 #include "rf.h"
 #include "power.h"
 #include "key.h"
-#include "rc4.h"
-#include "country.h"
-#include "datarate.h"
 #include "usbpipe.h"
 
 //const u16 cwRXBCNTSFOff[MAX_RATE] =
@@ -75,7 +71,7 @@ static const u16 cwRXBCNTSFOff[MAX_RATE] =
  *  Out:
  *      none
  */
-void CARDbSetMediaChannel(struct vnt_private *priv, u32 connection_channel)
+void vnt_set_channel(struct vnt_private *priv, u32 connection_channel)
 {
 
 	if (priv->byBBType == BB_TYPE_11A) {
@@ -89,10 +85,10 @@ void CARDbSetMediaChannel(struct vnt_private *priv, u32 connection_channel)
 	}
 
 	/* clear NAV */
-	MACvRegBitsOn(priv, MAC_REG_MACCR, MACCR_CLRNAV);
+	vnt_mac_reg_bits_on(priv, MAC_REG_MACCR, MACCR_CLRNAV);
 
 	/* Set Channel[7] = 0 to tell H/W channel is changing now. */
-	MACvRegBitsOff(priv, MAC_REG_CHANNEL, 0xb0);
+	vnt_mac_reg_bits_off(priv, MAC_REG_CHANNEL, 0xb0);
 
 	vnt_control_out(priv, MESSAGE_TYPE_SELECT_CHANNLE,
 					connection_channel, 0, 0, NULL);
@@ -128,7 +124,7 @@ void CARDbSetMediaChannel(struct vnt_private *priv, u32 connection_channel)
  * Return Value: response Control frame rate
  *
  */
-static u16 swGetCCKControlRate(struct vnt_private *priv, u16 rate_idx)
+static u16 vnt_get_cck_rate(struct vnt_private *priv, u16 rate_idx)
 {
 	u16 ui = rate_idx;
 
@@ -154,14 +150,14 @@ static u16 swGetCCKControlRate(struct vnt_private *priv, u16 rate_idx)
  * Return Value: response Control frame rate
  *
  */
-static u16 swGetOFDMControlRate(struct vnt_private *priv, u16 rate_idx)
+static u16 vnt_get_ofdm_rate(struct vnt_private *priv, u16 rate_idx)
 {
 	u16 ui = rate_idx;
 
 	dev_dbg(&priv->usb->dev, "%s basic rate: %d\n",
 					__func__,  priv->wBasicRate);
 
-	if (!CARDbIsOFDMinBasicRate(priv)) {
+	if (!vnt_ofdm_min_rate(priv)) {
 		dev_dbg(&priv->usb->dev, "%s (NO OFDM) %d\n",
 						__func__, rate_idx);
 		if (rate_idx > RATE_24M)
@@ -197,7 +193,7 @@ static u16 swGetOFDMControlRate(struct vnt_private *priv, u16 rate_idx)
  * Return Value: none
  *
  */
-static void CARDvCalculateOFDMRParameter(u16 rate, u8 bb_type,
+static void vnt_calculate_ofdm_rate(u16 rate, u8 bb_type,
 					u8 *tx_rate, u8 *rsv_time)
 {
 
@@ -291,7 +287,7 @@ static void CARDvCalculateOFDMRParameter(u16 rate, u8 bb_type,
  *
  */
 
-void CARDvSetRSPINF(struct vnt_private *priv, u8 bb_type)
+void vnt_set_rspinf(struct vnt_private *priv, u8 bb_type)
 {
 	struct vnt_phy_field phy[4];
 	u8 tx_rate[9] = {0, 0, 0, 0, 0, 0, 0, 0, 0}; /* For OFDM */
@@ -300,56 +296,51 @@ void CARDvSetRSPINF(struct vnt_private *priv, u8 bb_type)
 	int i;
 
 	/*RSPINF_b_1*/
-	BBvCalculateParameter(priv, 14,
-		swGetCCKControlRate(priv, RATE_1M), PK_TYPE_11B, &phy[0]);
+	vnt_get_phy_field(priv, 14,
+		vnt_get_cck_rate(priv, RATE_1M), PK_TYPE_11B, &phy[0]);
 
 	/*RSPINF_b_2*/
-	BBvCalculateParameter(priv, 14,
-		swGetCCKControlRate(priv, RATE_2M), PK_TYPE_11B, &phy[1]);
+	vnt_get_phy_field(priv, 14,
+		vnt_get_cck_rate(priv, RATE_2M), PK_TYPE_11B, &phy[1]);
 
 	/*RSPINF_b_5*/
-	BBvCalculateParameter(priv, 14,
-		swGetCCKControlRate(priv, RATE_5M), PK_TYPE_11B, &phy[2]);
+	vnt_get_phy_field(priv, 14,
+		vnt_get_cck_rate(priv, RATE_5M), PK_TYPE_11B, &phy[2]);
 
 	/*RSPINF_b_11*/
-	BBvCalculateParameter(priv, 14,
-		swGetCCKControlRate(priv, RATE_11M), PK_TYPE_11B, &phy[3]);
+	vnt_get_phy_field(priv, 14,
+		vnt_get_cck_rate(priv, RATE_11M), PK_TYPE_11B, &phy[3]);
 
 
 	/*RSPINF_a_6*/
-	CARDvCalculateOFDMRParameter(RATE_6M, bb_type,
-						&tx_rate[0], &rsv_time[0]);
+	vnt_calculate_ofdm_rate(RATE_6M, bb_type, &tx_rate[0], &rsv_time[0]);
 
 	/*RSPINF_a_9*/
-	CARDvCalculateOFDMRParameter(RATE_9M, bb_type,
-						&tx_rate[1], &rsv_time[1]);
+	vnt_calculate_ofdm_rate(RATE_9M, bb_type, &tx_rate[1], &rsv_time[1]);
 
 	/*RSPINF_a_12*/
-	CARDvCalculateOFDMRParameter(RATE_12M, bb_type,
-						&tx_rate[2], &rsv_time[2]);
+	vnt_calculate_ofdm_rate(RATE_12M, bb_type, &tx_rate[2], &rsv_time[2]);
 
 	/*RSPINF_a_18*/
-	CARDvCalculateOFDMRParameter(RATE_18M, bb_type,
-						&tx_rate[3], &rsv_time[3]);
+	vnt_calculate_ofdm_rate(RATE_18M, bb_type, &tx_rate[3], &rsv_time[3]);
 
 	/*RSPINF_a_24*/
-	CARDvCalculateOFDMRParameter(RATE_24M, bb_type,
-						&tx_rate[4], &rsv_time[4]);
+	vnt_calculate_ofdm_rate(RATE_24M, bb_type, &tx_rate[4], &rsv_time[4]);
 
 	/*RSPINF_a_36*/
-	CARDvCalculateOFDMRParameter(swGetOFDMControlRate(priv, RATE_36M),
+	vnt_calculate_ofdm_rate(vnt_get_ofdm_rate(priv, RATE_36M),
 					bb_type, &tx_rate[5], &rsv_time[5]);
 
 	/*RSPINF_a_48*/
-	CARDvCalculateOFDMRParameter(swGetOFDMControlRate(priv, RATE_48M),
+	vnt_calculate_ofdm_rate(vnt_get_ofdm_rate(priv, RATE_48M),
 					bb_type, &tx_rate[6], &rsv_time[6]);
 
 	/*RSPINF_a_54*/
-	CARDvCalculateOFDMRParameter(swGetOFDMControlRate(priv, RATE_54M),
+	vnt_calculate_ofdm_rate(vnt_get_ofdm_rate(priv, RATE_54M),
 					bb_type, &tx_rate[7], &rsv_time[7]);
 
 	/*RSPINF_a_72*/
-	CARDvCalculateOFDMRParameter(swGetOFDMControlRate(priv, RATE_54M),
+	vnt_calculate_ofdm_rate(vnt_get_ofdm_rate(priv, RATE_54M),
 					bb_type, &tx_rate[8], &rsv_time[8]);
 
 	put_unaligned(phy[0].len, (u16 *)&data[0]);
@@ -389,7 +380,7 @@ void CARDvSetRSPINF(struct vnt_private *priv, u8 bb_type)
  * Return Value: None.
  *
  */
-void vUpdateIFS(struct vnt_private *priv)
+void vnt_update_ifs(struct vnt_private *priv)
 {
 	u8 max_min = 0;
 	u8 data[4];
@@ -407,10 +398,8 @@ void vUpdateIFS(struct vnt_private *priv)
 		priv->uCwMin = C_CWMIN_B;
 		max_min = 5;
 	} else {/* PK_TYPE_11GA & PK_TYPE_11GB */
-		u8 rate = 0;
 		bool ofdm_rate = false;
 		unsigned int ii = 0;
-		PWLAN_IE_SUPP_RATES item_rates = NULL;
 
 		priv->uSIFS = C_SIFS_BG;
 
@@ -421,26 +410,10 @@ void vUpdateIFS(struct vnt_private *priv)
 
 		priv->uDIFS = C_SIFS_BG + 2 * priv->uSlot;
 
-		item_rates =
-			(PWLAN_IE_SUPP_RATES)priv->vnt_mgmt.abyCurrSuppRates;
-
-		for (ii = 0; ii < item_rates->len; ii++) {
-			rate = (u8)(item_rates->abyRates[ii] & 0x7f);
-			if (RATEwGetRateIdx(rate) > RATE_11M) {
+		for (ii = RATE_54M; ii >= RATE_6M; ii--) {
+			if (priv->wBasicRate & ((u32)(0x1 << ii))) {
 				ofdm_rate = true;
 				break;
-			}
-		}
-
-		if (ofdm_rate == false) {
-			item_rates = (PWLAN_IE_SUPP_RATES)priv->vnt_mgmt
-				.abyCurrExtSuppRates;
-			for (ii = 0; ii < item_rates->len; ii++) {
-				rate = (u8)(item_rates->abyRates[ii] & 0x7f);
-				if (RATEwGetRateIdx(rate) > RATE_11M) {
-					ofdm_rate = true;
-					break;
-				}
 			}
 		}
 
@@ -470,7 +443,7 @@ void vUpdateIFS(struct vnt_private *priv)
 		MESSAGE_REQUEST_MACREG, 1, &max_min);
 }
 
-void CARDvUpdateBasicTopRate(struct vnt_private *priv)
+void vnt_update_top_rates(struct vnt_private *priv)
 {
 	u8 top_ofdm = RATE_24M, top_cck = RATE_1M;
 	u8 i;
@@ -497,29 +470,7 @@ void CARDvUpdateBasicTopRate(struct vnt_private *priv)
 	priv->byTopCCKBasicRate = top_cck;
  }
 
-/*
- * Description: Set NIC Tx Basic Rate
- *
- * Parameters:
- *  In:
- *      pDevice         - The adapter to be set
- *      wBasicRate      - Basic Rate to be set
- *  Out:
- *      none
- *
- * Return Value: true if succeeded; false if failed.
- *
- */
-void CARDbAddBasicRate(struct vnt_private *priv, u16 rate_idx)
-{
-
-	priv->wBasicRate |= (1 << rate_idx);
-
-	/*Determines the highest basic rate.*/
-	CARDvUpdateBasicTopRate(priv);
-}
-
-int CARDbIsOFDMinBasicRate(struct vnt_private *priv)
+int vnt_ofdm_min_rate(struct vnt_private *priv)
 {
 	int ii;
 
@@ -531,12 +482,12 @@ int CARDbIsOFDMinBasicRate(struct vnt_private *priv)
 	return false;
 }
 
-u8 CARDbyGetPktType(struct vnt_private *priv)
+u8 vnt_get_pkt_type(struct vnt_private *priv)
 {
 
 	if (priv->byBBType == BB_TYPE_11A || priv->byBBType == BB_TYPE_11B)
 		return (u8)priv->byBBType;
-	else if (CARDbIsOFDMinBasicRate(priv))
+	else if (vnt_ofdm_min_rate(priv))
 		return PK_TYPE_11GA;
 	else
 		return PK_TYPE_11GB;
@@ -557,7 +508,7 @@ u8 CARDbyGetPktType(struct vnt_private *priv)
  * Return Value: TSF Offset value
  *
  */
-u64 CARDqGetTSFOffset(u8 rx_rate, u64 tsf1, u64 tsf2)
+u64 vnt_get_tsf_offset(u8 rx_rate, u64 tsf1, u64 tsf2)
 {
 	u64 tsf_offset = 0;
 	u16 rx_bcn_offset = 0;
@@ -586,13 +537,13 @@ u64 CARDqGetTSFOffset(u8 rx_rate, u64 tsf1, u64 tsf2)
  * Return Value: none
  *
  */
-void CARDvAdjustTSF(struct vnt_private *priv, u8 rx_rate,
+void vnt_adjust_tsf(struct vnt_private *priv, u8 rx_rate,
 		u64 time_stamp, u64 local_tsf)
 {
 	u64 tsf_offset = 0;
 	u8 data[8];
 
-	tsf_offset = CARDqGetTSFOffset(rx_rate, time_stamp, local_tsf);
+	tsf_offset = vnt_get_tsf_offset(rx_rate, time_stamp, local_tsf);
 
 	data[0] = (u8)tsf_offset;
 	data[1] = (u8)(tsf_offset >> 8);
@@ -619,7 +570,7 @@ void CARDvAdjustTSF(struct vnt_private *priv, u8 rx_rate,
  * Return Value: true if success; otherwise false
  *
  */
-bool CARDbGetCurrentTSF(struct vnt_private *priv, u64 *current_tsf)
+bool vnt_get_current_tsf(struct vnt_private *priv, u64 *current_tsf)
 {
 
 	*current_tsf = priv->qwCurrTSF;
@@ -638,10 +589,10 @@ bool CARDbGetCurrentTSF(struct vnt_private *priv, u64 *current_tsf)
  * Return Value: true if success; otherwise false
  *
  */
-bool CARDbClearCurrentTSF(struct vnt_private *priv)
+bool vnt_clear_current_tsf(struct vnt_private *priv)
 {
 
-	MACvRegBitsOn(priv, MAC_REG_TFTCTL, TFTCTL_TSFCNTRST);
+	vnt_mac_reg_bits_on(priv, MAC_REG_TFTCTL, TFTCTL_TSFCNTRST);
 
 	priv->qwCurrTSF = 0;
 
@@ -662,7 +613,7 @@ bool CARDbClearCurrentTSF(struct vnt_private *priv)
  * Return Value: TSF value of next Beacon
  *
  */
-u64 CARDqGetNextTBTT(u64 tsf, u16 beacon_interval)
+u64 vnt_get_next_tbtt(u64 tsf, u16 beacon_interval)
 {
 	u32 beacon_int;
 
@@ -694,14 +645,14 @@ u64 CARDqGetNextTBTT(u64 tsf, u16 beacon_interval)
  * Return Value: none
  *
  */
-void CARDvSetFirstNextTBTT(struct vnt_private *priv, u16 beacon_interval)
+void vnt_reset_next_tbtt(struct vnt_private *priv, u16 beacon_interval)
 {
 	u64 next_tbtt = 0;
 	u8 data[8];
 
-	CARDbClearCurrentTSF(priv);
+	vnt_clear_current_tsf(priv);
 
-	next_tbtt = CARDqGetNextTBTT(next_tbtt, beacon_interval);
+	next_tbtt = vnt_get_next_tbtt(next_tbtt, beacon_interval);
 
 	data[0] = (u8)next_tbtt;
 	data[1] = (u8)(next_tbtt >> 8);
@@ -733,12 +684,12 @@ void CARDvSetFirstNextTBTT(struct vnt_private *priv, u16 beacon_interval)
  * Return Value: none
  *
  */
-void CARDvUpdateNextTBTT(struct vnt_private *priv, u64 tsf,
+void vnt_update_next_tbtt(struct vnt_private *priv, u64 tsf,
 			u16 beacon_interval)
 {
 	u8 data[8];
 
-	tsf = CARDqGetNextTBTT(tsf, beacon_interval);
+	tsf = vnt_get_next_tbtt(tsf, beacon_interval);
 
 	data[0] = (u8)tsf;
 	data[1] = (u8)(tsf >> 8);
@@ -769,7 +720,7 @@ void CARDvUpdateNextTBTT(struct vnt_private *priv, u64 tsf,
  * Return Value: true if success; otherwise false
  *
  */
-int CARDbRadioPowerOff(struct vnt_private *priv)
+int vnt_radio_power_off(struct vnt_private *priv)
 {
 	int ret = true;
 
@@ -782,12 +733,12 @@ int CARDbRadioPowerOff(struct vnt_private *priv)
 	case RF_VT3226:
 	case RF_VT3226D0:
 	case RF_VT3342A0:
-		MACvRegBitsOff(priv, MAC_REG_SOFTPWRCTL,
+		vnt_mac_reg_bits_off(priv, MAC_REG_SOFTPWRCTL,
 				(SOFTPWRCTL_SWPE2 | SOFTPWRCTL_SWPE3));
 		break;
 	}
 
-	MACvRegBitsOff(priv, MAC_REG_HOSTCR, HOSTCR_RXON);
+	vnt_mac_reg_bits_off(priv, MAC_REG_HOSTCR, HOSTCR_RXON);
 
 	BBvSetDeepSleep(priv);
 
@@ -806,7 +757,7 @@ int CARDbRadioPowerOff(struct vnt_private *priv)
  * Return Value: true if success; otherwise false
  *
  */
-int CARDbRadioPowerOn(struct vnt_private *priv)
+int vnt_radio_power_on(struct vnt_private *priv)
 {
 	int ret = true;
 
@@ -817,7 +768,7 @@ int CARDbRadioPowerOn(struct vnt_private *priv)
 
 	BBvExitDeepSleep(priv);
 
-	MACvRegBitsOn(priv, MAC_REG_HOSTCR, HOSTCR_RXON);
+	vnt_mac_reg_bits_on(priv, MAC_REG_HOSTCR, HOSTCR_RXON);
 
 	switch (priv->byRFType) {
 	case RF_AL2230:
@@ -826,7 +777,7 @@ int CARDbRadioPowerOn(struct vnt_private *priv)
 	case RF_VT3226:
 	case RF_VT3226D0:
 	case RF_VT3342A0:
-		MACvRegBitsOn(priv, MAC_REG_SOFTPWRCTL,
+		vnt_mac_reg_bits_on(priv, MAC_REG_SOFTPWRCTL,
 			(SOFTPWRCTL_SWPE2 | SOFTPWRCTL_SWPE3));
 		break;
 	}
@@ -834,14 +785,14 @@ int CARDbRadioPowerOn(struct vnt_private *priv)
 	return ret;
 }
 
-void CARDvSetBSSMode(struct vnt_private *priv)
+void vnt_set_bss_mode(struct vnt_private *priv)
 {
 	if (priv->byRFType == RF_AIROHA7230 && priv->byBBType == BB_TYPE_11A)
-		MACvSetBBType(priv, BB_TYPE_11G);
+		vnt_mac_set_bb_type(priv, BB_TYPE_11G);
 	else
-		MACvSetBBType(priv, priv->byBBType);
+		vnt_mac_set_bb_type(priv, priv->byBBType);
 
-	priv->byPacketType = CARDbyGetPktType(priv);
+	priv->byPacketType = vnt_get_pkt_type(priv);
 
 	if (priv->byBBType == BB_TYPE_11A)
 		vnt_control_out_u8(priv, MESSAGE_REQUEST_BBREG, 0x88, 0x03);
@@ -850,8 +801,8 @@ void CARDvSetBSSMode(struct vnt_private *priv)
 	else if (priv->byBBType == BB_TYPE_11G)
 		vnt_control_out_u8(priv, MESSAGE_REQUEST_BBREG, 0x88, 0x08);
 
-	vUpdateIFS(priv);
-	CARDvSetRSPINF(priv, (u8)priv->byBBType);
+	vnt_update_ifs(priv);
+	vnt_set_rspinf(priv, (u8)priv->byBBType);
 
 	if (priv->byBBType == BB_TYPE_11A) {
 		if (priv->byRFType == RF_AIROHA7230) {
@@ -874,4 +825,6 @@ void CARDvSetBSSMode(struct vnt_private *priv)
 		priv->abyBBVGA[2] = 0x0;
 		priv->abyBBVGA[3] = 0x0;
 	}
+
+	BBvSetVGAGainOffset(priv, priv->abyBBVGA[0]);
 }

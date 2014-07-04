@@ -42,8 +42,8 @@
 #include <linux/slab.h>
 #include <linux/stat.h>
 #include <linux/ctype.h>
-#include <asm/bitops.h>
-#include <asm/uaccess.h>
+#include <linux/bitops.h>
+#include <linux/uaccess.h>
 #include <linux/utsname.h>
 
 #define DEBUG_SUBSYSTEM S_CLASS
@@ -196,7 +196,7 @@ int LL_PROC_PROTO(proc_max_dirty_pages_in_mb)
 	}
 	if (write) {
 		rc = lprocfs_write_frac_helper(buffer, *lenp,
-					       (unsigned int*)table->data,
+					       (unsigned int *)table->data,
 					       1 << (20 - PAGE_CACHE_SHIFT));
 		/* Don't allow them to let dirty pages exceed 90% of system
 		 * memory and set a hard minimum of 4MB. */
@@ -214,7 +214,7 @@ int LL_PROC_PROTO(proc_max_dirty_pages_in_mb)
 		int len;
 
 		len = lprocfs_read_frac_helper(buf, sizeof(buf),
-					       *(unsigned int*)table->data,
+					       *(unsigned int *)table->data,
 					       1 << (20 - PAGE_CACHE_SHIFT));
 		if (len > *lenp)
 			len = *lenp;
@@ -238,14 +238,14 @@ int LL_PROC_PROTO(proc_alloc_fail_rate)
 	}
 	if (write) {
 		rc = lprocfs_write_frac_helper(buffer, *lenp,
-					       (unsigned int*)table->data,
+					       (unsigned int *)table->data,
 					       OBD_ALLOC_FAIL_MULT);
 	} else {
 		char buf[21];
 		int  len;
 
 		len = lprocfs_read_frac_helper(buf, 21,
-					       *(unsigned int*)table->data,
+					       *(unsigned int *)table->data,
 					       OBD_ALLOC_FAIL_MULT);
 		if (len > *lenp)
 			len = *lenp;
@@ -408,18 +408,18 @@ static ctl_table_t parent_table[] = {
 };
 #endif
 
-void obd_sysctl_init (void)
+void obd_sysctl_init(void)
 {
 #ifdef CONFIG_SYSCTL
-	if ( !obd_table_header )
+	if (!obd_table_header)
 		obd_table_header = register_sysctl_table(parent_table);
 #endif
 }
 
-void obd_sysctl_clean (void)
+void obd_sysctl_clean(void)
 {
 #ifdef CONFIG_SYSCTL
-	if ( obd_table_header )
+	if (obd_table_header)
 		unregister_sysctl_table(obd_table_header);
 	obd_table_header = NULL;
 #endif

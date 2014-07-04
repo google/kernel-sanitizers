@@ -74,9 +74,8 @@ static int import_set_conn(struct obd_import *imp, struct obd_uuid *uuid,
 
 	if (create) {
 		OBD_ALLOC(imp_conn, sizeof(*imp_conn));
-		if (!imp_conn) {
+		if (!imp_conn)
 			GOTO(out_put, rc = -ENOMEM);
-		}
 	}
 
 	spin_lock(&imp->imp_lock);
@@ -511,7 +510,7 @@ int client_connect_import(const struct lu_env *env,
 
 	rc = ptlrpc_connect_import(imp);
 	if (rc != 0) {
-		LASSERT (imp->imp_state == LUSTRE_IMP_DISCON);
+		LASSERT(imp->imp_state == LUSTRE_IMP_DISCON);
 		GOTO(out_ldlm, rc);
 	}
 	LASSERT(*exp != NULL && (*exp)->exp_connection);
@@ -662,33 +661,32 @@ void target_send_reply(struct ptlrpc_request *req, int rc, int fail_id)
 	struct ptlrpc_reply_state *rs;
 	struct obd_export	 *exp;
 
-	if (req->rq_no_reply) {
+	if (req->rq_no_reply)
 		return;
-	}
 
 	svcpt = req->rq_rqbd->rqbd_svcpt;
 	rs = req->rq_reply_state;
 	if (rs == NULL || !rs->rs_difficult) {
 		/* no notifiers */
-		target_send_reply_msg (req, rc, fail_id);
+		target_send_reply_msg(req, rc, fail_id);
 		return;
 	}
 
 	/* must be an export if locks saved */
-	LASSERT (req->rq_export != NULL);
+	LASSERT(req->rq_export != NULL);
 	/* req/reply consistent */
 	LASSERT(rs->rs_svcpt == svcpt);
 
 	/* "fresh" reply */
-	LASSERT (!rs->rs_scheduled);
-	LASSERT (!rs->rs_scheduled_ever);
-	LASSERT (!rs->rs_handled);
-	LASSERT (!rs->rs_on_net);
-	LASSERT (rs->rs_export == NULL);
-	LASSERT (list_empty(&rs->rs_obd_list));
-	LASSERT (list_empty(&rs->rs_exp_list));
+	LASSERT(!rs->rs_scheduled);
+	LASSERT(!rs->rs_scheduled_ever);
+	LASSERT(!rs->rs_handled);
+	LASSERT(!rs->rs_on_net);
+	LASSERT(rs->rs_export == NULL);
+	LASSERT(list_empty(&rs->rs_obd_list));
+	LASSERT(list_empty(&rs->rs_exp_list));
 
-	exp = class_export_get (req->rq_export);
+	exp = class_export_get(req->rq_export);
 
 	/* disable reply scheduling while I'm setting up */
 	rs->rs_scheduled = 1;

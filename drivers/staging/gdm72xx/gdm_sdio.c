@@ -390,7 +390,8 @@ static int gdm_sdio_send(void *priv_dev, void *data, int len,
 	u16 cmd_evt;
 	unsigned long flags;
 
-	BUG_ON(len > TX_BUF_SIZE - TYPE_A_HEADER_SIZE);
+	if (len > TX_BUF_SIZE - TYPE_A_HEADER_SIZE)
+		return -EINVAL;
 
 	spin_lock_irqsave(&tx->lock, flags);
 
@@ -439,9 +440,7 @@ static int gdm_sdio_send(void *priv_dev, void *data, int len,
 	return 0;
 }
 
-/*
- * Handle the HCI, WIMAX_SDU_TX_FLOW.
- */
+/* Handle the HCI, WIMAX_SDU_TX_FLOW. */
 static int control_sdu_tx_flow(struct sdiowm_dev *sdev, u8 *hci_data, int len)
 {
 	struct tx_cxt *tx = &sdev->tx;
@@ -462,8 +461,7 @@ static int control_sdu_tx_flow(struct sdiowm_dev *sdev, u8 *hci_data, int len)
 		tx->stop_sdu_tx = 0;
 		if (tx->can_send)
 			schedule_work(&sdev->ws);
-		/*
-		 * If free buffer for sdu tx doesn't exist, then tx queue
+		/* If free buffer for sdu tx doesn't exist, then tx queue
 		 * should not be woken. For this reason, don't pass the command,
 		 * START_SDU_TX.
 		 */

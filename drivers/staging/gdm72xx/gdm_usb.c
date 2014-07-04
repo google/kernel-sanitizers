@@ -312,7 +312,8 @@ static int gdm_usb_send(void *priv_dev, void *data, int len,
 		return -ENODEV;
 	}
 
-	BUG_ON(len > TX_BUF_SIZE - padding - 1);
+	if (len > TX_BUF_SIZE - padding - 1)
+		return -EINVAL;
 
 	spin_lock_irqsave(&tx->lock, flags);
 
@@ -338,8 +339,7 @@ static int gdm_usb_send(void *priv_dev, void *data, int len,
 	t->callback = cb;
 	t->cb_data = cb_data;
 
-	/*
-	 * In some cases, USB Module of WiMax is blocked when data size is
+	/* In some cases, USB Module of WiMax is blocked when data size is
 	 * the multiple of 512. So, increment length by one in that case.
 	 */
 	if ((len % 512) == 0)
@@ -439,8 +439,7 @@ static void gdm_usb_rcv_complete(struct urb *urb)
 				list_for_each_entry(t, &tx->sdu_list, list) {
 					usb_submit_urb(t->urb, GFP_ATOMIC);
 				}
-				/*
-				 * If free buffer for sdu tx doesn't
+				/* If free buffer for sdu tx doesn't
 				 * exist, then tx queue should not be
 				 * woken. For this reason, don't pass
 				 * the command, START_SDU_TX.
@@ -632,7 +631,6 @@ static void gdm_usb_disconnect(struct usb_interface *intf)
 	if (idProduct != EMERGENCY_PID &&
 	    bConfigurationValue != DOWNLOAD_CONF_VALUE &&
 	    (idProduct & B_DOWNLOAD) == 0) {
-
 		udev = phy_dev->priv_dev;
 		udev->usbdev = NULL;
 
@@ -710,10 +708,8 @@ static int k_mode_thread(void *arg)
 	int ret;
 
 	while (!k_mode_stop) {
-
 		spin_lock_irqsave(&k_lock, flags2);
 		while (!list_empty(&k_list)) {
-
 			udev = list_entry(k_list.next, struct usbwm_dev, list);
 			tx = &udev->tx;
 			rx = &udev->rx;

@@ -33,6 +33,7 @@
 #include "device.h"
 #include "ioctl.h"
 #include "iocmd.h"
+#include "iwctl.h"
 #include "mac.h"
 #include "card.h"
 #include "hostap.h"
@@ -128,7 +129,7 @@ int iwctl_giwname(struct net_device *dev,
  * Wireless Handler : set scan
  */
 
-int iwctl_siwscan(struct net_device *dev,
+static int iwctl_siwscan(struct net_device *dev,
 		  struct iw_request_info *info,
 		  struct iw_point *wrq,
 		  char *extra)
@@ -189,7 +190,7 @@ int iwctl_siwscan(struct net_device *dev,
  * Wireless Handler : get scan results
  */
 
-int iwctl_giwscan(struct net_device *dev,
+static int iwctl_giwscan(struct net_device *dev,
 		  struct iw_request_info *info,
 		  struct iw_point *wrq,
 		  char *extra)

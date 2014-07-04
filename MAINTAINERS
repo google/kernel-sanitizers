@@ -8516,12 +8516,6 @@ L:	devel@driverdev.osuosl.org
 S:	Supported
 F:	drivers/staging/
 
-STAGING - AGERE HERMES II and II.5 WIRELESS DRIVERS
-M:	Henk de Groot <pe1dnn@amsat.org>
-S:	Odd Fixes
-F:	drivers/staging/wlags49_h2/
-F:	drivers/staging/wlags49_h25/
-
 STAGING - ASUS OLED
 M:	Jakub Schmidtke <sjakub@gmail.com>
 S:	Odd Fixes
@@ -8532,14 +8526,6 @@ M:	Ian Abbott <abbotti@mev.co.uk>
 M:	H Hartley Sweeten <hsweeten@visionengravers.com>
 S:	Odd Fixes
 F:	drivers/staging/comedi/
-
-STAGING - CRYSTAL HD VIDEO DECODER
-M:	Naren Sankar <nsankar@broadcom.com>
-M:	Jarod Wilson <jarod@wilsonet.com>
-M:	Scott Davilla <davilla@4pi.com>
-M:	Manu Abraham <abraham.manu@gmail.com>
-S:	Odd Fixes
-F:	drivers/staging/crystalhd/
 
 STAGING - ECHO CANCELLER
 M:	Steve Underwood <steveu@coppice.org>
@@ -8658,11 +8644,6 @@ STAGING - VIA VT665X DRIVERS
 M:	Forest Bond <forest@alittletooquiet.net>
 S:	Odd Fixes
 F:	drivers/staging/vt665?/
-
-STAGING - WINBOND IS89C35 WLAN USB DRIVER
-M:	Pavel Machek <pavel@ucw.cz>
-S:	Odd Fixes
-F:	drivers/staging/winbond/
 
 STAGING - XGI Z7,Z9,Z11 PCI DISPLAY DRIVER
 M:	Arnaud Patard <arnaud.patard@rtp-net.org>

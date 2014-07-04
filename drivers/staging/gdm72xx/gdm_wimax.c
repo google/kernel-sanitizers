@@ -291,8 +291,9 @@ static void __gdm_wimax_event_send(struct work_struct *work)
 		e = list_entry(wm_event.evtq.next, struct evt_entry, list);
 		spin_unlock_irqrestore(&wm_event.evt_lock, flags);
 
-		sscanf(e->dev->name, "wm%d", &idx);
-		netlink_send(wm_event.sock, idx, 0, e->evt_data, e->size);
+		if (sscanf(e->dev->name, "wm%d", &idx) == 1)
+			netlink_send(wm_event.sock, idx, 0, e->evt_data,
+				     e->size);
 
 		spin_lock_irqsave(&wm_event.evt_lock, flags);
 		list_del(&e->list);
@@ -580,8 +581,9 @@ static int gdm_wimax_ioctl(struct net_device *dev, struct ifreq *ifr, int cmd)
 				return ret;
 		} else if (req->cmd == SIOCS_DATA) {
 			if (req->data_id == SIOC_DATA_FSM) {
-				/*NOTE: gdm_update_fsm should be called
-				before gdm_wimax_ioctl_set_data is called*/
+				/* NOTE: gdm_update_fsm should be called
+				 * before gdm_wimax_ioctl_set_data is called.
+				 */
 				gdm_update_fsm(dev,
 					       (struct fsm_s *)req->data.buf);
 			}

@@ -29,14 +29,14 @@
 #ifndef __WCMD_H__
 #define __WCMD_H__
 
-#include "80211hdr.h"
-#include "80211mgr.h"
+#include "device.h"
 
 #define AUTHENTICATE_TIMEOUT   1000 //ms
 #define ASSOCIATE_TIMEOUT      1000 //ms
 
 // Command code
 typedef enum tagCMD_CODE {
+    WLAN_CMD_INIT_MAC80211,
     WLAN_CMD_BSSID_SCAN,
     WLAN_CMD_SSID,
     WLAN_CMD_DISASSOCIATE,
@@ -69,7 +69,6 @@ typedef enum tagCMD_STATUS {
 
 typedef struct tagCMD_ITEM {
     CMD_CODE eCmd;
-    u8     abyCmdDesireSSID[WLAN_IEHDR_LEN + WLAN_SSID_MAXLEN + 1];
     bool     bNeedRadioOFF;
     bool     bRadioCmd;
     bool     bForceSCAN;
@@ -78,6 +77,7 @@ typedef struct tagCMD_ITEM {
 
 // Command state
 typedef enum tagCMD_STATE {
+    WLAN_CMD_INIT_MAC80211_START,
     WLAN_CMD_SCAN_START,
     WLAN_CMD_SCAN_END,
     WLAN_CMD_DISASSOCIATE_START,

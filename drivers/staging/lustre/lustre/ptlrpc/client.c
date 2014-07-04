@@ -1202,7 +1202,7 @@ static int after_reply(struct ptlrpc_request *req)
 
 	LASSERT(obd != NULL);
 	/* repbuf must be unlinked */
-	LASSERT(!req->rq_receiving_reply && !req->rq_must_unlink);
+	LASSERT(!req->rq_receiving_reply && !req->rq_reply_unlink);
 
 	if (req->rq_reply_truncate) {
 		if (ptlrpc_no_resend(req)) {
@@ -1496,6 +1496,8 @@ static inline int ptlrpc_set_producer(struct ptlrpc_request_set *set)
  * and no more replies are expected.
  * (it is possible to get less replies than requests sent e.g. due to timed out
  * requests or requests that we had trouble to send out)
+ *
+ * NOTE: This function contains a potential schedule point (cond_resched()).
  */
 int ptlrpc_check_set(const struct lu_env *env, struct ptlrpc_request_set *set)
 {
@@ -1512,6 +1514,14 @@ int ptlrpc_check_set(const struct lu_env *env, struct ptlrpc_request_set *set)
 		struct obd_import *imp = req->rq_import;
 		int unregistered = 0;
 		int rc = 0;
+
+		/* This schedule point is mainly for the ptlrpcd caller of this
+		 * function.  Most ptlrpc sets are not long-lived and unbounded
+		 * in length, but at the least the set used by the ptlrpcd is.
+		 * Since the processing time is unbounded, we need to insert an
+		 * explicit schedule point to make the thread well-behaved.
+		 */
+		cond_resched();
 
 		if (req->rq_phase == RQ_PHASE_NEW &&
 		    ptlrpc_send_new_req(req)) {
@@ -2396,9 +2406,10 @@ int ptlrpc_unregister_reply(struct ptlrpc_request *request, int async)
 		}
 
 		LASSERT(rc == -ETIMEDOUT);
-		DEBUG_REQ(D_WARNING, request, "Unexpectedly long timeout "
-			  "rvcng=%d unlnk=%d", request->rq_receiving_reply,
-			  request->rq_must_unlink);
+		DEBUG_REQ(D_WARNING, request,
+			  "Unexpectedly long timeout rvcng=%d unlnk=%d/%d",
+			  request->rq_receiving_reply,
+			  request->rq_req_unlink, request->rq_reply_unlink);
 	}
 	return 0;
 }
@@ -2530,10 +2541,19 @@ EXPORT_SYMBOL(ptlrpc_cleanup_client);
 void ptlrpc_resend_req(struct ptlrpc_request *req)
 {
 	DEBUG_REQ(D_HA, req, "going to resend");
+	spin_lock(&req->rq_lock);
+
+	/* Request got reply but linked to the import list still.
+	   Let ptlrpc_check_set() to process it. */
+	if (ptlrpc_client_replied(req)) {
+		spin_unlock(&req->rq_lock);
+		DEBUG_REQ(D_HA, req, "it has reply, so skip it");
+		return;
+	}
+
 	lustre_msg_set_handle(req->rq_reqmsg, &(struct lustre_handle){ 0 });
 	req->rq_status = -EAGAIN;
 
-	spin_lock(&req->rq_lock);
 	req->rq_resend = 1;
 	req->rq_net_err = 0;
 	req->rq_timedout = 0;
@@ -3062,7 +3082,7 @@ void *ptlrpcd_alloc_work(struct obd_import *imp,
 	req->rq_interpret_reply = work_interpreter;
 	/* don't want reply */
 	req->rq_receiving_reply = 0;
-	req->rq_must_unlink = 0;
+	req->rq_req_unlink = req->rq_reply_unlink = 0;
 	req->rq_no_delay = req->rq_no_resend = 1;
 	req->rq_pill.rc_fmt = (void *)&worker_format;
 

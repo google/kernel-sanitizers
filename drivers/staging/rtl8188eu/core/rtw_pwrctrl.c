@@ -22,7 +22,111 @@
 #include <osdep_service.h>
 #include <drv_types.h>
 #include <osdep_intf.h>
+#include <usb_ops_linux.h>
 #include <linux/usb.h>
+#include <usb_osintf.h>
+
+static int rtw_hw_suspend(struct adapter *padapter)
+{
+	struct pwrctrl_priv *pwrpriv = &padapter->pwrctrlpriv;
+	struct net_device *pnetdev = padapter->pnetdev;
+
+
+	if ((!padapter->bup) || (padapter->bDriverStopped) ||
+	    (padapter->bSurpriseRemoved)) {
+		DBG_88E("padapter->bup=%d bDriverStopped=%d bSurpriseRemoved = %d\n",
+			padapter->bup, padapter->bDriverStopped,
+			padapter->bSurpriseRemoved);
+		goto error_exit;
+	}
+
+	/* system suspend */
+	LeaveAllPowerSaveMode(padapter);
+
+	DBG_88E("==> rtw_hw_suspend\n");
+	_enter_pwrlock(&pwrpriv->lock);
+	pwrpriv->bips_processing = true;
+	/* s1. */
+	if (pnetdev) {
+		netif_carrier_off(pnetdev);
+		netif_tx_stop_all_queues(pnetdev);
+	}
+
+	/* s2. */
+	rtw_disassoc_cmd(padapter, 500, false);
+
+	/* s2-2.  indicate disconnect to os */
+	{
+		struct	mlme_priv *pmlmepriv = &padapter->mlmepriv;
+
+		if (check_fwstate(pmlmepriv, _FW_LINKED)) {
+			_clr_fwstate_(pmlmepriv, _FW_LINKED);
+
+			rtw_led_control(padapter, LED_CTL_NO_LINK);
+
+			rtw_os_indicate_disconnect(padapter);
+
+			/* donnot enqueue cmd */
+			rtw_lps_ctrl_wk_cmd(padapter, LPS_CTRL_DISCONNECT, 0);
+		}
+	}
+	/* s2-3. */
+	rtw_free_assoc_resources(padapter, 1);
+
+	/* s2-4. */
+	rtw_free_network_queue(padapter, true);
+	rtw_ips_dev_unload(padapter);
+	pwrpriv->rf_pwrstate = rf_off;
+	pwrpriv->bips_processing = false;
+
+	_exit_pwrlock(&pwrpriv->lock);
+
+	return 0;
+
+error_exit:
+	DBG_88E("%s, failed\n", __func__);
+	return -1;
+}
+
+static int rtw_hw_resume(struct adapter *padapter)
+{
+	struct pwrctrl_priv *pwrpriv = &padapter->pwrctrlpriv;
+	struct net_device *pnetdev = padapter->pnetdev;
+
+
+	/* system resume */
+	DBG_88E("==> rtw_hw_resume\n");
+	_enter_pwrlock(&pwrpriv->lock);
+	pwrpriv->bips_processing = true;
+	rtw_reset_drv_sw(padapter);
+
+	if (pm_netdev_open(pnetdev, false) != 0) {
+		_exit_pwrlock(&pwrpriv->lock);
+		goto error_exit;
+	}
+
+	netif_device_attach(pnetdev);
+	netif_carrier_on(pnetdev);
+
+	if (!netif_queue_stopped(pnetdev))
+		netif_start_queue(pnetdev);
+	else
+		netif_wake_queue(pnetdev);
+
+	pwrpriv->bkeepfwalive = false;
+	pwrpriv->brfoffbyhw = false;
+
+	pwrpriv->rf_pwrstate = rf_on;
+	pwrpriv->bips_processing = false;
+
+	_exit_pwrlock(&pwrpriv->lock);
+
+
+	return 0;
+error_exit:
+	DBG_88E("%s, Open net dev failed\n", __func__);
+	return -1;
+}
 
 void ips_enter(struct adapter *padapter)
 {
@@ -100,7 +204,7 @@ int ips_leave(struct adapter *padapter)
 			}
 		}
 
-		DBG_88E("==> ips_leave.....LED(0x%08x)...\n", rtw_read32(padapter, 0x4c));
+		DBG_88E("==> ips_leave.....LED(0x%08x)...\n", usb_read32(padapter, 0x4c));
 		pwrpriv->bips_processing = false;
 
 		pwrpriv->bkeepfwalive = false;
@@ -114,7 +218,6 @@ int ips_leave(struct adapter *padapter)
 
 static bool rtw_pwr_unassociated_idle(struct adapter *adapter)
 {
-	struct adapter *buddy = adapter->pbuddy_adapter;
 	struct mlme_priv *pmlmepriv = &(adapter->mlmepriv);
 #ifdef CONFIG_88EU_P2P
 	struct wifidirect_info	*pwdinfo = &(adapter->wdinfo);
@@ -136,24 +239,6 @@ static bool rtw_pwr_unassociated_idle(struct adapter *adapter)
 #endif
 		goto exit;
 
-	/* consider buddy, if exist */
-	if (buddy) {
-		struct mlme_priv *b_pmlmepriv = &(buddy->mlmepriv);
-		#ifdef CONFIG_88EU_P2P
-		struct wifidirect_info *b_pwdinfo = &(buddy->wdinfo);
-		#endif
-
-		if (check_fwstate(b_pmlmepriv, WIFI_ASOC_STATE|WIFI_SITE_MONITOR) ||
-		    check_fwstate(b_pmlmepriv, WIFI_UNDER_LINKING|WIFI_UNDER_WPS) ||
-		    check_fwstate(b_pmlmepriv, WIFI_AP_STATE) ||
-		    check_fwstate(b_pmlmepriv, WIFI_ADHOC_MASTER_STATE|WIFI_ADHOC_STATE) ||
-#if defined(CONFIG_88EU_P2P)
-		    !rtw_p2p_chk_state(b_pwdinfo, P2P_STATE_NONE))
-#else
-		    0)
-#endif
-			goto exit;
-	}
 	ret = true;
 
 exit:
@@ -179,7 +264,6 @@ void rtw_ps_processor(struct adapter *padapter)
 			if (rfpwrstate == rf_off) {
 				pwrpriv->change_rfpwrstate = rf_off;
 				pwrpriv->brfoffbyhw = true;
-				padapter->bCardDisableWOHSM = true;
 				rtw_hw_suspend(padapter);
 			} else {
 				pwrpriv->change_rfpwrstate = rf_on;

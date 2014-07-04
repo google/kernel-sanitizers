@@ -23,7 +23,6 @@
 #include <drv_types.h>
 #include <recv_osdep.h>
 #include <mlme_osdep.h>
-#include <usb_ops.h>
 #include <wifi.h>
 #include <linux/vmalloc.h>
 
@@ -47,7 +46,7 @@ void rtw_signal_stat_timer_hdl(RTW_TIMER_HDL_ARGS);
 void _rtw_init_sta_recv_priv(struct sta_recv_priv *psta_recvpriv)
 {
 
-	_rtw_memset((u8 *)psta_recvpriv, 0, sizeof (struct sta_recv_priv));
+	memset((u8 *)psta_recvpriv, 0, sizeof (struct sta_recv_priv));
 
 	spin_lock_init(&psta_recvpriv->lock);
 
@@ -83,9 +82,9 @@ int _rtw_init_recv_priv(struct recv_priv *precvpriv, struct adapter *padapter)
 	precvframe = (struct recv_frame *)precvpriv->precv_frame_buf;
 
 	for (i = 0; i < NR_RECVFRAME; i++) {
-		_rtw_init_listhead(&(precvframe->list));
+		INIT_LIST_HEAD(&(precvframe->list));
 
-		rtw_list_insert_tail(&(precvframe->list),
+		list_add_tail(&(precvframe->list),
 				     &(precvpriv->free_recv_queue.queue));
 
 		res = rtw_os_recv_resource_alloc(padapter, precvframe);
@@ -132,7 +131,7 @@ struct recv_frame *_rtw_alloc_recvframe (struct __queue *pfree_recv_queue)
 	struct adapter *padapter;
 	struct recv_priv *precvpriv;
 
-	if (_rtw_queue_empty(pfree_recv_queue)) {
+	if (list_empty(&pfree_recv_queue->queue)) {
 		hdr = NULL;
 	} else {
 		phead = get_list_head(pfree_recv_queue);
@@ -141,7 +140,7 @@ struct recv_frame *_rtw_alloc_recvframe (struct __queue *pfree_recv_queue)
 
 		hdr = container_of(plist, struct recv_frame, list);
 
-		rtw_list_delete(&hdr->list);
+		list_del_init(&hdr->list);
 		padapter = hdr->adapter;
 		if (padapter != NULL) {
 			precvpriv = &padapter->recvpriv;
@@ -170,7 +169,7 @@ struct recv_frame *rtw_alloc_recvframe(struct __queue *pfree_recv_queue)
 void rtw_init_recvframe(struct recv_frame *precvframe, struct recv_priv *precvpriv)
 {
 	/* Perry: This can be removed */
-	_rtw_init_listhead(&precvframe->list);
+	INIT_LIST_HEAD(&precvframe->list);
 
 	precvframe->len = 0;
 }
@@ -192,11 +191,11 @@ int rtw_free_recvframe(struct recv_frame *precvframe,
 
 	spin_lock_bh(&pfree_recv_queue->lock);
 
-	rtw_list_delete(&(precvframe->list));
+	list_del_init(&(precvframe->list));
 
 	precvframe->len = 0;
 
-	rtw_list_insert_tail(&(precvframe->list), get_list_head(pfree_recv_queue));
+	list_add_tail(&(precvframe->list), get_list_head(pfree_recv_queue));
 
 	if (padapter != NULL) {
 		if (pfree_recv_queue == &precvpriv->free_recv_queue)
@@ -215,8 +214,8 @@ int _rtw_enqueue_recvframe(struct recv_frame *precvframe, struct __queue *queue)
 	struct recv_priv *precvpriv = &padapter->recvpriv;
 
 
-	rtw_list_delete(&(precvframe->list));
-	rtw_list_insert_tail(&(precvframe->list), get_list_head(queue));
+	list_del_init(&(precvframe->list));
+	list_add_tail(&(precvframe->list), get_list_head(queue));
 
 	if (padapter != NULL) {
 		if (queue == &precvpriv->free_recv_queue)
@@ -256,7 +255,7 @@ void rtw_free_recvframe_queue(struct __queue *pframequeue,  struct __queue *pfre
 	phead = get_list_head(pframequeue);
 	plist = phead->next;
 
-	while (rtw_end_of_queue_search(phead, plist) == false) {
+	while (phead != plist) {
 		hdr = container_of(plist, struct recv_frame, list);
 
 		plist = plist->next;
@@ -1040,12 +1039,12 @@ static int validate_recv_ctrl_frame(struct adapter *padapter,
 			xmitframe_phead = get_list_head(&psta->sleep_q);
 			xmitframe_plist = xmitframe_phead->next;
 
-			if ((rtw_end_of_queue_search(xmitframe_phead, xmitframe_plist)) == false) {
+			if (xmitframe_phead != xmitframe_plist) {
 				pxmitframe = container_of(xmitframe_plist, struct xmit_frame, list);
 
 				xmitframe_plist = xmitframe_plist->next;
 
-				rtw_list_delete(&pxmitframe->list);
+				list_del_init(&pxmitframe->list);
 
 				psta->sleepq_len--;
 
@@ -1455,7 +1454,7 @@ static struct recv_frame *recvframe_defrag(struct adapter *adapter,
 	plist = phead->next;
 	pfhdr = container_of(plist, struct recv_frame, list);
 	prframe = (struct recv_frame *)pfhdr;
-	rtw_list_delete(&(prframe->list));
+	list_del_init(&(prframe->list));
 
 	if (curfragnum != pfhdr->attrib.frag_num) {
 		/* the first fragment number must be 0 */
@@ -1472,7 +1471,7 @@ static struct recv_frame *recvframe_defrag(struct adapter *adapter,
 
 	plist = plist->next;
 
-	while (rtw_end_of_queue_search(phead, plist) == false) {
+	while (phead != plist) {
 		pnfhdr = container_of(plist, struct recv_frame, list);
 		pnextrframe = (struct recv_frame *)pnfhdr;
 
@@ -1564,7 +1563,7 @@ struct recv_frame *recvframe_chk_defrag(struct adapter *padapter,
 		if (pdefrag_q != NULL) {
 			if (fragnum == 0) {
 				/* the first fragment */
-				if (_rtw_queue_empty(pdefrag_q) == false) {
+				if (!list_empty(&pdefrag_q->queue)) {
 					/* free current defrag_q */
 					rtw_free_recvframe_queue(pdefrag_q, pfree_recv_queue);
 				}
@@ -1573,7 +1572,7 @@ struct recv_frame *recvframe_chk_defrag(struct adapter *padapter,
 			/* Then enqueue the 0~(n-1) fragment into the defrag_q */
 
 			phead = get_list_head(pdefrag_q);
-			rtw_list_insert_tail(&pfhdr->list, phead);
+			list_add_tail(&pfhdr->list, phead);
 
 			RT_TRACE(_module_rtl871x_recv_c_, _drv_info_, ("Enqueuq: ismfrag=%d, fragnum=%d\n", ismfrag, fragnum));
 
@@ -1591,7 +1590,7 @@ struct recv_frame *recvframe_chk_defrag(struct adapter *padapter,
 		/* enqueue the last fragment */
 		if (pdefrag_q != NULL) {
 			phead = get_list_head(pdefrag_q);
-			rtw_list_insert_tail(&pfhdr->list, phead);
+			list_add_tail(&pfhdr->list, phead);
 
 			/* call recvframe_defrag to defrag */
 			RT_TRACE(_module_rtl871x_recv_c_, _drv_info_, ("defrag: ismfrag=%d, fragnum=%d\n", ismfrag, fragnum));
@@ -1645,7 +1644,7 @@ static int amsdu_to_msdu(struct adapter *padapter, struct recv_frame *prframe)
 
 	while (a_len > ETH_HLEN) {
 		/* Offset 12 denote 2 mac address */
-		nSubframe_Length = RTW_GET_BE16(pdata + 12);
+		nSubframe_Length = get_unaligned_be16(pdata + 12);
 
 		if (a_len < (ETHERNET_HEADER_SIZE + nSubframe_Length)) {
 			DBG_88E("nRemain_Length is %d and nSubframe_Length is : %d\n", a_len, nSubframe_Length);
@@ -1700,7 +1699,7 @@ static int amsdu_to_msdu(struct adapter *padapter, struct recv_frame *prframe)
 	for (i = 0; i < nr_subframes; i++) {
 		sub_skb = subframes[i];
 		/* convert hdr + possible LLC headers into Ethernet header */
-		eth_type = RTW_GET_BE16(&sub_skb->data[6]);
+		eth_type = get_unaligned_be16(&sub_skb->data[6]);
 		if (sub_skb->len >= 8 &&
 		    ((!memcmp(sub_skb->data, rtw_rfc1042_header, SNAP_SIZE) &&
 			  eth_type != ETH_P_AARP && eth_type != ETH_P_IPX) ||
@@ -1778,7 +1777,7 @@ static int enqueue_reorder_recvframe(struct recv_reorder_ctrl *preorder_ctrl,
 	phead = get_list_head(ppending_recvframe_queue);
 	plist = phead->next;
 
-	while (rtw_end_of_queue_search(phead, plist) == false) {
+	while (phead != plist) {
 		hdr = container_of(plist, struct recv_frame, list);
 		pnextattrib = &hdr->attrib;
 
@@ -1790,9 +1789,9 @@ static int enqueue_reorder_recvframe(struct recv_reorder_ctrl *preorder_ctrl,
 			break;
 	}
 
-	rtw_list_delete(&(prframe->list));
+	list_del_init(&(prframe->list));
 
-	rtw_list_insert_tail(&(prframe->list), plist);
+	list_add_tail(&(prframe->list), plist);
 	return true;
 }
 
@@ -1811,7 +1810,7 @@ static int recv_indicatepkts_in_order(struct adapter *padapter, struct recv_reor
 
 	/*  Handling some condition for forced indicate case. */
 	if (bforced) {
-		if (rtw_is_list_empty(phead))
+		if (list_empty(phead))
 			return true;
 
 		prhdr = container_of(plist, struct recv_frame, list);
@@ -1821,7 +1820,7 @@ static int recv_indicatepkts_in_order(struct adapter *padapter, struct recv_reor
 
 	/*  Prepare indication list and indication. */
 	/*  Check if there is any packet need indicate. */
-	while (!rtw_is_list_empty(phead)) {
+	while (!list_empty(phead)) {
 		prhdr = container_of(plist, struct recv_frame, list);
 		prframe = (struct recv_frame *)prhdr;
 		pattrib = &prframe->attrib;
@@ -1831,7 +1830,7 @@ static int recv_indicatepkts_in_order(struct adapter *padapter, struct recv_reor
 				 ("recv_indicatepkts_in_order: indicate=%d seq=%d amsdu=%d\n",
 				  preorder_ctrl->indicate_seq, pattrib->seq_num, pattrib->amsdu));
 			plist = plist->next;
-			rtw_list_delete(&(prframe->list));
+			list_del_init(&(prframe->list));
 
 			if (SN_EQUAL(preorder_ctrl->indicate_seq, pattrib->seq_num))
 				preorder_ctrl->indicate_seq = (preorder_ctrl->indicate_seq + 1) & 0xFFF;

@@ -35,7 +35,6 @@
 #define __MAC_H__
 
 #include "device.h"
-#include "tmacro.h"
 
 #define REV_ID_VT3253_A0    0x00
 #define REV_ID_VT3253_A1    0x01
@@ -414,20 +413,20 @@ struct vnt_mac_set_key {
 	u8 key[WLAN_KEY_LEN_CCMP];
 } __packed;
 
-void MACvWriteMultiAddr(struct vnt_private *, u64);
-void MACbShutdown(struct vnt_private *);
-void MACvSetBBType(struct vnt_private *, u8);
-void MACvDisableKeyEntry(struct vnt_private *, u8);
-void MACvSetKeyEntry(struct vnt_private *, u16, u32, u32, u8 *, u8 *);
-void MACvRegBitsOff(struct vnt_private *, u8, u8);
-void MACvRegBitsOn(struct vnt_private *, u8, u8);
-void MACvWriteWord(struct vnt_private *, u8, u16);
-void MACvWriteBSSIDAddress(struct vnt_private *, u8 *);
-void MACvEnableProtectMD(struct vnt_private *);
-void MACvDisableProtectMD(struct vnt_private *);
-void MACvEnableBarkerPreambleMd(struct vnt_private *);
-void MACvDisableBarkerPreambleMd(struct vnt_private *);
-void MACvWriteBeaconInterval(struct vnt_private *, u16);
+void vnt_mac_set_filter(struct vnt_private *, u64);
+void vnt_mac_shutdown(struct vnt_private *);
+void vnt_mac_set_bb_type(struct vnt_private *, u8);
+void vnt_mac_disable_keyentry(struct vnt_private *, u8);
+void vnt_mac_set_keyentry(struct vnt_private *, u16, u32, u32, u8 *, u8 *);
+void vnt_mac_reg_bits_off(struct vnt_private *, u8, u8);
+void vnt_mac_reg_bits_on(struct vnt_private *, u8, u8);
+void vnt_mac_write_word(struct vnt_private *, u8, u16);
+void vnt_mac_set_bssid_addr(struct vnt_private *, u8 *);
+void vnt_mac_enable_protect_mode(struct vnt_private *);
+void vnt_mac_disable_protect_mode(struct vnt_private *);
+void vnt_mac_enable_barker_preamble_mode(struct vnt_private *);
+void vnt_mac_disable_barker_preamble_mode(struct vnt_private *);
+void vnt_mac_set_beacon_interval(struct vnt_private *, u16);
 void vnt_mac_set_led(struct vnt_private *priv, u8, u8);
 
 #endif /* __MAC_H__ */
