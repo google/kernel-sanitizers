@@ -211,6 +211,10 @@ static int sunxi_pctrl_dt_node_to_map(struct pinctrl_dev *pctldev,
 			configlen++;
 
 		pinconfig = kzalloc(configlen * sizeof(*pinconfig), GFP_KERNEL);
+		if (!pinconfig) {
+			kfree(*map);
+			return -ENOMEM;
+		}
 
 		if (!of_property_read_u32(node, "allwinner,drive", &val)) {
 			u16 strength = (val + 1) * 10;
@@ -573,26 +577,14 @@ static int sunxi_pinctrl_irq_set_type(struct irq_data *d,
 	return 0;
 }
 
-static void sunxi_pinctrl_irq_mask_ack(struct irq_data *d)
+static void sunxi_pinctrl_irq_ack(struct irq_data *d)
 {
 	struct sunxi_pinctrl *pctl = irq_data_get_irq_chip_data(d);
-	u32 ctrl_reg = sunxi_irq_ctrl_reg(d->hwirq);
-	u8 ctrl_idx = sunxi_irq_ctrl_offset(d->hwirq);
 	u32 status_reg = sunxi_irq_status_reg(d->hwirq);
 	u8 status_idx = sunxi_irq_status_offset(d->hwirq);
-	unsigned long flags;
-	u32 val;
-
-	spin_lock_irqsave(&pctl->lock, flags);
-
-	/* Mask the IRQ */
-	val = readl(pctl->membase + ctrl_reg);
-	writel(val & ~(1 << ctrl_idx), pctl->membase + ctrl_reg);
 
 	/* Clear the IRQ */
 	writel(1 << status_idx, pctl->membase + status_reg);
-
-	spin_unlock_irqrestore(&pctl->lock, flags);
 }
 
 static void sunxi_pinctrl_irq_mask(struct irq_data *d)
@@ -638,8 +630,8 @@ static void sunxi_pinctrl_irq_unmask(struct irq_data *d)
 }
 
 static struct irq_chip sunxi_pinctrl_irq_chip = {
+	.irq_ack	= sunxi_pinctrl_irq_ack,
 	.irq_mask	= sunxi_pinctrl_irq_mask,
-	.irq_mask_ack	= sunxi_pinctrl_irq_mask_ack,
 	.irq_unmask	= sunxi_pinctrl_irq_unmask,
 	.irq_set_type	= sunxi_pinctrl_irq_set_type,
 };
@@ -648,17 +640,28 @@ static void sunxi_pinctrl_irq_handler(unsigned irq, struct irq_desc *desc)
 {
 	struct irq_chip *chip = irq_get_chip(irq);
 	struct sunxi_pinctrl *pctl = irq_get_handler_data(irq);
-	const unsigned long reg = readl(pctl->membase + IRQ_STATUS_REG);
+	unsigned long bank, reg, val;
+
+	for (bank = 0; bank < pctl->desc->irq_banks; bank++)
+		if (irq == pctl->irq[bank])
+			break;
+
+	if (bank == pctl->desc->irq_banks)
+		return;
+
+	reg = sunxi_irq_status_reg_from_bank(bank);
+	val = readl(pctl->membase + reg);
 
 	/* Clear all interrupts */
-	writel(reg, pctl->membase + IRQ_STATUS_REG);
+	writel(val, pctl->membase + reg);
 
-	if (reg) {
+	if (val) {
 		int irqoffset;
 
 		chained_irq_enter(chip, desc);
-		for_each_set_bit(irqoffset, &reg, SUNXI_IRQ_NUMBER) {
-			int pin_irq = irq_find_mapping(pctl->domain, irqoffset);
+		for_each_set_bit(irqoffset, &val, IRQ_PER_BANK) {
+			int pin_irq = irq_find_mapping(pctl->domain,
+						       bank * IRQ_PER_BANK + irqoffset);
 			generic_handle_irq(pin_irq);
 		}
 		chained_irq_exit(chip, desc);
@@ -726,8 +729,11 @@ static int sunxi_pinctrl_build_state(struct platform_device *pdev)
 
 		while (func->name) {
 			/* Create interrupt mapping while we're at it */
-			if (!strcmp(func->name, "irq"))
-				pctl->irq_array[func->irqnum] = pin->pin.number;
+			if (!strcmp(func->name, "irq")) {
+				int irqnum = func->irqnum + func->irqbank * IRQ_PER_BANK;
+				pctl->irq_array[irqnum] = pin->pin.number;
+			}
+
 			sunxi_pinctrl_add_function(pctl, func->name);
 			func++;
 		}
@@ -796,6 +802,13 @@ int sunxi_pinctrl_init(struct platform_device *pdev,
 
 	pctl->dev = &pdev->dev;
 	pctl->desc = desc;
+
+	pctl->irq_array = devm_kcalloc(&pdev->dev,
+				       IRQ_PER_BANK * pctl->desc->irq_banks,
+				       sizeof(*pctl->irq_array),
+				       GFP_KERNEL);
+	if (!pctl->irq_array)
+		return -ENOMEM;
 
 	ret = sunxi_pinctrl_build_state(pdev);
 	if (ret) {
@@ -881,21 +894,34 @@ int sunxi_pinctrl_init(struct platform_device *pdev,
 	if (ret)
 		goto gpiochip_error;
 
-	pctl->irq = irq_of_parse_and_map(node, 0);
+	pctl->irq = devm_kcalloc(&pdev->dev,
+				 pctl->desc->irq_banks,
+				 sizeof(*pctl->irq),
+				 GFP_KERNEL);
 	if (!pctl->irq) {
-		ret = -EINVAL;
+		ret = -ENOMEM;
 		goto clk_error;
 	}
 
-	pctl->domain = irq_domain_add_linear(node, SUNXI_IRQ_NUMBER,
-					     &irq_domain_simple_ops, NULL);
+	for (i = 0; i < pctl->desc->irq_banks; i++) {
+		pctl->irq[i] = platform_get_irq(pdev, i);
+		if (pctl->irq[i] < 0) {
+			ret = pctl->irq[i];
+			goto clk_error;
+		}
+	}
+
+	pctl->domain = irq_domain_add_linear(node,
+					     pctl->desc->irq_banks * IRQ_PER_BANK,
+					     &irq_domain_simple_ops,
+					     NULL);
 	if (!pctl->domain) {
 		dev_err(&pdev->dev, "Couldn't register IRQ domain\n");
 		ret = -ENOMEM;
 		goto clk_error;
 	}
 
-	for (i = 0; i < SUNXI_IRQ_NUMBER; i++) {
+	for (i = 0; i < (pctl->desc->irq_banks * IRQ_PER_BANK); i++) {
 		int irqno = irq_create_mapping(pctl->domain, i);
 
 		irq_set_chip_and_handler(irqno, &sunxi_pinctrl_irq_chip,
@@ -903,8 +929,11 @@ int sunxi_pinctrl_init(struct platform_device *pdev,
 		irq_set_chip_data(irqno, pctl);
 	};
 
-	irq_set_chained_handler(pctl->irq, sunxi_pinctrl_irq_handler);
-	irq_set_handler_data(pctl->irq, pctl);
+	for (i = 0; i < pctl->desc->irq_banks; i++) {
+		irq_set_chained_handler(pctl->irq[i],
+					sunxi_pinctrl_irq_handler);
+		irq_set_handler_data(pctl->irq[i], pctl);
+	}
 
 	dev_info(&pdev->dev, "initialized sunXi PIO driver\n");
 
