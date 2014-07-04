@@ -461,7 +461,7 @@
 	};
 
 	pwm@139D0000 {
-		compatible = "samsung,s5p6440-pwm";
+		compatible = "samsung,exynos4210-pwm";
 		status = "okay";
 	};
 
