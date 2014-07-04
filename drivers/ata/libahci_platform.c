@@ -250,8 +250,13 @@ struct ahci_host_priv *ahci_platform_get_resources(struct platform_device *pdev)
 	if (IS_ERR(hpriv->phy)) {
 		rc = PTR_ERR(hpriv->phy);
 		switch (rc) {
-		case -ENODEV:
 		case -ENOSYS:
+			/* No PHY support. Check if PHY is required. */
+			if (of_find_property(dev->of_node, "phys", NULL)) {
+				dev_err(dev, "couldn't get sata-phy: ENOSYS\n");
+				goto err_out;
+			}
+		case -ENODEV:
 			/* continue normally */
 			hpriv->phy = NULL;
 			break;
@@ -362,6 +367,19 @@ int ahci_platform_init_host(struct platform_device *pdev,
 		/* disabled/not-implemented port */
 		if (!(hpriv->port_map & (1 << i)))
 			ap->ops = &ata_dummy_port_ops;
+	}
+
+	if (hpriv->cap & HOST_CAP_64) {
+		rc = dma_coerce_mask_and_coherent(dev, DMA_BIT_MASK(64));
+		if (rc) {
+			rc = dma_coerce_mask_and_coherent(dev,
+							  DMA_BIT_MASK(32));
+			if (rc) {
+				dev_err(dev, "Failed to enable 64-bit DMA.\n");
+				return rc;
+			}
+			dev_warn(dev, "Enable 32-bit DMA instead of 64-bit.\n");
+		}
 	}
 
 	rc = ahci_reset_controller(host);
