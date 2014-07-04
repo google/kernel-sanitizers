@@ -33,6 +33,7 @@
 #define RCU_KTHREAD_PRIO 1
 
 #ifdef CONFIG_RCU_BOOST
+#include "../locking/rtmutex_common.h"
 #define RCU_BOOST_PRIO CONFIG_RCU_BOOST_PRIO
 #else
 #define RCU_BOOST_PRIO RCU_KTHREAD_PRIO
@@ -336,7 +337,7 @@ void rcu_read_unlock_special(struct task_struct *t)
 	unsigned long flags;
 	struct list_head *np;
 #ifdef CONFIG_RCU_BOOST
-	struct rt_mutex *rbmp = NULL;
+	bool drop_boost_mutex = false;
 #endif /* #ifdef CONFIG_RCU_BOOST */
 	struct rcu_node *rnp;
 	int special;
@@ -398,11 +399,8 @@ void rcu_read_unlock_special(struct task_struct *t)
 #ifdef CONFIG_RCU_BOOST
 		if (&t->rcu_node_entry == rnp->boost_tasks)
 			rnp->boost_tasks = np;
-		/* Snapshot/clear ->rcu_boost_mutex with rcu_node lock held. */
-		if (t->rcu_boost_mutex) {
-			rbmp = t->rcu_boost_mutex;
-			t->rcu_boost_mutex = NULL;
-		}
+		/* Snapshot ->boost_mtx ownership with rcu_node lock held. */
+		drop_boost_mutex = rt_mutex_owner(&rnp->boost_mtx) == t;
 #endif /* #ifdef CONFIG_RCU_BOOST */
 
 		/*
@@ -427,8 +425,10 @@ void rcu_read_unlock_special(struct task_struct *t)
 
 #ifdef CONFIG_RCU_BOOST
 		/* Unboost if we were boosted. */
-		if (rbmp)
-			rt_mutex_unlock(rbmp);
+		if (drop_boost_mutex) {
+			rt_mutex_unlock(&rnp->boost_mtx);
+			complete(&rnp->boost_completion);
+		}
 #endif /* #ifdef CONFIG_RCU_BOOST */
 
 		/*
@@ -988,6 +988,7 @@ static int rcu_preempt_blocked_readers_cgp(struct rcu_node *rnp)
 
 /* Because preemptible RCU does not exist, no quieting of tasks. */
 static void rcu_report_unblock_qs_rnp(struct rcu_node *rnp, unsigned long flags)
+	__releases(rnp->lock)
 {
 	raw_spin_unlock_irqrestore(&rnp->lock, flags);
 }
@@ -1149,7 +1150,6 @@ static void rcu_wake_cond(struct task_struct *t, int status)
 static int rcu_boost(struct rcu_node *rnp)
 {
 	unsigned long flags;
-	struct rt_mutex mtx;
 	struct task_struct *t;
 	struct list_head *tb;
 
@@ -1200,11 +1200,15 @@ static int rcu_boost(struct rcu_node *rnp)
 	 * section.
 	 */
 	t = container_of(tb, struct task_struct, rcu_node_entry);
-	rt_mutex_init_proxy_locked(&mtx, t);
-	t->rcu_boost_mutex = &mtx;
+	rt_mutex_init_proxy_locked(&rnp->boost_mtx, t);
+	init_completion(&rnp->boost_completion);
 	raw_spin_unlock_irqrestore(&rnp->lock, flags);
-	rt_mutex_lock(&mtx);  /* Side effect: boosts task t's priority. */
-	rt_mutex_unlock(&mtx);  /* Keep lockdep happy. */
+	/* Lock only for side effect: boosts task t's priority. */
+	rt_mutex_lock(&rnp->boost_mtx);
+	rt_mutex_unlock(&rnp->boost_mtx);  /* Then keep lockdep happy. */
+
+	/* Wait for boostee to be done w/boost_mtx before reinitializing. */
+	wait_for_completion(&rnp->boost_completion);
 
 	return ACCESS_ONCE(rnp->exp_tasks) != NULL ||
 	       ACCESS_ONCE(rnp->boost_tasks) != NULL;
@@ -1256,6 +1260,7 @@ static int rcu_boost_kthread(void *arg)
  * about it going away.
  */
 static void rcu_initiate_boost(struct rcu_node *rnp, unsigned long flags)
+	__releases(rnp->lock)
 {
 	struct task_struct *t;
 
@@ -1491,6 +1496,7 @@ static void rcu_prepare_kthreads(int cpu)
 #else /* #ifdef CONFIG_RCU_BOOST */
 
 static void rcu_initiate_boost(struct rcu_node *rnp, unsigned long flags)
+	__releases(rnp->lock)
 {
 	raw_spin_unlock_irqrestore(&rnp->lock, flags);
 }
@@ -2220,6 +2226,8 @@ static int rcu_nocb_kthread(void *arg)
 {
 	int c, cl;
 	bool firsttime = 1;
+	unsigned long gp_next_start = jiffies;
+	unsigned long j;
 	struct rcu_head *list;
 	struct rcu_head *next;
 	struct rcu_head **tail;
@@ -2227,6 +2235,11 @@ static int rcu_nocb_kthread(void *arg)
 
 	/* Each pass through this loop invokes one batch of callbacks */
 	for (;;) {
+		/* Avoid excessive wakeups due to short grace periods. */
+		j = jiffies;
+		if (time_before(j, gp_next_start))
+			schedule_timeout_uninterruptible(gp_next_start - j);
+
 		/* If not polling, wait for next batch of callbacks. */
 		if (!rcu_nocb_poll) {
 			trace_rcu_nocb_wake(rdp->rsp->name, rdp->cpu,
@@ -2250,6 +2263,14 @@ static int rcu_nocb_kthread(void *arg)
 		firsttime = 1;
 		trace_rcu_nocb_wake(rdp->rsp->name, rdp->cpu,
 				    TPS("WokeNonEmpty"));
+		/*
+		 * Time of next grace-period start.  The idea is that
+		 * we are willing to take a jiffies_till_next_fqs delay
+		 * if any CPUs are idle, so we should be willing to take
+		 * a similar delay when all are busy context-switching
+		 * their little brains out.
+		 */
+		gp_next_start = jiffies + read_jiffies_till_next_fqs();
 
 		/*
 		 * Extract queued callbacks, update counts, and wait
@@ -2259,8 +2280,8 @@ static int rcu_nocb_kthread(void *arg)
 		tail = xchg(&rdp->nocb_tail, &rdp->nocb_head);
 		c = atomic_long_xchg(&rdp->nocb_q_count, 0);
 		cl = atomic_long_xchg(&rdp->nocb_q_count_lazy, 0);
-		ACCESS_ONCE(rdp->nocb_p_count) += c;
-		ACCESS_ONCE(rdp->nocb_p_count_lazy) += cl;
+		rdp->nocb_p_count += c;
+		rdp->nocb_p_count_lazy += cl;
 		rcu_nocb_wait_gp(rdp);
 
 		/* Each pass through the following loop invokes a callback. */
@@ -2404,7 +2425,7 @@ static bool init_nocb_callback_list(struct rcu_data *rdp)
  * if an adaptive-ticks CPU is failing to respond to the current grace
  * period and has not be idle from an RCU perspective, kick it.
  */
-static void rcu_kick_nohz_cpu(int cpu)
+static void __maybe_unused rcu_kick_nohz_cpu(int cpu)
 {
 #ifdef CONFIG_NO_HZ_FULL
 	if (tick_nohz_full_cpu(cpu))
@@ -2843,12 +2864,16 @@ static bool rcu_nohz_full_cpu(struct rcu_state *rsp)
  */
 static void rcu_bind_gp_kthread(void)
 {
-#ifdef CONFIG_NO_HZ_FULL
-	int cpu = ACCESS_ONCE(tick_do_timer_cpu);
+	int __maybe_unused cpu;
 
-	if (cpu < 0 || cpu >= nr_cpu_ids)
+	if (!tick_nohz_full_enabled())
 		return;
-	if (raw_smp_processor_id() != cpu)
+#ifdef CONFIG_NO_HZ_FULL_SYSIDLE
+	cpu = tick_do_timer_cpu;
+	if (cpu >= 0 && cpu < nr_cpu_ids && raw_smp_processor_id() != cpu)
 		set_cpus_allowed_ptr(current, cpumask_of(cpu));
-#endif /* #ifdef CONFIG_NO_HZ_FULL */
+#else /* #ifdef CONFIG_NO_HZ_FULL_SYSIDLE */
+	if (!is_housekeeping_cpu(raw_smp_processor_id()))
+		housekeeping_affine(current);
+#endif /* #else #ifdef CONFIG_NO_HZ_FULL_SYSIDLE */
 }

@@ -99,21 +99,25 @@ static inline void debug_rcu_head_unqueue(struct rcu_head *head)
 
 void kfree(const void *);
 
+/*
+ * Reclaim the specified callback, either by invoking it (non-lazy case)
+ * or freeing it directly (lazy case).  Return true if lazy, false otherwise.
+ */
 static inline bool __rcu_reclaim(const char *rn, struct rcu_head *head)
 {
 	unsigned long offset = (unsigned long)head->func;
 
-	rcu_lock_acquire(&rcu_callback_map);
+	__rcu_lock_acquire(&rcu_callback_map, _THIS_IP_);
 	if (__is_kfree_rcu_offset(offset)) {
 		RCU_TRACE(trace_rcu_invoke_kfree_callback(rn, head, offset));
 		kfree((void *)head - offset);
-		rcu_lock_release(&rcu_callback_map);
-		return 1;
+		__rcu_lock_release(&rcu_callback_map, _THIS_IP_);
+		return true;
 	} else {
 		RCU_TRACE(trace_rcu_invoke_callback(rn, head));
 		head->func(head);
-		rcu_lock_release(&rcu_callback_map);
-		return 0;
+		__rcu_lock_release(&rcu_callback_map, _THIS_IP_);
+		return false;
 	}
 }
 

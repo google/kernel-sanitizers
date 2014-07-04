@@ -44,7 +44,6 @@
 #include <linux/debugobjects.h>
 #include <linux/bug.h>
 #include <linux/compiler.h>
-#include <linux/percpu.h>
 #include <asm/barrier.h>
 
 extern int rcu_expedited; /* for sysctl */
@@ -300,41 +299,6 @@ bool __rcu_is_watching(void);
 #endif /* #if defined(CONFIG_DEBUG_LOCK_ALLOC) || defined(CONFIG_RCU_TRACE) || defined(CONFIG_SMP) */
 
 /*
- * Hooks for cond_resched() and friends to avoid RCU CPU stall warnings.
- */
-
-#define RCU_COND_RESCHED_LIM 256	/* ms vs. 100s of ms. */
-DECLARE_PER_CPU(int, rcu_cond_resched_count);
-void rcu_resched(void);
-
-/*
- * Is it time to report RCU quiescent states?
- *
- * Note unsynchronized access to rcu_cond_resched_count.  Yes, we might
- * increment some random CPU's count, and possibly also load the result from
- * yet another CPU's count.  We might even clobber some other CPU's attempt
- * to zero its counter.  This is all OK because the goal is not precision,
- * but rather reasonable amortization of rcu_note_context_switch() overhead
- * and extremely high probability of avoiding RCU CPU stall warnings.
- * Note that this function has to be preempted in just the wrong place,
- * many thousands of times in a row, for anything bad to happen.
- */
-static inline bool rcu_should_resched(void)
-{
-	return raw_cpu_inc_return(rcu_cond_resched_count) >=
-	       RCU_COND_RESCHED_LIM;
-}
-
-/*
- * Report quiscent states to RCU if it is time to do so.
- */
-static inline void rcu_cond_resched(void)
-{
-	if (unlikely(rcu_should_resched()))
-		rcu_resched();
-}
-
-/*
  * Infrastructure to implement the synchronize_() primitives in
  * TREE_RCU and rcu_barrier_() primitives in TINY_RCU.
  */
@@ -358,9 +322,19 @@ void wait_rcu_gp(call_rcu_func_t crf);
  * initialization.
  */
 #ifdef CONFIG_DEBUG_OBJECTS_RCU_HEAD
+void init_rcu_head(struct rcu_head *head);
+void destroy_rcu_head(struct rcu_head *head);
 void init_rcu_head_on_stack(struct rcu_head *head);
 void destroy_rcu_head_on_stack(struct rcu_head *head);
 #else /* !CONFIG_DEBUG_OBJECTS_RCU_HEAD */
+static inline void init_rcu_head(struct rcu_head *head)
+{
+}
+
+static inline void destroy_rcu_head(struct rcu_head *head)
+{
+}
+
 static inline void init_rcu_head_on_stack(struct rcu_head *head)
 {
 }
@@ -381,21 +355,28 @@ static inline bool rcu_lockdep_current_cpu_online(void)
 
 #ifdef CONFIG_DEBUG_LOCK_ALLOC
 
-static inline void rcu_lock_acquire(struct lockdep_map *map)
-{
-	lock_acquire(map, 0, 0, 2, 0, NULL, _THIS_IP_);
-}
-
-static inline void rcu_lock_release(struct lockdep_map *map)
-{
-	lock_release(map, 1, _THIS_IP_);
-}
-
 extern struct lockdep_map rcu_lock_map;
 extern struct lockdep_map rcu_bh_lock_map;
 extern struct lockdep_map rcu_sched_lock_map;
 extern struct lockdep_map rcu_callback_map;
 int debug_lockdep_rcu_enabled(void);
+
+static inline void __rcu_lock_acquire(struct lockdep_map *map, unsigned long ip)
+{
+	lock_acquire(map, 0, 0, 2, 0, NULL, ip);
+}
+
+static inline void __rcu_lock_release(struct lockdep_map *map, unsigned long ip)
+{
+	lock_release(map, 1, ip);
+}
+
+extern void rcu_lock_acquire(void);
+extern void rcu_lock_release(void);
+extern void rcu_lock_acquire_bh(void);
+extern void rcu_lock_release_bh(void);
+extern void rcu_lock_acquire_sched(void);
+extern void rcu_lock_release_sched(void);
 
 /**
  * rcu_read_lock_held() - might we be in RCU read-side critical section?
@@ -489,8 +470,15 @@ static inline int rcu_read_lock_sched_held(void)
 
 #else /* #ifdef CONFIG_DEBUG_LOCK_ALLOC */
 
-# define rcu_lock_acquire(a)		do { } while (0)
-# define rcu_lock_release(a)		do { } while (0)
+#define __rcu_lock_acquire(map, ip)	do { } while (0)
+#define __rcu_lock_release(map, ip)	do { } while (0)
+
+#define rcu_lock_acquire()		do { } while (0)
+#define rcu_lock_release()		do { } while (0)
+#define rcu_lock_acquire_bh()		do { } while (0)
+#define rcu_lock_release_bh()		do { } while (0)
+#define rcu_lock_acquire_sched()	do { } while (0)
+#define rcu_lock_release_sched()	do { } while (0)
 
 static inline int rcu_read_lock_held(void)
 {
@@ -706,7 +694,7 @@ static inline void rcu_preempt_sleep_check(void)
  * annotated as __rcu.
  */
 #define rcu_dereference_check(p, c) \
-	__rcu_dereference_check((p), rcu_read_lock_held() || (c), __rcu)
+	__rcu_dereference_check((p), (c) || rcu_read_lock_held(), __rcu)
 
 /**
  * rcu_dereference_bh_check() - rcu_dereference_bh with debug checking
@@ -716,7 +704,7 @@ static inline void rcu_preempt_sleep_check(void)
  * This is the RCU-bh counterpart to rcu_dereference_check().
  */
 #define rcu_dereference_bh_check(p, c) \
-	__rcu_dereference_check((p), rcu_read_lock_bh_held() || (c), __rcu)
+	__rcu_dereference_check((p), (c) || rcu_read_lock_bh_held(), __rcu)
 
 /**
  * rcu_dereference_sched_check() - rcu_dereference_sched with debug checking
@@ -726,7 +714,7 @@ static inline void rcu_preempt_sleep_check(void)
  * This is the RCU-sched counterpart to rcu_dereference_check().
  */
 #define rcu_dereference_sched_check(p, c) \
-	__rcu_dereference_check((p), rcu_read_lock_sched_held() || (c), \
+	__rcu_dereference_check((p), (c) || rcu_read_lock_sched_held(), \
 				__rcu)
 
 #define rcu_dereference_raw(p) rcu_dereference_check(p, 1) /*@@@ needed? @@@*/
@@ -852,23 +840,20 @@ static inline void rcu_preempt_sleep_check(void)
  * read-side critical section that would block in a !PREEMPT kernel.
  * But if you want the full story, read on!
  *
- * In non-preemptible RCU implementations (TREE_RCU and TINY_RCU), it
- * is illegal to block while in an RCU read-side critical section.  In
- * preemptible RCU implementations (TREE_PREEMPT_RCU and TINY_PREEMPT_RCU)
- * in CONFIG_PREEMPT kernel builds, RCU read-side critical sections may
- * be preempted, but explicit blocking is illegal.  Finally, in preemptible
- * RCU implementations in real-time (with -rt patchset) kernel builds,
- * RCU read-side critical sections may be preempted and they may also
- * block, but only when acquiring spinlocks that are subject to priority
- * inheritance.
+ * In non-preemptible RCU implementations (TREE_RCU and TINY_RCU),
+ * it is illegal to block while in an RCU read-side critical section.
+ * In preemptible RCU implementations (TREE_PREEMPT_RCU) in CONFIG_PREEMPT
+ * kernel builds, RCU read-side critical sections may be preempted,
+ * but explicit blocking is illegal.  Finally, in preemptible RCU
+ * implementations in real-time (with -rt patchset) kernel builds, RCU
+ * read-side critical sections may be preempted and they may also block, but
+ * only when acquiring spinlocks that are subject to priority inheritance.
  */
 static inline void rcu_read_lock(void)
 {
 	__rcu_read_lock();
 	__acquire(RCU);
-	rcu_lock_acquire(&rcu_lock_map);
-	rcu_lockdep_assert(rcu_is_watching(),
-			   "rcu_read_lock() used illegally while idle");
+	rcu_lock_acquire();
 }
 
 /*
@@ -884,13 +869,39 @@ static inline void rcu_read_lock(void)
 /**
  * rcu_read_unlock() - marks the end of an RCU read-side critical section.
  *
+ * In most situations, rcu_read_unlock() is immune from deadlock.
+ * However, in kernels built with CONFIG_RCU_BOOST, rcu_read_unlock()
+ * is responsible for deboosting, which it does via rt_mutex_unlock().
+ * Unfortunately, this function acquires the scheduler's runqueue and
+ * priority-inheritance spinlocks.  This means that deadlock could result
+ * if the caller of rcu_read_unlock() already holds one of these locks or
+ * any lock that is ever acquired while holding them.
+ *
+ * That said, RCU readers are never priority boosted unless they were
+ * preempted.  Therefore, one way to avoid deadlock is to make sure
+ * that preemption never happens within any RCU read-side critical
+ * section whose outermost rcu_read_unlock() is called with one of
+ * rt_mutex_unlock()'s locks held.  Such preemption can be avoided in
+ * a number of ways, for example, by invoking preempt_disable() before
+ * critical section's outermost rcu_read_lock().
+ *
+ * Given that the set of locks acquired by rt_mutex_unlock() might change
+ * at any time, a somewhat more future-proofed approach is to make sure
+ * that that preemption never happens within any RCU read-side critical
+ * section whose outermost rcu_read_unlock() is called with irqs disabled.
+ * This approach relies on the fact that rt_mutex_unlock() currently only
+ * acquires irq-disabled locks.
+ *
+ * The second of these two approaches is best in most situations,
+ * however, the first approach can also be useful, at least to those
+ * developers willing to keep abreast of the set of locks acquired by
+ * rt_mutex_unlock().
+ *
  * See rcu_read_lock() for more information.
  */
 static inline void rcu_read_unlock(void)
 {
-	rcu_lockdep_assert(rcu_is_watching(),
-			   "rcu_read_unlock() used illegally while idle");
-	rcu_lock_release(&rcu_lock_map);
+	rcu_lock_release();
 	__release(RCU);
 	__rcu_read_unlock();
 }
@@ -916,9 +927,7 @@ static inline void rcu_read_lock_bh(void)
 {
 	local_bh_disable();
 	__acquire(RCU_BH);
-	rcu_lock_acquire(&rcu_bh_lock_map);
-	rcu_lockdep_assert(rcu_is_watching(),
-			   "rcu_read_lock_bh() used illegally while idle");
+	rcu_lock_acquire_bh();
 }
 
 /*
@@ -928,9 +937,7 @@ static inline void rcu_read_lock_bh(void)
  */
 static inline void rcu_read_unlock_bh(void)
 {
-	rcu_lockdep_assert(rcu_is_watching(),
-			   "rcu_read_unlock_bh() used illegally while idle");
-	rcu_lock_release(&rcu_bh_lock_map);
+	rcu_lock_release_bh();
 	__release(RCU_BH);
 	local_bh_enable();
 }
@@ -952,9 +959,7 @@ static inline void rcu_read_lock_sched(void)
 {
 	preempt_disable();
 	__acquire(RCU_SCHED);
-	rcu_lock_acquire(&rcu_sched_lock_map);
-	rcu_lockdep_assert(rcu_is_watching(),
-			   "rcu_read_lock_sched() used illegally while idle");
+	rcu_lock_acquire_sched();
 }
 
 /* Used by lockdep and tracing: cannot be traced, cannot call lockdep. */
@@ -971,9 +976,7 @@ static inline notrace void rcu_read_lock_sched_notrace(void)
  */
 static inline void rcu_read_unlock_sched(void)
 {
-	rcu_lockdep_assert(rcu_is_watching(),
-			   "rcu_read_unlock_sched() used illegally while idle");
-	rcu_lock_release(&rcu_sched_lock_map);
+	rcu_lock_release_sched();
 	__release(RCU_SCHED);
 	preempt_enable();
 }
