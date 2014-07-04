@@ -380,13 +380,15 @@ static void truncate_partial_data_page(struct inode *inode, u64 from)
 		return;
 
 	lock_page(page);
-	if (unlikely(page->mapping != inode->i_mapping)) {
-		f2fs_put_page(page, 1);
-		return;
-	}
+	if (unlikely(!PageUptodate(page) ||
+			page->mapping != inode->i_mapping))
+		goto out;
+
 	f2fs_wait_on_page_writeback(page, DATA);
 	zero_user(page, offset, PAGE_CACHE_SIZE - offset);
 	set_page_dirty(page);
+
+out:
 	f2fs_put_page(page, 1);
 }
 
@@ -659,16 +661,19 @@ static int expand_inode_data(struct inode *inode, loff_t offset,
 	off_start = offset & (PAGE_CACHE_SIZE - 1);
 	off_end = (offset + len) & (PAGE_CACHE_SIZE - 1);
 
+	f2fs_lock_op(sbi);
+
 	for (index = pg_start; index <= pg_end; index++) {
 		struct dnode_of_data dn;
 
-		f2fs_lock_op(sbi);
+		if (index == pg_end && !off_end)
+			goto noalloc;
+
 		set_new_dnode(&dn, inode, NULL, NULL, 0);
 		ret = f2fs_reserve_block(&dn, index);
-		f2fs_unlock_op(sbi);
 		if (ret)
 			break;
-
+noalloc:
 		if (pg_start == pg_end)
 			new_size = offset + len;
 		else if (index == pg_start && off_start)
@@ -683,8 +688,9 @@ static int expand_inode_data(struct inode *inode, loff_t offset,
 		i_size_read(inode) < new_size) {
 		i_size_write(inode, new_size);
 		mark_inode_dirty(inode);
-		f2fs_write_inode(inode, NULL);
+		update_inode_page(inode);
 	}
+	f2fs_unlock_op(sbi);
 
 	return ret;
 }
