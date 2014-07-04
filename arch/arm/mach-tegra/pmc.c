@@ -17,13 +17,12 @@
 
 #include <linux/kernel.h>
 #include <linux/clk.h>
-#include <linux/io.h>
 #include <linux/of.h>
 #include <linux/of_address.h>
 #include <linux/tegra-powergate.h>
+#include <linux/tegra-soc.h>
 
 #include "flowctrl.h"
-#include "fuse.h"
 #include "pm.h"
 #include "pmc.h"
 #include "sleep.h"
@@ -60,9 +59,9 @@ static u8 tegra_cpu_domains[] = {
 };
 static DEFINE_SPINLOCK(tegra_powergate_lock);
 
-static void __iomem *tegra_pmc_base;
 static bool tegra_pmc_invert_interrupt;
 static struct clk *tegra_pclk;
+void __iomem *tegra_pmc_base;
 
 struct pmc_pm_data {
 	u32 cpu_good_time;	/* CPU power good time in uS */
@@ -79,16 +78,6 @@ struct pmc_pm_data {
 	enum tegra_suspend_mode suspend_mode;
 };
 static struct pmc_pm_data pmc_pm_data;
-
-static inline u32 tegra_pmc_readl(u32 reg)
-{
-	return readl(tegra_pmc_base + reg);
-}
-
-static inline void tegra_pmc_writel(u32 val, u32 reg)
-{
-	writel(val, tegra_pmc_base + reg);
-}
 
 static int tegra_pmc_get_cpu_powerdomain_id(int cpuid)
 {

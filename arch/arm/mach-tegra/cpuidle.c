@@ -23,8 +23,8 @@
 
 #include <linux/kernel.h>
 #include <linux/module.h>
+#include <linux/tegra-soc.h>
 
-#include "fuse.h"
 #include "cpuidle.h"
 
 void __init tegra_cpuidle_init(void)
