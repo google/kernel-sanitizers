@@ -50,6 +50,9 @@
 					 (d) == I40E_DEV_ID_QSFP_B  || \
 					 (d) == I40E_DEV_ID_QSFP_C)
 
+/* I40E_MASK is a macro used on 32 bit registers */
+#define I40E_MASK(mask, shift) (mask << shift)
+
 #define I40E_MAX_VSI_QP			16
 #define I40E_MAX_VF_VSI			3
 #define I40E_MAX_CHAINED_RX_BUFFERS	5
@@ -875,7 +878,6 @@ enum i40e_filter_pctype {
 	I40E_FILTER_PCTYPE_FRAG_IPV4			= 36,
 	/* Note: Values 37-40 are reserved for future use */
 	I40E_FILTER_PCTYPE_NONF_IPV6_UDP		= 41,
-	I40E_FILTER_PCTYPE_NONF_IPV6_TCP_SYN		= 42,
 	I40E_FILTER_PCTYPE_NONF_IPV6_TCP		= 43,
 	I40E_FILTER_PCTYPE_NONF_IPV6_SCTP		= 44,
 	I40E_FILTER_PCTYPE_NONF_IPV6_OTHER		= 45,
@@ -1162,4 +1164,7 @@ enum i40e_reset_type {
 	I40E_RESET_GLOBR	= 2,
 	I40E_RESET_EMPR		= 3,
 };
+
+/* RSS Hash Table Size */
+#define I40E_PFQF_CTL_0_HASHLUTSIZE_512	0x00010000
 #endif /* _I40E_TYPE_H_ */

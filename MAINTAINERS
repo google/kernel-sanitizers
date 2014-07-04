@@ -1908,7 +1908,8 @@ S:	Supported
 F:	drivers/net/ethernet/broadcom/genet/
 
 BROADCOM BNX2 GIGABIT ETHERNET DRIVER
-M:	Michael Chan <mchan@broadcom.com>
+M:	Sony Chacko <sony.chacko@qlogic.com>
+M:	Dept-HSGLinuxNICDev@qlogic.com
 L:	netdev@vger.kernel.org
 S:	Supported
 F:	drivers/net/ethernet/broadcom/bnx2.*
@@ -1953,7 +1954,7 @@ F:	arch/arm/boot/dts/bcm5301x.dtsi
 F:	arch/arm/boot/dts/bcm470*
 
 BROADCOM TG3 GIGABIT ETHERNET DRIVER
-M:	Nithin Nayak Sujir <nsujir@broadcom.com>
+M:	Prashant Sreedharan <prashant@broadcom.com>
 M:	Michael Chan <mchan@broadcom.com>
 L:	netdev@vger.kernel.org
 S:	Supported

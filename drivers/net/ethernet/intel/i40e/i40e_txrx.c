@@ -100,8 +100,6 @@ int i40e_program_fdir_filter(struct i40e_fdir_filter *fdir_data, u8 *raw_packet,
 			I40E_TXD_FLTR_QW0_DEST_VSI_SHIFT) &
 		       I40E_TXD_FLTR_QW0_DEST_VSI_MASK;
 
-	fdir_desc->qindex_flex_ptype_vsi = cpu_to_le32(fpt);
-
 	dcc = I40E_TX_DESC_DTYPE_FILTER_PROG;
 
 	if (add)
@@ -124,6 +122,8 @@ int i40e_program_fdir_filter(struct i40e_fdir_filter *fdir_data, u8 *raw_packet,
 			I40E_TXD_FLTR_QW1_CNTINDEX_MASK;
 	}
 
+	fdir_desc->qindex_flex_ptype_vsi = cpu_to_le32(fpt);
+	fdir_desc->rsvd = cpu_to_le32(0);
 	fdir_desc->dtype_cmd_cntindex = cpu_to_le32(dcc);
 	fdir_desc->fd_id = cpu_to_le32(fdir_data->fd_id);
 
@@ -269,19 +269,6 @@ static int i40e_add_del_fdir_tcpv4(struct i40e_vsi *vsi,
 	} else {
 		dev_info(&pf->pdev->dev, "Filter OK for PCTYPE %d (ret = %d)\n",
 			 fd_data->pctype, ret);
-	}
-
-	fd_data->pctype = I40E_FILTER_PCTYPE_NONF_IPV4_TCP;
-
-	ret = i40e_program_fdir_filter(fd_data, raw_packet, pf, add);
-	if (ret) {
-		dev_info(&pf->pdev->dev,
-			 "Filter command send failed for PCTYPE %d (ret = %d)\n",
-			 fd_data->pctype, ret);
-		err = true;
-	} else {
-		dev_info(&pf->pdev->dev, "Filter OK for PCTYPE %d (ret = %d)\n",
-			  fd_data->pctype, ret);
 	}
 
 	return err ? -EOPNOTSUPP : 0;
@@ -450,22 +437,24 @@ static void i40e_fd_handle_status(struct i40e_ring *rx_ring,
 			 rx_desc->wb.qword0.hi_dword.fd_id);
 
 		/* filter programming failed most likely due to table full */
-		fcnt_prog = i40e_get_current_fd_count(pf);
-		fcnt_avail = i40e_get_fd_cnt_all(pf);
+		fcnt_prog = i40e_get_cur_guaranteed_fd_count(pf);
+		fcnt_avail = pf->fdir_pf_filter_count;
 		/* If ATR is running fcnt_prog can quickly change,
 		 * if we are very close to full, it makes sense to disable
 		 * FD ATR/SB and then re-enable it when there is room.
 		 */
 		if (fcnt_prog >= (fcnt_avail - I40E_FDIR_BUFFER_FULL_MARGIN)) {
 			/* Turn off ATR first */
-			if (pf->flags & I40E_FLAG_FD_ATR_ENABLED) {
-				pf->flags &= ~I40E_FLAG_FD_ATR_ENABLED;
+			if ((pf->flags & I40E_FLAG_FD_ATR_ENABLED) &&
+			    !(pf->auto_disable_flags &
+			      I40E_FLAG_FD_ATR_ENABLED)) {
 				dev_warn(&pdev->dev, "FD filter space full, ATR for further flows will be turned off\n");
 				pf->auto_disable_flags |=
 						       I40E_FLAG_FD_ATR_ENABLED;
 				pf->flags |= I40E_FLAG_FDIR_REQUIRES_REINIT;
-			} else if (pf->flags & I40E_FLAG_FD_SB_ENABLED) {
-				pf->flags &= ~I40E_FLAG_FD_SB_ENABLED;
+			} else if ((pf->flags & I40E_FLAG_FD_SB_ENABLED) &&
+				   !(pf->auto_disable_flags &
+				     I40E_FLAG_FD_SB_ENABLED)) {
 				dev_warn(&pdev->dev, "FD filter space full, new ntuple rules will not be added\n");
 				pf->auto_disable_flags |=
 							I40E_FLAG_FD_SB_ENABLED;
@@ -1701,7 +1690,9 @@ static void i40e_atr(struct i40e_ring *tx_ring, struct sk_buff *skb,
 		I40E_TXD_FLTR_QW1_CNTINDEX_MASK;
 
 	fdir_desc->qindex_flex_ptype_vsi = cpu_to_le32(flex_ptype);
+	fdir_desc->rsvd = cpu_to_le32(0);
 	fdir_desc->dtype_cmd_cntindex = cpu_to_le32(dtype_cmd);
+	fdir_desc->fd_id = cpu_to_le32(0);
 }
 
 /**
@@ -2000,6 +1991,7 @@ static void i40e_create_tx_ctx(struct i40e_ring *tx_ring,
 	/* cpu_to_le32 and assign to struct fields */
 	context_desc->tunneling_params = cpu_to_le32(cd_tunneling);
 	context_desc->l2tag2 = cpu_to_le16(cd_l2tag2);
+	context_desc->rsvd = cpu_to_le16(0);
 	context_desc->type_cmd_tso_mss = cpu_to_le64(cd_type_cmd_tso_mss);
 }
 

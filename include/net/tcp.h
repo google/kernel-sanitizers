@@ -493,14 +493,8 @@ static inline u32 tcp_cookie_time(void)
 
 u32 __cookie_v4_init_sequence(const struct iphdr *iph, const struct tcphdr *th,
 			      u16 *mssp);
-__u32 cookie_v4_init_sequence(struct sock *sk, struct sk_buff *skb, __u16 *mss);
-#else
-static inline __u32 cookie_v4_init_sequence(struct sock *sk,
-					    struct sk_buff *skb,
-					    __u16 *mss)
-{
-	return 0;
-}
+__u32 cookie_v4_init_sequence(struct sock *sk, const struct sk_buff *skb,
+			      __u16 *mss);
 #endif
 
 __u32 cookie_init_timestamp(struct request_sock *req);
@@ -516,13 +510,6 @@ u32 __cookie_v6_init_sequence(const struct ipv6hdr *iph,
 			      const struct tcphdr *th, u16 *mssp);
 __u32 cookie_v6_init_sequence(struct sock *sk, const struct sk_buff *skb,
 			      __u16 *mss);
-#else
-static inline __u32 cookie_v6_init_sequence(struct sock *sk,
-					    struct sk_buff *skb,
-					    __u16 *mss)
-{
-	return 0;
-}
 #endif
 /* tcp_output.c */
 
@@ -1098,7 +1085,7 @@ static inline int tcp_full_space(const struct sock *sk)
 
 static inline void tcp_openreq_init(struct request_sock *req,
 				    struct tcp_options_received *rx_opt,
-				    struct sk_buff *skb)
+				    struct sk_buff *skb, struct sock *sk)
 {
 	struct inet_request_sock *ireq = inet_rsk(req);
 
@@ -1117,6 +1104,7 @@ static inline void tcp_openreq_init(struct request_sock *req,
 	ireq->ecn_ok = 0;
 	ireq->ir_rmt_port = tcp_hdr(skb)->source;
 	ireq->ir_num = ntohs(tcp_hdr(skb)->dest);
+	ireq->ir_mark = inet_request_mark(sk, skb);
 }
 
 extern void tcp_openreq_init_rwin(struct request_sock *req,
@@ -1585,6 +1573,11 @@ int tcp4_proc_init(void);
 void tcp4_proc_exit(void);
 #endif
 
+int tcp_rtx_synack(struct sock *sk, struct request_sock *req);
+int tcp_conn_request(struct request_sock_ops *rsk_ops,
+		     const struct tcp_request_sock_ops *af_ops,
+		     struct sock *sk, struct sk_buff *skb);
+
 /* TCP af-specific functions */
 struct tcp_sock_af_ops {
 #ifdef CONFIG_TCP_MD5SIG
@@ -1602,6 +1595,7 @@ struct tcp_sock_af_ops {
 };
 
 struct tcp_request_sock_ops {
+	u16 mss_clamp;
 #ifdef CONFIG_TCP_MD5SIG
 	struct tcp_md5sig_key	*(*md5_lookup) (struct sock *sk,
 						struct request_sock *req);
@@ -1611,7 +1605,38 @@ struct tcp_request_sock_ops {
 						  const struct request_sock *req,
 						  const struct sk_buff *skb);
 #endif
+	void (*init_req)(struct request_sock *req, struct sock *sk,
+			 struct sk_buff *skb);
+#ifdef CONFIG_SYN_COOKIES
+	__u32 (*cookie_init_seq)(struct sock *sk, const struct sk_buff *skb,
+				 __u16 *mss);
+#endif
+	struct dst_entry *(*route_req)(struct sock *sk, struct flowi *fl,
+				       const struct request_sock *req,
+				       bool *strict);
+	__u32 (*init_seq)(const struct sk_buff *skb);
+	int (*send_synack)(struct sock *sk, struct dst_entry *dst,
+			   struct flowi *fl, struct request_sock *req,
+			   u16 queue_mapping, struct tcp_fastopen_cookie *foc);
+	void (*queue_hash_add)(struct sock *sk, struct request_sock *req,
+			       const unsigned long timeout);
 };
+
+#ifdef CONFIG_SYN_COOKIES
+static inline __u32 cookie_init_sequence(const struct tcp_request_sock_ops *ops,
+					 struct sock *sk, struct sk_buff *skb,
+					 __u16 *mss)
+{
+	return ops->cookie_init_seq(sk, skb, mss);
+}
+#else
+static inline __u32 cookie_init_sequence(const struct tcp_request_sock_ops *ops,
+					 struct sock *sk, struct sk_buff *skb,
+					 __u16 *mss)
+{
+	return 0;
+}
+#endif
 
 int tcpv4_offload_init(void);
 

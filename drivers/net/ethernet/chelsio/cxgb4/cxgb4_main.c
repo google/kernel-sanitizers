@@ -1,7 +1,7 @@
 /*
  * This file is part of the Chelsio T4 Ethernet driver for Linux.
  *
- * Copyright (c) 2003-2010 Chelsio Communications, Inc. All rights reserved.
+ * Copyright (c) 2003-2014 Chelsio Communications, Inc. All rights reserved.
  *
  * This software is available to you under a choice of one of two
  * licenses.  You may choose to be licensed under the terms of the GNU
@@ -67,6 +67,7 @@
 #include "t4_regs.h"
 #include "t4_msg.h"
 #include "t4fw_api.h"
+#include "cxgb4_dcb.h"
 #include "l2t.h"
 
 #include <../drivers/net/bonding/bonding.h>
@@ -223,6 +224,17 @@ static DEFINE_PCI_DEVICE_TABLE(cxgb4_pci_tbl) = {
 	CH_DEVICE(0x4008, -1),
 	CH_DEVICE(0x4009, -1),
 	CH_DEVICE(0x400a, -1),
+	CH_DEVICE(0x400d, -1),
+	CH_DEVICE(0x400e, -1),
+	CH_DEVICE(0x4080, -1),
+	CH_DEVICE(0x4081, -1),
+	CH_DEVICE(0x4082, -1),
+	CH_DEVICE(0x4083, -1),
+	CH_DEVICE(0x4084, -1),
+	CH_DEVICE(0x4085, -1),
+	CH_DEVICE(0x4086, -1),
+	CH_DEVICE(0x4087, -1),
+	CH_DEVICE(0x4088, -1),
 	CH_DEVICE(0x4401, 4),
 	CH_DEVICE(0x4402, 4),
 	CH_DEVICE(0x4403, 4),
@@ -235,6 +247,15 @@ static DEFINE_PCI_DEVICE_TABLE(cxgb4_pci_tbl) = {
 	CH_DEVICE(0x440a, 4),
 	CH_DEVICE(0x440d, 4),
 	CH_DEVICE(0x440e, 4),
+	CH_DEVICE(0x4480, 4),
+	CH_DEVICE(0x4481, 4),
+	CH_DEVICE(0x4482, 4),
+	CH_DEVICE(0x4483, 4),
+	CH_DEVICE(0x4484, 4),
+	CH_DEVICE(0x4485, 4),
+	CH_DEVICE(0x4486, 4),
+	CH_DEVICE(0x4487, 4),
+	CH_DEVICE(0x4488, 4),
 	CH_DEVICE(0x5001, 4),
 	CH_DEVICE(0x5002, 4),
 	CH_DEVICE(0x5003, 4),
@@ -391,6 +412,17 @@ module_param_array(num_vf, uint, NULL, 0644);
 MODULE_PARM_DESC(num_vf, "number of VFs for each of PFs 0-3");
 #endif
 
+/* TX Queue select used to determine what algorithm to use for selecting TX
+ * queue. Select between the kernel provided function (select_queue=0) or user
+ * cxgb_select_queue function (select_queue=1)
+ *
+ * Default: select_queue=0
+ */
+static int select_queue;
+module_param(select_queue, int, 0644);
+MODULE_PARM_DESC(select_queue,
+		 "Select between kernel provided method of selecting or driver method of selecting TX queue. Default is kernel method.");
+
 /*
  * The filter TCAM has a fixed portion and a variable portion.  The fixed
  * portion can match on source/destination IP IPv4/IPv6 addresses and TCP/UDP
@@ -458,6 +490,42 @@ static void link_report(struct net_device *dev)
 	}
 }
 
+#ifdef CONFIG_CHELSIO_T4_DCB
+/* Set up/tear down Data Center Bridging Priority mapping for a net device. */
+static void dcb_tx_queue_prio_enable(struct net_device *dev, int enable)
+{
+	struct port_info *pi = netdev_priv(dev);
+	struct adapter *adap = pi->adapter;
+	struct sge_eth_txq *txq = &adap->sge.ethtxq[pi->first_qset];
+	int i;
+
+	/* We use a simple mapping of Port TX Queue Index to DCB
+	 * Priority when we're enabling DCB.
+	 */
+	for (i = 0; i < pi->nqsets; i++, txq++) {
+		u32 name, value;
+		int err;
+
+		name = (FW_PARAMS_MNEM(FW_PARAMS_MNEM_DMAQ) |
+			FW_PARAMS_PARAM_X(FW_PARAMS_PARAM_DMAQ_EQ_DCBPRIO_ETH) |
+			FW_PARAMS_PARAM_YZ(txq->q.cntxt_id));
+		value = enable ? i : 0xffffffff;
+
+		/* Since we can be called while atomic (from "interrupt
+		 * level") we need to issue the Set Parameters Commannd
+		 * without sleeping (timeout < 0).
+		 */
+		err = t4_set_params_nosleep(adap, adap->mbox, adap->fn, 0, 1,
+					    &name, &value);
+
+		if (err)
+			dev_err(adap->pdev_dev,
+				"Can't %s DCB Priority on port %d, TX Queue %d: err=%d\n",
+				enable ? "set" : "unset", pi->port_id, i, -err);
+	}
+}
+#endif /* CONFIG_CHELSIO_T4_DCB */
+
 void t4_os_link_changed(struct adapter *adapter, int port_id, int link_stat)
 {
 	struct net_device *dev = adapter->port[port_id];
@@ -466,8 +534,13 @@ void t4_os_link_changed(struct adapter *adapter, int port_id, int link_stat)
 	if (netif_running(dev) && link_stat != netif_carrier_ok(dev)) {
 		if (link_stat)
 			netif_carrier_on(dev);
-		else
+		else {
+#ifdef CONFIG_CHELSIO_T4_DCB
+			cxgb4_dcb_state_init(dev);
+			dcb_tx_queue_prio_enable(dev, false);
+#endif /* CONFIG_CHELSIO_T4_DCB */
 			netif_carrier_off(dev);
+		}
 
 		link_report(dev);
 	}
@@ -601,9 +674,44 @@ static int link_start(struct net_device *dev)
 		ret = t4_link_start(pi->adapter, mb, pi->tx_chan,
 				    &pi->link_cfg);
 	if (ret == 0)
-		ret = t4_enable_vi(pi->adapter, mb, pi->viid, true, true);
+		ret = t4_enable_vi_params(pi->adapter, mb, pi->viid, true,
+					  true, CXGB4_DCB_ENABLED);
+
 	return ret;
 }
+
+int cxgb4_dcb_enabled(const struct net_device *dev)
+{
+#ifdef CONFIG_CHELSIO_T4_DCB
+	struct port_info *pi = netdev_priv(dev);
+
+	return pi->dcb.state == CXGB4_DCB_STATE_FW_ALLSYNCED;
+#else
+	return 0;
+#endif
+}
+EXPORT_SYMBOL(cxgb4_dcb_enabled);
+
+#ifdef CONFIG_CHELSIO_T4_DCB
+/* Handle a Data Center Bridging update message from the firmware. */
+static void dcb_rpl(struct adapter *adap, const struct fw_port_cmd *pcmd)
+{
+	int port = FW_PORT_CMD_PORTID_GET(ntohl(pcmd->op_to_portid));
+	struct net_device *dev = adap->port[port];
+	int old_dcb_enabled = cxgb4_dcb_enabled(dev);
+	int new_dcb_enabled;
+
+	cxgb4_dcb_handle_fw_update(adap, pcmd);
+	new_dcb_enabled = cxgb4_dcb_enabled(dev);
+
+	/* If the DCB has become enabled or disabled on the port then we're
+	 * going to need to set up/tear down DCB Priority parameters for the
+	 * TX Queues associated with the port.
+	 */
+	if (new_dcb_enabled != old_dcb_enabled)
+		dcb_tx_queue_prio_enable(dev, new_dcb_enabled);
+}
+#endif /* CONFIG_CHELSIO_T4_DCB */
 
 /* Clear a filter and release any of its resources that we own.  This also
  * clears the filter's "pending" status.
@@ -709,8 +817,32 @@ static int fwevtq_handler(struct sge_rspq *q, const __be64 *rsp,
 	} else if (opcode == CPL_FW6_MSG || opcode == CPL_FW4_MSG) {
 		const struct cpl_fw6_msg *p = (void *)rsp;
 
-		if (p->type == 0)
-			t4_handle_fw_rpl(q->adap, p->data);
+#ifdef CONFIG_CHELSIO_T4_DCB
+		const struct fw_port_cmd *pcmd = (const void *)p->data;
+		unsigned int cmd = FW_CMD_OP_GET(ntohl(pcmd->op_to_portid));
+		unsigned int action =
+			FW_PORT_CMD_ACTION_GET(ntohl(pcmd->action_to_len16));
+
+		if (cmd == FW_PORT_CMD &&
+		    action == FW_PORT_ACTION_GET_PORT_INFO) {
+			int port = FW_PORT_CMD_PORTID_GET(
+					be32_to_cpu(pcmd->op_to_portid));
+			struct net_device *dev = q->adap->port[port];
+			int state_input = ((pcmd->u.info.dcbxdis_pkd &
+					    FW_PORT_CMD_DCBXDIS)
+					   ? CXGB4_DCB_INPUT_FW_DISABLED
+					   : CXGB4_DCB_INPUT_FW_ENABLED);
+
+			cxgb4_dcb_state_fsm(dev, state_input);
+		}
+
+		if (cmd == FW_PORT_CMD &&
+		    action == FW_PORT_ACTION_L2_DCB_CFG)
+			dcb_rpl(q->adap, pcmd);
+		else
+#endif
+			if (p->type == 0)
+				t4_handle_fw_rpl(q->adap, p->data);
 	} else if (opcode == CPL_L2T_WRITE_RPL) {
 		const struct cpl_l2t_write_rpl *p = (void *)rsp;
 
@@ -1288,6 +1420,48 @@ static int del_filter_wr(struct adapter *adapter, int fidx)
 	f->pending = 1;
 	t4_mgmt_tx(adapter, skb);
 	return 0;
+}
+
+static u16 cxgb_select_queue(struct net_device *dev, struct sk_buff *skb,
+			     void *accel_priv, select_queue_fallback_t fallback)
+{
+	int txq;
+
+#ifdef CONFIG_CHELSIO_T4_DCB
+	/* If a Data Center Bridging has been successfully negotiated on this
+	 * link then we'll use the skb's priority to map it to a TX Queue.
+	 * The skb's priority is determined via the VLAN Tag Priority Code
+	 * Point field.
+	 */
+	if (cxgb4_dcb_enabled(dev)) {
+		u16 vlan_tci;
+		int err;
+
+		err = vlan_get_tag(skb, &vlan_tci);
+		if (unlikely(err)) {
+			if (net_ratelimit())
+				netdev_warn(dev,
+					    "TX Packet without VLAN Tag on DCB Link\n");
+			txq = 0;
+		} else {
+			txq = (vlan_tci & VLAN_PRIO_MASK) >> VLAN_PRIO_SHIFT;
+		}
+		return txq;
+	}
+#endif /* CONFIG_CHELSIO_T4_DCB */
+
+	if (select_queue) {
+		txq = (skb_rx_queue_recorded(skb)
+			? skb_get_rx_queue(skb)
+			: smp_processor_id());
+
+		while (unlikely(txq >= dev->real_num_tx_queues))
+			txq -= dev->real_num_tx_queues;
+
+		return txq;
+	}
+
+	return fallback(dev, skb) % dev->real_num_tx_queues;
 }
 
 static inline int is_offload(const struct adapter *adap)
@@ -2912,6 +3086,8 @@ static ssize_t mem_read(struct file *file, char __user *buf, size_t count,
 	loff_t avail = file_inode(file)->i_size;
 	unsigned int mem = (uintptr_t)file->private_data & 3;
 	struct adapter *adap = file->private_data - mem;
+	__be32 *data;
+	int ret;
 
 	if (pos < 0)
 		return -EINVAL;
@@ -2920,29 +3096,24 @@ static ssize_t mem_read(struct file *file, char __user *buf, size_t count,
 	if (count > avail - pos)
 		count = avail - pos;
 
-	while (count) {
-		size_t len;
-		int ret, ofst;
-		__be32 data[16];
+	data = t4_alloc_mem(count);
+	if (!data)
+		return -ENOMEM;
 
-		if ((mem == MEM_MC) || (mem == MEM_MC1))
-			ret = t4_mc_read(adap, mem % MEM_MC, pos, data, NULL);
-		else
-			ret = t4_edc_read(adap, mem, pos, data, NULL);
-		if (ret)
-			return ret;
-
-		ofst = pos % sizeof(data);
-		len = min(count, sizeof(data) - ofst);
-		if (copy_to_user(buf, (u8 *)data + ofst, len))
-			return -EFAULT;
-
-		buf += len;
-		pos += len;
-		count -= len;
+	spin_lock(&adap->win0_lock);
+	ret = t4_memory_rw(adap, 0, mem, pos, count, data, T4_MEMORY_READ);
+	spin_unlock(&adap->win0_lock);
+	if (ret) {
+		t4_free_mem(data);
+		return ret;
 	}
-	count = pos - *ppos;
-	*ppos = pos;
+	ret = copy_to_user(buf, data, count);
+
+	t4_free_mem(data);
+	if (ret)
+		return -EFAULT;
+
+	*ppos = pos + count;
 	return count;
 }
 
@@ -3603,7 +3774,11 @@ static int read_eq_indices(struct adapter *adap, u16 qid, u16 *pidx, u16 *cidx)
 	__be64 indices;
 	int ret;
 
-	ret = t4_mem_win_read_len(adap, addr, (__be32 *)&indices, 8);
+	spin_lock(&adap->win0_lock);
+	ret = t4_memory_rw(adap, 0, MEM_EDC0, addr,
+			   sizeof(indices), (__be32 *)&indices,
+			   T4_MEMORY_READ);
+	spin_unlock(&adap->win0_lock);
 	if (!ret) {
 		*cidx = (be64_to_cpu(indices) >> 25) & 0xffff;
 		*pidx = (be64_to_cpu(indices) >> 9) & 0xffff;
@@ -3899,6 +4074,7 @@ static void uld_attach(struct adapter *adap, unsigned int uld)
 	unsigned short i;
 
 	lli.pdev = adap->pdev;
+	lli.pf = adap->fn;
 	lli.l2t = adap->l2t;
 	lli.tids = &adap->tids;
 	lli.ports = adap->port;
@@ -4598,6 +4774,7 @@ static const struct net_device_ops cxgb4_netdev_ops = {
 	.ndo_open             = cxgb_open,
 	.ndo_stop             = cxgb_close,
 	.ndo_start_xmit       = t4_eth_xmit,
+	.ndo_select_queue     =	cxgb_select_queue,
 	.ndo_get_stats64      = cxgb_get_stats,
 	.ndo_set_rx_mode      = cxgb_set_rxmode,
 	.ndo_set_mac_address  = cxgb_set_mac_addr,
@@ -4617,20 +4794,75 @@ void t4_fatal_err(struct adapter *adap)
 	dev_alert(adap->pdev_dev, "encountered fatal error, adapter stopped\n");
 }
 
+/* Return the specified PCI-E Configuration Space register from our Physical
+ * Function.  We try first via a Firmware LDST Command since we prefer to let
+ * the firmware own all of these registers, but if that fails we go for it
+ * directly ourselves.
+ */
+static u32 t4_read_pcie_cfg4(struct adapter *adap, int reg)
+{
+	struct fw_ldst_cmd ldst_cmd;
+	u32 val;
+	int ret;
+
+	/* Construct and send the Firmware LDST Command to retrieve the
+	 * specified PCI-E Configuration Space register.
+	 */
+	memset(&ldst_cmd, 0, sizeof(ldst_cmd));
+	ldst_cmd.op_to_addrspace =
+		htonl(FW_CMD_OP(FW_LDST_CMD) |
+		      FW_CMD_REQUEST |
+		      FW_CMD_READ |
+		      FW_LDST_CMD_ADDRSPACE(FW_LDST_ADDRSPC_FUNC_PCIE));
+	ldst_cmd.cycles_to_len16 = htonl(FW_LEN16(ldst_cmd));
+	ldst_cmd.u.pcie.select_naccess = FW_LDST_CMD_NACCESS(1);
+	ldst_cmd.u.pcie.ctrl_to_fn =
+		(FW_LDST_CMD_LC | FW_LDST_CMD_FN(adap->fn));
+	ldst_cmd.u.pcie.r = reg;
+	ret = t4_wr_mbox(adap, adap->mbox, &ldst_cmd, sizeof(ldst_cmd),
+			 &ldst_cmd);
+
+	/* If the LDST Command suucceeded, exctract the returned register
+	 * value.  Otherwise read it directly ourself.
+	 */
+	if (ret == 0)
+		val = ntohl(ldst_cmd.u.pcie.data[0]);
+	else
+		t4_hw_pci_read_cfg4(adap, reg, &val);
+
+	return val;
+}
+
 static void setup_memwin(struct adapter *adap)
 {
-	u32 bar0, mem_win0_base, mem_win1_base, mem_win2_base;
+	u32 mem_win0_base, mem_win1_base, mem_win2_base, mem_win2_aperture;
 
-	bar0 = pci_resource_start(adap->pdev, 0);  /* truncation intentional */
 	if (is_t4(adap->params.chip)) {
+		u32 bar0;
+
+		/* Truncation intentional: we only read the bottom 32-bits of
+		 * the 64-bit BAR0/BAR1 ...  We use the hardware backdoor
+		 * mechanism to read BAR0 instead of using
+		 * pci_resource_start() because we could be operating from
+		 * within a Virtual Machine which is trapping our accesses to
+		 * our Configuration Space and we need to set up the PCI-E
+		 * Memory Window decoders with the actual addresses which will
+		 * be coming across the PCI-E link.
+		 */
+		bar0 = t4_read_pcie_cfg4(adap, PCI_BASE_ADDRESS_0);
+		bar0 &= PCI_BASE_ADDRESS_MEM_MASK;
+		adap->t4_bar0 = bar0;
+
 		mem_win0_base = bar0 + MEMWIN0_BASE;
 		mem_win1_base = bar0 + MEMWIN1_BASE;
 		mem_win2_base = bar0 + MEMWIN2_BASE;
+		mem_win2_aperture = MEMWIN2_APERTURE;
 	} else {
 		/* For T5, only relative offset inside the PCIe BAR is passed */
 		mem_win0_base = MEMWIN0_BASE;
-		mem_win1_base = MEMWIN1_BASE_T5;
+		mem_win1_base = MEMWIN1_BASE;
 		mem_win2_base = MEMWIN2_BASE_T5;
+		mem_win2_aperture = MEMWIN2_APERTURE_T5;
 	}
 	t4_write_reg(adap, PCIE_MEM_ACCESS_REG(PCIE_MEM_ACCESS_BASE_WIN, 0),
 		     mem_win0_base | BIR(0) |
@@ -4640,16 +4872,19 @@ static void setup_memwin(struct adapter *adap)
 		     WINDOW(ilog2(MEMWIN1_APERTURE) - 10));
 	t4_write_reg(adap, PCIE_MEM_ACCESS_REG(PCIE_MEM_ACCESS_BASE_WIN, 2),
 		     mem_win2_base | BIR(0) |
-		     WINDOW(ilog2(MEMWIN2_APERTURE) - 10));
+		     WINDOW(ilog2(mem_win2_aperture) - 10));
+	t4_read_reg(adap, PCIE_MEM_ACCESS_REG(PCIE_MEM_ACCESS_BASE_WIN, 2));
 }
 
 static void setup_memwin_rdma(struct adapter *adap)
 {
 	if (adap->vres.ocq.size) {
-		unsigned int start, sz_kb;
+		u32 start;
+		unsigned int sz_kb;
 
-		start = pci_resource_start(adap->pdev, 2) +
-			OCQ_WIN_OFFSET(adap->pdev, &adap->vres);
+		start = t4_read_pcie_cfg4(adap, PCI_BASE_ADDRESS_2);
+		start &= PCI_BASE_ADDRESS_MEM_MASK;
+		start += OCQ_WIN_OFFSET(adap->pdev, &adap->vres);
 		sz_kb = roundup_pow_of_two(adap->vres.ocq.size) >> 10;
 		t4_write_reg(adap,
 			     PCIE_MEM_ACCESS_REG(PCIE_MEM_ACCESS_BASE_WIN, 3),
@@ -4862,7 +5097,7 @@ static int adap_init0_config(struct adapter *adapter, int reset)
 					      adapter->fn, 0, 1, params, val);
 			if (ret == 0) {
 				/*
-				 * For t4_memory_write() below addresses and
+				 * For t4_memory_rw() below addresses and
 				 * sizes have to be in terms of multiples of 4
 				 * bytes.  So, if the Configuration File isn't
 				 * a multiple of 4 bytes in length we'll have
@@ -4878,8 +5113,9 @@ static int adap_init0_config(struct adapter *adapter, int reset)
 				mtype = FW_PARAMS_PARAM_Y_GET(val[0]);
 				maddr = FW_PARAMS_PARAM_Z_GET(val[0]) << 16;
 
-				ret = t4_memory_write(adapter, mtype, maddr,
-						      size, data);
+				spin_lock(&adapter->win0_lock);
+				ret = t4_memory_rw(adapter, 0, mtype, maddr,
+						   size, data, T4_MEMORY_WRITE);
 				if (ret == 0 && resid != 0) {
 					union {
 						__be32 word;
@@ -4890,10 +5126,12 @@ static int adap_init0_config(struct adapter *adapter, int reset)
 					last.word = data[size >> 2];
 					for (i = resid; i < 4; i++)
 						last.buf[i] = 0;
-					ret = t4_memory_write(adapter, mtype,
-							      maddr + size,
-							      4, &last.word);
+					ret = t4_memory_rw(adapter, 0, mtype,
+							   maddr + size,
+							   4, &last.word,
+							   T4_MEMORY_WRITE);
 				}
+				spin_unlock(&adapter->win0_lock);
 			}
 		}
 
@@ -5838,12 +6076,33 @@ static inline void init_rspq(struct adapter *adap, struct sge_rspq *q,
 static void cfg_queues(struct adapter *adap)
 {
 	struct sge *s = &adap->sge;
-	int i, q10g = 0, n10g = 0, qidx = 0;
+	int i, n10g = 0, qidx = 0;
+#ifndef CONFIG_CHELSIO_T4_DCB
+	int q10g = 0;
+#endif
 	int ciq_size;
 
 	for_each_port(adap, i)
 		n10g += is_x_10g_port(&adap2pinfo(adap, i)->link_cfg);
+#ifdef CONFIG_CHELSIO_T4_DCB
+	/* For Data Center Bridging support we need to be able to support up
+	 * to 8 Traffic Priorities; each of which will be assigned to its
+	 * own TX Queue in order to prevent Head-Of-Line Blocking.
+	 */
+	if (adap->params.nports * 8 > MAX_ETH_QSETS) {
+		dev_err(adap->pdev_dev, "MAX_ETH_QSETS=%d < %d!\n",
+			MAX_ETH_QSETS, adap->params.nports * 8);
+		BUG_ON(1);
+	}
 
+	for_each_port(adap, i) {
+		struct port_info *pi = adap2pinfo(adap, i);
+
+		pi->first_qset = qidx;
+		pi->nqsets = 8;
+		qidx += pi->nqsets;
+	}
+#else /* !CONFIG_CHELSIO_T4_DCB */
 	/*
 	 * We default to 1 queue per non-10G port and up to # of cores queues
 	 * per 10G port.
@@ -5860,6 +6119,7 @@ static void cfg_queues(struct adapter *adap)
 		pi->nqsets = is_x_10g_port(&pi->link_cfg) ? q10g : 1;
 		qidx += pi->nqsets;
 	}
+#endif /* !CONFIG_CHELSIO_T4_DCB */
 
 	s->ethqsets = qidx;
 	s->max_ethqsets = qidx;   /* MSI-X may lower it later */
@@ -5978,8 +6238,14 @@ static int enable_msix(struct adapter *adap)
 		/* need nchan for each possible ULD */
 		ofld_need = 3 * nchan;
 	}
+#ifdef CONFIG_CHELSIO_T4_DCB
+	/* For Data Center Bridging we need 8 Ethernet TX Priority Queues for
+	 * each port.
+	 */
+	need = 8 * adap->params.nports + EXTRA_VECS + ofld_need;
+#else
 	need = adap->params.nports + EXTRA_VECS + ofld_need;
-
+#endif
 	want = pci_enable_msix_range(adap->pdev, entries, need, want);
 	if (want < 0)
 		return want;
@@ -6111,13 +6377,6 @@ static int init_one(struct pci_dev *pdev, const struct pci_device_id *ent)
 		return err;
 	}
 
-	/* We control everything through one PF */
-	func = PCI_FUNC(pdev->devfn);
-	if (func != ent->driver_data) {
-		pci_save_state(pdev);        /* to restore SR-IOV later */
-		goto sriov;
-	}
-
 	err = pci_enable_device(pdev);
 	if (err) {
 		dev_err(&pdev->dev, "cannot enable PCI device\n");
@@ -6159,6 +6418,15 @@ static int init_one(struct pci_dev *pdev, const struct pci_device_id *ent)
 		dev_err(&pdev->dev, "cannot map device registers\n");
 		err = -ENOMEM;
 		goto out_free_adapter;
+	}
+
+	/* We control everything through one PF */
+	func = SOURCEPF_GET(readl(adapter->regs + PL_WHOAMI));
+	if ((pdev->device == 0xa000 && func != 0) ||
+	    func != ent->driver_data) {
+		pci_save_state(pdev);        /* to restore SR-IOV later */
+		err = 0;
+		goto out_unmap_bar0;
 	}
 
 	adapter->pdev = pdev;
@@ -6242,6 +6510,10 @@ static int init_one(struct pci_dev *pdev, const struct pci_device_id *ent)
 		netdev->priv_flags |= IFF_UNICAST_FLT;
 
 		netdev->netdev_ops = &cxgb4_netdev_ops;
+#ifdef CONFIG_CHELSIO_T4_DCB
+		netdev->dcbnl_ops = &cxgb4_dcb_ops;
+		cxgb4_dcb_state_init(netdev);
+#endif
 		netdev->ethtool_ops = &cxgb_ethtool_ops;
 	}
 
@@ -6320,7 +6592,6 @@ static int init_one(struct pci_dev *pdev, const struct pci_device_id *ent)
 	if (is_offload(adapter))
 		attach_ulds(adapter);
 
-sriov:
 #ifdef CONFIG_PCI_IOV
 	if (func < ARRAY_SIZE(num_vf) && num_vf[func] > 0)
 		if (pci_enable_sriov(pdev, num_vf[func]) == 0)
@@ -6366,8 +6637,7 @@ static void remove_one(struct pci_dev *pdev)
 			if (adapter->port[i]->reg_state == NETREG_REGISTERED)
 				unregister_netdev(adapter->port[i]);
 
-		if (adapter->debugfs_root)
-			debugfs_remove_recursive(adapter->debugfs_root);
+		debugfs_remove_recursive(adapter->debugfs_root);
 
 		/* If we allocated filters, free up state associated with any
 		 * valid filters ...

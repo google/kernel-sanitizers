@@ -2738,8 +2738,8 @@ static inline int __dev_xmit_skb(struct sk_buff *skb, struct Qdisc *q,
 	/*
 	 * Heuristic to force contended enqueues to serialize on a
 	 * separate lock before trying to get qdisc main lock.
-	 * This permits __QDISC_STATE_RUNNING owner to get the lock more often
-	 * and dequeue packets faster.
+	 * This permits __QDISC___STATE_RUNNING owner to get the lock more
+	 * often and dequeue packets faster.
 	 */
 	contended = qdisc_is_running(q);
 	if (unlikely(contended))
@@ -5432,12 +5432,8 @@ int __dev_change_flags(struct net_device *dev, unsigned int flags)
 	 */
 
 	ret = 0;
-	if ((old_flags ^ flags) & IFF_UP) {	/* Bit is different  ? */
+	if ((old_flags ^ flags) & IFF_UP)
 		ret = ((old_flags & IFF_UP) ? __dev_close : __dev_open)(dev);
-
-		if (!ret)
-			dev_set_rx_mode(dev);
-	}
 
 	if ((flags ^ dev->gflags) & IFF_PROMISC) {
 		int inc = (flags & IFF_PROMISC) ? 1 : -1;
@@ -7095,7 +7091,7 @@ static void __net_exit default_device_exit_batch(struct list_head *net_list)
 	rtnl_lock_unregistering(net_list);
 	list_for_each_entry(net, net_list, exit_list) {
 		for_each_netdev_reverse(net, dev) {
-			if (dev->rtnl_link_ops)
+			if (dev->rtnl_link_ops && dev->rtnl_link_ops->dellink)
 				dev->rtnl_link_ops->dellink(dev, &dev_kill_list);
 			else
 				unregister_netdevice_queue(dev, &dev_kill_list);

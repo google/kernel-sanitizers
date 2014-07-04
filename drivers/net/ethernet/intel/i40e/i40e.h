@@ -84,6 +84,7 @@
 #define I40E_AQ_WORK_LIMIT            16
 #define I40E_MAX_USER_PRIORITY        8
 #define I40E_DEFAULT_MSG_ENABLE       4
+#define I40E_QUEUE_WAIT_RETRY_LIMIT   10
 
 #define I40E_NVM_VERSION_LO_SHIFT  0
 #define I40E_NVM_VERSION_LO_MASK   (0xff << I40E_NVM_VERSION_LO_SHIFT)
@@ -134,6 +135,7 @@ enum i40e_state_t {
 	__I40E_FILTER_OVERFLOW_PROMISC,
 	__I40E_SUSPENDED,
 	__I40E_BAD_EEPROM,
+	__I40E_DOWN_REQUESTED,
 };
 
 enum i40e_interrupt_policy {
@@ -152,7 +154,7 @@ struct i40e_lump_tracking {
 #define I40E_DEFAULT_ATR_SAMPLE_RATE	20
 #define I40E_FDIR_MAX_RAW_PACKET_SIZE	512
 #define I40E_FDIR_BUFFER_FULL_MARGIN	10
-#define I40E_FDIR_BUFFER_HEAD_ROOM	200
+#define I40E_FDIR_BUFFER_HEAD_ROOM	32
 
 enum i40e_fd_stat_idx {
 	I40E_FD_STAT_ATR,
@@ -348,6 +350,7 @@ struct i40e_pf {
 	u32 rx_hwtstamp_cleared;
 	bool ptp_tx;
 	bool ptp_rx;
+	u16 rss_table_size;
 };
 
 struct i40e_mac_filter {
@@ -359,6 +362,7 @@ struct i40e_mac_filter {
 	bool is_vf;		/* filter belongs to a VF */
 	bool is_netdev;		/* filter belongs to a netdev */
 	bool changed;		/* filter needs to be sync'd to the HW */
+	bool is_laa;		/* filter is a Locally Administered Address */
 };
 
 struct i40e_veb {
@@ -578,6 +582,7 @@ int i40e_add_del_fdir(struct i40e_vsi *vsi,
 		      struct i40e_fdir_filter *input, bool add);
 void i40e_fdir_check_and_reenable(struct i40e_pf *pf);
 int i40e_get_current_fd_count(struct i40e_pf *pf);
+int i40e_get_cur_guaranteed_fd_count(struct i40e_pf *pf);
 bool i40e_set_ntuple(struct i40e_pf *pf, netdev_features_t features);
 void i40e_set_ethtool_ops(struct net_device *netdev);
 struct i40e_mac_filter *i40e_add_filter(struct i40e_vsi *vsi,
@@ -614,6 +619,7 @@ static inline void i40e_dbg_init(void) {}
 static inline void i40e_dbg_exit(void) {}
 #endif /* CONFIG_DEBUG_FS*/
 void i40e_irq_dynamic_enable(struct i40e_vsi *vsi, int vector);
+void i40e_irq_dynamic_disable(struct i40e_vsi *vsi, int vector);
 void i40e_irq_dynamic_disable_icr0(struct i40e_pf *pf);
 void i40e_irq_dynamic_enable_icr0(struct i40e_pf *pf);
 int i40e_ioctl(struct net_device *netdev, struct ifreq *ifr, int cmd);

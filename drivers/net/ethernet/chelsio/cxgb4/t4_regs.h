@@ -1,7 +1,7 @@
 /*
  * This file is part of the Chelsio T4 Ethernet driver for Linux.
  *
- * Copyright (c) 2010 Chelsio Communications, Inc. All rights reserved.
+ * Copyright (c) 2003-2014 Chelsio Communications, Inc. All rights reserved.
  *
  * This software is available to you under a choice of one of two
  * licenses.  You may choose to be licensed under the terms of the GNU
@@ -387,6 +387,8 @@
 #define  MSTGRPPERR      0x00000001U
 
 #define PCIE_NONFAT_ERR 0x3010
+#define PCIE_CFG_SPACE_REQ 0x3060
+#define PCIE_CFG_SPACE_DATA 0x3064
 #define PCIE_MEM_ACCESS_BASE_WIN 0x3068
 #define S_PCIEOFST       10
 #define M_PCIEOFST       0x3fffffU
@@ -398,7 +400,11 @@
 #define  WINDOW_MASK     0x000000ffU
 #define  WINDOW_SHIFT    0
 #define  WINDOW(x)       ((x) << WINDOW_SHIFT)
+#define  GET_WINDOW(x)	 (((x) >> WINDOW_SHIFT) & WINDOW_MASK)
 #define PCIE_MEM_ACCESS_OFFSET 0x306c
+#define ENABLE	(1U << 30)
+#define FUNCTION(x) ((x) << 12)
+#define F_LOCALCFG    (1U << 28)
 
 #define S_PFNUM    0
 #define V_PFNUM(x) ((x) << S_PFNUM)
