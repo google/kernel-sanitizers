@@ -2089,7 +2089,7 @@ fc_timed_out(struct scsi_cmnd *scmd)
  * on the rport.
  */
 static void
-fc_user_scan_tgt(struct Scsi_Host *shost, uint channel, uint id, uint lun)
+fc_user_scan_tgt(struct Scsi_Host *shost, uint channel, uint id, u64 lun)
 {
 	struct fc_rport *rport;
 	unsigned long flags;
@@ -2121,7 +2121,7 @@ fc_user_scan_tgt(struct Scsi_Host *shost, uint channel, uint id, uint lun)
  * object as the parent.
  */
 static int
-fc_user_scan(struct Scsi_Host *shost, uint channel, uint id, uint lun)
+fc_user_scan(struct Scsi_Host *shost, uint channel, uint id, u64 lun)
 {
 	uint chlo, chhi;
 	uint tgtlo, tgthi;
@@ -2549,6 +2549,7 @@ fc_rport_final_delete(struct work_struct *work)
 			fc_flush_devloss(shost);
 		if (!cancel_delayed_work(&rport->dev_loss_work))
 			fc_flush_devloss(shost);
+		cancel_work_sync(&rport->scan_work);
 		spin_lock_irqsave(shost->host_lock, flags);
 		rport->flags &= ~FC_RPORT_DEVLOSS_PENDING;
 	}
