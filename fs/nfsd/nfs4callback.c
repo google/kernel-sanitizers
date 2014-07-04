@@ -43,6 +43,7 @@
 #define NFSDDBG_FACILITY                NFSDDBG_PROC
 
 static void nfsd4_mark_cb_fault(struct nfs4_client *, int reason);
+static void nfsd4_do_callback_rpc(struct work_struct *w);
 
 #define NFSPROC4_CB_NULL 0
 #define NFSPROC4_CB_COMPOUND 1
@@ -763,6 +764,8 @@ static void do_probe_callback(struct nfs4_client *clp)
 
 	cb->cb_ops = &nfsd4_cb_probe_ops;
 
+	INIT_WORK(&cb->cb_work, nfsd4_do_callback_rpc);
+
 	run_nfsd4_cb(cb);
 }
 
@@ -1031,11 +1034,6 @@ static void nfsd4_do_callback_rpc(struct work_struct *w)
 			cb->cb_ops, cb);
 }
 
-void nfsd4_init_callback(struct nfsd4_callback *cb)
-{
-	INIT_WORK(&cb->cb_work, nfsd4_do_callback_rpc);
-}
-
 void nfsd4_cb_recall(struct nfs4_delegation *dp)
 {
 	struct nfsd4_callback *cb = &dp->dl_recall;
@@ -1052,6 +1050,8 @@ void nfsd4_cb_recall(struct nfs4_delegation *dp)
 
 	INIT_LIST_HEAD(&cb->cb_per_client);
 	cb->cb_done = true;
+
+	INIT_WORK(&cb->cb_work, nfsd4_do_callback_rpc);
 
 	run_nfsd4_cb(&dp->dl_recall);
 }
