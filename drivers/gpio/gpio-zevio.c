@@ -18,6 +18,10 @@
 #include <linux/slab.h>
 #include <linux/gpio.h>
 
+#ifndef IOMEM
+#define IOMEM(x)    ((void __force __iomem *)(x))
+#endif
+
 /*
  * Memory layout:
  * This chip has four gpio sections, each controls 8 GPIOs.

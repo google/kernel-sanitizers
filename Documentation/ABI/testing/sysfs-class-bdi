@@ -53,3 +53,11 @@ stable_pages_required (read-only)
 
 	If set, the backing device requires that all pages comprising a write
 	request must not be changed until writeout is complete.
+
+strictlimit (read-write)
+
+	Forces per-BDI checks for the share of given device in the write-back
+	cache even before the global background dirty limit is reached. This
+	is useful in situations where the global limit is much higher than
+	affordable for given relatively slow (or untrusted) device. Turning
+	strictlimit on has no visible effect if max_ratio is equal to 100%.

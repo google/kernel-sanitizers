@@ -3278,14 +3278,13 @@ static void __init nbu2ss_drv_set_ep_info(
 	ep->ep.ops = &nbu2ss_ep_ops;
 
 	if (isdigit(name[2])) {
-
-		long	num;
+		u32	num;
 		int	res;
 		char	tempbuf[2];
 
 		tempbuf[0] = name[2];
 		tempbuf[1] = '\0';
-		res = strict_strtol(tempbuf, 16, &num);
+		res = kstrtou32(tempbuf, 16, &num);
 
 		if (num == 0)
 			ep->ep.maxpacket = EP0_PACKETSIZE;
