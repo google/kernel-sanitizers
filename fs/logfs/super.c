@@ -287,13 +287,13 @@ static int logfs_make_writeable(struct super_block *sb)
 	if (err)
 		return err;
 
+	/* Do one GC pass before any data gets dirtied */
+	logfs_gc_pass(sb);
+
 	/* Check areas for trailing unaccounted data */
 	err = logfs_check_areas(sb);
 	if (err)
 		return err;
-
-	/* Do one GC pass before any data gets dirtied */
-	logfs_gc_pass(sb);
 
 	/* after all initializations are done, replay the journal
 	 * for rw-mounts, if necessary */
