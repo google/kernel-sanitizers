@@ -191,24 +191,20 @@ static int rsnd_dvc_pcm_new(struct rsnd_mod *mod,
 			    struct snd_soc_pcm_runtime *rtd)
 {
 	struct rsnd_dai_stream *io = rsnd_mod_to_io(mod);
-	struct rsnd_priv *priv = rsnd_mod_to_priv(mod);
-	struct device *dev = rsnd_priv_to_dev(priv);
 	struct snd_card *card = rtd->card->snd_card;
 	struct snd_kcontrol *kctrl;
 	static struct snd_kcontrol_new knew = {
 		.iface		= SNDRV_CTL_ELEM_IFACE_MIXER,
-		.name		= "Playback Volume",
 		.info		= rsnd_dvc_volume_info,
 		.get		= rsnd_dvc_volume_get,
 		.put		= rsnd_dvc_volume_put,
 	};
 	int ret;
 
-	if (!rsnd_dai_is_play(rdai, io)) {
-		dev_err(dev, "DVC%d is connected to Capture DAI\n",
-			rsnd_mod_id(mod));
-		return -EINVAL;
-	}
+	if (rsnd_dai_is_play(rdai, io))
+		knew.name = "Playback Volume";
+	else
+		knew.name = "Capture Volume";
 
 	kctrl = snd_ctl_new1(&knew, mod);
 	if (!kctrl)
@@ -239,6 +235,42 @@ struct rsnd_mod *rsnd_dvc_mod_get(struct rsnd_priv *priv, int id)
 	return &((struct rsnd_dvc *)(priv->dvc) + id)->mod;
 }
 
+static void rsnd_of_parse_dvc(struct platform_device *pdev,
+			      const struct rsnd_of_data *of_data,
+			      struct rsnd_priv *priv)
+{
+	struct device_node *node;
+	struct rsnd_dvc_platform_info *dvc_info;
+	struct rcar_snd_info *info = rsnd_priv_to_info(priv);
+	struct device *dev = &pdev->dev;
+	int nr;
+
+	if (!of_data)
+		return;
+
+	node = of_get_child_by_name(dev->of_node, "rcar_sound,dvc");
+	if (!node)
+		return;
+
+	nr = of_get_child_count(node);
+	if (!nr)
+		goto rsnd_of_parse_dvc_end;
+
+	dvc_info = devm_kzalloc(dev,
+				sizeof(struct rsnd_dvc_platform_info) * nr,
+				GFP_KERNEL);
+	if (!dvc_info) {
+		dev_err(dev, "dvc info allocation error\n");
+		goto rsnd_of_parse_dvc_end;
+	}
+
+	info->dvc_info		= dvc_info;
+	info->dvc_info_nr	= nr;
+
+rsnd_of_parse_dvc_end:
+	of_node_put(node);
+}
+
 int rsnd_dvc_probe(struct platform_device *pdev,
 		   const struct rsnd_of_data *of_data,
 		   struct rsnd_priv *priv)
@@ -249,6 +281,8 @@ int rsnd_dvc_probe(struct platform_device *pdev,
 	struct clk *clk;
 	char name[RSND_DVC_NAME_SIZE];
 	int i, nr;
+
+	rsnd_of_parse_dvc(pdev, of_data, priv);
 
 	nr = info->dvc_info_nr;
 	if (!nr)

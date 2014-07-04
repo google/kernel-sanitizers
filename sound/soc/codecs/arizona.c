@@ -243,6 +243,31 @@ int arizona_init_spk(struct snd_soc_codec *codec)
 }
 EXPORT_SYMBOL_GPL(arizona_init_spk);
 
+static const struct snd_soc_dapm_route arizona_mono_routes[] = {
+	{ "OUT1R", NULL, "OUT1L" },
+	{ "OUT2R", NULL, "OUT2L" },
+	{ "OUT3R", NULL, "OUT3L" },
+	{ "OUT4R", NULL, "OUT4L" },
+	{ "OUT5R", NULL, "OUT5L" },
+	{ "OUT6R", NULL, "OUT6L" },
+};
+
+int arizona_init_mono(struct snd_soc_codec *codec)
+{
+	struct arizona_priv *priv = snd_soc_codec_get_drvdata(codec);
+	struct arizona *arizona = priv->arizona;
+	int i;
+
+	for (i = 0; i < ARIZONA_MAX_OUTPUT; ++i) {
+		if (arizona->pdata.out_mono[i])
+			snd_soc_dapm_add_routes(&codec->dapm,
+						&arizona_mono_routes[i], 1);
+	}
+
+	return 0;
+}
+EXPORT_SYMBOL_GPL(arizona_init_mono);
+
 int arizona_init_gpio(struct snd_soc_codec *codec)
 {
 	struct arizona_priv *priv = snd_soc_codec_get_drvdata(codec);
@@ -1127,6 +1152,31 @@ static int arizona_startup(struct snd_pcm_substream *substream,
 					  constraint);
 }
 
+static void arizona_wm5102_set_dac_comp(struct snd_soc_codec *codec,
+					unsigned int rate)
+{
+	struct arizona_priv *priv = snd_soc_codec_get_drvdata(codec);
+	struct arizona *arizona = priv->arizona;
+	struct reg_default dac_comp[] = {
+		{ 0x80, 0x3 },
+		{ ARIZONA_DAC_COMP_1, 0 },
+		{ ARIZONA_DAC_COMP_2, 0 },
+		{ 0x80, 0x0 },
+	};
+
+	mutex_lock(&codec->mutex);
+
+	dac_comp[1].def = arizona->dac_comp_coeff;
+	if (rate >= 176400)
+		dac_comp[2].def = arizona->dac_comp_enabled;
+
+	mutex_unlock(&codec->mutex);
+
+	regmap_multi_reg_write(arizona->regmap,
+			       dac_comp,
+			       ARRAY_SIZE(dac_comp));
+}
+
 static int arizona_hw_params_rate(struct snd_pcm_substream *substream,
 				  struct snd_pcm_hw_params *params,
 				  struct snd_soc_dai *dai)
@@ -1153,6 +1203,15 @@ static int arizona_hw_params_rate(struct snd_pcm_substream *substream,
 
 	switch (dai_priv->clk) {
 	case ARIZONA_CLK_SYSCLK:
+		switch (priv->arizona->type) {
+		case WM5102:
+			arizona_wm5102_set_dac_comp(codec,
+						    params_rate(params));
+			break;
+		default:
+			break;
+		}
+
 		snd_soc_update_bits(codec, ARIZONA_SAMPLE_RATE_1,
 				    ARIZONA_SAMPLE_RATE_1_MASK, sr_val);
 		if (base)
@@ -1185,7 +1244,10 @@ static int arizona_hw_params(struct snd_pcm_substream *substream,
 	int base = dai->driver->base;
 	const int *rates;
 	int i, ret, val;
+	int channels = params_channels(params);
 	int chan_limit = arizona->pdata.max_channels_clocked[dai->id - 1];
+	int tdm_width = arizona->tdm_width[dai->id - 1];
+	int tdm_slots = arizona->tdm_slots[dai->id - 1];
 	int bclk, lrclk, wl, frame, bclk_target;
 
 	if (params_rate(params) % 8000)
@@ -1193,18 +1255,27 @@ static int arizona_hw_params(struct snd_pcm_substream *substream,
 	else
 		rates = &arizona_48k_bclk_rates[0];
 
-	bclk_target = snd_soc_params_to_bclk(params);
-	if (chan_limit && chan_limit < params_channels(params)) {
+	if (tdm_slots) {
+		arizona_aif_dbg(dai, "Configuring for %d %d bit TDM slots\n",
+				tdm_slots, tdm_width);
+		bclk_target = tdm_slots * tdm_width * params_rate(params);
+		channels = tdm_slots;
+	} else {
+		bclk_target = snd_soc_params_to_bclk(params);
+	}
+
+	if (chan_limit && chan_limit < channels) {
 		arizona_aif_dbg(dai, "Limiting to %d channels\n", chan_limit);
-		bclk_target /= params_channels(params);
+		bclk_target /= channels;
 		bclk_target *= chan_limit;
 	}
 
-	/* Force stereo for I2S mode */
+	/* Force multiple of 2 channels for I2S mode */
 	val = snd_soc_read(codec, base + ARIZONA_AIF_FORMAT);
-	if (params_channels(params) == 1 && (val & ARIZONA_AIF1_FMT_MASK)) {
+	if ((channels & 1) && (val & ARIZONA_AIF1_FMT_MASK)) {
 		arizona_aif_dbg(dai, "Forcing stereo mode\n");
-		bclk_target *= 2;
+		bclk_target /= channels;
+		bclk_target *= channels + 1;
 	}
 
 	for (i = 0; i < ARRAY_SIZE(arizona_44k1_bclk_rates); i++) {
@@ -1324,9 +1395,63 @@ static int arizona_set_tristate(struct snd_soc_dai *dai, int tristate)
 				   ARIZONA_AIF1_TRI, reg);
 }
 
+static void arizona_set_channels_to_mask(struct snd_soc_dai *dai,
+					 unsigned int base,
+					 int channels, unsigned int mask)
+{
+	struct snd_soc_codec *codec = dai->codec;
+	struct arizona_priv *priv = snd_soc_codec_get_drvdata(codec);
+	struct arizona *arizona = priv->arizona;
+	int slot, i;
+
+	for (i = 0; i < channels; ++i) {
+		slot = ffs(mask) - 1;
+		if (slot < 0)
+			return;
+
+		regmap_write(arizona->regmap, base + i, slot);
+
+		mask &= ~(1 << slot);
+	}
+
+	if (mask)
+		arizona_aif_warn(dai, "Too many channels in TDM mask\n");
+}
+
+static int arizona_set_tdm_slot(struct snd_soc_dai *dai, unsigned int tx_mask,
+				unsigned int rx_mask, int slots, int slot_width)
+{
+	struct snd_soc_codec *codec = dai->codec;
+	struct arizona_priv *priv = snd_soc_codec_get_drvdata(codec);
+	struct arizona *arizona = priv->arizona;
+	int base = dai->driver->base;
+	int rx_max_chan = dai->driver->playback.channels_max;
+	int tx_max_chan = dai->driver->capture.channels_max;
+
+	/* Only support TDM for the physical AIFs */
+	if (dai->id > ARIZONA_MAX_AIF)
+		return -ENOTSUPP;
+
+	if (slots == 0) {
+		tx_mask = (1 << tx_max_chan) - 1;
+		rx_mask = (1 << rx_max_chan) - 1;
+	}
+
+	arizona_set_channels_to_mask(dai, base + ARIZONA_AIF_FRAME_CTRL_3,
+				     tx_max_chan, tx_mask);
+	arizona_set_channels_to_mask(dai, base + ARIZONA_AIF_FRAME_CTRL_11,
+				     rx_max_chan, rx_mask);
+
+	arizona->tdm_width[dai->id - 1] = slot_width;
+	arizona->tdm_slots[dai->id - 1] = slots;
+
+	return 0;
+}
+
 const struct snd_soc_dai_ops arizona_dai_ops = {
 	.startup = arizona_startup,
 	.set_fmt = arizona_set_fmt,
+	.set_tdm_slot = arizona_set_tdm_slot,
 	.hw_params = arizona_hw_params,
 	.set_sysclk = arizona_dai_set_sysclk,
 	.set_tristate = arizona_set_tristate,

@@ -1,11 +1,10 @@
 config SND_SOC_SAMSUNG
 	tristate "ASoC support for Samsung"
 	depends on PLAT_SAMSUNG
-	select S3C2410_DMA if ARCH_S3C24XX
+	select S3C24XX_DMAC if ARCH_S3C24XX
 	select S3C64XX_PL080 if ARCH_S3C64XX
-	select SND_S3C_DMA if !ARCH_S3C24XX
-	select SND_S3C_DMA_LEGACY if ARCH_S3C24XX
-	select SND_SOC_GENERIC_DMAENGINE_PCM if !ARCH_S3C24XX
+	select SND_S3C_DMA
+	select SND_SOC_GENERIC_DMAENGINE_PCM
 	help
 	  Say Y or M if you want to add support for codecs attached to
 	  the Samsung SoCs' Audio interfaces. You will also need to
@@ -14,12 +13,8 @@ config SND_SOC_SAMSUNG
 config SND_S3C_DMA
 	tristate
 
-config SND_S3C_DMA_LEGACY
-	tristate
-
 config SND_S3C24XX_I2S
 	tristate
-	select S3C24XX_DMA
 
 config SND_S3C_I2SV2_SOC
 	tristate
@@ -27,7 +22,6 @@ config SND_S3C_I2SV2_SOC
 config SND_S3C2412_SOC_I2S
 	tristate
 	select SND_S3C_I2SV2_SOC
-	select S3C2410_DMA
 
 config SND_SAMSUNG_PCM
 	tristate
@@ -236,7 +230,7 @@ config SND_SOC_LITTLEMILL
 
 config SND_SOC_SNOW
 	tristate "Audio support for Google Snow boards"
-	depends on SND_SOC_SAMSUNG
+	depends on SND_SOC_SAMSUNG && I2C
 	select SND_SOC_MAX98090
 	select SND_SOC_MAX98095
 	select SND_SAMSUNG_I2S
