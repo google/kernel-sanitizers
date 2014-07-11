@@ -371,6 +371,12 @@ LDFLAGS_MODULE  =
 CFLAGS_KERNEL	=
 AFLAGS_KERNEL	=
 CFLAGS_GCOV	= -fprofile-arcs -ftest-coverage
+CFLAGS_KASAN	= -fsanitize=address --param asan-stack=0 \
+			--param asan-use-after-return=0 \
+			--param asan-globals=0 \
+			--param asan-memintrin=0 \
+			--param asan-instrumentation-with-call-threshold=0 \
+			-DKASAN_HOOKS
 
 
 # Use USERINCLUDE when you must reference the UAPI directories only.
@@ -415,7 +421,7 @@ export MAKE AWK GENKSYMS INSTALLKERNEL PERL UTS_MACHINE
 export HOSTCXX HOSTCXXFLAGS LDFLAGS_MODULE CHECK CHECKFLAGS
 
 export KBUILD_CPPFLAGS NOSTDINC_FLAGS LINUXINCLUDE OBJCOPYFLAGS LDFLAGS
-export KBUILD_CFLAGS CFLAGS_KERNEL CFLAGS_MODULE CFLAGS_GCOV
+export KBUILD_CFLAGS CFLAGS_KERNEL CFLAGS_MODULE CFLAGS_GCOV CFLAGS_KASAN
 export KBUILD_AFLAGS AFLAGS_KERNEL AFLAGS_MODULE
 export KBUILD_AFLAGS_MODULE KBUILD_CFLAGS_MODULE KBUILD_LDFLAGS_MODULE
 export KBUILD_AFLAGS_KERNEL KBUILD_CFLAGS_KERNEL
@@ -729,11 +735,6 @@ KBUILD_ARFLAGS := $(call ar-option,D)
 # check for 'asm goto'
 ifeq ($(shell $(CONFIG_SHELL) $(srctree)/scripts/gcc-goto.sh $(CC)), y)
 	KBUILD_CFLAGS += -DCC_HAVE_ASM_GOTO
-endif
-
-# use an appropriate -fsanitize if CONFIG_ASAN is enabled
-ifdef CONFIG_ASAN
-KBUILD_CFLAGS += -fsanitize=kernel-address
 endif
 
 # Add user supplied CPPFLAGS, AFLAGS and CFLAGS as the last assignments

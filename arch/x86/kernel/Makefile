@@ -119,6 +119,6 @@ ifeq ($(CONFIG_X86_64),y)
 	obj-y				+= vsmp_64.o
 endif
 
-CFLAGS_REMOVE_stacktrace.o = -fsanitize=kernel-address
-CFLAGS_REMOVE_dumpstack.o = -fsanitize=kernel-address
-CFLAGS_REMOVE_dumpstack_$(BITS).o = -fsanitize=kernel-address
+KASAN_SANITIZE_stacktrace.o = n
+KASAN_SANITIZE_dumpstack.o = n
+KASAN_SANITIZE_dumpstack_$(BITS).o = n
