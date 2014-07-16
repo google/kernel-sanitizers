@@ -28,11 +28,13 @@ static struct {
 	spinlock_t quarantine_lock;
 	struct list_head quarantine_list;
 	size_t quarantine_size;
+	int stack;
 } ctx = {
 	.enabled = 0,
 	.quarantine_lock = __SPIN_LOCK_UNLOCKED(ctx.quarantine_lock),
 	.quarantine_list = LIST_HEAD_INIT(ctx.quarantine_list),
 	.quarantine_size = 0,
+	.stack = 0,
 };
 
 static struct kmem_cache *virt_to_cache(const void *ptr)
@@ -642,6 +644,21 @@ void asan_check(const volatile void *ptr, size_t sz, bool wr)
 	check_memory_region((unsigned long)ptr, sz, wr);
 }
 EXPORT_SYMBOL(asan_check);
+
+unsigned long __asan_get_shadow_ptr(void)
+{
+	unsigned long frame_pointer = (unsigned long)__builtin_frame_address(0);
+	if (ctx.stack && ctx.enabled && addr_is_in_mem(frame_pointer)) {
+		return (unsigned long)(ASAN_SHADOW_OFFSET + PAGE_OFFSET - (PAGE_OFFSET >> ASAN_SHADOW_SCALE));
+	} else {
+		return 0;
+	}
+}
+EXPORT_SYMBOL(__asan_get_shadow_ptr);
+
+void asan_enable_stack(void) {
+	ctx.stack = 1;
+}
 
 /* to shut up compiler complains */
 void __asan_init_v3(void) {}
