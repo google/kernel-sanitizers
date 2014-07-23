@@ -32,12 +32,6 @@
 #define COLOR_MAGENTA COLOR("\x1B[1;35m")
 #define COLOR_WHITE   COLOR("\x1B[1;37m")
 
-static struct kmem_cache *virt_to_cache(const void *virt)
-{
-	struct page *page = virt_to_head_page(virt);
-	return page->slab_cache;
-}
-
 static void print_compressed_stack_trace(unsigned int *stack,
 					 unsigned int entries)
 {
@@ -133,21 +127,22 @@ static void print_memory_block_description(unsigned long addr,
 
 static void print_address_description(struct access_info *info)
 {
+	void *poisoned_ptr = (void *)info->poisoned_addr;
 	u8 *shadow = (u8 *)asan_mem_to_shadow(info->poisoned_addr);
-	u8 *shadow_left, *shadow_right;
 	bool use_after_free = (*shadow == ASAN_HEAP_FREE);
 
-	unsigned long redzone_addr;
 	struct redzone *redzone;
 	unsigned int *alloc_stack = NULL;
 	unsigned int *free_stack = NULL;
 
-	struct kmem_cache *cache = virt_to_cache((void *)info->poisoned_addr);
+	struct page *page = virt_to_head_page(poisoned_ptr);
+	struct kmem_cache *cache = page->slab_cache;
+	size_t object_size = cache->object_size;
 	void *object;
 	unsigned long object_addr;
-	size_t object_size;
+	u32 offset, idx;
 
-	if (!ASAN_HAS_REDZONE(cache) || *shadow == ASAN_SHADOW_GAP) {
+	if (!PageSlab(page) || !ASAN_HAS_REDZONE(cache) || *shadow == ASAN_SHADOW_GAP) {
 		pr_err("%s%s of size %lu by thread T%d:%s\n",
 		       COLOR_BLUE, info->is_write ? "Write" : "Read",
 		       info->access_size, info->thread_id, COLOR_NORMAL);
@@ -159,51 +154,11 @@ static void print_address_description(struct access_info *info)
 		return;
 	}
 
-	switch (*shadow) {
-	case ASAN_HEAP_REDZONE:
-		shadow_left = shadow_right = shadow;
-		while (*(shadow_left - 1) == ASAN_HEAP_REDZONE)
-			shadow_left--;
-		while (*shadow_right == ASAN_HEAP_REDZONE)
-			shadow_right++;
-
-		if (shadow - shadow_left <= shadow_right - shadow) {
-			shadow = shadow_left;
-			break;
-		}
-
-		/*
-		 * FIXME: we can end up in the next page, which is not
-		 * allocated or it's cache has no redzone.
-		 */
-		shadow = shadow_right;
-		while (*shadow != ASAN_HEAP_REDZONE) {
-			shadow++;
-			if (shadow == shadow_right + MAX_OBJECT_SIZE) {
-				shadow = shadow_left;
-				break;
-			}
-		}
-
-		break;
-	case ASAN_HEAP_KMALLOC_REDZONE:
-	case 0 ... ASAN_SHADOW_GRAIN - 1:
-		while (*shadow != ASAN_HEAP_REDZONE)
-			shadow++;
-		break;
-	case ASAN_HEAP_FREE:
-		while (*shadow == ASAN_HEAP_FREE)
-			shadow++;
-		break;
-	}
-
-	/* shadow now points to the beginning of the redzone. */
-	redzone_addr = asan_shadow_to_mem((unsigned long)shadow);
-	redzone = (struct redzone *)redzone_addr;
-
-	object = ASAN_REDZONE_TO_OBJECT(cache, redzone);
+	offset = poisoned_ptr - page->s_mem;
+	idx = reciprocal_divide(offset, cache->reciprocal_buffer_size);
+	object = page->s_mem + cache->size * idx;
 	object_addr = (unsigned long)object;
-	object_size = cache->object_size;
+	redzone = (struct redzone *)(object + object_size);
 
 	alloc_stack = redzone->alloc_stack;
 	if (use_after_free)
