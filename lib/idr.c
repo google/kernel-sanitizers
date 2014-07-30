@@ -587,7 +587,7 @@ static void __idr_remove_all(struct idr *idp)
 	int bt_mask;
 	struct idr_layer *p;
 	struct idr_layer *pa[MAX_IDR_LEVEL + 1];
-	struct idr_layer **paa = &pa[0];
+	struct idr_layer **paa = &pa[1];
 
 	n = idp->layers * IDR_BITS;
 	p = idp->top;
@@ -689,7 +689,7 @@ int idr_for_each(struct idr *idp,
 	int n, id, max, error = 0;
 	struct idr_layer *p;
 	struct idr_layer *pa[MAX_IDR_LEVEL + 1];
-	struct idr_layer **paa = &pa[0];
+	struct idr_layer **paa = &pa[1];
 
 	n = idp->layers * IDR_BITS;
 	p = rcu_dereference_raw(idp->top);
@@ -735,7 +735,7 @@ EXPORT_SYMBOL(idr_for_each);
 void *idr_get_next(struct idr *idp, int *nextidp)
 {
 	struct idr_layer *p, *pa[MAX_IDR_LEVEL + 1];
-	struct idr_layer **paa = &pa[0];
+	struct idr_layer **paa = &pa[1];
 	int id = *nextidp;
 	int n, max;
 
