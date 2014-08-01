@@ -31,4 +31,11 @@ config ASAN_SHADOW_OFFSET
 	  Select the offset in bytes of the shadow memory region
 	  within the physical memory.
 
+config ASAN_STACK_ORDER_ADD
+	hex "AddressSanitizer: enlarge stacks order"
+	depends on ASAN
+	default 2
+	help
+	  Enlarge all stacks 2^this_value times
+
 endif
