@@ -1,12 +1,6 @@
 #ifndef BOOT_COMPRESSED_EBOOT_H
 #define BOOT_COMPRESSED_EBOOT_H
 
-/*
- * Since the binaries in arch/x86/boot are not linked with ASAN runtime library,
- * we must not replace memset with asan_memset, etc.
- */
-#define ASAN_NO_INTERCEPTORS
-
 #define SEG_TYPE_DATA		(0 << 3)
 #define SEG_TYPE_READ_WRITE	(1 << 1)
 #define SEG_TYPE_CODE		(1 << 3)

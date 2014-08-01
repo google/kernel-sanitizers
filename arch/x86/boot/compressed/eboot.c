@@ -7,6 +7,12 @@
  *
  * ----------------------------------------------------------------------- */
 
+/*
+ * Since the binaries in arch/x86/boot are not linked with ASAN runtime library,
+ * we must not replace memset with asan_memset, etc.
+ */
+#define ASAN_NO_INTERCEPTORS
+
 #include <linux/efi.h>
 #include <linux/pci.h>
 #include <asm/efi.h>
