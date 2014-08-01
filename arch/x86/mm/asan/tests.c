@@ -192,6 +192,16 @@ void asan_do_bo_atomic_rmwcc(void)
 	kfree(ptr);
 }
 
+/* Expected to produce a report. */
+void asan_do_bo_stack(void)
+{
+	char a[16];
+	volatile int sixteen = 16;
+
+	pr_err("TEST: stack-out-of-bounds:\n");
+	pr_err("%c\n", a[sixteen]);
+}
+
 void asan_run_tests(void)
 {
 	asan_do_bo();
@@ -212,6 +222,15 @@ void asan_run_tests(void)
 	asan_do_bo_atomic_rmwcc();
 }
 
+/* TODO: remove definition */
+void asan_enable_stack(void);
+
+void asan_run_stack(void)
+{
+	asan_enable_stack();
+	asan_do_bo_stack();
+}
+
 static ssize_t asan_tests_write(struct file *file, const char __user *buf,
 				size_t count, loff_t *offset)
 {
@@ -225,6 +244,9 @@ static ssize_t asan_tests_write(struct file *file, const char __user *buf,
 
 	if (!strcmp(buffer, "asan_run_tests\n"))
 		asan_run_tests();
+
+	if (!strcmp(buffer, "asan_run_stack\n"))
+		asan_run_stack();
 
 	return count;
 }

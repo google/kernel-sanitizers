@@ -28,11 +28,13 @@ static struct {
 	spinlock_t quarantine_lock;
 	struct list_head quarantine_list;
 	size_t quarantine_size;
+	int stack;
 } ctx = {
 	.enabled = 0,
 	.quarantine_lock = __SPIN_LOCK_UNLOCKED(ctx.quarantine_lock),
 	.quarantine_list = LIST_HEAD_INIT(ctx.quarantine_list),
 	.quarantine_size = 0,
+	.stack = 0,
 };
 
 static struct kmem_cache *virt_to_cache(const void *ptr)
@@ -565,68 +567,137 @@ void *asan_memmove(void *dst, const void *src, size_t len)
 }
 EXPORT_SYMBOL(asan_memmove);
 
-void __kasan_read1(unsigned long addr)
+void __asan_load1(unsigned long addr)
 {
 	check_memory_word(addr, 1, false);
 }
-EXPORT_SYMBOL(__kasan_read1);
+EXPORT_SYMBOL(__asan_load1);
 
-void __kasan_read2(unsigned long addr)
+void __asan_load2(unsigned long addr)
 {
 	check_memory_word(addr, 2, false);
 }
-EXPORT_SYMBOL(__kasan_read2);
+EXPORT_SYMBOL(__asan_load2);
 
-void __kasan_read4(unsigned long addr)
+void __asan_load4(unsigned long addr)
 {
 	check_memory_word(addr, 4, false);
 }
-EXPORT_SYMBOL(__kasan_read4);
+EXPORT_SYMBOL(__asan_load4);
 
-void __kasan_read8(unsigned long addr)
+void __asan_load8(unsigned long addr)
 {
 	check_memory_word(addr, 8, false);
 }
-EXPORT_SYMBOL(__kasan_read8);
+EXPORT_SYMBOL(__asan_load8);
 
-void __kasan_read16(unsigned long addr)
+void __asan_load16(unsigned long addr)
 {
 	check_memory_region(addr, 16, false);
 }
-EXPORT_SYMBOL(__kasan_read16);
+EXPORT_SYMBOL(__asan_load16);
 
-void __kasan_write1(unsigned long addr)
+void __asan_loadN(unsigned long addr, size_t size)
+{
+	check_memory_region(addr, size, false);
+}
+EXPORT_SYMBOL(__asan_loadN);
+
+void __asan_store1(unsigned long addr)
 {
 	check_memory_word(addr, 1, true);
 }
-EXPORT_SYMBOL(__kasan_write1);
+EXPORT_SYMBOL(__asan_store1);
 
-void __kasan_write2(unsigned long addr)
+void __asan_store2(unsigned long addr)
 {
 	check_memory_word(addr, 2, true);
 }
-EXPORT_SYMBOL(__kasan_write2);
+EXPORT_SYMBOL(__asan_store2);
 
-void __kasan_write4(unsigned long addr)
+void __asan_store4(unsigned long addr)
 {
 	check_memory_word(addr, 4, true);
 }
-EXPORT_SYMBOL(__kasan_write4);
+EXPORT_SYMBOL(__asan_store4);
 
-void __kasan_write8(unsigned long addr)
+void __asan_store8(unsigned long addr)
 {
 	check_memory_word(addr, 8, true);
 }
-EXPORT_SYMBOL(__kasan_write8);
+EXPORT_SYMBOL(__asan_store8);
 
-void __kasan_write16(unsigned long addr)
+void __asan_store16(unsigned long addr)
 {
 	check_memory_region(addr, 16, true);
 }
-EXPORT_SYMBOL(__kasan_write16);
+EXPORT_SYMBOL(__asan_store16);
+
+void __asan_storeN(unsigned long addr, size_t size)
+{
+	check_memory_region(addr, size, true);
+}
+EXPORT_SYMBOL(__asan_storeN);
 
 void asan_check(const volatile void *ptr, size_t sz, bool wr)
 {
 	check_memory_region((unsigned long)ptr, sz, wr);
 }
 EXPORT_SYMBOL(asan_check);
+
+unsigned long __asan_get_shadow_ptr(void)
+{
+	unsigned long frame_pointer = (unsigned long)__builtin_frame_address(0);
+	if (ctx.stack && ctx.enabled && addr_is_in_mem(frame_pointer)) {
+		return (unsigned long)(ASAN_SHADOW_OFFSET + PAGE_OFFSET - (PAGE_OFFSET >> ASAN_SHADOW_SCALE));
+	} else {
+		return 0;
+	}
+}
+EXPORT_SYMBOL(__asan_get_shadow_ptr);
+
+void asan_enable_stack(void) {
+	ctx.stack = 1;
+}
+
+/* to shut up compiler complains */
+void __asan_init_v3(void) {}
+EXPORT_SYMBOL(__asan_init_v3);
+
+void __asan_handle_no_return(void) {}
+EXPORT_SYMBOL(__asan_handle_no_return);
+
+
+/*
+ * Old instrumentation uses __kasan_(read|write) instead of __asan_(load|store)
+ */
+
+void __kasan_read1(unsigned long addr) __attribute__ ((alias ("__asan_load1")));
+EXPORT_SYMBOL(__kasan_read1);
+
+void __kasan_read2(unsigned long addr) __attribute__ ((alias ("__asan_load2")));
+EXPORT_SYMBOL(__kasan_read2);
+
+void __kasan_read4(unsigned long addr) __attribute__ ((alias ("__asan_load4")));
+EXPORT_SYMBOL(__kasan_read4);
+
+void __kasan_read8(unsigned long addr) __attribute__ ((alias ("__asan_load8")));
+EXPORT_SYMBOL(__kasan_read8);
+
+void __kasan_read16(unsigned long addr) __attribute__ ((alias ("__asan_load16")));
+EXPORT_SYMBOL(__kasan_read16);
+
+void __kasan_write1(unsigned long addr) __attribute__ ((alias ("__asan_store1")));
+EXPORT_SYMBOL(__kasan_write1);
+
+void __kasan_write2(unsigned long addr) __attribute__ ((alias ("__asan_store2")));
+EXPORT_SYMBOL(__kasan_write2);
+
+void __kasan_write4(unsigned long addr) __attribute__ ((alias ("__asan_store4")));
+EXPORT_SYMBOL(__kasan_write4);
+
+void __kasan_write8(unsigned long addr) __attribute__ ((alias ("__asan_store8")));
+EXPORT_SYMBOL(__kasan_write8);
+
+void __kasan_write16(unsigned long addr) __attribute__ ((alias ("__asan_store16")));
+EXPORT_SYMBOL(__kasan_write16);
