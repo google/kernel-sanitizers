@@ -7,6 +7,8 @@
 #include <linux/slab.h>
 #include <linux/string.h>
 
+#include "quarantine.h"
+
 /* Expected to produce a report. */
 void asan_do_bo(void)
 {
@@ -202,6 +204,27 @@ void asan_do_bo_stack(void)
 	pr_err("%c\n", a[sixteen]);
 }
 
+void asan_do_quarantine_check(void)
+{
+	void* ptr;
+	size_t old_q_size = asan_quarantine_size();
+	int i;
+
+	pr_err("TEST: quarantine\n");
+	for (i = 0; i < 10; i++) {
+		while (asan_quarantine_size() >= old_q_size) {
+			int j;
+			old_q_size = asan_quarantine_size();
+			pr_err("Quarantine size %ld\n", old_q_size);
+			for (j = 0; j < 10; j--) {
+				ptr = kmalloc(1024, GFP_KERNEL);
+				kfree(ptr);
+			}
+		}
+	}
+	pr_err("TEST complete\n");
+}
+
 void asan_run_tests(void)
 {
 	asan_do_bo();
@@ -220,6 +243,7 @@ void asan_run_tests(void)
 	/* asan_do_user_memory_access(); */
 	asan_do_bo_atomic();
 	asan_do_bo_atomic_rmwcc();
+	asan_do_quarantine_check();
 }
 
 /* TODO: remove definition */
@@ -248,6 +272,14 @@ static ssize_t asan_tests_write(struct file *file, const char __user *buf,
 	if (!strcmp(buffer, "asan_run_stack\n"))
 		asan_run_stack();
 
+	if (!strcmp(buffer, "asan_test_quarantine\n"))
+		asan_do_quarantine_check();
+
+        if (!strcmp(buffer, "asan_enable\n")) {
+          asan_enable();
+        } else if (!strcmp(buffer, "asan_disable\n")) {
+          asan_disable();
+        }
 	return count;
 }
 

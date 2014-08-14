@@ -24,6 +24,9 @@ void asan_slab_destroy(struct kmem_cache *cache, void *slab);
 void asan_slab_alloc(struct kmem_cache *cache, void *object);
 void asan_slab_free(struct kmem_cache *cache, void *object);
 
+void asan_enable(void);
+void asan_disable(void);
+
 void asan_kmalloc(struct kmem_cache *cache, void *object, size_t size);
 void asan_krealloc(void *object, size_t new_size);
 size_t asan_ksize(const void *ptr);

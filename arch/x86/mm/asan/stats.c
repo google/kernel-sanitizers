@@ -1,5 +1,7 @@
 #include "asan.h"
 
+#include "quarantine.h"
+
 #include <linux/fs.h>
 #include <linux/init.h>
 #include <linux/kernel.h>
@@ -17,6 +19,7 @@ static int asan_stats_show(struct seq_file *m, void *v)
 
 	spin_lock_irqsave(&asan_error_counter_lock, flags);
 	seq_printf(m, "errors: %d\n", asan_error_counter);
+	seq_printf(m, "quarantine size: %ld\n", asan_quarantine_size());
 	spin_unlock_irqrestore(&asan_error_counter_lock, flags);
 	return 0;
 }
