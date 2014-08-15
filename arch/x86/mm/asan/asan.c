@@ -19,7 +19,6 @@
 #include <asm/thread_info.h>
 
 #include "asan.h"
-#include "quarantine.h"
 
 #undef memset
 #undef memcpy
@@ -275,7 +274,7 @@ void __init asan_init_shadow(void)
 	poison_shadow(shadow_beg, shadow_size, ASAN_SHADOW_GAP);
 
 	asan_quarantine_init();
-	//ctx.enabled = 1;
+	ctx.enabled = 1;
 }
 
 void asan_enable(void)

@@ -77,6 +77,13 @@ static inline struct kmem_cache *virt_to_cache(const void *ptr)
 	return page->slab_cache;
 }
 
+void asan_quarantine_init(void);
+void asan_quarantine_put(struct kmem_cache *cache, void *object);
+void asan_quarantine_flush(void);
+void asan_quarantine_drop_cache(struct kmem_cache *cache);
+size_t asan_quarantine_size(void);
 
+void asan_enable(void);
+void asan_disable(void);
 
 #endif

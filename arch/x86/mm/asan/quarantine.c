@@ -1,12 +1,18 @@
-#include "quarantine.h"
-
 #include "asan.h"
 
 #include <linux/list.h>
 #include <linux/types.h>
 #include <linux/slab.h>
-#include <linux/mm.h> 
+#include <linux/mm.h>
 #include <asm-generic/atomic-long.h>
+
+/*
+ * Free memory quarantine implementation.
+ *
+ * There is one main fifo queue, plus if SMP is enabled, one queue per CPU.
+ * The queues are implemented as linked lists with struct redzone asumed
+ * members.
+ */
 
 
 struct q_queue {
@@ -19,9 +25,9 @@ struct q_queue global_queue;
 int percpu_enabled = 0;
 DEFINE_PER_CPU(struct q_queue, percpu_queue);
 
+// Initializes the queue
 static void q_queue_init(struct q_queue* queue)
 {
-	pr_err("q_queue init %p\n", queue);
 	spin_lock_init(&queue->lock);
 	INIT_LIST_HEAD(&queue->list);
 	atomic_long_set(&queue->size, 0);
@@ -29,7 +35,7 @@ static void q_queue_init(struct q_queue* queue)
 
 // Adds an entry to head of the queue.
 static void q_queue_put(struct q_queue* queue, struct kmem_cache* cache,
-		void* object) 
+		void* object)
 {
 	struct redzone *redzone;
 	unsigned long flags;
@@ -50,8 +56,7 @@ static void q_queue_put(struct q_queue* queue, struct kmem_cache* cache,
 // is also locked after return.
 static void q_queue_remove(struct q_queue* queue, struct redzone* redzone,
 		unsigned long* flags)
-{
-	struct kmem_cache *cache;
+{	struct kmem_cache *cache;
 	void *object;
 
 	BUG_ON(list_empty(&queue->list));
@@ -78,21 +83,23 @@ static void q_queue_transfer(struct q_queue* from, struct q_queue* to)
 	LIST_HEAD(temp);
 	size_t size;
 
-	pr_err("q_queue %p transfer to %p\n", from, to);
 	spin_lock_irqsave(&from->lock, flags);
 	size = atomic_long_read(&from->size);
-	list_move(&from->list, &temp);
+	list_splice_init(&from->list, &temp);
 	atomic_long_set(&from->size, 0);
-	INIT_LIST_HEAD(&from->list);
 	spin_unlock_irqrestore(&from->lock, flags);
 	
 	spin_lock_irqsave(&to->lock, flags);
-	list_move(&temp, &to->list);
+	list_splice(&temp, &to->list);
 	atomic_long_add(size, &to->size);
 	spin_unlock_irqrestore(&to->lock, flags);
-	pr_err("q_queue transfered %ld bytes\n", size);
 }
 
+// Lazy per-cpu queues initialization. The true number of CPUs and structures
+// for per-cpu data aren't available during boot, so we initialize these
+// structures when the number of CPUs is more then 1.
+// Returns 1 if per-cpu queues have been initialized, 0 if they haven't and the
+// main queue should be used instead.
 static int try_init_percpu(void)
 {
 	int cpu;
@@ -116,13 +123,14 @@ static int try_init_percpu(void)
 	return 1;
 }
 
-
 void __init asan_quarantine_init(void)
 {
 	q_queue_init(&global_queue);
 	try_init_percpu();
 }
 
+// Puts the memory block to quarantine. If the per-cpu queue is larger then
+// treshold, transfers it to the main queue.
 void asan_quarantine_put(struct kmem_cache *cache, void *object)
 {
 	if (try_init_percpu()) {
@@ -137,14 +145,20 @@ void asan_quarantine_put(struct kmem_cache *cache, void *object)
 	}
 }
 
+
 static inline size_t global_size(void)
 {
 	return atomic_long_read(&global_queue.size);
 }
 
+// If the whole size of quarantine memory is over twice ASAN_QUARANTINE_SIZE,
+// reduces it to no more than ASAN_QUARANTINE_SIZE.
+// In case of flush transfers all per-cpu queues to the main first,
+// to have the same average quarantine time on all CPUs regardless of which one
+// frees memory more frequently.
 void asan_quarantine_flush(void)
 {
-	if (try_init_percpu() 
+	if (try_init_percpu()
 			&& global_size() > ASAN_QUARANTINE_SIZE
 			&& asan_quarantine_size() > ASAN_QUARANTINE_SIZE * 2) {
 		int cpu;
@@ -170,24 +184,26 @@ void asan_quarantine_flush(void)
 	}
 }
 
-static void q_queue_drop_cache(struct q_queue* q, struct kmem_cache* cache)
+// Removes all blocks allocated in cache from queue.
+static void q_queue_drop_cache(struct q_queue* queue, struct kmem_cache* cache)
 {
 	struct list_head *pos, *temp;
 	struct redzone *redzone;
 	unsigned long flags;
 
-	spin_lock_irqsave(&q->lock, flags);
+	spin_lock_irqsave(&queue->lock, flags);
 
-	list_for_each_safe(pos, temp, &q->list) {
+	list_for_each_safe(pos, temp, &queue->list) {
 		redzone = list_entry(pos, struct redzone, quarantine_list);
 		if (virt_to_cache(redzone) == cache) {
-			q_queue_remove(q, redzone, &flags);
+			q_queue_remove(queue, redzone, &flags);
 		}
 	}
 
-	spin_unlock_irqrestore(&q->lock, flags);
+	spin_unlock_irqrestore(&queue->lock, flags);
 }
 
+// Removes all blocks allocated in cache from quarantine.
 void asan_quarantine_drop_cache(struct kmem_cache *cache)
 {
 	if (try_init_percpu()) {
@@ -201,6 +217,7 @@ void asan_quarantine_drop_cache(struct kmem_cache *cache)
 	q_queue_drop_cache(&global_queue, cache);
 }
 
+// Returns the total size of memory in quarantine.
 size_t asan_quarantine_size()
 {
 	size_t size = global_size();

@@ -1,7 +1,5 @@
 #include "asan.h"
 
-#include "quarantine.h"
-
 #include <linux/fs.h>
 #include <linux/init.h>
 #include <linux/kernel.h>
