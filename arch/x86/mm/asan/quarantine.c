@@ -15,9 +15,10 @@
  */
 
 
+/** Queue of quarantined memory blocks */
 struct q_queue {
-	struct list_head list;
-	size_t size;
+	struct list_head list;  /** list of redzones */
+	size_t size;            /** total size of blocks in queue */
 };
 
 static struct q_queue global_queue;
@@ -27,15 +28,21 @@ static DEFINE_PER_CPU(struct q_queue, percpu_queue);
 static DEFINE_PER_CPU(int, percpu_initialized);
 
 /** Initializes the queue */
-static void q_queue_init(struct q_queue* queue)
+static void q_queue_init(struct q_queue *queue)
 {
 	INIT_LIST_HEAD(&queue->list);
 	queue->size = 0;
 }
 
-/** Adds an entry to head of the queue. */
-static void q_queue_put(struct q_queue* queue, struct kmem_cache* cache,
-		void* object)
+/**
+ * Adds an entry to head of the queue. Calculates the redzone to add based on
+ * the parameters.
+ * @queue: The queue to add to.
+ * @cache: The cache where the object was allocated.
+ * @object: Pointer to the freed memory.
+ * */
+static void q_queue_put(struct q_queue *queue, struct kmem_cache *cache,
+		void *object)
 {
 	struct redzone *redzone;
 
@@ -46,9 +53,14 @@ static void q_queue_put(struct q_queue* queue, struct kmem_cache* cache,
 	queue->size += cache->size;
 }
 
-/** Removes an entry from the queue and moves it to list */
-static void q_queue_remove(struct q_queue* queue, struct redzone* redzone,
-		struct list_head* list)
+/**
+ * Removes an entry from the queue and moves it a given list
+ * @queue: The queue to remove from.
+ * @redzone: The entry to remove.
+ * @list: The list to move the entry to.
+ */
+static void q_queue_remove(struct q_queue *queue, struct redzone *redzone,
+		struct list_head *list)
 {	struct kmem_cache *cache;
 
 	BUG_ON(list_empty(&queue->list));
@@ -57,12 +69,13 @@ static void q_queue_remove(struct q_queue* queue, struct redzone* redzone,
 	queue->size -= cache->size;
 }
 
-static void redzone_list_free(struct list_head* list)
+/** Frees memory for all redzones in the list */
+static void redzone_list_free(struct list_head *list)
 {
-	struct list_head* pos;
-	struct redzone* redzone;
-	struct kmem_cache* cache;
-	void* object;
+	struct list_head *pos;
+	struct redzone *redzone;
+	struct kmem_cache *cache;
+	void *object;
 
 	list_for_each(pos, list) {
 		redzone = list_entry(pos, struct redzone, quarantine_list);
@@ -76,29 +89,33 @@ static void redzone_list_free(struct list_head* list)
  * Transfers the entire from queue to the head of the to, leaving the from queue
  * empty
  */
-static void q_queue_transfer(struct q_queue* from, struct q_queue* to)
+static void q_queue_transfer(struct q_queue *from, struct q_queue *to)
 {
 	list_splice_init(&from->list, &to->list);
 	to->size += from->size;
 	from->size = 0;
 }
 
+/** Initializes quarantine structures */
 void __init asan_quarantine_init(void)
 {
 	q_queue_init(&global_queue);
 }
 
+/* Transfers the per-cpu queue to the global queue. Then if the global queue 
+ * size is over ASAN_QUARANTINE_SIZE, reduces it to zero.
+ */
 static inline void quarantine_flush(void)
 {
 	unsigned long flags;
-	struct q_queue* q = &get_cpu_var(percpu_queue);
+	struct q_queue *q = &get_cpu_var(percpu_queue);
 
 	spin_lock_irqsave(&global_queue_lock, flags);
 
 	q_queue_transfer(q, &global_queue);
 
 	if (global_queue.size > ASAN_QUARANTINE_SIZE) {
-		struct redzone* redzone;
+		struct redzone *redzone;
 		LIST_HEAD(to_free);
 
 		while (global_queue.size > 0) {
@@ -116,7 +133,6 @@ static inline void quarantine_flush(void)
 	} else {
 		spin_unlock_irqrestore(&global_queue_lock, flags);
 	}
-
 }
 
 /**
@@ -126,7 +142,7 @@ static inline void quarantine_flush(void)
 void asan_quarantine_put(struct kmem_cache *cache, void *object)
 {
 	unsigned long flags;
-	struct q_queue* q = &get_cpu_var(percpu_queue);
+	struct q_queue *q = &get_cpu_var(percpu_queue);
 
 	local_irq_save(flags);
 
@@ -147,8 +163,8 @@ void asan_quarantine_put(struct kmem_cache *cache, void *object)
 
 
 /** Removes all blocks allocated in cache from queue. */
-static void q_queue_drop_cache(struct q_queue* queue, struct kmem_cache* cache,
-		struct list_head* to_free)
+static void q_queue_drop_cache(struct q_queue *queue, struct kmem_cache *cache,
+		struct list_head *to_free)
 {
 	struct list_head *pos, *temp;
 	struct redzone *redzone;
@@ -161,10 +177,10 @@ static void q_queue_drop_cache(struct q_queue* queue, struct kmem_cache* cache,
 	}
 }
 
-static void per_cpu_drop_cache(void* arg) {
-	struct kmem_cache* cache = (struct kmem_cache*) arg;
+static void per_cpu_drop_cache(void *arg) {
+	struct kmem_cache *cache = (struct kmem_cache*) arg;
 	LIST_HEAD(to_free);
-	struct q_queue* q = &get_cpu_var(percpu_queue);
+	struct q_queue *q = &get_cpu_var(percpu_queue);
 	
 	BUG_ON(!irqs_disabled());
 	
@@ -195,7 +211,7 @@ void asan_quarantine_drop_cache(struct kmem_cache *cache)
 }
 
 /** Returns the total size of memory in quarantine. No synchronization is used,
- * the result may be inconsistent. */
+  * the result may be inconsistent. */
 size_t asan_quarantine_size()
 {
 	size_t size = global_queue.size;

@@ -369,7 +369,7 @@ void asan_slab_free(struct kmem_cache *cache, void *object)
 	struct redzone *redzone;
 	unsigned int *free_stack;
 	unsigned long strip_addr;
-	
+
 	if (!ctx.enabled) {
 		noasan_cache_free(cache, object, _THIS_IP_);
 		return;
