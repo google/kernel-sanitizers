@@ -316,7 +316,6 @@ void asan_slab_create(struct kmem_cache *cache, void *slab)
 
 	poison_shadow(slab, (1 << cache->gfporder) << PAGE_SHIFT,
 			   ASAN_HEAP_REDZONE);
-	asan_quarantine_flush();
 }
 
 void asan_slab_destroy(struct kmem_cache *cache, void *slab)
@@ -344,8 +343,6 @@ void asan_slab_alloc(struct kmem_cache *cache, void *object)
 					rounded_down_size);
 			*shadow = size & (ASAN_SHADOW_GRAIN - 1);
 		}
-
-		asan_quarantine_flush();
 	}
 
 	if (!ASAN_HAS_REDZONE(cache))
@@ -414,7 +411,6 @@ void asan_kmalloc(struct kmem_cache *cache, void *object, size_t size)
 		round_down(size, ASAN_SHADOW_GRAIN);
 	struct redzone *redzone;
 	u8 *shadow;
-
 
 	if (object == NULL)
 		return;
