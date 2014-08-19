@@ -215,7 +215,8 @@ void asan_do_bo_quarantine_flush(void)
 
 	while (asan_quarantine_size() >= old_size
 			&& mem_recycled < ASAN_QUARANTINE_SIZE * 2) {
-		void* p = kmalloc(2048, GFP_KERNEL);
+		void *p = kmalloc(2048, GFP_KERNEL);
+
 		kfree(p);
 		mem_recycled += 2058;
 	}
@@ -229,13 +230,14 @@ struct test_struct {
 
 void asan_do_bo_kmem_cache(void)
 {
-	struct kmem_cache* cache;
+	struct kmem_cache *cache;
 	int i;
 
 	pr_err("TEST: quarantine kmem_cache\n");
 	cache = KMEM_CACHE(test_struct, SLAB_TRACE);
 	for (i = 0; i < 100; i++) {
-		void* p = kmem_cache_alloc(cache, GFP_KERNEL);
+		void *p = kmem_cache_alloc(cache, GFP_KERNEL);
+
 		kmem_cache_free(cache, p);
 	}
 
@@ -290,11 +292,10 @@ static ssize_t asan_tests_write(struct file *file, const char __user *buf,
 	if (!strcmp(buffer, "asan_run_stack\n"))
 		asan_run_stack();
 
-        if (!strcmp(buffer, "asan_enable\n")) {
-          asan_enable();
-        } else if (!strcmp(buffer, "asan_disable\n")) {
-          asan_disable();
-        }
+	if (!strcmp(buffer, "asan_enable\n"))
+		asan_enable();
+	else if (!strcmp(buffer, "asan_disable\n")) {
+		asan_disable();
 	return count;
 }
 

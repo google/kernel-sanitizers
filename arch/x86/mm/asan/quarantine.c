@@ -102,7 +102,8 @@ void __init asan_quarantine_init(void)
 	q_queue_init(&global_queue);
 }
 
-/* Transfers the per-cpu queue to the global queue. Then if the global queue 
+/**
+ * Transfers the per-cpu queue to the global queue. Then if the global queue
  * size is over ASAN_QUARANTINE_SIZE, reduces it to zero.
  */
 static inline void quarantine_flush(void)
@@ -171,26 +172,23 @@ static void q_queue_drop_cache(struct q_queue *queue, struct kmem_cache *cache,
 
 	list_for_each_safe(pos, temp, &queue->list) {
 		redzone = list_entry(pos, struct redzone, quarantine_list);
-		if (virt_to_cache(redzone) == cache) {
+		if (virt_to_cache(redzone) == cache)
 			q_queue_remove(queue, redzone, to_free);
-		}
 	}
 }
 
-static void per_cpu_drop_cache(void *arg) {
-	struct kmem_cache *cache = (struct kmem_cache*) arg;
+static void per_cpu_drop_cache(void *arg)
+{
+	struct kmem_cache *cache = (struct kmem_cache *) arg;
 	LIST_HEAD(to_free);
 	struct q_queue *q = &get_cpu_var(percpu_queue);
-	
-	BUG_ON(!irqs_disabled());
-	
-	if (!get_cpu_var(percpu_initialized)) {
-		q_queue_init(q);
-		get_cpu_var(percpu_initialized) = 1;
-	}
 
-	q_queue_drop_cache(q, cache, &to_free);
-	redzone_list_free(&to_free);
+	BUG_ON(!irqs_disabled());
+
+	if (get_cpu_var(percpu_initialized)) {
+		q_queue_drop_cache(q, cache, &to_free);
+		redzone_list_free(&to_free);
+	}
 }
 
 /** Removes all blocks allocated in cache from quarantine. */
@@ -212,7 +210,7 @@ void asan_quarantine_drop_cache(struct kmem_cache *cache)
 
 /** Returns the total size of memory in quarantine. No synchronization is used,
   * the result may be inconsistent. */
-size_t asan_quarantine_size()
+size_t asan_quarantine_size(void)
 {
 	size_t size = global_queue.size;
 	int cpu;
