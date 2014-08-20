@@ -111,7 +111,7 @@ void __init asan_quarantine_init(void)
  * Transfers the per-cpu queue to the global queue. Then if the global queue
  * size is over ASAN_QUARANTINE_SIZE, reduces it to zero.
  */
-static inline void quarantine_transfer_and_flush(q_queue *from)
+static inline void quarantine_transfer_and_flush(struct q_queue *from)
 {
 	unsigned long flags;
 
@@ -150,7 +150,7 @@ void asan_quarantine_put(struct kmem_cache *cache, void *object)
 	struct q_queue *q;
 
 	local_irq_save(flags);
-	get_cpu_var(percpu_queue);
+	q = &get_cpu_var(percpu_queue);
 
 	if (!q->initialized)
 		q_queue_init(q);
@@ -159,6 +159,7 @@ void asan_quarantine_put(struct kmem_cache *cache, void *object)
 	if (q->size > ASAN_QUARANTINE_SIZE / num_possible_cpus()) {
 		struct q_queue temp;
 
+		temp.initialized = 0;
 		q_queue_init(&temp);
 		q_queue_transfer(q, &temp);
 
