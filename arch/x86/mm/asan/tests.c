@@ -294,7 +294,7 @@ static ssize_t asan_tests_write(struct file *file, const char __user *buf,
 
 	if (!strcmp(buffer, "asan_enable\n"))
 		asan_enable();
-	else if (!strcmp(buffer, "asan_disable\n")) {
+	else if (!strcmp(buffer, "asan_disable\n"))
 		asan_disable();
 	return count;
 }
