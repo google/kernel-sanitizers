@@ -147,7 +147,10 @@ static inline void quarantine_transfer_and_flush(q_queue *from)
 void asan_quarantine_put(struct kmem_cache *cache, void *object)
 {
 	unsigned long flags;
-	struct q_queue *q = get_cpu_var(percpu_queue);
+	struct q_queue *q;
+
+	local_irq_save(flags);
+	get_cpu_var(percpu_queue);
 
 	if (!q->initialized)
 		q_queue_init(q);
@@ -160,10 +163,12 @@ void asan_quarantine_put(struct kmem_cache *cache, void *object)
 		q_queue_transfer(q, &temp);
 
 		put_cpu_var(percpu_queue);
+		local_irq_restore(flags);
 
 		quarantine_transfer_and_flush(&temp);
 	} else {
 		put_cpu_var(percpu_queue);
+		local_irq_restore(flags);
 	}
 }
 
