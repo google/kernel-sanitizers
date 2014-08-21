@@ -7,6 +7,8 @@
 #include <linux/slab.h>
 #include <linux/string.h>
 
+#include "asan.h"
+
 /* Expected to produce a report. */
 void asan_do_bo(void)
 {
@@ -202,6 +204,46 @@ void asan_do_bo_stack(void)
 	pr_err("%c\n", a[sixteen]);
 }
 
+void asan_do_bo_quarantine_flush(void)
+{
+	size_t old_size;
+	size_t mem_recycled = 0;
+
+	pr_err("TEST: quarantine flush\n");
+	old_size = asan_quarantine_size();
+	pr_err("Quarantine size %ld\n", old_size);
+
+	while (asan_quarantine_size() >= old_size
+			&& mem_recycled < ASAN_QUARANTINE_SIZE * 2) {
+		void *p = kmalloc(2048, GFP_KERNEL);
+
+		kfree(p);
+		mem_recycled += 2058;
+	}
+	pr_err("Memory cycled %ld\n", mem_recycled);
+	pr_err("New quarantine size %ld\n", asan_quarantine_size());
+}
+
+struct test_struct {
+	int field;
+};
+
+void asan_do_bo_kmem_cache(void)
+{
+	struct kmem_cache *cache;
+	int i;
+
+	pr_err("TEST: quarantine kmem_cache\n");
+	cache = KMEM_CACHE(test_struct, SLAB_TRACE);
+	for (i = 0; i < 100; i++) {
+		void *p = kmem_cache_alloc(cache, GFP_KERNEL);
+
+		kmem_cache_free(cache, p);
+	}
+
+	kmem_cache_destroy(cache);
+}
+
 void asan_run_tests(void)
 {
 	asan_do_bo();
@@ -220,6 +262,8 @@ void asan_run_tests(void)
 	/* asan_do_user_memory_access(); */
 	asan_do_bo_atomic();
 	asan_do_bo_atomic_rmwcc();
+	asan_do_bo_quarantine_flush();
+	asan_do_bo_kmem_cache();
 }
 
 /* TODO: remove definition */
@@ -248,6 +292,10 @@ static ssize_t asan_tests_write(struct file *file, const char __user *buf,
 	if (!strcmp(buffer, "asan_run_stack\n"))
 		asan_run_stack();
 
+	if (!strcmp(buffer, "asan_enable\n"))
+		asan_enable();
+	else if (!strcmp(buffer, "asan_disable\n"))
+		asan_disable();
 	return count;
 }
 

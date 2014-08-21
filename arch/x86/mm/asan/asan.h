@@ -3,6 +3,7 @@
 
 #include <linux/slab.h>
 #include <linux/types.h>
+#include <linux/mm.h>
 
 #define ASAN_COLORED_OUTPUT_ENABLE 0
 
@@ -69,5 +70,20 @@ struct access_info {
 
 void asan_report_error(struct access_info *info);
 void asan_report_user_access(struct access_info *info);
+
+static inline struct kmem_cache *virt_to_cache(const void *ptr)
+{
+	struct page *page = virt_to_head_page(ptr);
+
+	return page->slab_cache;
+}
+
+void asan_quarantine_init(void);
+void asan_quarantine_put(struct kmem_cache *cache, void *object);
+void asan_quarantine_drop_cache(struct kmem_cache *cache);
+size_t asan_quarantine_size(void);
+
+void asan_enable(void);
+void asan_disable(void);
 
 #endif
