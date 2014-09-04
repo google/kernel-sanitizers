@@ -8,6 +8,8 @@ CFLAGS_setup_nx.o		:= $(nostackp)
 
 CFLAGS_fault.o := -I$(src)/../include/asm/trace
 
+KASAN_SANITIZE_kasan_init_$(BITS).o := n
+
 obj-$(CONFIG_X86_PAT)		+= pat_rbtree.o
 obj-$(CONFIG_SMP)		+= tlb.o
 
@@ -30,3 +32,4 @@ obj-$(CONFIG_ACPI_NUMA)		+= srat.o
 obj-$(CONFIG_NUMA_EMU)		+= numa_emulation.o
 
 obj-$(CONFIG_MEMTEST)		+= memtest.o
+obj-$(CONFIG_KASAN)		+= kasan_init_$(BITS).o

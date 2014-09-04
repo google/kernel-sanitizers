@@ -514,6 +514,22 @@ ENTRY(phys_base)
 	/* This must match the first entry in level2_kernel_pgt */
 	.quad   0x0000000000000000
 
+#ifdef CONFIG_KASAN
+#define FILL(VAL, COUNT)				\
+	.rept (COUNT) ;					\
+	.quad	(VAL) ;					\
+	.endr
+
+NEXT_PAGE(zero_pte)
+	FILL(empty_zero_page - __START_KERNEL_map + _KERNPG_TABLE, 512)
+NEXT_PAGE(zero_pmd)
+	FILL(zero_pte - __START_KERNEL_map + _KERNPG_TABLE, 512)
+NEXT_PAGE(zero_pud)
+	FILL(zero_pmd - __START_KERNEL_map + _KERNPG_TABLE, 512)
+#undef FILL
+#endif
+
+
 #include "../../x86/xen/xen-head.S"
 	
 	__PAGE_ALIGNED_BSS

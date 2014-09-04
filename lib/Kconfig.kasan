@@ -5,6 +5,7 @@ if HAVE_ARCH_KASAN
 
 config KASAN
 	bool "AddressSanitizer: dynamic memory error detector"
+	depends on !MEMORY_HOTPLUG
 	default n
 	help
 	  Enables AddressSanitizer - dynamic memory error detector,
