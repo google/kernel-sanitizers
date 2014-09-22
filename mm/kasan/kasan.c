@@ -29,11 +29,6 @@
 #include "kasan.h"
 #include "../slab.h"
 
-static inline bool kasan_enabled(void)
-{
-	return !current->kasan_depth;
-}
-
 /*
  * Poisons the shadow memory for 'size' bytes starting from 'addr'.
  * Memory addresses should be aligned to KASAN_SHADOW_SCALE_SIZE.
@@ -247,14 +242,7 @@ static __always_inline void check_memory_region(unsigned long addr,
 	if (likely(!memory_is_poisoned(addr, size)))
 		return;
 
-	if (likely(!kasan_enabled()))
-		return;
-
-	info.access_addr = addr;
-	info.access_size = size;
-	info.is_write = write;
-	info.ip = _RET_IP_;
-	kasan_report_error(&info);
+	kasan_report(addr, size, write);
 }
 
 void kasan_alloc_pages(struct page *page, unsigned int order)
