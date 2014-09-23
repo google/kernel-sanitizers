@@ -16,13 +16,17 @@ struct vm_struct kasan_vm __initdata = {
 
 static int __init map_range(struct range *range)
 {
-	int ret;
-	unsigned long start = kasan_mem_to_shadow((range->start << PAGE_SHIFT) + PAGE_OFFSET);
-	unsigned long end = kasan_mem_to_shadow((range->end << PAGE_SHIFT) + PAGE_OFFSET);
+	unsigned long start = kasan_mem_to_shadow(
+		(unsigned long)pfn_to_kaddr(range->start));
+	unsigned long end = kasan_mem_to_shadow(
+		(unsigned long)pfn_to_kaddr(range->end));
 
-	ret = vmemmap_populate(start, end, NUMA_NO_NODE);
-
-	return ret;
+	/*
+	 * end + 1 here is intentional. We check several shadow bytes in advance
+	 * to slightly speed up fastpath. In some rare cases we could cross
+	 * boundary of mapped shadow, so we just map some more here.
+	 */
+	return vmemmap_populate(start, end + 1, NUMA_NO_NODE);
 }
 
 static void __init clear_zero_shadow_mapping(unsigned long start,
