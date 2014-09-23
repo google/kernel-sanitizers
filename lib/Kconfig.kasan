@@ -6,12 +6,14 @@ if HAVE_ARCH_KASAN
 config KASAN
 	bool "AddressSanitizer: dynamic memory error detector"
 	depends on !MEMORY_HOTPLUG
-	depends on SLUB
+	depends on SLUB_DEBUG
 	default n
 	help
-	  Enables AddressSanitizer - dynamic memory error detector,
-	  that finds out-of-bounds and use-after-free bugs.
+	  Enables address sanitizer - dynamic memory error detector,
+	  designed to find out-of-bounds accesses and use-after-free bugs.
+	  This is strictly debugging feature. It consumes about 1/8
+	  of available memory and brings about ~x3 performance slowdown.
 	  For better error detection enable CONFIG_STACKTRACE,
-	  CONFIG_SLUB_DEBUG, and add slub_debug=U to boot cmdline.
+	  and add slub_debug=U to boot cmdline.
 
 endif
