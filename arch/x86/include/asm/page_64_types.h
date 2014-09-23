@@ -30,11 +30,7 @@
  * hypervisor to fit.  Choosing 16 slots here is arbitrary, but it's
  * what Xen requires.
  */
-#ifdef CONFIG_KASAN
-#define __PAGE_OFFSET           _AC(0xffff900000000000, UL)
-#else
 #define __PAGE_OFFSET           _AC(0xffff880000000000, UL)
-#endif
 
 #define __START_KERNEL_map	_AC(0xffffffff80000000, UL)
 

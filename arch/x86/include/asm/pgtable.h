@@ -671,14 +671,8 @@ static inline int pgd_none(pgd_t pgd)
  */
 #define pgd_offset_k(address) pgd_offset(&init_mm, (address))
 
-#ifndef CONFIG_KASAN
 #define KERNEL_PGD_BOUNDARY	pgd_index(PAGE_OFFSET)
 #define KERNEL_PGD_PTRS		(PTRS_PER_PGD - KERNEL_PGD_BOUNDARY)
-#else
-#include <asm/kasan.h>
-#define KERNEL_PGD_BOUNDARY	pgd_index(KASAN_SHADOW_START)
-#define KERNEL_PGD_PTRS		(PTRS_PER_PGD - KERNEL_PGD_BOUNDARY)
-#endif
 
 #ifndef __ASSEMBLY__
 

@@ -136,7 +136,7 @@ config X86
 	select HAVE_ACPI_APEI if ACPI
 	select HAVE_ACPI_APEI_NMI if ACPI
 	select ACPI_LEGACY_TABLES_LOOKUP if ACPI
-	select HAVE_ARCH_KASAN if X86_64 && !XEN
+	select HAVE_ARCH_KASAN if X86_64
 
 config INSTRUCTION_DECODER
 	def_bool y

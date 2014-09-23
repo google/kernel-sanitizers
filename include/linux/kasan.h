@@ -11,11 +11,11 @@ struct page;
 #include <linux/sched.h>
 
 #define KASAN_SHADOW_SCALE_SHIFT 3
+#define KASAN_SHADOW_OFFSET _AC(CONFIG_KASAN_SHADOW_OFFSET, UL)
 
 static inline unsigned long kasan_mem_to_shadow(unsigned long addr)
 {
-	return ((addr - KASAN_SHADOW_START) >> KASAN_SHADOW_SCALE_SHIFT)
-		+ KASAN_SHADOW_START;
+	return (addr >> KASAN_SHADOW_SCALE_SHIFT) + KASAN_SHADOW_OFFSET;
 }
 
 static inline void kasan_enable_local(void)

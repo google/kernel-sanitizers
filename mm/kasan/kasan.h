@@ -31,8 +31,7 @@ void kasan_report_user_access(struct access_info *info);
 
 static inline unsigned long kasan_shadow_to_mem(unsigned long shadow_addr)
 {
-	return ((shadow_addr - KASAN_SHADOW_START)
-		<< KASAN_SHADOW_SCALE_SHIFT) + KASAN_SHADOW_START;
+	return (shadow_addr - KASAN_SHADOW_OFFSET) << KASAN_SHADOW_SCALE_SHIFT;
 }
 
 #endif
