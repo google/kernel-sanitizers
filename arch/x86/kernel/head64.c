@@ -47,7 +47,7 @@ static void __init reset_early_page_tables(void)
 
 	next_early_pgt = 0;
 
-	write_cr3(__pa(early_level4_pgt));
+	write_cr3(__pa_nodebug(early_level4_pgt));
 }
 
 /* Create a new PMD entry */
@@ -60,7 +60,7 @@ int __init early_make_pgtable(unsigned long address)
 	pmdval_t pmd, *pmd_p;
 
 	/* Invalid address or early pgt is done ?  */
-	if (physaddr >= MAXMEM || read_cr3() != __pa(early_level4_pgt))
+	if (physaddr >= MAXMEM || read_cr3() != __pa_nodebug(early_level4_pgt))
 		return -1;
 
 again:
@@ -160,7 +160,6 @@ asmlinkage __visible void __init x86_64_start_kernel(char * real_mode_data)
 	reset_early_page_tables();
 
 	kasan_map_zero_shadow(early_level4_pgt);
-	write_cr3(__pa(early_level4_pgt));
 
 	/* clear bss before set_intr_gate with early_idt_handler */
 	clear_bss();
