@@ -33,7 +33,7 @@
  * Poisons the shadow memory for 'size' bytes starting from 'addr'.
  * Memory addresses should be aligned to KASAN_SHADOW_SCALE_SIZE.
  */
-void poison_shadow(const void *address, size_t size, u8 value)
+static void kasan_poison_shadow(const void *address, size_t size, u8 value)
 {
 	unsigned long shadow_start, shadow_end;
 	unsigned long addr = (unsigned long)address;
@@ -44,9 +44,9 @@ void poison_shadow(const void *address, size_t size, u8 value)
 	memset((void *)shadow_start, value, shadow_end - shadow_start);
 }
 
-void unpoison_shadow(const void *address, size_t size)
+void kasan_unpoison_shadow(const void *address, size_t size)
 {
-	poison_shadow(address, size, 0);
+	kasan_poison_shadow(address, size, 0);
 
 	if (size & KASAN_SHADOW_MASK) {
 		u8 *shadow = (u8 *)kasan_mem_to_shadow((unsigned long)address
@@ -108,18 +108,20 @@ static __always_inline void check_memory_region(unsigned long addr,
 void kasan_alloc_pages(struct page *page, unsigned int order)
 {
 	if (likely(!PageHighMem(page)))
-		unpoison_shadow(page_address(page), PAGE_SIZE << order);
+		kasan_unpoison_shadow(page_address(page), PAGE_SIZE << order);
 }
 
 void kasan_free_pages(struct page *page, unsigned int order)
 {
 	if (likely(!PageHighMem(page)))
-		poison_shadow(page_address(page), PAGE_SIZE << order, KASAN_FREE_PAGE);
+		kasan_poison_shadow(page_address(page),
+				PAGE_SIZE << order, KASAN_FREE_PAGE);
 }
 
 void kasan_free_slab_pages(struct page *page, int order)
 {
-	poison_shadow(page_address(page), PAGE_SIZE << order, KASAN_SLAB_FREE);
+	kasan_poison_shadow(page_address(page),
+			PAGE_SIZE << order, KASAN_SLAB_FREE);
 }
 
 void kasan_mark_slab_padding(struct kmem_cache *s, void *object)
@@ -131,16 +133,13 @@ void kasan_mark_slab_padding(struct kmem_cache *s, void *object)
 	size_t size = padding_end - padding_start;
 
 	if (size)
-		poison_shadow((void *)padding_start, size, KASAN_SLAB_PADDING);
+		kasan_poison_shadow((void *)padding_start,
+				size, KASAN_SLAB_PADDING);
 }
 
 void kasan_slab_alloc(struct kmem_cache *cache, void *object)
 {
-	if (unlikely(object == NULL))
-		return;
-
-	poison_shadow(object, cache->size, KASAN_KMALLOC_REDZONE);
-	unpoison_shadow(object, cache->object_size);
+	kasan_kmalloc(cache, object, cache->object_size);
 }
 
 void kasan_slab_free(struct kmem_cache *cache, void *object)
@@ -151,7 +150,7 @@ void kasan_slab_free(struct kmem_cache *cache, void *object)
 	if (unlikely(cache->flags & SLAB_DESTROY_BY_RCU))
 		return;
 
-	poison_shadow(object, rounded_up_size, KASAN_KMALLOC_FREE);
+	kasan_poison_shadow(object, rounded_up_size, KASAN_KMALLOC_FREE);
 }
 
 void kasan_kmalloc(struct kmem_cache *cache, const void *object, size_t size)
@@ -166,8 +165,8 @@ void kasan_kmalloc(struct kmem_cache *cache, const void *object, size_t size)
 				KASAN_SHADOW_SCALE_SIZE);
 	redzone_end = (unsigned long)object + cache->size;
 
-	unpoison_shadow(object, size);
-	poison_shadow((void *)redzone_start, redzone_end - redzone_start,
+	kasan_unpoison_shadow(object, size);
+	kasan_poison_shadow((void *)redzone_start, redzone_end - redzone_start,
 		KASAN_KMALLOC_REDZONE);
 
 }
@@ -187,8 +186,8 @@ void kasan_kmalloc_large(const void *ptr, size_t size)
 				KASAN_SHADOW_SCALE_SIZE);
 	redzone_end = (unsigned long)ptr + (PAGE_SIZE << compound_order(page));
 
-	unpoison_shadow(ptr, size);
-	poison_shadow((void *)redzone_start, redzone_end - redzone_start,
+	kasan_unpoison_shadow(ptr, size);
+	kasan_poison_shadow((void *)redzone_start, redzone_end - redzone_start,
 		KASAN_PAGE_REDZONE);
 }
 EXPORT_SYMBOL(kasan_kmalloc_large);
@@ -211,7 +210,9 @@ void kasan_krealloc(const void *object, size_t size)
 void kasan_kfree_large(const void *ptr)
 {
 	struct page *page = virt_to_page(ptr);
-	poison_shadow(ptr, PAGE_SIZE << compound_order(page), KASAN_FREE_PAGE);
+
+	kasan_poison_shadow(ptr, PAGE_SIZE << compound_order(page),
+			KASAN_FREE_PAGE);
 }
 
 void __asan_load1(unsigned long addr)
