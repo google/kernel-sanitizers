@@ -835,7 +835,7 @@ static void max310x_set_termios(struct uart_port *port,
 	if (termios->c_iflag & INPCK)
 		port->read_status_mask |= MAX310X_LSR_RXPAR_BIT |
 					  MAX310X_LSR_FRERR_BIT;
-	if (termios->c_iflag & (BRKINT | PARMRK))
+	if (termios->c_iflag & (IGNBRK | BRKINT | PARMRK))
 		port->read_status_mask |= MAX310X_LSR_RXBRK_BIT;
 
 	/* Set status ignore mask */
@@ -1008,7 +1008,6 @@ static const struct uart_ops max310x_ops = {
 	.stop_tx	= max310x_null_void,
 	.start_tx	= max310x_start_tx,
 	.stop_rx	= max310x_null_void,
-	.enable_ms	= max310x_null_void,
 	.break_ctl	= max310x_break_ctl,
 	.startup	= max310x_startup,
 	.shutdown	= max310x_shutdown,

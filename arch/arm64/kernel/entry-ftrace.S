@@ -96,11 +96,6 @@
  *     - ftrace_graph_caller to set up an exit hook
  */
 ENTRY(_mcount)
-#ifdef CONFIG_HAVE_FUNCTION_TRACE_MCOUNT_TEST
-	ldr	x0, =ftrace_trace_stop
-	ldr	x0, [x0]		// if ftrace_trace_stop
-	ret				//   return;
-#endif
 	mcount_enter
 
 	ldr	x0, =ftrace_trace_function
@@ -205,7 +200,7 @@ ENDPROC(ftrace_graph_caller)
  *
  * Run ftrace_return_to_handler() before going back to parent.
  * @fp is checked against the value passed by ftrace_graph_caller()
- * only when CONFIG_FUNCTION_GRAPH_FP_TEST is enabled.
+ * only when CONFIG_HAVE_FUNCTION_GRAPH_FP_TEST is enabled.
  */
 ENTRY(return_to_handler)
 	str	x0, [sp, #-16]!

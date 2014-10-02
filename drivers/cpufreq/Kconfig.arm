@@ -5,8 +5,7 @@
 # big LITTLE core layer and glue drivers
 config ARM_BIG_LITTLE_CPUFREQ
 	tristate "Generic ARM big LITTLE CPUfreq driver"
-	depends on (BIG_LITTLE && ARM_CPU_TOPOLOGY) || (ARM64 && SMP)
-	depends on HAVE_CLK
+	depends on ARM && BIG_LITTLE && ARM_CPU_TOPOLOGY && HAVE_CLK
 	select PM_OPP
 	help
 	  This enables the Generic CPUfreq driver for ARM big.LITTLE platforms.
@@ -105,6 +104,7 @@ config ARM_IMX6Q_CPUFREQ
 	tristate "Freescale i.MX6 cpufreq support"
 	depends on ARCH_MXC
 	depends on REGULATOR_ANATOP
+	select PM_OPP
 	help
 	  This adds cpufreq driver support for Freescale i.MX6 series SoCs.
 
@@ -119,7 +119,7 @@ config ARM_INTEGRATOR
 	  If in doubt, say Y.
 
 config ARM_KIRKWOOD_CPUFREQ
-	def_bool MACH_KIRKWOOD
+	def_bool ARCH_KIRKWOOD || MACH_KIRKWOOD
 	help
 	  This adds the CPUFreq driver for Marvell Kirkwood
 	  SoCs.

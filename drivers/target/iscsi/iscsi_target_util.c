@@ -400,6 +400,8 @@ struct iscsi_cmd *iscsit_find_cmd_from_itt_or_dump(
 
 	spin_lock_bh(&conn->cmd_lock);
 	list_for_each_entry(cmd, &conn->conn_cmd_list, i_conn_node) {
+		if (cmd->cmd_flags & ICF_GOT_LAST_DATAOUT)
+			continue;
 		if (cmd->init_task_tag == init_task_tag) {
 			spin_unlock_bh(&conn->cmd_lock);
 			return cmd;
@@ -1294,6 +1296,8 @@ int iscsit_tx_login_rsp(struct iscsi_conn *conn, u8 status_class, u8 status_deta
 
 	login->login_failed = 1;
 	iscsit_collect_login_stats(conn, status_class, status_detail);
+
+	memset(&login->rsp[0], 0, ISCSI_HDR_LEN);
 
 	hdr	= (struct iscsi_login_rsp *)&login->rsp[0];
 	hdr->opcode		= ISCSI_OP_LOGIN_RSP;

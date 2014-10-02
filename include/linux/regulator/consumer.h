@@ -37,6 +37,7 @@
 
 struct device;
 struct notifier_block;
+struct regmap;
 
 /*
  * Regulator operating modes.
@@ -214,6 +215,13 @@ unsigned int regulator_get_mode(struct regulator *regulator);
 int regulator_set_optimum_mode(struct regulator *regulator, int load_uA);
 
 int regulator_allow_bypass(struct regulator *regulator, bool allow);
+
+struct regmap *regulator_get_regmap(struct regulator *regulator);
+int regulator_get_hardware_vsel_register(struct regulator *regulator,
+					 unsigned *vsel_reg,
+					 unsigned *vsel_mask);
+int regulator_list_hardware_vsel(struct regulator *regulator,
+				 unsigned selector);
 
 /* regulator notifier block */
 int regulator_register_notifier(struct regulator *regulator,
@@ -395,6 +403,11 @@ static inline void regulator_bulk_free(int num_consumers,
 {
 }
 
+static inline int regulator_can_change_voltage(struct regulator *regulator)
+{
+	return 0;
+}
+
 static inline int regulator_set_voltage(struct regulator *regulator,
 					int min_uV, int max_uV)
 {
@@ -450,6 +463,24 @@ static inline int regulator_allow_bypass(struct regulator *regulator,
 					 bool allow)
 {
 	return 0;
+}
+
+static inline struct regmap *regulator_get_regmap(struct regulator *regulator)
+{
+	return ERR_PTR(-EOPNOTSUPP);
+}
+
+static inline int regulator_get_hardware_vsel_register(struct regulator *regulator,
+						       unsigned *vsel_reg,
+						       unsigned *vsel_mask)
+{
+	return -EOPNOTSUPP;
+}
+
+static inline int regulator_list_hardware_vsel(struct regulator *regulator,
+					       unsigned selector)
+{
+	return -EOPNOTSUPP;
 }
 
 static inline int regulator_register_notifier(struct regulator *regulator,

@@ -196,6 +196,7 @@ struct at91_adc_state {
 	bool			done;
 	int			irq;
 	u16			last_value;
+	int			chnb;
 	struct mutex		lock;
 	u8			num_channels;
 	void __iomem		*reg_base;
@@ -272,9 +273,9 @@ void handle_adc_eoc_trigger(int irq, struct iio_dev *idev)
 
 	if (iio_buffer_enabled(idev)) {
 		disable_irq_nosync(irq);
-		iio_trigger_poll(idev->trig, iio_get_time_ns());
+		iio_trigger_poll(idev->trig);
 	} else {
-		st->last_value = at91_adc_readl(st, AT91_ADC_LCDR);
+		st->last_value = at91_adc_readl(st, AT91_ADC_CHAN(st, st->chnb));
 		st->done = true;
 		wake_up_interruptible(&st->wq_data_avail);
 	}
@@ -351,7 +352,7 @@ static irqreturn_t at91_adc_rl_interrupt(int irq, void *private)
 	unsigned int reg;
 
 	status &= at91_adc_readl(st, AT91_ADC_IMR);
-	if (status & st->registers->drdy_mask)
+	if (status & GENMASK(st->num_channels - 1, 0))
 		handle_adc_eoc_trigger(irq, idev);
 
 	if (status & AT91RL_ADC_IER_PEN) {
@@ -418,7 +419,7 @@ static irqreturn_t at91_adc_9x5_interrupt(int irq, void *private)
 		AT91_ADC_IER_YRDY |
 		AT91_ADC_IER_PRDY;
 
-	if (status & st->registers->drdy_mask)
+	if (status & GENMASK(st->num_channels - 1, 0))
 		handle_adc_eoc_trigger(irq, idev);
 
 	if (status & AT91_ADC_IER_PEN) {
@@ -510,12 +511,11 @@ static int at91_adc_channel_init(struct iio_dev *idev)
 	return idev->num_channels;
 }
 
-static u8 at91_adc_get_trigger_value_by_name(struct iio_dev *idev,
+static int at91_adc_get_trigger_value_by_name(struct iio_dev *idev,
 					     struct at91_adc_trigger *triggers,
 					     const char *trigger_name)
 {
 	struct at91_adc_state *st = iio_priv(idev);
-	u8 value = 0;
 	int i;
 
 	for (i = 0; i < st->trigger_number; i++) {
@@ -528,15 +528,16 @@ static u8 at91_adc_get_trigger_value_by_name(struct iio_dev *idev,
 			return -ENOMEM;
 
 		if (strcmp(trigger_name, name) == 0) {
-			value = triggers[i].value;
 			kfree(name);
-			break;
+			if (triggers[i].value == 0)
+				return -EINVAL;
+			return triggers[i].value;
 		}
 
 		kfree(name);
 	}
 
-	return value;
+	return -EINVAL;
 }
 
 static int at91_adc_configure_trigger(struct iio_trigger *trig, bool state)
@@ -546,14 +547,14 @@ static int at91_adc_configure_trigger(struct iio_trigger *trig, bool state)
 	struct iio_buffer *buffer = idev->buffer;
 	struct at91_adc_reg_desc *reg = st->registers;
 	u32 status = at91_adc_readl(st, reg->trigger_register);
-	u8 value;
+	int value;
 	u8 bit;
 
 	value = at91_adc_get_trigger_value_by_name(idev,
 						   st->trigger_list,
 						   idev->trig->name);
-	if (value == 0)
-		return -EINVAL;
+	if (value < 0)
+		return value;
 
 	if (state) {
 		st->buffer = kmalloc(idev->scan_bytes, GFP_KERNEL);
@@ -689,9 +690,10 @@ static int at91_adc_read_raw(struct iio_dev *idev,
 	case IIO_CHAN_INFO_RAW:
 		mutex_lock(&st->lock);
 
+		st->chnb = chan->channel;
 		at91_adc_writel(st, AT91_ADC_CHER,
 				AT91_ADC_CH(chan->channel));
-		at91_adc_writel(st, AT91_ADC_IER, st->registers->drdy_mask);
+		at91_adc_writel(st, AT91_ADC_IER, BIT(chan->channel));
 		at91_adc_writel(st, AT91_ADC_CR, AT91_ADC_START);
 
 		ret = wait_event_interruptible_timeout(st->wq_data_avail,
@@ -708,7 +710,7 @@ static int at91_adc_read_raw(struct iio_dev *idev,
 
 		at91_adc_writel(st, AT91_ADC_CHDR,
 				AT91_ADC_CH(chan->channel));
-		at91_adc_writel(st, AT91_ADC_IDR, st->registers->drdy_mask);
+		at91_adc_writel(st, AT91_ADC_IDR, BIT(chan->channel));
 
 		st->last_value = 0;
 		st->done = false;

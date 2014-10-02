@@ -19,6 +19,7 @@
 #include <linux/acpi.h>
 #include <linux/module.h>
 #include <asm/io.h>
+#include <trace/events/power.h>
 
 #include "internal.h"
 #include "sleep.h"
@@ -321,6 +322,11 @@ static struct dmi_system_id acpisleep_dmi_table[] __initdata = {
 
 static void acpi_sleep_dmi_check(void)
 {
+	int year;
+
+	if (dmi_get_date(DMI_BIOS_DATE, &year, NULL, NULL) && year >= 2012)
+		acpi_nvs_nosave_s3();
+
 	dmi_check_system(acpisleep_dmi_table);
 }
 
@@ -501,6 +507,7 @@ static int acpi_suspend_enter(suspend_state_t pm_state)
 
 	ACPI_FLUSH_CPU_CACHE();
 
+	trace_suspend_resume(TPS("acpi_suspend"), acpi_state, true);
 	switch (acpi_state) {
 	case ACPI_STATE_S1:
 		barrier();
@@ -516,6 +523,7 @@ static int acpi_suspend_enter(suspend_state_t pm_state)
 		pr_info(PREFIX "Low-level resume complete\n");
 		break;
 	}
+	trace_suspend_resume(TPS("acpi_suspend"), acpi_state, false);
 
 	/* This violates the spec but is required for bug compatibility. */
 	acpi_write_bit_register(ACPI_BITREG_SCI_ENABLE, 1);

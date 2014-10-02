@@ -75,6 +75,9 @@ int hid_sensor_power_state(struct hid_sensor_common *st, bool state)
 					(s32)report_val);
 	}
 
+	sensor_hub_get_feature(st->hsdev, st->power_state.report_id,
+					st->power_state.index,
+					&state_val);
 	return 0;
 }
 EXPORT_SYMBOL(hid_sensor_power_state);
@@ -119,7 +122,8 @@ int hid_sensor_setup_trigger(struct iio_dev *indio_dev, const char *name,
 		dev_err(&indio_dev->dev, "Trigger Register Failed\n");
 		goto error_free_trig;
 	}
-	indio_dev->trig = attrb->trigger = trig;
+	attrb->trigger = trig;
+	indio_dev->trig = iio_trigger_get(trig);
 
 	return ret;
 

@@ -130,7 +130,7 @@ static int vexpress_syscfg_write(void *context, unsigned int index,
 	return vexpress_syscfg_exec(func, index, true, &val);
 }
 
-struct regmap_config vexpress_syscfg_regmap_config = {
+static struct regmap_config vexpress_syscfg_regmap_config = {
 	.lock = vexpress_config_lock,
 	.unlock = vexpress_config_unlock,
 	.reg_bits = 32,
@@ -199,7 +199,7 @@ static struct regmap *vexpress_syscfg_regmap_init(struct device *dev,
 	func = kzalloc(sizeof(*func) + sizeof(*func->template) * num,
 			GFP_KERNEL);
 	if (!func)
-		return NULL;
+		return ERR_PTR(-ENOMEM);
 
 	func->syscfg = syscfg;
 	func->num_templates = num;
@@ -231,10 +231,14 @@ static struct regmap *vexpress_syscfg_regmap_init(struct device *dev,
 	func->regmap = regmap_init(dev, NULL, func,
 			&vexpress_syscfg_regmap_config);
 
-	if (IS_ERR(func->regmap))
+	if (IS_ERR(func->regmap)) {
+		void *err = func->regmap;
+
 		kfree(func);
-	else
-		list_add(&func->list, &syscfg->funcs);
+		return err;
+	}
+
+	list_add(&func->list, &syscfg->funcs);
 
 	return func->regmap;
 }
@@ -272,7 +276,7 @@ int vexpress_syscfg_device_register(struct platform_device *pdev)
 }
 
 
-int vexpress_syscfg_probe(struct platform_device *pdev)
+static int vexpress_syscfg_probe(struct platform_device *pdev)
 {
 	struct vexpress_syscfg *syscfg;
 	struct resource *res;

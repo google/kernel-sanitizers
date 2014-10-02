@@ -79,7 +79,7 @@ MODULE_PARM_DESC(home_node, "Home node for the device");
 
 static int queue_mode = NULL_Q_MQ;
 module_param(queue_mode, int, S_IRUGO);
-MODULE_PARM_DESC(use_mq, "Use blk-mq interface (0=bio,1=rq,2=multiqueue)");
+MODULE_PARM_DESC(queue_mode, "Block interface to use (0=bio,1=rq,2=multiqueue)");
 
 static int gb = 250;
 module_param(gb, int, S_IRUGO);
@@ -227,7 +227,10 @@ static void null_cmd_end_timer(struct nullb_cmd *cmd)
 
 static void null_softirq_done_fn(struct request *rq)
 {
-	end_cmd(blk_mq_rq_to_pdu(rq));
+	if (queue_mode == NULL_Q_MQ)
+		end_cmd(blk_mq_rq_to_pdu(rq));
+	else
+		end_cmd(rq->special);
 }
 
 static inline void null_handle_cmd(struct nullb_cmd *cmd)
@@ -459,17 +462,21 @@ static int null_add_dev(void)
 	struct gendisk *disk;
 	struct nullb *nullb;
 	sector_t size;
+	int rv;
 
 	nullb = kzalloc_node(sizeof(*nullb), GFP_KERNEL, home_node);
-	if (!nullb)
+	if (!nullb) {
+		rv = -ENOMEM;
 		goto out;
+	}
 
 	spin_lock_init(&nullb->lock);
 
 	if (queue_mode == NULL_Q_MQ && use_per_node_hctx)
 		submit_queues = nr_online_nodes;
 
-	if (setup_queues(nullb))
+	rv = setup_queues(nullb);
+	if (rv)
 		goto out_free_nullb;
 
 	if (queue_mode == NULL_Q_MQ) {
@@ -481,22 +488,29 @@ static int null_add_dev(void)
 		nullb->tag_set.flags = BLK_MQ_F_SHOULD_MERGE;
 		nullb->tag_set.driver_data = nullb;
 
-		if (blk_mq_alloc_tag_set(&nullb->tag_set))
+		rv = blk_mq_alloc_tag_set(&nullb->tag_set);
+		if (rv)
 			goto out_cleanup_queues;
 
 		nullb->q = blk_mq_init_queue(&nullb->tag_set);
-		if (!nullb->q)
+		if (!nullb->q) {
+			rv = -ENOMEM;
 			goto out_cleanup_tags;
+		}
 	} else if (queue_mode == NULL_Q_BIO) {
 		nullb->q = blk_alloc_queue_node(GFP_KERNEL, home_node);
-		if (!nullb->q)
+		if (!nullb->q) {
+			rv = -ENOMEM;
 			goto out_cleanup_queues;
+		}
 		blk_queue_make_request(nullb->q, null_queue_bio);
 		init_driver_queues(nullb);
 	} else {
 		nullb->q = blk_init_queue_node(null_request_fn, &nullb->lock, home_node);
-		if (!nullb->q)
+		if (!nullb->q) {
+			rv = -ENOMEM;
 			goto out_cleanup_queues;
+		}
 		blk_queue_prep_rq(nullb->q, null_rq_prep_fn);
 		blk_queue_softirq_done(nullb->q, null_softirq_done_fn);
 		init_driver_queues(nullb);
@@ -506,8 +520,10 @@ static int null_add_dev(void)
 	queue_flag_set_unlocked(QUEUE_FLAG_NONROT, nullb->q);
 
 	disk = nullb->disk = alloc_disk_node(1, home_node);
-	if (!disk)
+	if (!disk) {
+		rv = -ENOMEM;
 		goto out_cleanup_blk_queue;
+	}
 
 	mutex_lock(&lock);
 	list_add_tail(&nullb->list, &nullb_list);
@@ -541,7 +557,7 @@ out_cleanup_queues:
 out_free_nullb:
 	kfree(nullb);
 out:
-	return -ENOMEM;
+	return rv;
 }
 
 static int __init null_init(void)

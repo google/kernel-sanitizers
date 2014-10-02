@@ -255,7 +255,7 @@ static int ltc3589_parse_regulators_dt(struct ltc3589 *ltc3589)
 	struct device_node *node;
 	int i, ret;
 
-	node = of_find_node_by_name(dev->of_node, "regulators");
+	node = of_get_child_by_name(dev->of_node, "regulators");
 	if (!node) {
 		dev_err(dev, "regulators node not found\n");
 		return -EINVAL;
@@ -377,7 +377,7 @@ static bool ltc3589_volatile_reg(struct device *dev, unsigned int reg)
 	return false;
 }
 
-struct reg_default ltc3589_reg_defaults[] = {
+static struct reg_default ltc3589_reg_defaults[] = {
 	{ LTC3589_SCR1,   0x00 },
 	{ LTC3589_OVEN,   0x00 },
 	{ LTC3589_SCR2,   0x00 },

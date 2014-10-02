@@ -477,6 +477,9 @@ struct root_domain {
 	cpumask_var_t span;
 	cpumask_var_t online;
 
+	/* Indicate more than one runnable task for any CPU */
+	bool overload;
+
 	/*
 	 * The bit corresponding to a CPU gets set here if such CPU has more
 	 * than one runnable -deadline task (as it is below for RT tasks).
@@ -567,7 +570,7 @@ struct rq {
 	struct root_domain *rd;
 	struct sched_domain *sd;
 
-	unsigned long cpu_power;
+	unsigned long cpu_capacity;
 
 	unsigned char idle_balance;
 	/* For active balancing */
@@ -670,6 +673,8 @@ extern int migrate_swap(struct task_struct *, struct task_struct *);
 
 #ifdef CONFIG_SMP
 
+extern void sched_ttwu_pending(void);
+
 #define rcu_dereference_check_sched_domain(p) \
 	rcu_dereference_check((p), \
 			      lockdep_is_held(&sched_domains_mutex))
@@ -728,15 +733,15 @@ DECLARE_PER_CPU(struct sched_domain *, sd_numa);
 DECLARE_PER_CPU(struct sched_domain *, sd_busy);
 DECLARE_PER_CPU(struct sched_domain *, sd_asym);
 
-struct sched_group_power {
+struct sched_group_capacity {
 	atomic_t ref;
 	/*
-	 * CPU power of this group, SCHED_LOAD_SCALE being max power for a
-	 * single CPU.
+	 * CPU capacity of this group, SCHED_LOAD_SCALE being max capacity
+	 * for a single CPU.
 	 */
-	unsigned int power, power_orig;
+	unsigned int capacity, capacity_orig;
 	unsigned long next_update;
-	int imbalance; /* XXX unrelated to power but shared group state */
+	int imbalance; /* XXX unrelated to capacity but shared group state */
 	/*
 	 * Number of busy cpus in this group.
 	 */
@@ -750,7 +755,7 @@ struct sched_group {
 	atomic_t ref;
 
 	unsigned int group_weight;
-	struct sched_group_power *sgp;
+	struct sched_group_capacity *sgc;
 
 	/*
 	 * The CPUs this group covers.
@@ -773,7 +778,7 @@ static inline struct cpumask *sched_group_cpus(struct sched_group *sg)
  */
 static inline struct cpumask *sched_group_mask(struct sched_group *sg)
 {
-	return to_cpumask(sg->sgp->cpumask);
+	return to_cpumask(sg->sgc->cpumask);
 }
 
 /**
@@ -786,6 +791,10 @@ static inline unsigned int group_first_cpu(struct sched_group *group)
 }
 
 extern int group_balance_cpu(struct sched_group *sg);
+
+#else
+
+static inline void sched_ttwu_pending(void) { }
 
 #endif /* CONFIG_SMP */
 
@@ -878,20 +887,10 @@ enum {
 #undef SCHED_FEAT
 
 #if defined(CONFIG_SCHED_DEBUG) && defined(HAVE_JUMP_LABEL)
-static __always_inline bool static_branch__true(struct static_key *key)
-{
-	return static_key_true(key); /* Not out of line branch. */
-}
-
-static __always_inline bool static_branch__false(struct static_key *key)
-{
-	return static_key_false(key); /* Out of line branch. */
-}
-
 #define SCHED_FEAT(name, enabled)					\
 static __always_inline bool static_branch_##name(struct static_key *key) \
 {									\
-	return static_branch__##enabled(key);				\
+	return static_key_##enabled(key);				\
 }
 
 #include "features.h"
@@ -1167,7 +1166,7 @@ extern const struct sched_class idle_sched_class;
 
 #ifdef CONFIG_SMP
 
-extern void update_group_power(struct sched_domain *sd, int cpu);
+extern void update_group_capacity(struct sched_domain *sd, int cpu);
 
 extern void trigger_load_balance(struct rq *rq);
 
@@ -1190,7 +1189,7 @@ extern void init_sched_rt_class(void);
 extern void init_sched_fair_class(void);
 extern void init_sched_dl_class(void);
 
-extern void resched_task(struct task_struct *p);
+extern void resched_curr(struct rq *rq);
 extern void resched_cpu(int cpu);
 
 extern struct rt_bandwidth def_rt_bandwidth;
@@ -1212,15 +1211,26 @@ static inline void add_nr_running(struct rq *rq, unsigned count)
 
 	rq->nr_running = prev_nr + count;
 
-#ifdef CONFIG_NO_HZ_FULL
 	if (prev_nr < 2 && rq->nr_running >= 2) {
-		if (tick_nohz_full_cpu(rq->cpu)) {
-			/* Order rq->nr_running write against the IPI */
-			smp_wmb();
-			smp_send_reschedule(rq->cpu);
-		}
-       }
+#ifdef CONFIG_SMP
+		if (!rq->rd->overload)
+			rq->rd->overload = true;
 #endif
+
+#ifdef CONFIG_NO_HZ_FULL
+		if (tick_nohz_full_cpu(rq->cpu)) {
+			/*
+			 * Tick is needed if more than one task runs on a CPU.
+			 * Send the target an IPI to kick it out of nohz mode.
+			 *
+			 * We assume that IPI implies full memory barrier and the
+			 * new value of rq->nr_running is visible on reception
+			 * from the target.
+			 */
+			tick_nohz_full_kick_cpu(rq->cpu);
+		}
+#endif
+	}
 }
 
 static inline void sub_nr_running(struct rq *rq, unsigned count)

@@ -10,10 +10,11 @@
 #include "blk.h"
 
 static unsigned int __blk_recalc_rq_segments(struct request_queue *q,
-					     struct bio *bio)
+					     struct bio *bio,
+					     bool no_sg_merge)
 {
 	struct bio_vec bv, bvprv = { NULL };
-	int cluster, high, highprv = 1, no_sg_merge;
+	int cluster, high, highprv = 1;
 	unsigned int seg_size, nr_phys_segs;
 	struct bio *fbio, *bbio;
 	struct bvec_iter iter;
@@ -35,7 +36,6 @@ static unsigned int __blk_recalc_rq_segments(struct request_queue *q,
 	cluster = blk_queue_cluster(q);
 	seg_size = 0;
 	nr_phys_segs = 0;
-	no_sg_merge = test_bit(QUEUE_FLAG_NO_SG_MERGE, &q->queue_flags);
 	high = 0;
 	for_each_bio(bio) {
 		bio_for_each_segment(bv, bio, iter) {
@@ -88,18 +88,23 @@ new_segment:
 
 void blk_recalc_rq_segments(struct request *rq)
 {
-	rq->nr_phys_segments = __blk_recalc_rq_segments(rq->q, rq->bio);
+	bool no_sg_merge = !!test_bit(QUEUE_FLAG_NO_SG_MERGE,
+			&rq->q->queue_flags);
+
+	rq->nr_phys_segments = __blk_recalc_rq_segments(rq->q, rq->bio,
+			no_sg_merge);
 }
 
 void blk_recount_segments(struct request_queue *q, struct bio *bio)
 {
-	if (test_bit(QUEUE_FLAG_NO_SG_MERGE, &q->queue_flags))
+	if (test_bit(QUEUE_FLAG_NO_SG_MERGE, &q->queue_flags) &&
+			bio->bi_vcnt < queue_max_segments(q))
 		bio->bi_phys_segments = bio->bi_vcnt;
 	else {
 		struct bio *nxt = bio->bi_next;
 
 		bio->bi_next = NULL;
-		bio->bi_phys_segments = __blk_recalc_rq_segments(q, bio);
+		bio->bi_phys_segments = __blk_recalc_rq_segments(q, bio, false);
 		bio->bi_next = nxt;
 	}
 
@@ -568,6 +573,8 @@ int blk_attempt_req_merge(struct request_queue *q, struct request *rq,
 
 bool blk_rq_merge_ok(struct request *rq, struct bio *bio)
 {
+	struct request_queue *q = rq->q;
+
 	if (!rq_mergeable(rq) || !bio_mergeable(bio))
 		return false;
 
@@ -590,6 +597,14 @@ bool blk_rq_merge_ok(struct request *rq, struct bio *bio)
 	if (rq->cmd_flags & REQ_WRITE_SAME &&
 	    !blk_write_same_mergeable(rq->bio, bio))
 		return false;
+
+	if (q->queue_flags & (1 << QUEUE_FLAG_SG_GAPS)) {
+		struct bio_vec *bprev;
+
+		bprev = &rq->biotail->bi_io_vec[bio->bi_vcnt - 1];
+		if (bvec_gap_to_prev(bprev, bio->bi_io_vec[0].bv_offset))
+			return false;
+	}
 
 	return true;
 }

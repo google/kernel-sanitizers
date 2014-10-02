@@ -185,7 +185,6 @@ static void xlr_net_fmn_handler(int bkt, int src_stnid, int size,
 		if (skb_new)
 			send_to_rfr_fifo(priv, skb_new->data);
 	}
-	return;
 }
 
 /* Ethtool operation */
@@ -1067,7 +1066,7 @@ static int xlr_net_probe(struct platform_device *pdev)
 	xlr_set_rx_mode(ndev);
 
 	priv->num_rx_desc += MAX_NUM_DESC_SPILL;
-	SET_ETHTOOL_OPS(ndev, &xlr_ethtool_ops);
+	ndev->ethtool_ops = &xlr_ethtool_ops;
 	SET_NETDEV_DEV(ndev, &pdev->dev);
 
 	/* Common registers, do one time initialization */

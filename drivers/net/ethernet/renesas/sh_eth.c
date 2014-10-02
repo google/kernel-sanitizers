@@ -307,6 +307,27 @@ static const u16 sh_eth_offset_fast_sh4[SH_ETH_MAX_REGISTER_OFFSET] = {
 };
 
 static const u16 sh_eth_offset_fast_sh3_sh2[SH_ETH_MAX_REGISTER_OFFSET] = {
+	[EDMR]		= 0x0000,
+	[EDTRR]		= 0x0004,
+	[EDRRR]		= 0x0008,
+	[TDLAR]		= 0x000c,
+	[RDLAR]		= 0x0010,
+	[EESR]		= 0x0014,
+	[EESIPR]	= 0x0018,
+	[TRSCER]	= 0x001c,
+	[RMFCR]		= 0x0020,
+	[TFTR]		= 0x0024,
+	[FDR]		= 0x0028,
+	[RMCR]		= 0x002c,
+	[EDOCR]		= 0x0030,
+	[FCFTR]		= 0x0034,
+	[RPADIR]	= 0x0038,
+	[TRIMD]		= 0x003c,
+	[RBWAR]		= 0x0040,
+	[RDFAR]		= 0x0044,
+	[TBRAR]		= 0x004c,
+	[TDFAR]		= 0x0050,
+
 	[ECMR]		= 0x0160,
 	[ECSR]		= 0x0164,
 	[ECSIPR]	= 0x0168,
@@ -546,7 +567,6 @@ static struct sh_eth_cpu_data sh7757_data = {
 	.register_type	= SH_ETH_REG_FAST_SH4,
 
 	.eesipr_value	= DMAC_M_RFRMER | DMAC_M_ECI | 0x003fffff,
-	.rmcr_value	= RMCR_RNC,
 
 	.tx_check	= EESR_FTC | EESR_CND | EESR_DLC | EESR_CD | EESR_RTO,
 	.eesr_err_check	= EESR_TWB | EESR_TABT | EESR_RABT | EESR_RFE |
@@ -624,7 +644,6 @@ static struct sh_eth_cpu_data sh7757_data_giga = {
 			  EESR_RFE | EESR_RDE | EESR_RFRMER | EESR_TFE |
 			  EESR_TDE | EESR_ECI,
 	.fdr_value	= 0x0000072f,
-	.rmcr_value	= RMCR_RNC,
 
 	.irq_flags	= IRQF_SHARED,
 	.apr		= 1,
@@ -752,7 +771,6 @@ static struct sh_eth_cpu_data r8a7740_data = {
 			  EESR_RFE | EESR_RDE | EESR_RFRMER | EESR_TFE |
 			  EESR_TDE | EESR_ECI,
 	.fdr_value	= 0x0000070f,
-	.rmcr_value	= RMCR_RNC,
 
 	.apr		= 1,
 	.mpr		= 1,
@@ -784,7 +802,6 @@ static struct sh_eth_cpu_data r7s72100_data = {
 			  EESR_RFE | EESR_RDE | EESR_RFRMER | EESR_TFE |
 			  EESR_TDE | EESR_ECI,
 	.fdr_value	= 0x0000070f,
-	.rmcr_value	= RMCR_RNC,
 
 	.no_psr		= 1,
 	.apr		= 1,
@@ -832,9 +849,6 @@ static void sh_eth_set_default_cpu_data(struct sh_eth_cpu_data *cd)
 
 	if (!cd->fdr_value)
 		cd->fdr_value = DEFAULT_FDR_INIT;
-
-	if (!cd->rmcr_value)
-		cd->rmcr_value = DEFAULT_RMCR_VALUE;
 
 	if (!cd->tx_check)
 		cd->tx_check = DEFAULT_TX_CHECK;
@@ -1080,20 +1094,16 @@ static void sh_eth_ring_free(struct net_device *ndev)
 
 	/* Free Rx skb ringbuffer */
 	if (mdp->rx_skbuff) {
-		for (i = 0; i < mdp->num_rx_ring; i++) {
-			if (mdp->rx_skbuff[i])
-				dev_kfree_skb(mdp->rx_skbuff[i]);
-		}
+		for (i = 0; i < mdp->num_rx_ring; i++)
+			dev_kfree_skb(mdp->rx_skbuff[i]);
 	}
 	kfree(mdp->rx_skbuff);
 	mdp->rx_skbuff = NULL;
 
 	/* Free Tx skb ringbuffer */
 	if (mdp->tx_skbuff) {
-		for (i = 0; i < mdp->num_tx_ring; i++) {
-			if (mdp->tx_skbuff[i])
-				dev_kfree_skb(mdp->tx_skbuff[i]);
-		}
+		for (i = 0; i < mdp->num_tx_ring; i++)
+			dev_kfree_skb(mdp->tx_skbuff[i]);
 	}
 	kfree(mdp->tx_skbuff);
 	mdp->tx_skbuff = NULL;
@@ -1287,8 +1297,8 @@ static int sh_eth_dev_init(struct net_device *ndev, bool start)
 	sh_eth_write(ndev, mdp->cd->fdr_value, FDR);
 	sh_eth_write(ndev, 0, TFTR);
 
-	/* Frame recv control */
-	sh_eth_write(ndev, mdp->cd->rmcr_value, RMCR);
+	/* Frame recv control (enable multiple-packets per rx irq) */
+	sh_eth_write(ndev, RMCR_RNC, RMCR);
 
 	sh_eth_write(ndev, DESC_I_RINT8 | DESC_I_RINT5 | DESC_I_TINT2, TRSCER);
 
@@ -1385,7 +1395,6 @@ static int sh_eth_rx(struct net_device *ndev, u32 intr_status, int *quota)
 	int entry = mdp->cur_rx % mdp->num_rx_ring;
 	int boguscnt = (mdp->dirty_rx + mdp->num_rx_ring) - mdp->cur_rx;
 	struct sk_buff *skb;
-	int exceeded = 0;
 	u16 pkt_len = 0;
 	u32 desc_status;
 
@@ -1397,10 +1406,9 @@ static int sh_eth_rx(struct net_device *ndev, u32 intr_status, int *quota)
 		if (--boguscnt < 0)
 			break;
 
-		if (*quota <= 0) {
-			exceeded = 1;
+		if (*quota <= 0)
 			break;
-		}
+
 		(*quota)--;
 
 		if (!(desc_status & RDFEND))
@@ -1448,7 +1456,6 @@ static int sh_eth_rx(struct net_device *ndev, u32 intr_status, int *quota)
 			ndev->stats.rx_packets++;
 			ndev->stats.rx_bytes += pkt_len;
 		}
-		rxdesc->status |= cpu_to_edmac(mdp, RD_RACT);
 		entry = (++mdp->cur_rx) % mdp->num_rx_ring;
 		rxdesc = &mdp->rx_ring[entry];
 	}
@@ -1494,7 +1501,7 @@ static int sh_eth_rx(struct net_device *ndev, u32 intr_status, int *quota)
 		sh_eth_write(ndev, EDRRR_R, EDRRR);
 	}
 
-	return exceeded;
+	return *quota <= 0;
 }
 
 static void sh_eth_rcv_snd_disable(struct net_device *ndev)
@@ -2066,13 +2073,11 @@ static void sh_eth_tx_timeout(struct net_device *ndev)
 		rxdesc = &mdp->rx_ring[i];
 		rxdesc->status = 0;
 		rxdesc->addr = 0xBADF00D0;
-		if (mdp->rx_skbuff[i])
-			dev_kfree_skb(mdp->rx_skbuff[i]);
+		dev_kfree_skb(mdp->rx_skbuff[i]);
 		mdp->rx_skbuff[i] = NULL;
 	}
 	for (i = 0; i < mdp->num_tx_ring; i++) {
-		if (mdp->tx_skbuff[i])
-			dev_kfree_skb(mdp->tx_skbuff[i]);
+		dev_kfree_skb(mdp->tx_skbuff[i]);
 		mdp->tx_skbuff[i] = NULL;
 	}
 
@@ -2627,8 +2632,8 @@ static int sh_mdio_init(struct sh_eth_private *mdp,
 		 pdev->name, pdev->id);
 
 	/* PHY IRQ */
-	mdp->mii_bus->irq = devm_kzalloc(dev, sizeof(int) * PHY_MAX_ADDR,
-					 GFP_KERNEL);
+	mdp->mii_bus->irq = devm_kmalloc_array(dev, PHY_MAX_ADDR, sizeof(int),
+					       GFP_KERNEL);
 	if (!mdp->mii_bus->irq) {
 		ret = -ENOMEM;
 		goto out_free_bus;
@@ -2741,6 +2746,7 @@ static const struct of_device_id sh_eth_match_table[] = {
 	{ .compatible = "renesas,ether-r8a7779", .data = &r8a777x_data },
 	{ .compatible = "renesas,ether-r8a7790", .data = &r8a779x_data },
 	{ .compatible = "renesas,ether-r8a7791", .data = &r8a779x_data },
+	{ .compatible = "renesas,ether-r8a7794", .data = &r8a779x_data },
 	{ .compatible = "renesas,ether-r7s72100", .data = &r7s72100_data },
 	{ }
 };
@@ -2843,7 +2849,7 @@ static int sh_eth_drv_probe(struct platform_device *pdev)
 		ndev->netdev_ops = &sh_eth_netdev_ops_tsu;
 	else
 		ndev->netdev_ops = &sh_eth_netdev_ops;
-	SET_ETHTOOL_OPS(ndev, &sh_eth_ethtool_ops);
+	ndev->ethtool_ops = &sh_eth_ethtool_ops;
 	ndev->watchdog_timeo = TX_TIMEOUT;
 
 	/* debug message level */
@@ -2967,6 +2973,7 @@ static struct platform_device_id sh_eth_id_table[] = {
 	{ "r8a777x-ether", (kernel_ulong_t)&r8a777x_data },
 	{ "r8a7790-ether", (kernel_ulong_t)&r8a779x_data },
 	{ "r8a7791-ether", (kernel_ulong_t)&r8a779x_data },
+	{ "r8a7794-ether", (kernel_ulong_t)&r8a779x_data },
 	{ }
 };
 MODULE_DEVICE_TABLE(platform, sh_eth_id_table);

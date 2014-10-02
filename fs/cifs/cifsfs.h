@@ -68,8 +68,8 @@ extern int cifs_hardlink(struct dentry *, struct inode *, struct dentry *);
 extern int cifs_mknod(struct inode *, struct dentry *, umode_t, dev_t);
 extern int cifs_mkdir(struct inode *, struct dentry *, umode_t);
 extern int cifs_rmdir(struct inode *, struct dentry *);
-extern int cifs_rename(struct inode *, struct dentry *, struct inode *,
-		       struct dentry *);
+extern int cifs_rename2(struct inode *, struct dentry *, struct inode *,
+			struct dentry *, unsigned int);
 extern int cifs_revalidate_file_attr(struct file *filp);
 extern int cifs_revalidate_dentry_attr(struct dentry *);
 extern int cifs_revalidate_file(struct file *filp);
@@ -95,14 +95,10 @@ extern const struct file_operations cifs_file_strict_nobrl_ops;
 extern int cifs_open(struct inode *inode, struct file *file);
 extern int cifs_close(struct inode *inode, struct file *file);
 extern int cifs_closedir(struct inode *inode, struct file *file);
-extern ssize_t cifs_user_readv(struct kiocb *iocb, const struct iovec *iov,
-			       unsigned long nr_segs, loff_t pos);
-extern ssize_t cifs_strict_readv(struct kiocb *iocb, const struct iovec *iov,
-				 unsigned long nr_segs, loff_t pos);
-extern ssize_t cifs_user_writev(struct kiocb *iocb, const struct iovec *iov,
-				unsigned long nr_segs, loff_t pos);
-extern ssize_t cifs_strict_writev(struct kiocb *iocb, const struct iovec *iov,
-				  unsigned long nr_segs, loff_t pos);
+extern ssize_t cifs_user_readv(struct kiocb *iocb, struct iov_iter *to);
+extern ssize_t cifs_strict_readv(struct kiocb *iocb, struct iov_iter *to);
+extern ssize_t cifs_user_writev(struct kiocb *iocb, struct iov_iter *from);
+extern ssize_t cifs_strict_writev(struct kiocb *iocb, struct iov_iter *from);
 extern int cifs_lock(struct file *, int, struct file_lock *);
 extern int cifs_fsync(struct file *, loff_t, loff_t, int);
 extern int cifs_strict_fsync(struct file *, loff_t, loff_t, int);
@@ -140,5 +136,5 @@ extern long cifs_ioctl(struct file *filep, unsigned int cmd, unsigned long arg);
 extern const struct export_operations cifs_export_ops;
 #endif /* CONFIG_CIFS_NFSD_EXPORT */
 
-#define CIFS_VERSION   "2.03"
+#define CIFS_VERSION   "2.05"
 #endif				/* _CIFSFS_H */
