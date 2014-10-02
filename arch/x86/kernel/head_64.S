@@ -521,11 +521,19 @@ ENTRY(phys_base)
 	.endr
 
 NEXT_PAGE(zero_pte)
-	FILL(empty_zero_page - __START_KERNEL_map + _KERNPG_TABLE, 512)
+	FILL(empty_zero_page - __START_KERNEL_map + __PAGE_KERNEL_RO, 512)
 NEXT_PAGE(zero_pmd)
-	FILL(zero_pte - __START_KERNEL_map + _KERNPG_TABLE, 512)
+	FILL(zero_pte - __START_KERNEL_map + __PAGE_KERNEL_RO, 512)
 NEXT_PAGE(zero_pud)
-	FILL(zero_pmd - __START_KERNEL_map + _KERNPG_TABLE, 512)
+	FILL(zero_pmd - __START_KERNEL_map + __PAGE_KERNEL_RO, 512)
+
+NEXT_PAGE(poisoned_pte)
+	FILL(poisoned_page - __START_KERNEL_map + __PAGE_KERNEL_RO, 512)
+NEXT_PAGE(poisoned_pmd)
+	FILL(poisoned_pte - __START_KERNEL_map + __PAGE_KERNEL_RO, 512)
+NEXT_PAGE(poisoned_pud)
+	FILL(poisoned_pmd - __START_KERNEL_map + __PAGE_KERNEL_RO, 512)
+
 #undef FILL
 #endif
 
@@ -535,3 +543,7 @@ NEXT_PAGE(zero_pud)
 	__PAGE_ALIGNED_BSS
 NEXT_PAGE(empty_zero_page)
 	.skip PAGE_SIZE
+#ifdef CONFIG_KASAN
+NEXT_PAGE(poisoned_page)
+	.fill PAGE_SIZE,1,0xF9
+#endif

@@ -11,11 +11,11 @@ struct page;
 #include <linux/sched.h>
 
 #define KASAN_SHADOW_SCALE_SHIFT 3
+#define KASAN_SHADOW_OFFSET _AC(CONFIG_KASAN_SHADOW_OFFSET, UL)
 
 static inline unsigned long kasan_mem_to_shadow(unsigned long addr)
 {
-	return ((addr - KASAN_SHADOW_START) >> KASAN_SHADOW_SCALE_SHIFT)
-		+ KASAN_SHADOW_START;
+	return (addr >> KASAN_SHADOW_SCALE_SHIFT) + KASAN_SHADOW_OFFSET;
 }
 
 static inline void kasan_enable_local(void)
@@ -28,7 +28,7 @@ static inline void kasan_disable_local(void)
 	current->kasan_depth--;
 }
 
-void unpoison_shadow(const void *address, size_t size);
+void kasan_unpoison_shadow(const void *address, size_t size);
 void kasan_map_shadow(void);
 
 void kasan_alloc_pages(struct page *page, unsigned int order);
@@ -47,7 +47,7 @@ void kasan_free_slab_pages(struct page *page, int order);
 
 #else /* CONFIG_KASAN */
 
-static inline void unpoison_shadow(const void *address, size_t size) {}
+static inline void kasan_unpoison_shadow(const void *address, size_t size) {}
 
 static inline void kasan_enable_local(void) {}
 static inline void kasan_disable_local(void) {}

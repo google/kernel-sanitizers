@@ -383,8 +383,7 @@ LDFLAGS_MODULE  =
 CFLAGS_KERNEL	=
 AFLAGS_KERNEL	=
 CFLAGS_GCOV	= -fprofile-arcs -ftest-coverage
-CFLAGS_KASAN	= -fsanitize=kernel-address
-
+CFLAGS_KASAN	= $(call cc-option, -fsanitize=kernel-address)
 
 # Use USERINCLUDE when you must reference the UAPI directories only.
 USERINCLUDE    := \
@@ -746,6 +745,13 @@ endif
 # We trigger additional mismatches with less inlining
 ifdef CONFIG_DEBUG_SECTION_MISMATCH
 KBUILD_CFLAGS += $(call cc-option, -fno-inline-functions-called-once)
+endif
+
+ifdef CONFIG_KASAN
+  ifeq ($(CFLAGS_KASAN),)
+    $(warning Cannot use CONFIG_KASAN: \
+	      -fsanitize=kernel-address not supported by compiler)
+  endif
 endif
 
 # arch Makefile may override CC so keep this after arch Makefile is included
