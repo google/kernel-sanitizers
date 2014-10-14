@@ -35,6 +35,7 @@ enum stat_item {
 	CPU_PARTIAL_FREE,	/* Refill cpu partial on free */
 	CPU_PARTIAL_NODE,	/* Refill cpu partial from node partial */
 	CPU_PARTIAL_DRAIN,	/* Drain cpu partial to node partial */
+	QUARANTINE_BREACH,	/* Slab left quarantine via reclaimer */
 	NR_SLUB_STAT_ITEMS };
 
 struct kmem_cache_cpu {
@@ -91,7 +92,9 @@ struct kmem_cache {
 	struct kset *memcg_kset;
 #endif
 #endif
-
+#ifdef CONFIG_SLUB_DEBUG
+	struct kmem_cache_quarantine_shrinker *quarantine_shrinker;
+#endif
 #ifdef CONFIG_NUMA
 	/*
 	 * Defragmentation by allocating from a remote node.

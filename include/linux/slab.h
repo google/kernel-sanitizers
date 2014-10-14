@@ -87,6 +87,8 @@
 # define SLAB_FAILSLAB		0x00000000UL
 #endif
 
+#define SLAB_QUARANTINE		0x04000000UL
+
 /* The following flags affect the page allocator grouping pages by mobility */
 #define SLAB_RECLAIM_ACCOUNT	0x00020000UL		/* Objects are reclaimable */
 #define SLAB_TEMPORARY		SLAB_RECLAIM_ACCOUNT	/* Objects are short-lived */

@@ -161,7 +161,7 @@ static inline bool kmem_cache_has_cpu_partial(struct kmem_cache *s)
 #define MAX_PARTIAL 10
 
 #define DEBUG_DEFAULT_FLAGS (SLAB_DEBUG_FREE | SLAB_RED_ZONE | \
-				SLAB_POISON | SLAB_STORE_USER)
+		SLAB_POISON | SLAB_STORE_USER | SLAB_QUARANTINE)
 
 /*
  * Debugging flags that require metadata to be stored in the slab.  These get
@@ -453,6 +453,8 @@ static void get_map(struct kmem_cache *s, struct page *page, unsigned long *map)
 	void *addr = page_address(page);
 
 	for (p = page->freelist; p; p = get_freepointer(s, p))
+		set_bit(slab_index(p, s, addr), map);
+	for (p = page->quarantine; p; p = get_freepointer(s, p))
 		set_bit(slab_index(p, s, addr), map);
 }
 
@@ -915,6 +917,30 @@ static int on_freelist(struct kmem_cache *s, struct page *page, void *search)
 		nr++;
 	}
 
+	fp = page->quarantine;
+	while (fp && nr <= page->objects) {
+		if (fp == search)
+			return 1;
+		if (!check_valid_pointer(s, page, fp)) {
+			if (object) {
+				object_err(s, page, object,
+					"Quarantine corrupt");
+				set_freepointer(s, object, NULL);
+			} else {
+				slab_err(s, page, "Quarantine corrupt");
+				page->quarantine = NULL;
+				slab_fix(s, "Quarantine cleared");
+				return 0;
+			}
+			break;
+		}
+		object = fp;
+		fp = get_freepointer(s, object);
+		/* In frozen slubs qurantine included into inuse */
+		if (!page->frozen)
+			nr++;
+	}
+
 	max_objects = order_objects(compound_order(page), s->size, s->reserved);
 	if (max_objects > MAX_OBJS_PER_PAGE)
 		max_objects = MAX_OBJS_PER_PAGE;
@@ -972,6 +998,219 @@ static void remove_full(struct kmem_cache *s, struct kmem_cache_node *n, struct 
 
 	lockdep_assert_held(&n->list_lock);
 	list_del(&page->lru);
+}
+
+/*
+ * Quarantine management.
+ */
+static void add_quarantine(struct kmem_cache *s, struct kmem_cache_node *n,
+			   struct page *page)
+{
+	list_add_tail(&page->lru, &n->quarantine.slabs);
+	n->quarantine.nr_slabs++;
+
+	if (!(s->flags & SLAB_RECLAIM_ACCOUNT)) {
+		struct zone *zone = page_zone(page);
+		int size = 1 << compound_order(page);
+
+		mod_zone_page_state(zone, NR_SLAB_UNRECLAIMABLE, -size);
+		mod_zone_page_state(zone, NR_SLAB_RECLAIMABLE, size);
+	}
+}
+
+static void remove_quarantine(struct kmem_cache *s, struct kmem_cache_node *n,
+			      struct page *page)
+{
+	list_del(&page->lru);
+	n->quarantine.nr_slabs--;
+
+	if (!(s->flags & SLAB_RECLAIM_ACCOUNT)) {
+		struct zone *zone = page_zone(page);
+		int size = 1 << compound_order(page);
+
+		mod_zone_page_state(zone, NR_SLAB_RECLAIMABLE, -size);
+		mod_zone_page_state(zone, NR_SLAB_UNRECLAIMABLE, size);
+	}
+}
+
+static inline void dec_slabs_node(struct kmem_cache *s, int node, int objects);
+
+static bool put_in_qurantine(struct kmem_cache *s, struct kmem_cache_node *n,
+			     struct page *page, void *object)
+{
+	unsigned long counters;
+	struct page new;
+
+	if (!(s->flags & SLAB_QUARANTINE))
+		return false;
+
+	set_freepointer(s, object, page->quarantine);
+	page->quarantine = object;
+	n->quarantine.nr_objects++;
+
+	/* deactivate_slab takes care about updating inuse */
+	if (page->frozen)
+		return true;
+
+	do {
+		new.freelist = page->freelist;
+		counters = page->counters;
+		new.counters = counters;
+		new.inuse--;
+	} while (!cmpxchg_double_slab(s, page,
+				new.freelist, counters,
+				new.freelist, new.counters,
+				"put_in_qurantine"));
+
+	/* All objects in quarantine, move slab into quarantine */
+	if (!new.inuse && !new.freelist) {
+		remove_full(s, n, page);
+		dec_slabs_node(s, page_to_nid(page), page->objects);
+		add_quarantine(s, n, page);
+	}
+
+	return true;
+}
+
+/* Moves objects from quarantine into freelist */
+static void __flush_quarantine(struct kmem_cache *s, struct kmem_cache_node *n,
+			       struct page *page)
+{
+	void *object, *next;
+
+	for (object = page->quarantine; object; object = next) {
+		next = get_freepointer(s, object);
+		set_freepointer(s, object, page->freelist);
+		page->freelist = object;
+		n->quarantine.nr_objects--;
+	}
+	page->quarantine = NULL;
+}
+
+static void free_slab(struct kmem_cache *s, struct page *page);
+
+static void free_quarantine(struct kmem_cache *s, struct kmem_cache_node *n)
+{
+	struct page *page, *next;
+
+	list_for_each_entry_safe(page, next, &n->quarantine.slabs, lru) {
+		__flush_quarantine(s, n, page);
+		remove_quarantine(s, n, page);
+		free_slab(s, page);
+		stat(s, FREE_SLAB);
+	}
+}
+
+static void free_partial(struct kmem_cache *s, struct kmem_cache_node *n,
+			 bool close);
+
+static void flush_quarantine(struct kmem_cache *s)
+{
+	struct kmem_cache_node *n;
+	unsigned long flags;
+	int node;
+
+	for_each_kmem_cache_node(s, node, n) {
+		spin_lock_irqsave(&n->list_lock, flags);
+		free_quarantine(s, n);
+		free_partial(s, n, false);
+		spin_unlock_irqrestore(&n->list_lock, flags);
+	}
+}
+
+struct kmem_cache_quarantine_shrinker {
+	struct shrinker shrinker;
+	struct kmem_cache *cache;
+};
+
+static struct kmem_cache *quarantine_shrinker_to_cache(struct shrinker *s)
+{
+	return container_of(s, struct kmem_cache_quarantine_shrinker,
+			    shrinker)->cache;
+}
+
+static unsigned long count_quarantine(struct shrinker *shrinker,
+				      struct shrink_control *sc)
+{
+	struct kmem_cache *s = quarantine_shrinker_to_cache(shrinker);
+	struct kmem_cache_node *n = get_node(s, sc->nid);
+
+	return n ? n->quarantine.nr_slabs : 0;
+}
+
+/*
+ * This reclaims only completely quarantined slabs.
+ */
+static unsigned long shrink_quarantine(struct shrinker *shrinker,
+				       struct shrink_control *sc)
+{
+	struct kmem_cache *s = quarantine_shrinker_to_cache(shrinker);
+	struct kmem_cache_node *n = get_node(s, sc->nid);
+	unsigned long flags, freed = 0;
+	struct page *page, *next;
+
+	if (list_empty(&n->quarantine.slabs))
+		return SHRINK_STOP;
+
+	spin_lock_irqsave(&n->list_lock, flags);
+	list_for_each_entry_safe(page, next, &n->quarantine.slabs, lru) {
+		if (!sc->nr_to_scan--)
+			break;
+
+		/* A half goes to another round after examination */
+		if (sc->nr_to_scan & 1) {
+			void *p;
+
+			check_slab(s, page);
+			on_freelist(s, page, NULL);
+			for_each_object(p, s, page_address(page), page->objects)
+				check_object(s, page, p, SLUB_RED_INACTIVE);
+			list_move(&page->lru, &n->quarantine.slabs);
+			continue;
+		}
+
+		__flush_quarantine(s, n, page);
+		remove_quarantine(s, n, page);
+		free_slab(s, page);
+		stat(s, QUARANTINE_BREACH);
+		stat(s, FREE_SLAB);
+		freed++;
+	}
+	spin_unlock_irqrestore(&n->list_lock, flags);
+
+	return freed;
+}
+
+static int register_quarantine_shrinker(struct kmem_cache *s)
+{
+	if ((slab_state >= FULL) && (s->flags & SLAB_QUARANTINE)) {
+		struct kmem_cache_quarantine_shrinker *qs;
+
+		qs = kmalloc(sizeof(*qs), GFP_KERNEL);
+		if (!qs)
+			return -ENOMEM;
+
+		s->quarantine_shrinker = qs;
+		qs->cache = s;
+
+		qs->shrinker.count_objects = count_quarantine;
+		qs->shrinker.scan_objects = shrink_quarantine;
+		qs->shrinker.flags = SHRINKER_NUMA_AWARE;
+		qs->shrinker.seeks = DEFAULT_SEEKS; /* make it tunable? */
+		qs->shrinker.batch = 0;
+
+		return register_shrinker(&qs->shrinker);
+	}
+	return 0;
+}
+
+static void unregister_quarantine_shrinker(struct kmem_cache *s)
+{
+	if (s->flags & SLAB_QUARANTINE) {
+		unregister_shrinker(&s->quarantine_shrinker->shrinker);
+		kfree(s->quarantine_shrinker);
+		s->quarantine_shrinker = NULL;
+	}
 }
 
 /* Tracking of the number of slabs for debugging purposes */
@@ -1102,6 +1341,12 @@ static noinline struct kmem_cache_node *free_debug_processing(
 	init_object(s, object, SLUB_RED_INACTIVE);
 out:
 	slab_unlock(page);
+
+	if (put_in_qurantine(s, n, page, object)) {
+		spin_unlock_irqrestore(&n->list_lock, *flags);
+		n = NULL;
+	}
+
 	/*
 	 * Keep node_lock to preserve integrity
 	 * until the object is actually freed
@@ -1170,6 +1415,9 @@ static int __init setup_slub_debug(char *str)
 		case 'a':
 			slub_debug |= SLAB_FAILSLAB;
 			break;
+		case 'q':
+			slub_debug |= SLAB_QUARANTINE;
+			break;
 		default:
 			pr_err("slub_debug option '%c' unknown. skipped\n",
 			       *str);
@@ -1235,7 +1483,13 @@ static inline void inc_slabs_node(struct kmem_cache *s, int node,
 							int objects) {}
 static inline void dec_slabs_node(struct kmem_cache *s, int node,
 							int objects) {}
-
+static inline int register_quarantine_shrinker(struct kmem_cache *s)
+							{ return 0; }
+static inline void unregister_quarantine_shrinker(struct kmem_cache *s) {}
+static inline void free_quarantine(struct kmem_cache *s,
+		struct kmem_cache_node *n) {}
+static inline void __flush_quarantine(struct kmem_cache *s,
+		struct kmem_cache_node *n, struct page *page) {}
 #endif /* CONFIG_SLUB_DEBUG */
 
 /*
@@ -1433,6 +1687,7 @@ static struct page *new_slab(struct kmem_cache *s, gfp_t flags, int node)
 	}
 
 	page->freelist = start;
+	page->quarantine = NULL;
 	page->inuse = page->objects;
 	page->frozen = 1;
 out:
@@ -1510,6 +1765,9 @@ static void free_slab(struct kmem_cache *s, struct page *page)
 
 static void discard_slab(struct kmem_cache *s, struct page *page)
 {
+	/* FIXME race with quarantine_store('0')
+	 * n->quarantine.nr_objects isn't uptodate */
+	page->quarantine = NULL;
 	dec_slabs_node(s, page_to_nid(page), page->objects);
 	free_slab(s, page);
 }
@@ -1844,6 +2102,29 @@ static void deactivate_slab(struct kmem_cache *s, struct page *page,
 			"drain percpu freelist"));
 
 		freelist = nextfree;
+	}
+
+	if (IS_ENABLED(CONFIG_SLUB_DEBUG) &&
+	    unlikely(s->flags & SLAB_QUARANTINE)) {
+		int objects = 0;
+
+		lock = 1;
+		spin_lock(&n->list_lock);
+
+		for (nextfree = page->quarantine; nextfree;
+		     nextfree = get_freepointer(s, nextfree))
+			objects++;
+
+		do {
+			old.freelist = page->freelist;
+			old.counters = page->counters;
+			new.counters = old.counters;
+			VM_BUG_ON(objects > new.inuse);
+			new.inuse -= objects;
+		} while (!__cmpxchg_double_slab(s, page,
+			old.freelist, old.counters,
+			old.freelist, new.counters,
+			"commit quarantine"));
 	}
 
 	/*
@@ -2853,6 +3134,9 @@ init_kmem_cache_node(struct kmem_cache_node *n)
 	atomic_long_set(&n->nr_slabs, 0);
 	atomic_long_set(&n->total_objects, 0);
 	INIT_LIST_HEAD(&n->full);
+	n->quarantine.nr_slabs = 0;
+	n->quarantine.nr_objects = 0;
+	INIT_LIST_HEAD(&n->quarantine.slabs);
 #endif
 }
 
@@ -2905,6 +3189,7 @@ static void early_kmem_cache_node_alloc(int node)
 	n = page->freelist;
 	BUG_ON(!n);
 	page->freelist = get_freepointer(kmem_cache_node, n);
+	page->quarantine = NULL;
 	page->inuse = 1;
 	page->frozen = 0;
 	kmem_cache_node->node[node] = n;
@@ -3152,9 +3437,17 @@ static int kmem_cache_open(struct kmem_cache *s, unsigned long flags)
 	if (!init_kmem_cache_nodes(s))
 		goto error;
 
-	if (alloc_kmem_cache_cpus(s))
-		return 0;
+	if (!alloc_kmem_cache_cpus(s))
+		goto error_cpus;
 
+	if (register_quarantine_shrinker(s))
+		goto error_shrinker;
+
+	return 0;
+
+error_shrinker:
+	free_percpu(s->cpu_slab);
+error_cpus:
 	free_kmem_cache_nodes(s);
 error:
 	if (flags & SLAB_PANIC)
@@ -3196,15 +3489,17 @@ static void list_slab_objects(struct kmem_cache *s, struct page *page,
  * This is called from kmem_cache_close(). We must be the last thread
  * using the cache and therefore we do not need to lock anymore.
  */
-static void free_partial(struct kmem_cache *s, struct kmem_cache_node *n)
+static void free_partial(struct kmem_cache *s, struct kmem_cache_node *n,
+			 bool close)
 {
 	struct page *page, *h;
 
 	list_for_each_entry_safe(page, h, &n->partial, lru) {
+		__flush_quarantine(s, n, page);
 		if (!page->inuse) {
 			__remove_partial(n, page);
 			discard_slab(s, page);
-		} else {
+		} else if (close) {
 			list_slab_objects(s, page,
 			"Objects remaining in %s on kmem_cache_close()");
 		}
@@ -3220,9 +3515,11 @@ static inline int kmem_cache_close(struct kmem_cache *s)
 	struct kmem_cache_node *n;
 
 	flush_all(s);
+	unregister_quarantine_shrinker(s);
 	/* Attempt to free all objects */
 	for_each_kmem_cache_node(s, node, n) {
-		free_partial(s, n);
+		free_quarantine(s, n);
+		free_partial(s, n, true);
 		if (n->nr_partial || slabs_node(s, node))
 			return 1;
 	}
@@ -4199,7 +4496,8 @@ enum slab_stat_type {
 	SL_PARTIAL,		/* Only partially allocated slabs */
 	SL_CPU,			/* Only slabs used for cpu caches */
 	SL_OBJECTS,		/* Determine allocated objects not slabs */
-	SL_TOTAL		/* Determine object capacity not slabs */
+	SL_TOTAL,		/* Determine object capacity not slabs */
+	SL_QUARANTINE,		/* Determine objects in quarantine */
 };
 
 #define SO_ALL		(1 << SL_ALL)
@@ -4207,6 +4505,7 @@ enum slab_stat_type {
 #define SO_CPU		(1 << SL_CPU)
 #define SO_OBJECTS	(1 << SL_OBJECTS)
 #define SO_TOTAL	(1 << SL_TOTAL)
+#define SO_QUARANTINE	(1 << SL_QUARANTINE)
 
 static ssize_t show_slab_objects(struct kmem_cache *s,
 			    char *buf, unsigned long flags)
@@ -4277,6 +4576,17 @@ static ssize_t show_slab_objects(struct kmem_cache *s,
 			nodes[node] += x;
 		}
 
+	} else if (flags & SO_QUARANTINE) {
+		struct kmem_cache_node *n;
+
+		for_each_kmem_cache_node(s, node, n) {
+			if (flags & SO_OBJECTS)
+				x = n->quarantine.nr_objects;
+			else
+				x = n->quarantine.nr_slabs;
+			total += x;
+			nodes[node] += x;
+		}
 	} else
 #endif
 	if (flags & SO_PARTIAL) {
@@ -4548,6 +4858,58 @@ static ssize_t total_objects_show(struct kmem_cache *s, char *buf)
 	return show_slab_objects(s, buf, SO_ALL|SO_TOTAL);
 }
 SLAB_ATTR_RO(total_objects);
+
+static ssize_t quarantine_slabs_show(struct kmem_cache *s, char *buf)
+{
+	return show_slab_objects(s, buf, SO_QUARANTINE);
+}
+SLAB_ATTR_RO(quarantine_slabs);
+
+static ssize_t quarantine_objects_show(struct kmem_cache *s, char *buf)
+{
+	return show_slab_objects(s, buf, SO_QUARANTINE|SO_OBJECTS);
+}
+
+static ssize_t quarantine_objects_store(struct kmem_cache *s,
+				const char *buf, size_t length)
+{
+	if (buf[0] == '0')
+		flush_quarantine(s);
+	return length;
+}
+SLAB_ATTR(quarantine_objects);
+
+static ssize_t quarantine_show(struct kmem_cache *s, char *buf)
+{
+	return sprintf(buf, "%d\n", !!(s->flags & SLAB_QUARANTINE));
+}
+
+static ssize_t quarantine_store(struct kmem_cache *s,
+				const char *buf, size_t length)
+{
+	if (buf[0] == '1') {
+		if (!(s->flags & SLAB_QUARANTINE)) {
+			s->flags &= ~__CMPXCHG_DOUBLE;
+			s->flags |= SLAB_QUARANTINE;
+			flush_all(s); /* FIXME stil racy? */
+			if (register_quarantine_shrinker(s)) {
+				s->flags &= ~SLAB_QUARANTINE;
+				flush_quarantine(s);
+				return -ENOMEM;
+			}
+		}
+	} else {
+		if (s->flags & SLAB_QUARANTINE) {
+			unregister_quarantine_shrinker(s);
+			s->flags &= ~SLAB_QUARANTINE;
+			/* FIXME race with deactivate_slab */
+			flush_all(s);
+			flush_quarantine(s);
+		}
+	}
+	return length;
+}
+SLAB_ATTR(quarantine);
 
 static ssize_t sanity_checks_show(struct kmem_cache *s, char *buf)
 {
@@ -4832,6 +5194,7 @@ STAT_ATTR(CPU_PARTIAL_ALLOC, cpu_partial_alloc);
 STAT_ATTR(CPU_PARTIAL_FREE, cpu_partial_free);
 STAT_ATTR(CPU_PARTIAL_NODE, cpu_partial_node);
 STAT_ATTR(CPU_PARTIAL_DRAIN, cpu_partial_drain);
+STAT_ATTR(QUARANTINE_BREACH, quarantine_breach);
 #endif
 
 static struct attribute *slab_attrs[] = {
@@ -4865,6 +5228,9 @@ static struct attribute *slab_attrs[] = {
 	&validate_attr.attr,
 	&alloc_calls_attr.attr,
 	&free_calls_attr.attr,
+	&quarantine_attr.attr,
+	&quarantine_slabs_attr.attr,
+	&quarantine_objects_attr.attr,
 #endif
 #ifdef CONFIG_ZONE_DMA
 	&cache_dma_attr.attr,
@@ -4899,6 +5265,7 @@ static struct attribute *slab_attrs[] = {
 	&cpu_partial_free_attr.attr,
 	&cpu_partial_node_attr.attr,
 	&cpu_partial_drain_attr.attr,
+	&quarantine_breach_attr.attr,
 #endif
 #ifdef CONFIG_FAILSLAB
 	&failslab_attr.attr,
@@ -5242,6 +5609,11 @@ static int __init slab_sysfs_init(void)
 		err = sysfs_slab_add(s);
 		if (err)
 			pr_err("SLUB: Unable to add boot slab %s to sysfs\n",
+			       s->name);
+
+		err = register_quarantine_shrinker(s);
+		if (err)
+			pr_err("SLUB: Unable to register quarantine shrinker %s",
 			       s->name);
 	}
 
