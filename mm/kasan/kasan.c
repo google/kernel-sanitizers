@@ -439,8 +439,6 @@ void __asan_storeN(unsigned long addr, size_t size)
 }
 EXPORT_SYMBOL(__asan_storeN);
 
-/* to shut up compiler complains */
-void __asan_init_v3(void) {}
-EXPORT_SYMBOL(__asan_init_v3);
+/* to shut up compiler complaints */
 void __asan_handle_no_return(void) {}
 EXPORT_SYMBOL(__asan_handle_no_return);
