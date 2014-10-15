@@ -29,6 +29,11 @@
 #include "kasan.h"
 #include "../slab.h"
 
+static inline bool kasan_enabled(void)
+{
+	return !current->kasan_depth;
+}
+
 /*
  * Poisons the shadow memory for 'size' bytes starting from 'addr'.
  * Memory addresses should be aligned to KASAN_SHADOW_SCALE_SIZE.
@@ -193,7 +198,7 @@ static __always_inline bool memory_is_poisoned_n(unsigned long addr,
 		s8 *last_shadow = (s8 *)kasan_mem_to_shadow(last_byte);
 
 		if (unlikely(ret != (unsigned long)last_shadow ||
-				((last_byte & KASAN_SHADOW_MASK) >= *last_shadow)))
+			((last_byte & KASAN_SHADOW_MASK) >= *last_shadow)))
 			return true;
 	}
 	return false;
@@ -230,7 +235,7 @@ static __always_inline void check_memory_region(unsigned long addr,
 	if (unlikely(size == 0))
 		return;
 
-	if (unlikely(addr < PAGE_OFFSET)) {
+	if (unlikely(addr < kasan_shadow_to_mem(KASAN_SHADOW_START))) {
 		info.access_addr = addr;
 		info.access_size = size;
 		info.is_write = write;
@@ -240,6 +245,9 @@ static __always_inline void check_memory_region(unsigned long addr,
 	}
 
 	if (likely(!memory_is_poisoned(addr, size)))
+		return;
+
+	if (likely(!kasan_enabled()))
 		return;
 
 	info.access_addr = addr;
@@ -291,6 +299,7 @@ void kasan_slab_free(struct kmem_cache *cache, void *object)
 	unsigned long size = cache->size;
 	unsigned long rounded_up_size = round_up(size, KASAN_SHADOW_SCALE_SIZE);
 
+	/* RCU slabs could be legally used after free within the RCU period */
 	if (unlikely(cache->flags & SLAB_DESTROY_BY_RCU))
 		return;
 
@@ -334,7 +343,6 @@ void kasan_kmalloc_large(const void *ptr, size_t size)
 	kasan_poison_shadow((void *)redzone_start, redzone_end - redzone_start,
 		KASAN_PAGE_REDZONE);
 }
-EXPORT_SYMBOL(kasan_kmalloc_large);
 
 void kasan_krealloc(const void *object, size_t size)
 {

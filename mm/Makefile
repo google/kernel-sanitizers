@@ -2,7 +2,6 @@
 # Makefile for the linux memory manager.
 #
 
-KASAN_SANITIZE_page_alloc.o := n
 KASAN_SANITIZE_slab_common.o := n
 KASAN_SANITIZE_slub.o := n
 KASAN_SANITIZE_kmemleak.o := n

@@ -22,10 +22,6 @@ struct access_info {
 	unsigned long ip;
 };
 
-extern unsigned long kasan_shadow_start;
-extern unsigned long kasan_shadow_end;
-extern unsigned long kasan_shadow_offset;
-
 void kasan_report_error(struct access_info *info);
 void kasan_report_user_access(struct access_info *info);
 

@@ -29,7 +29,6 @@ static inline void kasan_disable_local(void)
 }
 
 void kasan_unpoison_shadow(const void *address, size_t size);
-void kasan_map_shadow(void);
 
 void kasan_alloc_pages(struct page *page, unsigned int order);
 void kasan_free_pages(struct page *page, unsigned int order);
@@ -52,15 +51,14 @@ static inline void kasan_unpoison_shadow(const void *address, size_t size) {}
 static inline void kasan_enable_local(void) {}
 static inline void kasan_disable_local(void) {}
 
-static inline void kasan_map_shadow(void) {}
-
 static inline void kasan_alloc_pages(struct page *page, unsigned int order) {}
 static inline void kasan_free_pages(struct page *page, unsigned int order) {}
 static inline void kasan_mark_slab_padding(struct kmem_cache *s, void *object) {}
 
 static inline void kasan_kmalloc_large(void *ptr, size_t size) {}
 static inline void kasan_kfree_large(const void *ptr) {}
-static inline void kasan_kmalloc(struct kmem_cache *s, const void *object, size_t size) {}
+static inline void kasan_kmalloc(struct kmem_cache *s, const void *object,
+				size_t size) {}
 static inline void kasan_krealloc(const void *object, size_t new_size) {}
 
 static inline void kasan_slab_alloc(struct kmem_cache *s, void *object) {}

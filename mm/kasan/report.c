@@ -49,7 +49,8 @@ static void print_error_description(struct access_info *info)
 	const char *bug_type = "unknown crash";
 	u8 shadow_val;
 
-	info->first_bad_addr = find_first_bad_addr(info->access_addr, info->access_size);
+	info->first_bad_addr = find_first_bad_addr(info->access_addr,
+						info->access_size);
 
 	shadow_val = *(u8 *)kasan_mem_to_shadow(info->first_bad_addr);
 
@@ -70,17 +71,15 @@ static void print_error_description(struct access_info *info)
 		break;
 	}
 
-	pr_err("AddressSanitizer: %s in %pS at addr %p\n",
+	pr_err("BUG: AddressSanitizer: %s in %pS at addr %p\n",
 		bug_type, (void *)info->ip,
 		(void *)info->access_addr);
 }
 
 static void print_address_description(struct access_info *info)
 {
-	void *object;
-	struct kmem_cache *cache;
-	void *slab_start;
 	struct page *page;
+	struct kmem_cache *cache;
 	u8 shadow_val = *(u8 *)kasan_mem_to_shadow(info->first_bad_addr);
 
 	page = virt_to_head_page((void *)info->access_addr);
@@ -95,9 +94,11 @@ static void print_address_description(struct access_info *info)
 	case KASAN_KMALLOC_REDZONE:
 	case 1 ... KASAN_SHADOW_SCALE_SIZE - 1:
 		if (PageSlab(page)) {
+			void *object;
+			void *slab_page = page_address(page);
+
 			cache = page->slab_cache;
-			slab_start = page_address(page);
-			object = virt_to_obj(cache, slab_start,
+			object = virt_to_obj(cache, slab_page,
 					(void *)info->access_addr);
 			object_err(cache, page, object, "kasan error");
 			break;
@@ -116,9 +117,9 @@ static void print_address_description(struct access_info *info)
 		WARN_ON(1);
 	}
 
-	pr_err("%s of size %zu by thread T%d:\n",
+	pr_err("%s of size %zu by task %s:\n",
 		info->is_write ? "Write" : "Read",
-		info->access_size, current->pid);
+		info->access_size, current->comm);
 }
 
 static bool row_is_guilty(unsigned long row, unsigned long guilty)
@@ -126,18 +127,13 @@ static bool row_is_guilty(unsigned long row, unsigned long guilty)
 	return (row <= guilty) && (guilty < row + SHADOW_BYTES_PER_ROW);
 }
 
-static void print_shadow_pointer(unsigned long row, unsigned long shadow,
-				 char *output)
+static int shadow_pointer_offset(unsigned long row, unsigned long shadow)
 {
-	/* The length of ">ff00ff00ff00ff00: " is 3 + (BITS_PER_LONG/8)*2 chars. */
-	unsigned long space_count = 3 + (BITS_PER_LONG >> 2) + (shadow - row)*2 +
-		(shadow - row) / SHADOW_BYTES_PER_BLOCK;
-	unsigned long i;
-
-	for (i = 0; i < space_count; i++)
-		output[i] = ' ';
-	output[space_count] = '^';
-	output[space_count + 1] = '\0';
+	/* The length of ">ff00ff00ff00ff00: " is
+	 *    3 + (BITS_PER_LONG/8)*2 chars.
+	 */
+	return 3 + (BITS_PER_LONG/8)*2 + (shadow - row)*2 +
+		(shadow - row) / SHADOW_BYTES_PER_BLOCK + 1;
 }
 
 static void print_shadow_for_address(unsigned long addr)
@@ -151,7 +147,7 @@ static void print_shadow_for_address(unsigned long addr)
 
 	for (i = -SHADOW_ROWS_AROUND_ADDR; i <= SHADOW_ROWS_AROUND_ADDR; i++) {
 		unsigned long kaddr = kasan_shadow_to_mem(aligned_shadow);
-		char buffer[100];
+		char buffer[4 + (BITS_PER_LONG/8)*2];
 
 		snprintf(buffer, sizeof(buffer),
 			(i == 0) ? ">%lx: " : " %lx: ", kaddr);
@@ -162,17 +158,13 @@ static void print_shadow_for_address(unsigned long addr)
 			(void *)aligned_shadow, SHADOW_BYTES_PER_ROW, 0);
 		kasan_enable_local();
 
-		if (row_is_guilty(aligned_shadow, shadow)) {
-			print_shadow_pointer(aligned_shadow, shadow, buffer);
-			pr_err("%s\n", buffer);
-		}
+		if (row_is_guilty(aligned_shadow, shadow))
+			pr_err("%*c\n",
+				shadow_pointer_offset(aligned_shadow, shadow),
+				'^');
+
 		aligned_shadow += SHADOW_BYTES_PER_ROW;
 	}
-}
-
-static bool kasan_enabled(void)
-{
-	return !current->kasan_depth;
 }
 
 static DEFINE_SPINLOCK(report_lock);
@@ -180,9 +172,6 @@ static DEFINE_SPINLOCK(report_lock);
 void kasan_report_error(struct access_info *info)
 {
 	unsigned long flags;
-
-	if (likely(!kasan_enabled()))
-		return;
 
 	spin_lock_irqsave(&report_lock, flags);
 	pr_err("================================="
@@ -199,17 +188,14 @@ void kasan_report_user_access(struct access_info *info)
 {
 	unsigned long flags;
 
-	if (likely(!kasan_enabled()))
-		return;
-
 	spin_lock_irqsave(&report_lock, flags);
 	pr_err("================================="
 		"=================================\n");
-        pr_err("AddressSanitizer: user-memory-access on address %lx\n",
+	pr_err("BUG: AddressSanitizer: user-memory-access on address %lx\n",
 		info->access_addr);
-        pr_err("%s of size %zu by thread T%d:\n",
+	pr_err("%s of size %zu by thread T%d:\n",
 		info->is_write ? "Write" : "Read",
-               info->access_size, current->pid);
+		info->access_size, current->pid);
 	dump_stack();
 	pr_err("================================="
 		"=================================\n");

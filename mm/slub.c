@@ -478,12 +478,12 @@ static int slub_debug;
 static char *slub_debug_slabs;
 static int disable_higher_order_debug;
 
-static void metadata_access_enable(void)
+static inline void metadata_access_enable(void)
 {
 	kasan_disable_local();
 }
 
-static void metadata_access_disable(void)
+static inline void metadata_access_disable(void)
 {
 	kasan_enable_local();
 }

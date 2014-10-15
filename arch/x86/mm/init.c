@@ -4,11 +4,11 @@
 #include <linux/swap.h>
 #include <linux/memblock.h>
 #include <linux/bootmem.h>	/* for max_low_pfn */
-#include <linux/kasan.h>
 
 #include <asm/cacheflush.h>
 #include <asm/e820.h>
 #include <asm/init.h>
+#include <asm/kasan.h>
 #include <asm/page.h>
 #include <asm/page_types.h>
 #include <asm/sections.h>
