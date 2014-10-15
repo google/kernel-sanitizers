@@ -4,7 +4,6 @@
 
 KASAN_SANITIZE_slab_common.o := n
 KASAN_SANITIZE_slub.o := n
-KASAN_SANITIZE_kmemleak.o := n
 
 mmu-y			:= nommu.o
 mmu-$(CONFIG_MMU)	:= fremap.o gup.o highmem.o madvise.o memory.o mincore.o \
