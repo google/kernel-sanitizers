@@ -62,7 +62,6 @@ static void print_error_description(struct access_info *info)
 		bug_type = "out of bounds access";
 		break;
 	case KASAN_FREE_PAGE:
-	case KASAN_SLAB_FREE:
 	case KASAN_KMALLOC_FREE:
 		bug_type = "use after free";
 		break;
@@ -105,7 +104,6 @@ static void print_address_description(struct access_info *info)
 		}
 	case KASAN_PAGE_REDZONE:
 	case KASAN_FREE_PAGE:
-	case KASAN_SLAB_FREE:
 		dump_page(page, "kasan error");
 		dump_stack();
 		break;

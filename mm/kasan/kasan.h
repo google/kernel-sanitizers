@@ -11,7 +11,6 @@
 #define KASAN_SLAB_PADDING      0xFD  /* Slab page padding, does not belong to any slub object */
 #define KASAN_KMALLOC_REDZONE   0xFC  /* redzone inside slub object */
 #define KASAN_KMALLOC_FREE      0xFB  /* object was freed (kmem_cache_free/kfree) */
-#define KASAN_SLAB_FREE         0xFA  /* free slab page */
 #define KASAN_SHADOW_GAP        0xF9  /* address belongs to shadow memory */
 
 struct access_info {

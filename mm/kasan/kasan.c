@@ -267,26 +267,21 @@ void kasan_free_pages(struct page *page, unsigned int order)
 {
 	if (likely(!PageHighMem(page)))
 		kasan_poison_shadow(page_address(page),
-				PAGE_SIZE << order, KASAN_FREE_PAGE);
+				PAGE_SIZE << order,
+				KASAN_FREE_PAGE);
 }
 
-void kasan_free_slab_pages(struct page *page, int order)
-{
-	kasan_poison_shadow(page_address(page),
-			PAGE_SIZE << order, KASAN_SLAB_FREE);
-}
-
-void kasan_mark_slab_padding(struct kmem_cache *s, void *object)
+void kasan_mark_slab_padding(struct kmem_cache *s, void *object,
+			struct page *page)
 {
 	unsigned long object_end = (unsigned long)object + s->size;
-	unsigned long padding_end = round_up(object_end, PAGE_SIZE);
 	unsigned long padding_start = round_up(object_end,
 					KASAN_SHADOW_SCALE_SIZE);
+	unsigned long padding_end = (unsigned long)page_address(page) +
+					(PAGE_SIZE << compound_order(page));
 	size_t size = padding_end - padding_start;
 
-	if (size)
-		kasan_poison_shadow((void *)padding_start,
-				size, KASAN_SLAB_PADDING);
+	kasan_poison_shadow((void *)padding_start, size, KASAN_SLAB_PADDING);
 }
 
 void kasan_slab_alloc(struct kmem_cache *cache, void *object)
