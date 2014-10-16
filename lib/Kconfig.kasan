@@ -4,12 +4,11 @@ config HAVE_ARCH_KASAN
 if HAVE_ARCH_KASAN
 
 config KASAN
-	bool "AddressSanitizer: dynamic memory error detector"
+	bool "AddressSanitizer: runtime memory debugger"
 	depends on !MEMORY_HOTPLUG
 	depends on SLUB_DEBUG
-	default n
 	help
-	  Enables address sanitizer - dynamic memory error detector,
+	  Enables address sanitizer - runtime memory debugger,
 	  designed to find out-of-bounds accesses and use-after-free bugs.
 	  This is strictly debugging feature. It consumes about 1/8
 	  of available memory and brings about ~x3 performance slowdown.
@@ -19,5 +18,13 @@ config KASAN
 config KASAN_SHADOW_OFFSET
 	hex
 	default 0xdfffe90000000000 if X86_64
+
+config TEST_KASAN
+	tristate "Module for testing kasan for bug detection"
+	depends on m
+	help
+	  This is a test module doing various nasty things like
+	  out of bounds accesses, use after free. It is useful for testing
+	  kernel debugging features like kernel address sanitizer.
 
 endif

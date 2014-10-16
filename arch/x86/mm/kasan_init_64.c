@@ -1,7 +1,8 @@
-#include <linux/mm.h>
 #include <linux/bootmem.h>
-#include <linux/sched.h>
 #include <linux/kasan.h>
+#include <linux/mm.h>
+#include <linux/sched.h>
+#include <linux/vmalloc.h>
 
 #include <asm/tlbflush.h>
 
@@ -32,9 +33,8 @@ static int __init map_range(struct range *range)
 static void __init clear_zero_shadow_mapping(unsigned long start,
 					unsigned long end)
 {
-	for (; start < end; start += PGDIR_SIZE) {
+	for (; start < end; start += PGDIR_SIZE)
 		pgd_clear(pgd_offset_k(start));
-	}
 }
 
 void __init kasan_map_zero_shadow(pgd_t *pgd)

@@ -478,12 +478,12 @@ static int slub_debug;
 static char *slub_debug_slabs;
 static int disable_higher_order_debug;
 
-static void metadata_access_enable(void)
+static inline void metadata_access_enable(void)
 {
 	kasan_disable_local();
 }
 
-static void metadata_access_disable(void)
+static inline void metadata_access_disable(void)
 {
 	kasan_enable_local();
 }
@@ -1385,9 +1385,6 @@ static struct page *allocate_slab(struct kmem_cache *s, gfp_t flags, int node)
 	if (!page)
 		return NULL;
 
-	if (!s->ctor)
-		kasan_free_slab_pages(page, oo_order(oo));
-
 	page->objects = oo_objects(oo);
 	mod_zone_page_state(page_zone(page),
 		(s->flags & SLAB_RECLAIM_ACCOUNT) ?
@@ -1404,8 +1401,8 @@ static void setup_object(struct kmem_cache *s, struct page *page,
 	if (unlikely(s->ctor)) {
 		kasan_slab_alloc(s, object);
 		s->ctor(object);
-		kasan_slab_free(s, object);
 	}
+	kasan_slab_free(s, object);
 }
 
 static struct page *new_slab(struct kmem_cache *s, gfp_t flags, int node)
@@ -1441,7 +1438,7 @@ static struct page *new_slab(struct kmem_cache *s, gfp_t flags, int node)
 			set_freepointer(s, p, p + s->size);
 		else {
 			set_freepointer(s, p, NULL);
-			kasan_mark_slab_padding(s, p);
+			kasan_mark_slab_padding(s, p, page);
 		}
 	}
 
@@ -1467,7 +1464,6 @@ static void __free_slab(struct kmem_cache *s, struct page *page)
 	}
 
 	kmemcheck_free_shadow(page, compound_order(page));
-	kasan_free_slab_pages(page, compound_order(page));
 
 	mod_zone_page_state(page_zone(page),
 		(s->flags & SLAB_RECLAIM_ACCOUNT) ?
