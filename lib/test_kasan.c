@@ -9,8 +9,6 @@
  *
  */
 
-//#define pr_fmt(fmt) "kasan test: %s " fmt, __func__
-
 #define RUN_TEST(test_func) \
 	pr_info("##### TEST_START " #test_func  "\n"); \
 	test_func(); \
@@ -181,7 +179,7 @@ static noinline void __init kmalloc_oob_in_memset(void)
 	memset(ptr, 0, size+5);
 	kfree(ptr);
 
-	ASSERT_OOB(ptr); // TODO: fix wrong address computation for memset
+	ASSERT_OOB(ptr);
 }
 
 static noinline void __init kmalloc_uaf(void)
