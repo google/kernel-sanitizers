@@ -9,7 +9,19 @@
  *
  */
 
-#define pr_fmt(fmt) "kasan test: %s " fmt, __func__
+//#define pr_fmt(fmt) "kasan test: %s " fmt, __func__
+
+#define RUN_TEST(test_func) \
+	pr_info("##### TEST_START " #test_func  "\n", ); \
+	test_func(); \
+	pr_info("##### TEST_END " #test_func "\n", ); \
+	while(0)
+
+#define FAIL(message) \
+	FAIL("##### FAIL %s \n", message)
+
+#define ASSERT_OUT(fmt, args...) \
+	pr_info("##### ASSERT '" fmt "'\n", args);
 
 #include <linux/kernel.h>
 #include <linux/printk.h>
@@ -25,7 +37,7 @@ static noinline void __init kmalloc_oob_right(void)
 	pr_info("out-of-bounds to right\n");
 	ptr = kmalloc(size , GFP_KERNEL);
 	if (!ptr) {
-		pr_err("Allocation failed\n");
+		FAIL("Allocation failed\n");
 		return;
 	}
 
@@ -41,7 +53,7 @@ static noinline void __init kmalloc_oob_left(void)
 	pr_info("out-of-bounds to left\n");
 	ptr = kmalloc(size, GFP_KERNEL);
 	if (!ptr) {
-		pr_err("Allocation failed\n");
+		FAIL("Allocation failed\n");
 		return;
 	}
 
@@ -57,7 +69,7 @@ static noinline void __init kmalloc_node_oob_right(void)
 	pr_info("kmalloc_node(): out-of-bounds to right\n");
 	ptr = kmalloc_node(size , GFP_KERNEL, 0);
 	if (!ptr) {
-		pr_err("Allocation failed\n");
+		FAIL("Allocation failed\n");
 		return;
 	}
 
@@ -73,7 +85,7 @@ static noinline void __init kmalloc_large_oob_rigth(void)
 	pr_info("kmalloc large allocation: out-of-bounds to right\n");
 	ptr = kmalloc(size , GFP_KERNEL);
 	if (!ptr) {
-		pr_err("Allocation failed\n");
+		FAIL("Allocation failed\n");
 		return;
 	}
 
@@ -91,7 +103,7 @@ static noinline void __init kmalloc_oob_krealloc_more(void)
 	ptr1 = kmalloc(size1, GFP_KERNEL);
 	ptr2 = krealloc(ptr1, size2, GFP_KERNEL);
 	if (!ptr1 || !ptr2) {
-		pr_err("Allocation failed\n");
+		FAIL("Allocation failed\n");
 		kfree(ptr1);
 		return;
 	}
@@ -110,7 +122,7 @@ static noinline void __init kmalloc_oob_krealloc_less(void)
 	ptr1 = kmalloc(size1, GFP_KERNEL);
 	ptr2 = krealloc(ptr1, size2, GFP_KERNEL);
 	if (!ptr1 || !ptr2) {
-		pr_err("Allocation failed\n");
+		FAIL("Allocation failed\n");
 		kfree(ptr1);
 		return;
 	}
@@ -128,7 +140,7 @@ static noinline void __init kmalloc_oob_16(void)
 	ptr1 = kmalloc(sizeof(*ptr1) - 3, GFP_KERNEL);
 	ptr2 = kmalloc(sizeof(*ptr2), GFP_KERNEL);
 	if (!ptr1 || !ptr2) {
-		pr_err("Allocation failed\n");
+		FAIL("Allocation failed\n");
 		kfree(ptr1);
 		kfree(ptr2);
 		return;
@@ -146,7 +158,7 @@ static noinline void __init kmalloc_oob_in_memset(void)
 	pr_info("out-of-bounds in memset\n");
 	ptr = kmalloc(size, GFP_KERNEL);
 	if (!ptr) {
-		pr_err("Allocation failed\n");
+		FAIL("Allocation failed\n");
 		return;
 	}
 
@@ -162,7 +174,7 @@ static noinline void __init kmalloc_uaf(void)
 	pr_info("use-after-free\n");
 	ptr = kmalloc(size, GFP_KERNEL);
 	if (!ptr) {
-		pr_err("Allocation failed\n");
+		FAIL("Allocation failed\n");
 		return;
 	}
 
@@ -178,7 +190,7 @@ static noinline void __init kmalloc_uaf_memset(void)
 	pr_info("use-after-free in memset\n");
 	ptr = kmalloc(size, GFP_KERNEL);
 	if (!ptr) {
-		pr_err("Allocation failed\n");
+		FAIL("Allocation failed\n");
 		return;
 	}
 
@@ -194,14 +206,14 @@ static noinline void __init kmalloc_uaf2(void)
 	pr_info("use-after-free after another kmalloc\n");
 	ptr1 = kmalloc(size, GFP_KERNEL);
 	if (!ptr1) {
-		pr_err("Allocation failed\n");
+		FAIL("Allocation failed\n");
 		return;
 	}
 
 	kfree(ptr1);
 	ptr2 = kmalloc(size, GFP_KERNEL);
 	if (!ptr2) {
-		pr_err("Allocation failed\n");
+		FAIL("Allocation failed\n");
 		return;
 	}
 
@@ -217,13 +229,13 @@ static noinline void __init kmem_cache_oob(void)
 						size, 0,
 						0, NULL);
 	if (!cache) {
-		pr_err("Cache allocation failed\n");
+		FAIL("Cache allocation failed\n");
 		return;
 	}
 	pr_info("out-of-bounds in kmem_cache_alloc\n");
 	p = kmem_cache_alloc(cache, GFP_KERNEL);
 	if (!p) {
-		pr_err("Allocation failed\n");
+		FAIL("Allocation failed\n");
 		kmem_cache_destroy(cache);
 		return;
 	}
@@ -235,18 +247,18 @@ static noinline void __init kmem_cache_oob(void)
 
 int __init kmalloc_tests_init(void)
 {
-	kmalloc_oob_right();
-	kmalloc_oob_left();
-	kmalloc_node_oob_right();
-	kmalloc_large_oob_rigth();
-	kmalloc_oob_krealloc_more();
-	kmalloc_oob_krealloc_less();
-	kmalloc_oob_16();
-	kmalloc_oob_in_memset();
-	kmalloc_uaf();
-	kmalloc_uaf_memset();
-	kmalloc_uaf2();
-	kmem_cache_oob();
+	RUN_TEST(kmalloc_oob_right);
+	RUN_TEST(kmalloc_oob_left);
+	RUN_TEST(kmalloc_node_oob_right);
+	RUN_TEST(kmalloc_large_oob_rigth);
+	RUN_TEST(kmalloc_oob_krealloc_more);
+	RUN_TEST(kmalloc_oob_krealloc_less);
+	RUN_TEST(kmalloc_oob_16);
+	RUN_TEST(kmalloc_oob_in_memset);
+	RUN_TEST(kmalloc_uaf);
+	RUN_TEST(kmalloc_uaf_memset);
+	RUN_TEST(kmalloc_uaf2);
+	RUN_TEST(kmem_cache_oob);
 	return -EAGAIN;
 }
 
