@@ -14,22 +14,26 @@
 #include <linux/string.h>
 #include <linux/module.h>
 
-static inline void run_test(void (*test_func) (void), const char* name) {
+static inline void run_test(void (*test_func) (void), const char *name)
+{
 	pr_info("##### TEST_START %s\n", name);
 	(*test_func) ();
 	pr_info("##### TEST_END %s\n", name);
 }
 
-static inline void fail(const char* message) {
+static inline void fail(const char *message)
+{
 	pr_err("##### fail %s\n", message);
 }
 
-static inline void assert_oob(void* ptr, const char* function) {
+static inline void assert_oob(void *ptr, const char *function)
+{
 	pr_info("##### ASSERT 'BUG: AddressSanitizer: out of bounds access in %s.*"
 			"at addr %p'\n", function, ptr);
 }
 
-static inline void assert_uaf(void* ptr, const char* function) {
+static inline void assert_uaf(void *ptr, const char *function)
+{
 	pr_info("##### ASSERT 'BUG: AddressSanitizer: use after free in %s.* at addr %p'\n",
 			function, ptr);
 }
@@ -64,7 +68,9 @@ static noinline void __init kmalloc_oob_left(void)
 
 	*ptr = *(ptr - 1);
 	kfree(ptr);
-	assert_oob(ptr - 1, "kmalloc_oob_left");  // TODO: fix - displays UAF
+
+	/* TODO: fix - displays UAF */
+	assert_oob(ptr - 1, "kmalloc_oob_left");
 }
 
 static noinline void __init kmalloc_node_oob_right(void)
@@ -81,7 +87,8 @@ static noinline void __init kmalloc_node_oob_right(void)
 	ptr[size] = 0;
 	kfree(ptr);
 
-	assert_oob(ptr + size, "kmalloc_node_oob_right"); // TODO: fix - no output
+	/* TODO: fix - displays UAF */
+	assert_oob(ptr + size, "kmalloc_node_oob_right");
 }
 
 static noinline void __init kmalloc_large_oob_rigth(void)
@@ -231,8 +238,8 @@ static noinline void __init kmalloc_uaf2(void)
 
 	ptr1[40] = 'x';
 	kfree(ptr2);
-
-	assert_uaf(ptr1 + 40, "kmalloc_uaf2"); // TODO: fix - no output
+	/* TODO: fix - no output */
+	assert_uaf(ptr1 + 40, "kmalloc_uaf2");
 }
 
 static noinline void __init kmem_cache_oob(void)
@@ -257,7 +264,8 @@ static noinline void __init kmem_cache_oob(void)
 	kmem_cache_free(cache, p);
 	kmem_cache_destroy(cache);
 
-	assert_oob(p + size, "kmem_cache_oob"); // TODO: fix - UAF displayed instead
+	/* TODO: fix - UAF displayed instead */
+	assert_oob(p + size, "kmem_cache_oob");
 }
 
 int __init kmalloc_tests_init(void)
