@@ -748,9 +748,21 @@ KBUILD_CFLAGS += $(call cc-option, -fno-inline-functions-called-once)
 endif
 
 ifdef CONFIG_KASAN
+ifdef CONFIG_KASAN_INLINE
+  kasan_inline := $(call cc-option, $(CFLAGS_KASAN) \
+			-fasan-shadow-offset=$(CONFIG_KASAN_SHADOW_OFFSET) \
+			--param asan-instrumentation-with-call-threshold=10000)
+  ifeq ($(kasan_inline),)
+    $(warning Cannot use CONFIG_KASAN_INLINE: \
+	      inline instrumentation is not supported by compiler. Trying CONFIG_KASAN_OUTLINE.)
+  else
+    CFLAGS_KASAN := $(kasan_inline)
+  endif
+
+endif
   ifeq ($(CFLAGS_KASAN),)
     $(warning Cannot use CONFIG_KASAN: \
-	      -fsanitize=kernel-address not supported by compiler)
+	      -fsanitize=kernel-address is not supported by compiler)
   endif
 endif
 
