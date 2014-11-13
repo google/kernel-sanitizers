@@ -5,22 +5,26 @@ Kernel address sanitizer
 ===========
 
 Kernel Address sanitizer (KASan) is a dynamic memory error detector. It provides
-a fast and comprehensive solution for finding use-after-free and out-of-bounds bugs.
+a fast and comprehensive solution for finding use-after-free and out-of-bounds
+bugs.
 
-KASAN uses compile-time instrumentation for checking every memory access, therefore you
-will need a special compiler: GCC >= 5.0.0.
+KASan uses compile-time instrumentation for checking every memory access,
+therefore you will need a certain version of GCC >= 4.9.2
 
-Currently KASAN is supported only for x86_64 architecture and requires kernel
-to be built with SLUB allocator.
+Currently KASan is supported only for x86_64 architecture and requires that the
+kernel be built with the SLUB allocator.
 
 1. Usage
 =========
 
-KASAN requires the kernel to be built with a special compiler (GCC >= 5.0.0).
-
 To enable KASAN configure kernel with:
 
 	  CONFIG_KASAN = y
+
+and choose between CONFIG_KASAN_OUTLINE and CONFIG_KASAN_INLINE. Outline/inline
+is compiler instrumentation types. The former produces smaller binary the
+latter is 1.1 - 2 times faster. Inline instrumentation requires GCC 5.0 or
+latter.
 
 Currently KASAN works only with the SLUB memory allocator.
 For better bug detection and nicer report, enable CONFIG_STACKTRACE and put
@@ -35,109 +39,101 @@ similar to the following to the respective kernel Makefile:
         For all files in one directory:
                 KASAN_SANITIZE := n
 
-Only files which are linked to the main kernel image or are compiled as
-kernel modules are supported by this mechanism.
-
-
 1.1 Error reports
 ==========
 
 A typical out of bounds access report looks like this:
 
 ==================================================================
-BUG: AddressSanitizer: buffer overflow in kasan_kmalloc_oob_right+0x6a/0x7a at addr c6006f1b
+BUG: AddressSanitizer: out of bounds access in kmalloc_oob_right+0x65/0x75 [test_kasan] at addr ffff8800693bc5d3
 =============================================================================
 BUG kmalloc-128 (Not tainted): kasan error
 -----------------------------------------------------------------------------
 
 Disabling lock debugging due to kernel taint
-INFO: Allocated in kasan_kmalloc_oob_right+0x2c/0x7a age=5 cpu=0 pid=1
-	__slab_alloc.constprop.72+0x64f/0x680
-	kmem_cache_alloc+0xa8/0xe0
-	kasan_kmalloc_oob_rigth+0x2c/0x7a
-	kasan_tests_init+0x8/0xc
-	do_one_initcall+0x85/0x1a0
-	kernel_init_freeable+0x1f1/0x279
-	kernel_init+0x8/0xd0
-	ret_from_kernel_thread+0x21/0x30
-INFO: Slab 0xc7f3d0c0 objects=14 used=2 fp=0xc6006120 flags=0x5000080
-INFO: Object 0xc6006ea0 @offset=3744 fp=0xc6006d80
+INFO: Allocated in kmalloc_oob_right+0x3d/0x75 [test_kasan] age=0 cpu=0 pid=1689
+ __slab_alloc+0x4b4/0x4f0
+ kmem_cache_alloc_trace+0x10b/0x190
+ kmalloc_oob_right+0x3d/0x75 [test_kasan]
+ init_module+0x9/0x47 [test_kasan]
+ do_one_initcall+0x99/0x200
+ load_module+0x2cb3/0x3b20
+ SyS_finit_module+0x76/0x80
+ system_call_fastpath+0x12/0x17
+INFO: Slab 0xffffea0001a4ef00 objects=17 used=7 fp=0xffff8800693bd728 flags=0x100000000004080
+INFO: Object 0xffff8800693bc558 @offset=1368 fp=0xffff8800693bc720
 
-Bytes b4 c6006e90: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00  ................
-Object c6006ea0: 80 6d 00 c6 00 00 00 00 00 00 00 00 00 00 00 00  .m..............
-Object c6006eb0: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00  ................
-Object c6006ec0: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00  ................
-Object c6006ed0: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00  ................
-Object c6006ee0: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00  ................
-Object c6006ef0: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00  ................
-Object c6006f00: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00  ................
-Object c6006f10: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00  ................
-CPU: 0 PID: 1 Comm: swapper/0 Tainted: G    B          3.16.0-rc3-next-20140704+ #216
-Hardware name: QEMU Standard PC (i440FX + PIIX, 1996), BIOS Bochs 01/01/2011
- 00000000 00000000 c6006ea0 c6889e30 c1c4446f c6801b40 c6889e48 c11c3f32
- c6006000 c6801b40 c7f3d0c0 c6006ea0 c6889e68 c11c4ff5 c6801b40 c1e44906
- c1e11352 c7f3d0c0 c6889efc c6801b40 c6889ef4 c11ccb78 c1e11352 00000286
+Bytes b4 ffff8800693bc548: 00 00 00 00 00 00 00 00 5a 5a 5a 5a 5a 5a 5a 5a  ........ZZZZZZZZ
+Object ffff8800693bc558: 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b  kkkkkkkkkkkkkkkk
+Object ffff8800693bc568: 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b  kkkkkkkkkkkkkkkk
+Object ffff8800693bc578: 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b  kkkkkkkkkkkkkkkk
+Object ffff8800693bc588: 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b  kkkkkkkkkkkkkkkk
+Object ffff8800693bc598: 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b  kkkkkkkkkkkkkkkk
+Object ffff8800693bc5a8: 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b  kkkkkkkkkkkkkkkk
+Object ffff8800693bc5b8: 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b  kkkkkkkkkkkkkkkk
+Object ffff8800693bc5c8: 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b a5  kkkkkkkkkkkkkkk.
+Redzone ffff8800693bc5d8: cc cc cc cc cc cc cc cc                          ........
+Padding ffff8800693bc718: 5a 5a 5a 5a 5a 5a 5a 5a                          ZZZZZZZZ
+CPU: 0 PID: 1689 Comm: modprobe Tainted: G    B          3.18.0-rc1-mm1+ #98
+Hardware name: QEMU Standard PC (i440FX + PIIX, 1996), BIOS rel-1.7.5-0-ge51488c-20140602_164612-nilsson.home.kraxel.org 04/01/2014
+ ffff8800693bc000 0000000000000000 ffff8800693bc558 ffff88006923bb78
+ ffffffff81cc68ae 00000000000000f3 ffff88006d407600 ffff88006923bba8
+ ffffffff811fd848 ffff88006d407600 ffffea0001a4ef00 ffff8800693bc558
 Call Trace:
- [<c1c4446f>] dump_stack+0x4b/0x75
- [<c11c3f32>] print_trailer+0xf2/0x180
- [<c11c4ff5>] object_err+0x25/0x30
- [<c11ccb78>] kasan_report_error+0xf8/0x380
- [<c1c57940>] ? need_resched+0x21/0x25
- [<c11cb92b>] ? poison_shadow+0x2b/0x30
- [<c11cb92b>] ? poison_shadow+0x2b/0x30
- [<c11cb92b>] ? poison_shadow+0x2b/0x30
- [<c1f82763>] ? kasan_kmalloc_oob_right+0x7a/0x7a
- [<c11cbacc>] __asan_store1+0x9c/0xa0
- [<c1f82753>] ? kasan_kmalloc_oob_rigth+0x6a/0x7a
- [<c1f82753>] kasan_kmalloc_oob_rigth+0x6a/0x7a
- [<c1f8276b>] kasan_tests_init+0x8/0xc
- [<c1000435>] do_one_initcall+0x85/0x1a0
- [<c1f6f508>] ? repair_env_string+0x23/0x66
- [<c1f6f4e5>] ? initcall_blacklist+0x85/0x85
- [<c10c9883>] ? parse_args+0x33/0x450
- [<c1f6fdb7>] kernel_init_freeable+0x1f1/0x279
- [<c1000558>] kernel_init+0x8/0xd0
- [<c1c578c1>] ret_from_kernel_thread+0x21/0x30
- [<c1000550>] ? do_one_initcall+0x1a0/0x1a0
-Write of size 1 by thread T1:
+ [<ffffffff81cc68ae>] dump_stack+0x46/0x58
+ [<ffffffff811fd848>] print_trailer+0xf8/0x160
+ [<ffffffffa00026a7>] ? kmem_cache_oob+0xc3/0xc3 [test_kasan]
+ [<ffffffff811ff0f5>] object_err+0x35/0x40
+ [<ffffffffa0002065>] ? kmalloc_oob_right+0x65/0x75 [test_kasan]
+ [<ffffffff8120b9fa>] kasan_report_error+0x38a/0x3f0
+ [<ffffffff8120a79f>] ? kasan_poison_shadow+0x2f/0x40
+ [<ffffffff8120b344>] ? kasan_unpoison_shadow+0x14/0x40
+ [<ffffffff8120a79f>] ? kasan_poison_shadow+0x2f/0x40
+ [<ffffffffa00026a7>] ? kmem_cache_oob+0xc3/0xc3 [test_kasan]
+ [<ffffffff8120a995>] __asan_store1+0x75/0xb0
+ [<ffffffffa0002601>] ? kmem_cache_oob+0x1d/0xc3 [test_kasan]
+ [<ffffffffa0002065>] ? kmalloc_oob_right+0x65/0x75 [test_kasan]
+ [<ffffffffa0002065>] kmalloc_oob_right+0x65/0x75 [test_kasan]
+ [<ffffffffa00026b0>] init_module+0x9/0x47 [test_kasan]
+ [<ffffffff810002d9>] do_one_initcall+0x99/0x200
+ [<ffffffff811e4e5c>] ? __vunmap+0xec/0x160
+ [<ffffffff81114f63>] load_module+0x2cb3/0x3b20
+ [<ffffffff8110fd70>] ? m_show+0x240/0x240
+ [<ffffffff81115f06>] SyS_finit_module+0x76/0x80
+ [<ffffffff81cd3129>] system_call_fastpath+0x12/0x17
+Write of size 1 by task modprobe:
 Memory state around the buggy address:
- c6006c80: fd fd fd fd fd fd fd fd fd fd fd fd fd fd fd fd
- c6006d00: fd fd fd fd fd fd fd fd fd fd fd fd fd fd fd fd
- c6006d80: fd fd fd fd fd fd fd fd fd fd fd fd fd fd fd fd
- c6006e00: fd fd fd fd fd fd fd fd fd fd fd fd fd fd fd fd
- c6006e80: fd fd fd fd 00 00 00 00 00 00 00 00 00 00 00 00
->c6006f00: 00 00 00 03 fc fc fc fc fc fc fc fc fc fc fc fc
-                    ^
- c6006f80: fc fc fc fc fc fc fc fc fd fd fd fd fd fd fd fd
- c6007000: 00 00 00 00 00 00 00 00 00 fc fc fc fc fc fc fc
- c6007080: fc fc fc fc fc fc fc fc fc fc fc fc fc 00 00 00
- c6007100: 00 00 00 00 00 00 fc fc fc fc fc fc fc fc fc fc
- c6007180: fc fc fc fc fc fc fc fc fc fc 00 00 00 00 00 00
+ ffff8800693bc300: fc fc fc fc fc fc fc fc fc fc fc fc fc fc fc fc
+ ffff8800693bc380: fc fc 00 00 00 00 00 00 00 00 00 00 00 00 00 fc
+ ffff8800693bc400: fc fc fc fc fc fc fc fc fc fc fc fc fc fc fc fc
+ ffff8800693bc480: fc fc fc fc fc fc fc fc fc fc fc fc fc fc fc fc
+ ffff8800693bc500: fc fc fc fc fc fc fc fc fc fc fc 00 00 00 00 00
+>ffff8800693bc580: 00 00 00 00 00 00 00 00 00 00 03 fc fc fc fc fc
+                                                 ^
+ ffff8800693bc600: fc fc fc fc fc fc fc fc fc fc fc fc fc fc fc fc
+ ffff8800693bc680: fc fc fc fc fc fc fc fc fc fc fc fc fc fc fc fc
+ ffff8800693bc700: fc fc fc fc fb fb fb fb fb fb fb fb fb fb fb fb
+ ffff8800693bc780: fb fb fb fb fb fb fb fb fb fb fb fb fb fb fb fb
+ ffff8800693bc800: fb fb fb fb fb fb fb fb fb fb fb fb fb fb fb fb
 ==================================================================
 
+First sections describe slub object where bad access happened.
+See 'SLUB Debug output' section in Documentation/vm/slub.txt for details.
+
 In the last section the report shows memory state around the accessed address.
-Reading this part requires some more undestanding of how KASAN works.
+Reading this part requires some more understanding of how KASAN works.
 
-Each KASAN_SHADOW_SCALE_SIZE bytes of memory can be marked as addressable,
-partially addressable, freed or they can be part of a redzone.
-If bytes are marked as addressable that means that they belong to some
-allocated memory block and it is possible to read or modify any of these
-bytes. Addressable KASAN_SHADOW_SCALE_SIZE bytes are marked by 0 in the report.
-When only the first N bytes of KASAN_SHADOW_SCALE_SIZE belong to an allocated
-memory block, this bytes are partially addressable and marked by 'N'.
+Each 8 bytes of memory are encoded in one shadow byte as accessible,
+partially accessible, freed or they can be part of a redzone.
+We use the following encoding for each shadow byte: 0 means that all 8 bytes
+of the corresponding memory region are accessible; number N (1 <= N <= 7) means
+that the first N bytes are accessible, and other (8 - N) bytes are not;
+any negative value indicates that the entire 8-byte word is inaccessible.
+We use different negative values to distinguish between different kinds of
+inaccessible memory like redzones or freed memory (see mm/kasan/kasan.h).
 
-Markers of inaccessible bytes could be found in mm/kasan/kasan.h header:
-
-#define KASAN_FREE_PAGE         0xFF  /* page was freed */
-#define KASAN_PAGE_REDZONE      0xFE  /* redzone for kmalloc_large allocations */
-#define KASAN_SLAB_PADDING      0xFD  /* Slab page redzone, does not belong to any slub object */
-#define KASAN_KMALLOC_REDZONE   0xFC  /* redzone inside slub object */
-#define KASAN_KMALLOC_FREE      0xFB  /* object was freed (kmem_cache_free/kfree) */
-#define KASAN_SLAB_FREE         0xFA  /* free slab page */
-#define KASAN_SHADOW_GAP        0xF9  /* address belongs to shadow memory */
-
-In the report above the arrows point to the shadow byte 03, which means that the
-accessed address is partially addressable.
+In the report above the arrows point to the shadow byte 03, which means that
+the accessed address is partially accessible.
 
 
 2. Implementation details
@@ -145,14 +141,15 @@ accessed address is partially addressable.
 
 From a high level, our approach to memory error detection is similar to that
 of kmemcheck: use shadow memory to record whether each byte of memory is safe
-to access, and use compile-time instrumentation to check shadow on each memory
-access.
+to access, and use compile-time instrumentation to check shadow memory on each
+memory access.
 
-AddressSanitizer dedicates 1/8 of kernel memory to its shadow
-memory (e.g. 16TB to cover 128TB on x86_64) and uses direct mapping with a
-scale and offset to translate a memory address to its corresponding shadow address.
+AddressSanitizer dedicates 1/8 of kernel memory to its shadow memory
+(e.g. 16TB to cover 128TB on x86_64) and uses direct mapping with a scale and
+offset to translate a memory address to its corresponding shadow address.
 
-Here is the function witch translate an address to its corresponding shadow address:
+Here is the function witch translate an address to its corresponding shadow
+address:
 
 unsigned long kasan_mem_to_shadow(unsigned long addr)
 {
@@ -161,14 +158,12 @@ unsigned long kasan_mem_to_shadow(unsigned long addr)
 
 where KASAN_SHADOW_SCALE_SHIFT = 3.
 
-Each shadow byte corresponds to 8 bytes of the main memory. We use the
-following encoding for each shadow byte: 0 means that all 8 bytes of the
-corresponding memory region are addressable; k (1 <= k <= 7) means that
-the first k bytes are addressable, and other (8 - k) bytes are not;
-any negative value indicates that the entire 8-byte word is unaddressable.
-We use different negative values to distinguish between different kinds of
-unaddressable memory (redzones, freed memory) (see mm/kasan/kasan.h).
+Compile-time instrumentation used for checking memory accesses. Compiler inserts
+function calls (__asan_load*(addr), __asan_store*(addr)) before each memory
+access of size 1, 2, 4, 8 or 16. These functions check whether memory access is
+valid or not by checking corresponding shadow memory.
 
-Poisoning or unpoisoning a byte in the main memory means writing some special
-value into the corresponding shadow memory. This value indicates whether the
-byte is addressable or not.
+GCC 5.0 has possibility to perform inline instrumentation. Instead of making
+function calls GCC directly inserts the code to check the shadow memory.
+This option significantly enlarges kernel but it gives x1.1-x2 performance
+boost over outline instrumented kernel.
