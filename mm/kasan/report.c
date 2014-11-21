@@ -73,6 +73,9 @@ static void print_error_description(struct access_info *info)
 	pr_err("BUG: AddressSanitizer: %s in %pS at addr %p\n",
 		bug_type, (void *)info->ip,
 		(void *)info->access_addr);
+	pr_err("%s of size %zu by task %s:\n",
+		info->is_write ? "Write" : "Read",
+		info->access_size, current->comm);
 }
 
 static void print_address_description(struct access_info *info)
@@ -115,9 +118,6 @@ static void print_address_description(struct access_info *info)
 		WARN_ON(1);
 	}
 
-	pr_err("%s of size %zu by task %s:\n",
-		info->is_write ? "Write" : "Read",
-		info->access_size, current->comm);
 }
 
 static bool row_is_guilty(unsigned long row, unsigned long guilty)
