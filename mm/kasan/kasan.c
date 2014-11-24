@@ -41,7 +41,7 @@ static void kasan_poison_shadow(const void *address, size_t size, u8 value)
 	shadow_start = kasan_mem_to_shadow(addr);
 	shadow_end = kasan_mem_to_shadow(addr + size);
 
-	memset((void *)shadow_start, value, shadow_end - shadow_start);
+	__memset((void *)shadow_start, value, shadow_end - shadow_start);
 }
 
 void kasan_unpoison_shadow(const void *address, size_t size)
@@ -245,6 +245,32 @@ static __always_inline void check_memory_region(unsigned long addr,
 	kasan_report(addr, size, write);
 }
 
+#undef memset
+void *memset(void *addr, int c, size_t len)
+{
+	check_memory_region((unsigned long)addr, len, true);
+
+	return __memset(addr, c, len);
+}
+
+#undef memmove
+void *memmove(void *dest, const void *src, size_t count)
+{
+	check_memory_region((unsigned long)src, count, false);
+	check_memory_region((unsigned long)dest, count, true);
+
+	return __memmove(dest, src, count);
+}
+
+#undef memcpy
+void *memcpy(void *to, const void *from, size_t len)
+{
+	check_memory_region((unsigned long)from, len, false);
+	check_memory_region((unsigned long)to, len, true);
+
+	return __memcpy(to, from, len);
+}
+
 void kasan_alloc_pages(struct page *page, unsigned int order)
 {
 	if (likely(!PageHighMem(page)))
@@ -425,3 +451,53 @@ EXPORT_SYMBOL(__asan_storeN);
 /* to shut up compiler complaints */
 void __asan_handle_no_return(void) {}
 EXPORT_SYMBOL(__asan_handle_no_return);
+
+
+/* GCC 5.0 has different function names by default */
+ __attribute__((alias("__asan_load1")))
+void __asan_load1_noabort(unsigned long);
+EXPORT_SYMBOL(__asan_load1_noabort);
+
+ __attribute__((alias("__asan_load2")))
+void __asan_load2_noabort(unsigned long);
+EXPORT_SYMBOL(__asan_load2_noabort);
+
+ __attribute__((alias("__asan_load4")))
+void __asan_load4_noabort(unsigned long);
+EXPORT_SYMBOL(__asan_load4_noabort);
+
+ __attribute__((alias("__asan_load8")))
+void __asan_load8_noabort(unsigned long);
+EXPORT_SYMBOL(__asan_load8_noabort);
+
+ __attribute__((alias("__asan_load16")))
+void __asan_load16_noabort(unsigned long);
+EXPORT_SYMBOL(__asan_load16_noabort);
+
+ __attribute__((alias("__asan_loadN")))
+void __asan_loadN_noabort(unsigned long, size_t);
+EXPORT_SYMBOL(__asan_loadN_noabort);
+
+ __attribute__((alias("__asan_store1")))
+void __asan_store1_noabort(unsigned long);
+EXPORT_SYMBOL(__asan_store1_noabort);
+
+ __attribute__((alias("__asan_store2")))
+void __asan_store2_noabort(unsigned long);
+EXPORT_SYMBOL(__asan_store2_noabort);
+
+ __attribute__((alias("__asan_store4")))
+void __asan_store4_noabort(unsigned long);
+EXPORT_SYMBOL(__asan_store4_noabort);
+
+ __attribute__((alias("__asan_store8")))
+void __asan_store8_noabort(unsigned long);
+EXPORT_SYMBOL(__asan_store8_noabort);
+
+ __attribute__((alias("__asan_store16")))
+void __asan_store16_noabort(unsigned long);
+EXPORT_SYMBOL(__asan_store16_noabort);
+
+ __attribute__((alias("__asan_storeN")))
+void __asan_storeN_noabort(unsigned long, size_t);
+EXPORT_SYMBOL(__asan_storeN_noabort);
