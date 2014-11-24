@@ -279,7 +279,7 @@ void kasan_slab_alloc(struct kmem_cache *cache, void *object)
 
 void kasan_slab_free(struct kmem_cache *cache, void *object)
 {
-	unsigned long size = cache->size;
+	unsigned long size = cache->object_size;
 	unsigned long rounded_up_size = round_up(size, KASAN_SHADOW_SCALE_SIZE);
 
 	/* RCU slabs could be legally used after free within the RCU period */
