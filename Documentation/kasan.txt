@@ -46,6 +46,7 @@ A typical out of bounds access report looks like this:
 
 ==================================================================
 BUG: AddressSanitizer: out of bounds access in kmalloc_oob_right+0x65/0x75 [test_kasan] at addr ffff8800693bc5d3
+Write of size 1 by task modprobe/1689
 =============================================================================
 BUG kmalloc-128 (Not tainted): kasan error
 -----------------------------------------------------------------------------
@@ -101,7 +102,6 @@ Call Trace:
  [<ffffffff8110fd70>] ? m_show+0x240/0x240
  [<ffffffff81115f06>] SyS_finit_module+0x76/0x80
  [<ffffffff81cd3129>] system_call_fastpath+0x12/0x17
-Write of size 1 by task modprobe:
 Memory state around the buggy address:
  ffff8800693bc300: fc fc fc fc fc fc fc fc fc fc fc fc fc fc fc fc
  ffff8800693bc380: fc fc 00 00 00 00 00 00 00 00 00 00 00 00 00 fc
