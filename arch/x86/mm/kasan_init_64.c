@@ -82,7 +82,7 @@ static struct notifier_block kasan_die_notifier = {
 };
 #endif
 
-void __init kasan_map_shadow(void)
+void __init kasan_init(void)
 {
 	int i;
 
