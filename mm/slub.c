@@ -1285,8 +1285,6 @@ static inline void slab_post_alloc_hook(struct kmem_cache *s,
 static inline void slab_free_hook(struct kmem_cache *s, void *x)
 {
 	kmemleak_free_recursive(x, s->flags);
-	kasan_slab_free(s, x);
-
 	/*
 	 * Trouble is that we may no longer disable interrupts in the fast path
 	 * So in order to make the debug calls that expect irqs to be
@@ -1304,6 +1302,8 @@ static inline void slab_free_hook(struct kmem_cache *s, void *x)
 #endif
 	if (!(s->flags & SLAB_DEBUG_OBJECTS))
 		debug_check_no_obj_freed(x, s->object_size);
+
+	kasan_slab_free(s, x);
 }
 
 /*
