@@ -42,6 +42,7 @@ static noinline void __init kmalloc_oob_right(void)
 {
 	char *ptr;
 	size_t size = 123;
+	volatile char x;
 
 	ptr = kmalloc(size , GFP_KERNEL);
 	if (!ptr) {
@@ -49,7 +50,7 @@ static noinline void __init kmalloc_oob_right(void)
 		return;
 	}
 
-	ptr[size] = 'x';
+	x = ptr[size];
 	kfree(ptr);
 
 	assert_oob(ptr + size, "kmalloc_oob_right");
@@ -69,7 +70,6 @@ static noinline void __init kmalloc_oob_left(void)
 	*ptr = *(ptr - 1);
 	kfree(ptr);
 
-	/* TODO: fix - displays UAF */
 	assert_oob(ptr - 1, "kmalloc_oob_left");
 }
 
@@ -77,6 +77,7 @@ static noinline void __init kmalloc_node_oob_right(void)
 {
 	char *ptr;
 	size_t size = 4096;
+	volatile char x;
 
 	ptr = kmalloc_node(size, GFP_KERNEL, 0);
 	if (!ptr) {
@@ -84,10 +85,9 @@ static noinline void __init kmalloc_node_oob_right(void)
 		return;
 	}
 
-	ptr[size] = 0;
+	x = ptr[size];
 	kfree(ptr);
 
-	/* TODO: fix - displays UAF */
 	assert_oob(ptr + size, "kmalloc_node_oob_right");
 }
 
@@ -95,13 +95,14 @@ static noinline void __init kmalloc_large_oob_rigth(void)
 {
 	char *ptr;
 	size_t size = KMALLOC_MAX_CACHE_SIZE + 10;
+	volatile char x;
 
 	ptr = kmalloc(size , GFP_KERNEL);
 	if (!ptr) {
 		fail("Allocation failed");
 		return;
 	}
-	ptr[size] = 0;
+	x = ptr[size];
 	kfree(ptr);
 
 	assert_oob(ptr + size, "kmalloc_large_oob_rigth");
@@ -112,6 +113,7 @@ static noinline void __init kmalloc_oob_krealloc_more(void)
 	char *ptr1, *ptr2;
 	size_t size1 = 17;
 	size_t size2 = 19;
+	volatile char x;
 
 	ptr1 = kmalloc(size1, GFP_KERNEL);
 	ptr2 = krealloc(ptr1, size2, GFP_KERNEL);
@@ -121,7 +123,7 @@ static noinline void __init kmalloc_oob_krealloc_more(void)
 		return;
 	}
 
-	ptr2[size2] = 'x';
+	x = ptr2[size2];
 	kfree(ptr2);
 
 	assert_oob(ptr2 + size2, "kmalloc_oob_krealloc_more");
@@ -132,6 +134,7 @@ static noinline void __init kmalloc_oob_krealloc_less(void)
 	char *ptr1, *ptr2;
 	size_t size1 = 17;
 	size_t size2 = 15;
+	volatile char x;
 
 	ptr1 = kmalloc(size1, GFP_KERNEL);
 	ptr2 = krealloc(ptr1, size2, GFP_KERNEL);
@@ -140,7 +143,7 @@ static noinline void __init kmalloc_oob_krealloc_less(void)
 		kfree(ptr1);
 		return;
 	}
-	ptr2[size1] = 'x';
+	x = ptr2[size1];
 	kfree(ptr2);
 
 	assert_oob(ptr2 + size1, "kmalloc_oob_krealloc_less");
@@ -160,7 +163,7 @@ static noinline void __init kmalloc_oob_16(void)
 		kfree(ptr2);
 		return;
 	}
-	*ptr1 = *ptr2;
+	*ptr2 = *ptr1;
 	kfree(ptr1);
 	kfree(ptr2);
 
@@ -188,6 +191,7 @@ static noinline void __init kmalloc_uaf(void)
 {
 	char *ptr;
 	size_t size = 10;
+	volatile char x;
 
 	ptr = kmalloc(size, GFP_KERNEL);
 	if (!ptr) {
@@ -196,7 +200,7 @@ static noinline void __init kmalloc_uaf(void)
 	}
 
 	kfree(ptr);
-	*(ptr + 8) = 'x';
+	x = *(ptr + 8);
 
 	assert_uaf(ptr + 8, "kmalloc_uaf");
 }
@@ -222,6 +226,7 @@ static noinline void __init kmalloc_uaf2(void)
 {
 	char *ptr1, *ptr2;
 	size_t size = 43;
+	volatile char x;
 
 	ptr1 = kmalloc(size, GFP_KERNEL);
 	if (!ptr1) {
@@ -236,9 +241,8 @@ static noinline void __init kmalloc_uaf2(void)
 		return;
 	}
 
-	ptr1[40] = 'x';
+	x = ptr1[40];
 	kfree(ptr2);
-	/* TODO: fix - no output */
 	assert_uaf(ptr1 + 40, "kmalloc_uaf2");
 }
 
