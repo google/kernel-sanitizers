@@ -1,5 +1,6 @@
 #include <linux/bootmem.h>
 #include <linux/kasan.h>
+#include <linux/kdebug.h>
 #include <linux/mm.h>
 #include <linux/sched.h>
 #include <linux/vmalloc.h>
@@ -64,10 +65,30 @@ void __init kasan_map_zero_shadow(pgd_t *pgd)
 
 }
 
-void __init kasan_map_shadow(void)
+#ifdef CONFIG_KASAN_INLINE
+static int kasan_die_handler(struct notifier_block *self,
+			unsigned long val,
+			void *data)
+{
+	if (val == DIE_GPF) {
+		pr_emerg("CONFIG_KASAN_INLINE enabled\n");
+		pr_emerg("GPF could be caused by NULL-ptr deref or user memory access\n");
+	}
+	return NOTIFY_OK;
+}
+
+static struct notifier_block kasan_die_notifier = {
+	.notifier_call = kasan_die_handler,
+};
+#endif
+
+void __init kasan_init(void)
 {
 	int i;
 
+#ifdef CONFIG_KASAN_INLINE
+	register_die_notifier(&kasan_die_notifier);
+#endif
 	vm_area_add_early(&kasan_vm);
 
 	memcpy(early_level4_pgt, init_level4_pgt, sizeof(early_level4_pgt));

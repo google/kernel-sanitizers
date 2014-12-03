@@ -376,73 +376,73 @@ void kasan_kfree_large(const void *ptr)
 			KASAN_FREE_PAGE);
 }
 
-void __asan_load1(unsigned long addr)
+void notrace __asan_load1(unsigned long addr)
 {
 	check_memory_region(addr, 1, false);
 }
 EXPORT_SYMBOL(__asan_load1);
 
-void __asan_load2(unsigned long addr)
+void notrace __asan_load2(unsigned long addr)
 {
 	check_memory_region(addr, 2, false);
 }
 EXPORT_SYMBOL(__asan_load2);
 
-void __asan_load4(unsigned long addr)
+void notrace __asan_load4(unsigned long addr)
 {
 	check_memory_region(addr, 4, false);
 }
 EXPORT_SYMBOL(__asan_load4);
 
-void __asan_load8(unsigned long addr)
+void notrace __asan_load8(unsigned long addr)
 {
 	check_memory_region(addr, 8, false);
 }
 EXPORT_SYMBOL(__asan_load8);
 
-void __asan_load16(unsigned long addr)
+void notrace __asan_load16(unsigned long addr)
 {
 	check_memory_region(addr, 16, false);
 }
 EXPORT_SYMBOL(__asan_load16);
 
-void __asan_loadN(unsigned long addr, size_t size)
+void notrace __asan_loadN(unsigned long addr, size_t size)
 {
 	check_memory_region(addr, size, false);
 }
 EXPORT_SYMBOL(__asan_loadN);
 
-void __asan_store1(unsigned long addr)
+void notrace __asan_store1(unsigned long addr)
 {
 	check_memory_region(addr, 1, true);
 }
 EXPORT_SYMBOL(__asan_store1);
 
-void __asan_store2(unsigned long addr)
+void notrace __asan_store2(unsigned long addr)
 {
 	check_memory_region(addr, 2, true);
 }
 EXPORT_SYMBOL(__asan_store2);
 
-void __asan_store4(unsigned long addr)
+void notrace __asan_store4(unsigned long addr)
 {
 	check_memory_region(addr, 4, true);
 }
 EXPORT_SYMBOL(__asan_store4);
 
-void __asan_store8(unsigned long addr)
+void notrace __asan_store8(unsigned long addr)
 {
 	check_memory_region(addr, 8, true);
 }
 EXPORT_SYMBOL(__asan_store8);
 
-void __asan_store16(unsigned long addr)
+void notrace __asan_store16(unsigned long addr)
 {
 	check_memory_region(addr, 16, true);
 }
 EXPORT_SYMBOL(__asan_store16);
 
-void __asan_storeN(unsigned long addr, size_t size)
+void notrace __asan_storeN(unsigned long addr, size_t size)
 {
 	check_memory_region(addr, size, true);
 }
