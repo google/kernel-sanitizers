@@ -122,7 +122,7 @@ static inline unsigned long kmem_cache_flags(unsigned long object_size,
 #define SLAB_DEBUG_FLAGS (SLAB_RED_ZONE | SLAB_POISON | SLAB_STORE_USER)
 #elif defined(CONFIG_SLUB_DEBUG)
 #define SLAB_DEBUG_FLAGS (SLAB_RED_ZONE | SLAB_POISON | SLAB_STORE_USER | \
-			  SLAB_TRACE | SLAB_DEBUG_FREE)
+			  SLAB_TRACE | SLAB_DEBUG_FREE | SLAB_QUARANTINE)
 #else
 #define SLAB_DEBUG_FLAGS (0)
 #endif
@@ -337,6 +337,12 @@ struct kmem_cache_node {
 	atomic_long_t nr_slabs;
 	atomic_long_t total_objects;
 	struct list_head full;
+
+	struct {
+		unsigned long nr_objects;
+		unsigned long nr_slabs;
+		struct list_head slabs;
+	} quarantine;
 #endif
 #endif
 
