@@ -13,12 +13,6 @@ extern struct range pfn_mapped[E820_X_MAX];
 
 extern unsigned char poisoned_page[PAGE_SIZE];
 
-struct vm_struct kasan_vm __initdata = {
-	.addr = (void *)KASAN_SHADOW_START,
-	.size = (16UL << 40),
-};
-
-
 static int __init map_range(struct range *range)
 {
 	unsigned long start = kasan_mem_to_shadow(
@@ -185,8 +179,6 @@ void __init kasan_init(void)
 #ifdef CONFIG_KASAN_INLINE
 	register_die_notifier(&kasan_die_notifier);
 #endif
-	vm_area_add_early(&kasan_vm);
-
 	memcpy(early_level4_pgt, init_level4_pgt, sizeof(early_level4_pgt));
 	load_cr3(early_level4_pgt);
 
