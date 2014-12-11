@@ -56,7 +56,6 @@ static void print_error_description(struct access_info *info)
 
 	switch (shadow_val) {
 	case KASAN_PAGE_REDZONE:
-	case KASAN_SLAB_PADDING:
 	case KASAN_KMALLOC_REDZONE:
 	case 0 ... KASAN_SHADOW_SCALE_SIZE - 1:
 		bug_type = "out of bounds access";
@@ -87,21 +86,20 @@ static void print_address_description(struct access_info *info)
 	page = virt_to_head_page((void *)info->access_addr);
 
 	switch (shadow_val) {
-	case KASAN_SLAB_PADDING:
-		cache = page->slab_cache;
-		slab_err(cache, page, "access to slab redzone");
-		dump_stack();
-		break;
 	case KASAN_KMALLOC_FREE:
 	case KASAN_KMALLOC_REDZONE:
 	case 1 ... KASAN_SHADOW_SCALE_SIZE - 1:
 		if (PageSlab(page)) {
 			void *object;
 			void *slab_page = page_address(page);
+			void *last_object;
 
 			cache = page->slab_cache;
 			object = virt_to_obj(cache, slab_page,
 					(void *)info->access_addr);
+			last_object = slab_page + page->objects * cache->size;
+			if (unlikely(object > last_object))
+				object = last_object;
 			object_err(cache, page, object, "kasan error");
 			break;
 		}
