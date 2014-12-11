@@ -285,17 +285,24 @@ void kasan_free_pages(struct page *page, unsigned int order)
 				KASAN_FREE_PAGE);
 }
 
-void kasan_mark_slab_padding(struct kmem_cache *s, void *object,
-			struct page *page)
+void kasan_poison_slab(struct page *page)
 {
-	unsigned long object_end = (unsigned long)object + s->size;
-	unsigned long padding_start = round_up(object_end,
-					KASAN_SHADOW_SCALE_SIZE);
-	unsigned long padding_end = (unsigned long)page_address(page) +
-					(PAGE_SIZE << compound_order(page));
-	size_t size = padding_end - padding_start;
+	kasan_poison_shadow(page_address(page),
+			PAGE_SIZE << compound_order(page),
+			KASAN_KMALLOC_REDZONE);
+}
 
-	kasan_poison_shadow((void *)padding_start, size, KASAN_SLAB_PADDING);
+void kasan_pre_ctor(struct kmem_cache *cache, void *object)
+{
+	kasan_unpoison_shadow(object, cache->object_size);
+}
+
+
+void kasan_post_ctor(struct kmem_cache *cache, void *object)
+{
+	kasan_poison_shadow(object,
+			round_up(cache->object_size, KASAN_SHADOW_SCALE_SIZE),
+			KASAN_KMALLOC_REDZONE);
 }
 
 void kasan_slab_alloc(struct kmem_cache *cache, void *object)
@@ -324,13 +331,13 @@ void kasan_kmalloc(struct kmem_cache *cache, const void *object, size_t size)
 		return;
 
 	redzone_start = round_up((unsigned long)(object + size),
-				KASAN_SHADOW_SCALE_SIZE);
-	redzone_end = (unsigned long)object + cache->size;
+			KASAN_SHADOW_SCALE_SIZE);
+	redzone_end = round_up((unsigned long)object + cache->object_size,
+			KASAN_SHADOW_SCALE_SIZE);
 
 	kasan_unpoison_shadow(object, size);
 	kasan_poison_shadow((void *)redzone_start, redzone_end - redzone_start,
 		KASAN_KMALLOC_REDZONE);
-
 }
 EXPORT_SYMBOL(kasan_kmalloc);
 

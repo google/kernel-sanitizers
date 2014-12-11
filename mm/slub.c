@@ -653,7 +653,7 @@ void object_err(struct kmem_cache *s, struct page *page,
 	print_trailer(s, page, object);
 }
 
-void slab_err(struct kmem_cache *s, struct page *page,
+static void slab_err(struct kmem_cache *s, struct page *page,
 			const char *fmt, ...)
 {
 	va_list args;
@@ -1643,10 +1643,10 @@ static void setup_object(struct kmem_cache *s, struct page *page,
 {
 	setup_object_debug(s, page, object);
 	if (unlikely(s->ctor)) {
-		kasan_slab_alloc(s, object);
+		kasan_pre_ctor(s, object);
 		s->ctor(object);
+		kasan_post_ctor(s, object);
 	}
-	kasan_slab_free(s, object);
 }
 
 static struct page *new_slab(struct kmem_cache *s, gfp_t flags, int node)
@@ -1671,6 +1671,7 @@ static struct page *new_slab(struct kmem_cache *s, gfp_t flags, int node)
 	if (page->pfmemalloc)
 		SetPageSlabPfmemalloc(page);
 
+	kasan_poison_slab(page);
 	start = page_address(page);
 
 	if (unlikely(s->flags & SLAB_POISON))
@@ -1680,10 +1681,8 @@ static struct page *new_slab(struct kmem_cache *s, gfp_t flags, int node)
 		setup_object(s, page, p);
 		if (likely(idx < page->objects))
 			set_freepointer(s, p, p + s->size);
-		else {
+		else
 			set_freepointer(s, p, NULL);
-			kasan_mark_slab_padding(s, p, page);
-		}
 	}
 
 	page->freelist = start;
