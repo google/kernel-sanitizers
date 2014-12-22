@@ -67,6 +67,12 @@ static void print_error_description(struct access_info *info)
 	case KASAN_SHADOW_GAP:
 		bug_type = "wild memory access";
 		break;
+	case KASAN_STACK_LEFT:
+	case KASAN_STACK_MID:
+	case KASAN_STACK_RIGHT:
+	case KASAN_STACK_PARTIAL:
+		bug_type = "out-of-bounds on stack";
+		break;
 	}
 
 	pr_err("BUG: AddressSanitizer: %s in %pS at addr %p\n",

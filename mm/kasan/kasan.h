@@ -12,6 +12,12 @@
 #define KASAN_KMALLOC_FREE      0xFB  /* object was freed (kmem_cache_free/kfree) */
 #define KASAN_SHADOW_GAP        0xF9  /* address belongs to shadow memory */
 
+/* Stack redzones (Those are compiler's ABI, don't touch them) */
+#define KASAN_STACK_LEFT        0xF1
+#define KASAN_STACK_MID         0xF2
+#define KASAN_STACK_RIGHT       0xF3
+#define KASAN_STACK_PARTIAL     0xF4
+
 struct access_info {
 	unsigned long access_addr;
 	unsigned long first_bad_addr;
