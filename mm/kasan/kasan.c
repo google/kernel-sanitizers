@@ -245,30 +245,33 @@ static __always_inline void check_memory_region(unsigned long addr,
 	kasan_report(addr, size, write);
 }
 
+void __asan_loadN(unsigned long addr, size_t size);
+void __asan_storeN(unsigned long addr, size_t size);
+
 #undef memset
 void *memset(void *addr, int c, size_t len)
 {
-	check_memory_region((unsigned long)addr, len, true);
+	__asan_storeN((unsigned long)addr, len);
 
 	return __memset(addr, c, len);
 }
 
 #undef memmove
-void *memmove(void *dest, const void *src, size_t count)
+void *memmove(void *dest, const void *src, size_t len)
 {
-	check_memory_region((unsigned long)src, count, false);
-	check_memory_region((unsigned long)dest, count, true);
+	__asan_loadN((unsigned long)src, len);
+	__asan_storeN((unsigned long)dest, len);
 
-	return __memmove(dest, src, count);
+	return __memmove(dest, src, len);
 }
 
 #undef memcpy
-void *memcpy(void *to, const void *from, size_t len)
+void *memcpy(void *dest, const void *src, size_t len)
 {
-	check_memory_region((unsigned long)from, len, false);
-	check_memory_region((unsigned long)to, len, true);
+	__asan_loadN((unsigned long)src, len);
+	__asan_storeN((unsigned long)dest, len);
 
-	return __memcpy(to, from, len);
+	return __memcpy(dest, src, len);
 }
 
 void kasan_alloc_pages(struct page *page, unsigned int order)
