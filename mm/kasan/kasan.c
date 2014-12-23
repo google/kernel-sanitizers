@@ -295,13 +295,13 @@ void kasan_poison_slab(struct page *page)
 			KASAN_KMALLOC_REDZONE);
 }
 
-void kasan_pre_ctor(struct kmem_cache *cache, void *object)
+void kasan_unpoison_object_data(struct kmem_cache *cache, void *object)
 {
 	kasan_unpoison_shadow(object, cache->object_size);
 }
 
 
-void kasan_post_ctor(struct kmem_cache *cache, void *object)
+void kasan_poison_object_data(struct kmem_cache *cache, void *object)
 {
 	kasan_poison_shadow(object,
 			round_up(cache->object_size, KASAN_SHADOW_SCALE_SIZE),
