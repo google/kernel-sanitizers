@@ -4,4 +4,6 @@ KASAN_SANITIZE := n
 # see: https://gcc.gnu.org/bugzilla/show_bug.cgi?id=63533
 CFLAGS_kasan.o := $(call cc-option, -fno-conserve-stack)
 
+CFLAGS_kasan.o := $(call cc-option, -fno-stack-protector)
+
 obj-y := kasan.o report.o
