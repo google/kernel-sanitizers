@@ -60,4 +60,14 @@ config KASAN_STACK
 	  every variable on stack and poisons redzones in function's prologue.
 	  This allows to detect out of bounds memory accesses for varibles
 	  allocated on stack.
+
+config KASAN_GLOBALS
+	bool "Globals instrumentation"
+	depends on KASAN
+	select CONSTRUCTORS
+	default y
+	help
+	  Enables instrumentation of global variables. This allows to detect
+	  out-of-bounds accesses in global variables.
+
 endif

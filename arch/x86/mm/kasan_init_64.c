@@ -200,7 +200,8 @@ void __init kasan_init(void)
 	populate_poison_shadow(kasan_mem_to_shadow(KASAN_SHADOW_START),
 			kasan_mem_to_shadow(KASAN_SHADOW_END));
 
-	if (!IS_ENABLED(CONFIG_KASAN_STACK))
+	if (!IS_ENABLED(CONFIG_KASAN_STACK)
+		&& !IS_ENABLED(CONFIG_KASAN_GLOBALS))
 		populate_zero_shadow(kasan_mem_to_shadow(KASAN_SHADOW_END),
 				KASAN_SHADOW_END);
 	else {
@@ -209,8 +210,13 @@ void __init kasan_init(void)
 		vmemmap_populate(kasan_mem_to_shadow((unsigned long)_stext),
 				kasan_mem_to_shadow((unsigned long)_end),
 				NUMA_NO_NODE);
-		populate_zero_shadow(kasan_mem_to_shadow(MODULES_VADDR),
-				KASAN_SHADOW_END);
+
+		if (!IS_ENABLED(CONFIG_KASAN_GLOBALS))
+			populate_zero_shadow(kasan_mem_to_shadow(MODULES_VADDR),
+					KASAN_SHADOW_END);
+		else
+			populate_zero_shadow(kasan_mem_to_shadow(MODULES_END),
+					KASAN_SHADOW_END);
 	}
 
 	memset(poisoned_page, 0xF9, PAGE_SIZE);

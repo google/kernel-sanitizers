@@ -2,6 +2,15 @@
 #define __MM_KASAN_KASAN_H
 
 #include <linux/kasan.h>
+#include <linux/compiler.h>
+
+/*
+ * Prevent randconfig/allconfig build
+ * errors on old compilers
+ */
+#ifndef ASAN_ABI_VERSION
+#define ASAN_ABI_VERSION 1
+#endif
 
 #define KASAN_SHADOW_SCALE_SIZE (1UL << KASAN_SHADOW_SCALE_SHIFT)
 #define KASAN_SHADOW_MASK       (KASAN_SHADOW_SCALE_SIZE - 1)
@@ -10,6 +19,7 @@
 #define KASAN_PAGE_REDZONE      0xFE  /* redzone for kmalloc_large allocations */
 #define KASAN_KMALLOC_REDZONE   0xFC  /* redzone inside slub object */
 #define KASAN_KMALLOC_FREE      0xFB  /* object was freed (kmem_cache_free/kfree) */
+#define KASAN_GLOBAL_REDZONE    0xFA  /* redzone for global variable */
 #define KASAN_SHADOW_GAP        0xF9  /* address belongs to shadow memory */
 
 /* Stack redzones (Those are compiler's ABI, don't touch them) */
@@ -24,6 +34,25 @@ struct access_info {
 	size_t access_size;
 	bool is_write;
 	unsigned long ip;
+};
+
+struct asan_source_location {
+	const char *filename;
+	int line_no;
+	int column_no;
+};
+
+struct asan_global {
+	const void *beg;		/* Address of the beginning of the global variable. */
+	size_t size;			/* Initial size of the global variable. */
+	size_t size_with_redzone; 	/* Size of the variable + size of the red zone. 32 bytes aligned */
+	const void *name;
+	const void *module_name;	/* Name of the module where the global variable is declared. */
+	unsigned long has_dynamic_init;	/* this needed only for C++ */
+
+#if ASAN_ABI_VERSION >= 4
+	struct asan_source_location *location;
+#endif
 };
 
 void kasan_report_error(struct access_info *info);

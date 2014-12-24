@@ -750,6 +750,11 @@ ifdef CONFIG_KASAN_STACK
 			--param asan-stack=1)
 endif
 
+ifdef CONFIG_KASAN_GLOBALS
+	CFLAGS_KASAN := $(call cc-option, $(CFLAGS_KASAN) \
+				--param asan-globals=1)
+endif
+
 ifdef CONFIG_KASAN_INLINE
   kasan_inline := $(call cc-option, $(CFLAGS_KASAN) \
 			-fasan-shadow-offset=$(CONFIG_KASAN_SHADOW_OFFSET) \

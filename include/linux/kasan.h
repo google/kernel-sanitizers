@@ -73,4 +73,20 @@ static inline void kasan_slab_free(struct kmem_cache *s, void *object) {}
 
 #endif /* CONFIG_KASAN */
 
+#ifdef CONFIG_KASAN_GLOBALS
+
+#define MODULE_ALIGN (PAGE_SIZE << KASAN_SHADOW_SCALE_SHIFT)
+
+int kasan_module_alloc(void *addr, size_t size);
+void kasan_module_free(void *addr);
+
+#else
+
+#define MODULE_ALIGN 1
+
+static inline int kasan_module_alloc(void *addr, size_t size) { return 0; }
+static inline void kasan_module_free(void *addr) {}
+
+#endif /* CONFIG_KASAN_GLOBALS */
+
 #endif /* LINUX_KASAN_H */
