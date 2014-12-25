@@ -184,7 +184,7 @@ static noinline void __init kmalloc_oob_in_memset(void)
 	memset(ptr, 0, size+5);
 	kfree(ptr);
 
-	assert_oob(ptr, "kmalloc_oob_in_memset");
+	assert_oob(ptr, "memset");
 }
 
 static noinline void __init kmalloc_uaf(void)
@@ -219,7 +219,7 @@ static noinline void __init kmalloc_uaf_memset(void)
 	kfree(ptr);
 	memset(ptr, 0, size);
 
-	assert_uaf(ptr, "kmalloc_uaf_memset");
+	assert_uaf(ptr, "memset");
 }
 
 static noinline void __init kmalloc_uaf2(void)
