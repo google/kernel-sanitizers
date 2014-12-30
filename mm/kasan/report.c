@@ -80,42 +80,32 @@ static void print_error_description(struct access_info *info)
 static void print_address_description(struct access_info *info)
 {
 	struct page *page;
-	struct kmem_cache *cache;
-	u8 shadow_val = *(u8 *)kasan_mem_to_shadow(info->first_bad_addr);
+	unsigned long addr = info->access_addr;
 
-	page = virt_to_head_page((void *)info->access_addr);
-
-	switch (shadow_val) {
-	case KASAN_KMALLOC_FREE:
-	case KASAN_KMALLOC_REDZONE:
-	case 1 ... KASAN_SHADOW_SCALE_SIZE - 1:
+	if ((addr >= PAGE_OFFSET && addr < (unsigned long)high_memory)) {
+		page = virt_to_head_page((void *)addr);
 		if (PageSlab(page)) {
 			void *object;
-			void *slab_page = page_address(page);
+			struct kmem_cache *cache = page->slab_cache;
 			void *last_object;
 
-			cache = page->slab_cache;
-			object = virt_to_obj(cache, slab_page,
+			object = virt_to_obj(cache, page_address(page),
 					(void *)info->access_addr);
-			last_object = slab_page + page->objects * cache->size;
+			last_object = page_address(page) +
+					page->objects * cache->size;
+
 			if (unlikely(object > last_object))
-				object = last_object;
-			object_err(cache, page, object, "kasan error");
-			break;
+				object = last_object; /* we hit into padding */
+
+			object_err(cache, page, object, "kasan: bad access detected");
+			return;
 		}
-	case KASAN_PAGE_REDZONE:
-	case KASAN_FREE_PAGE:
-		dump_page(page, "kasan error");
+		dump_page(page, "kasan: bad access detected");
 		dump_stack();
-		break;
-	case KASAN_SHADOW_GAP:
-		pr_err("No metainfo is available for this access.\n");
-		dump_stack();
-		break;
-	default:
-		WARN_ON(1);
+		return;
 	}
 
+	dump_stack();
 }
 
 static bool row_is_guilty(unsigned long row, unsigned long guilty)
