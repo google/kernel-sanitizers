@@ -1,8 +1,9 @@
 #ifndef _ASM_X86_KASAN_H
 #define _ASM_X86_KASAN_H
 
-#define KASAN_SHADOW_START	0xffffd90000000000UL
-#define KASAN_SHADOW_END	0xffffe90000000000UL
+#define KASAN_SHADOW_START      (KASAN_SHADOW_OFFSET + (1ULL << 61) \
+                                        - (16ULL<<40))
+#define KASAN_SHADOW_END        (KASAN_SHADOW_START + (16ULL << 40))
 
 #ifndef __ASSEMBLY__
 
