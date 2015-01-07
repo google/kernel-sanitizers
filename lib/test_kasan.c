@@ -272,6 +272,27 @@ static noinline void __init kmem_cache_oob(void)
 	assert_oob(p + size, "kmem_cache_oob");
 }
 
+char global_array[10];
+
+static noinline void __init kasan_global_oob(void)
+{
+	volatile int i = 3;
+	char *p = &global_array[ARRAY_SIZE(global_array) + i];
+
+	*(volatile char *)p;
+	assert_oob(p, __func__);
+}
+
+static noinline void __init kasan_stack_oob(void)
+{
+	char stack_array[10];
+	volatile int i = 0;
+	char *p = &stack_array[ARRAY_SIZE(stack_array) + i];
+
+	*(volatile char *)p;
+	assert_oob(p, __func__);
+}
+
 int __init kmalloc_tests_init(void)
 {
 	run_test(kmalloc_oob_right, "kmalloc_oob_right");
@@ -286,6 +307,8 @@ int __init kmalloc_tests_init(void)
 	run_test(kmalloc_uaf_memset, "kmalloc_uaf_memset");
 	run_test(kmalloc_uaf2, "kmalloc_uaf2");
 	run_test(kmem_cache_oob, "kmem_cache_oob");
+	run_test(kasan_global_oob, "kasan_global_oob");
+	run_test(kasan_stack_oob, "kasan_stack_oob");
 	return -EAGAIN;
 }
 
