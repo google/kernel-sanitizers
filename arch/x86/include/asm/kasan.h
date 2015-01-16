@@ -1,9 +1,16 @@
 #ifndef _ASM_X86_KASAN_H
 #define _ASM_X86_KASAN_H
 
-#define KASAN_SHADOW_START      (KASAN_SHADOW_OFFSET + (1ULL << 61) \
-                                        - (16ULL<<40))
-#define KASAN_SHADOW_END        (KASAN_SHADOW_START + (16ULL << 40))
+/*
+ * Compiler uses shadow offset assuming that addresses start
+ * from 0. Kernel addresses don't start from 0, so shadow
+ * for kernel really starts from compiler's shadow offset +
+ * 'kernel address space start' >> KASAN_SHADOW_SCALE_SHIFT
+ */
+#define KASAN_SHADOW_START      (KASAN_SHADOW_OFFSET + \
+					(0xffff800000000000ULL >> 3))
+/* 47 bits for kernel address -> (47 - 3) bits for shadow */
+#define KASAN_SHADOW_END        (KASAN_SHADOW_START + (1ULL << (47 - 3)))
 
 #ifndef __ASSEMBLY__
 
