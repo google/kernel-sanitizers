@@ -23,10 +23,10 @@ extern pte_t kasan_poisoned_pmd[];
 extern pte_t kasan_poisoned_pud[];
 
 #ifdef CONFIG_KASAN
-void __init kasan_map_zero_shadow(pgd_t *pgd);
+void __init kasan_map_early_shadow(pgd_t *pgd);
 void __init kasan_init(void);
 #else
-static inline void kasan_map_zero_shadow(pgd_t *pgd) { }
+static inline void kasan_map_early_shadow(pgd_t *pgd) { }
 static inline void kasan_init(void) { }
 #endif
 

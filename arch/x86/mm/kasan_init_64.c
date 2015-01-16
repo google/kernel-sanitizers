@@ -35,7 +35,7 @@ static void __init clear_pgds(unsigned long start,
 		pgd_clear(pgd_offset_k(start));
 }
 
-void __init kasan_map_zero_shadow(pgd_t *pgd)
+void __init kasan_map_early_shadow(pgd_t *pgd)
 {
 	int i;
 	unsigned long start = KASAN_SHADOW_START;
