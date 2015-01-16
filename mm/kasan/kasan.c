@@ -539,7 +539,7 @@ void __asan_storeN_noabort(unsigned long, size_t);
 EXPORT_SYMBOL(__asan_storeN_noabort);
 
 #ifdef CONFIG_KASAN_GLOBALS
-static void register_global(struct asan_global *global)
+static void register_global(struct kasan_global *global)
 {
 	size_t aligned_size = round_up(global->size, KASAN_SHADOW_SCALE_SIZE);
 
@@ -550,7 +550,7 @@ static void register_global(struct asan_global *global)
 			KASAN_GLOBAL_REDZONE);
 }
 
-void __asan_register_globals(struct asan_global *globals, size_t size)
+void __asan_register_globals(struct kasan_global *globals, size_t size)
 {
 	int i;
 
@@ -559,7 +559,7 @@ void __asan_register_globals(struct asan_global *globals, size_t size)
 }
 EXPORT_SYMBOL(__asan_register_globals);
 
-void __asan_unregister_globals(struct asan_global *globals, size_t size)
+void __asan_unregister_globals(struct kasan_global *globals, size_t size)
 {
 }
 EXPORT_SYMBOL(__asan_unregister_globals);

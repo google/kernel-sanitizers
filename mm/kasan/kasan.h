@@ -23,13 +23,13 @@ struct access_info {
 	unsigned long ip;
 };
 
-struct asan_source_location {
+struct kasan_source_location {
 	const char *filename;
 	int line_no;
 	int column_no;
 };
 
-struct asan_global {
+struct kasan_global {
 	const void *beg;		/* Address of the beginning of the global variable. */
 	size_t size;			/* Initial size of the global variable. */
 	size_t size_with_redzone; 	/* Size of the variable + size of the red zone. 32 bytes aligned */
