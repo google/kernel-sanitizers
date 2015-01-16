@@ -520,19 +520,19 @@ ENTRY(phys_base)
 	.quad	(VAL) ;					\
 	.endr
 
-NEXT_PAGE(zero_pte)
+NEXT_PAGE(kasan_zero_pte)
 	FILL(empty_zero_page - __START_KERNEL_map + __PAGE_KERNEL_RO, 512)
-NEXT_PAGE(zero_pmd)
-	FILL(zero_pte - __START_KERNEL_map + __PAGE_KERNEL_RO, 512)
-NEXT_PAGE(zero_pud)
-	FILL(zero_pmd - __START_KERNEL_map + __PAGE_KERNEL_RO, 512)
+NEXT_PAGE(kasan_zero_pmd)
+	FILL(kasan_zero_pte - __START_KERNEL_map + __PAGE_KERNEL_RO, 512)
+NEXT_PAGE(kasan_zero_pud)
+	FILL(kasan_zero_pmd - __START_KERNEL_map + __PAGE_KERNEL_RO, 512)
 
-NEXT_PAGE(poisoned_pte)
-	FILL(poisoned_page - __START_KERNEL_map + _KERNPG_TABLE, 512)
-NEXT_PAGE(poisoned_pmd)
-	FILL(poisoned_pte - __START_KERNEL_map + _KERNPG_TABLE, 512)
-NEXT_PAGE(poisoned_pud)
-	FILL(poisoned_pmd - __START_KERNEL_map + _KERNPG_TABLE, 512)
+NEXT_PAGE(kasan_poisoned_pte)
+	FILL(kasan_poisoned_page - __START_KERNEL_map + _KERNPG_TABLE, 512)
+NEXT_PAGE(kasan_poisoned_pmd)
+	FILL(kasan_poisoned_pte - __START_KERNEL_map + _KERNPG_TABLE, 512)
+NEXT_PAGE(kasan_poisoned_pud)
+	FILL(kasan_poisoned_pmd - __START_KERNEL_map + _KERNPG_TABLE, 512)
 
 #undef FILL
 #endif
@@ -543,7 +543,13 @@ NEXT_PAGE(poisoned_pud)
 	__PAGE_ALIGNED_BSS
 NEXT_PAGE(empty_zero_page)
 	.skip PAGE_SIZE
+
 #ifdef CONFIG_KASAN
-NEXT_PAGE(poisoned_page)
+/*
+ * This page used as early shadow.
+ * Latter we use it to poison large ranges of memory that
+ * shouldn't be accessed by anyone except kasan itself.
+ */
+NEXT_PAGE(kasan_poisoned_page)
 	.skip PAGE_SIZE
 #endif

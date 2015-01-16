@@ -11,7 +11,7 @@
 extern pgd_t early_level4_pgt[PTRS_PER_PGD];
 extern struct range pfn_mapped[E820_X_MAX];
 
-extern unsigned char poisoned_page[PAGE_SIZE];
+extern unsigned char kasan_poisoned_page[PAGE_SIZE];
 
 static int __init map_range(struct range *range)
 {
@@ -42,7 +42,8 @@ void __init kasan_map_zero_shadow(pgd_t *pgd)
 	unsigned long end = KASAN_SHADOW_END;
 
 	for (i = pgd_index(start); start < end; i++) {
-		pgd[i] = __pgd(__pa_nodebug(poisoned_pud) | _KERNPG_TABLE);
+		pgd[i] = __pgd(__pa_nodebug(kasan_poisoned_pud)
+				| _KERNPG_TABLE);
 		start += PGDIR_SIZE;
 	}
 }
@@ -53,7 +54,8 @@ void __init populate_poison_shadow(unsigned long start, unsigned long end)
 	pgd_t *pgd = init_level4_pgt;
 
 	for (i = pgd_index(start); start < end; i++) {
-		pgd[i] = __pgd(__pa_nodebug(poisoned_pud) | _KERNPG_TABLE);
+		pgd[i] = __pgd(__pa_nodebug(kasan_poisoned_pud)
+				| _KERNPG_TABLE);
 		start += PGDIR_SIZE;
 	}
 }
@@ -81,7 +83,7 @@ static int __init zero_pmd_populate(pud_t *pud, unsigned long addr,
 
 	while (IS_ALIGNED(addr, PMD_SIZE) && addr + PMD_SIZE <= end) {
 		WARN_ON(!pmd_none(*pmd));
-		set_pmd(pmd, __pmd(__pa_nodebug(zero_pte) | __PAGE_KERNEL_RO));
+		set_pmd(pmd, __pmd(__pa_nodebug(kasan_zero_pte) | __PAGE_KERNEL_RO));
 		addr += PMD_SIZE;
 		pmd = pmd_offset(pud, addr);
 	}
@@ -106,7 +108,7 @@ static int __init zero_pud_populate(pgd_t *pgd, unsigned long addr,
 
 	while (IS_ALIGNED(addr, PUD_SIZE) && addr + PUD_SIZE <= end) {
 		WARN_ON(!pud_none(*pud));
-		set_pud(pud, __pud(__pa_nodebug(zero_pmd) | __PAGE_KERNEL_RO));
+		set_pud(pud, __pud(__pa_nodebug(kasan_zero_pmd) | __PAGE_KERNEL_RO));
 		addr += PUD_SIZE;
 		pud = pud_offset(pgd, addr);
 	}
@@ -130,7 +132,7 @@ static int __init zero_pgd_populate(unsigned long addr, unsigned long end)
 
 	while (IS_ALIGNED(addr, PGDIR_SIZE) && addr + PGDIR_SIZE <= end) {
 		WARN_ON(!pgd_none(*pgd));
-		set_pgd(pgd, __pgd(__pa_nodebug(zero_pud) | __PAGE_KERNEL_RO));
+		set_pgd(pgd, __pgd(__pa_nodebug(kasan_zero_pud) | __PAGE_KERNEL_RO));
 		addr += PGDIR_SIZE;
 		pgd = pgd_offset_k(addr);
 	}
@@ -219,7 +221,7 @@ void __init kasan_init(void)
 					KASAN_SHADOW_END);
 	}
 
-	memset(poisoned_page, 0xF9, PAGE_SIZE);
+	memset(kasan_poisoned_page, KASAN_SHADOW_GAP, PAGE_SIZE);
 
 	load_cr3(init_level4_pgt);
 	init_task.kasan_depth = 0;
