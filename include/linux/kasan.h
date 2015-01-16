@@ -58,6 +58,11 @@ void kasan_krealloc(const void *object, size_t new_size);
 void kasan_slab_alloc(struct kmem_cache *s, void *object);
 void kasan_slab_free(struct kmem_cache *s, void *object);
 
+#define MODULE_ALIGN (PAGE_SIZE << KASAN_SHADOW_SCALE_SHIFT)
+
+int kasan_module_alloc(void *addr, size_t size);
+void kasan_module_free(void *addr);
+
 #else /* CONFIG_KASAN */
 
 static inline void kasan_unpoison_shadow(const void *address, size_t size) {}
@@ -84,22 +89,11 @@ static inline void kasan_krealloc(const void *object, size_t new_size) {}
 static inline void kasan_slab_alloc(struct kmem_cache *s, void *object) {}
 static inline void kasan_slab_free(struct kmem_cache *s, void *object) {}
 
-#endif /* CONFIG_KASAN */
-
-#ifdef CONFIG_KASAN_GLOBALS
-
-#define MODULE_ALIGN (PAGE_SIZE << KASAN_SHADOW_SCALE_SHIFT)
-
-int kasan_module_alloc(void *addr, size_t size);
-void kasan_module_free(void *addr);
-
-#else
-
 #define MODULE_ALIGN 1
 
 static inline int kasan_module_alloc(void *addr, size_t size) { return 0; }
 static inline void kasan_module_free(void *addr) {}
 
-#endif /* CONFIG_KASAN_GLOBALS */
+#endif /* CONFIG_KASAN */
 
 #endif /* LINUX_KASAN_H */
