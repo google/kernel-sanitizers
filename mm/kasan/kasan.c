@@ -253,8 +253,12 @@ int kasan_module_alloc(void *addr, size_t size)
 	size_t shadow_size = round_up(size >> KASAN_SHADOW_SCALE_SHIFT,
 				PAGE_SIZE);
 	unsigned long shadow_start = kasan_mem_to_shadow((unsigned long)addr);
+	void *ret;
 
-	void *ret = __vmalloc_node_range(shadow_size, 1, shadow_start,
+	if (WARN_ON(!PAGE_ALIGNED(shadow_start)))
+		return -EINVAL;
+
+	ret = __vmalloc_node_range(shadow_size, 1, shadow_start,
 			shadow_start + shadow_size,
 			GFP_KERNEL | __GFP_HIGHMEM | __GFP_ZERO,
 			PAGE_KERNEL, VM_NO_GUARD, NUMA_NO_NODE,
