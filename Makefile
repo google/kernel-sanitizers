@@ -377,7 +377,6 @@ LDFLAGS_MODULE  =
 CFLAGS_KERNEL	=
 AFLAGS_KERNEL	=
 CFLAGS_GCOV	= -fprofile-arcs -ftest-coverage
-CFLAGS_KASAN	= $(call cc-option, -fsanitize=kernel-address --param asan-globals=1)
 
 # Use USERINCLUDE when you must reference the UAPI directories only.
 USERINCLUDE    := \
@@ -743,29 +742,30 @@ KBUILD_CFLAGS += $(call cc-option, -fno-inline-functions-called-once)
 endif
 
 ifdef CONFIG_KASAN
-
-ifdef CONFIG_KASAN_STACK
-	CFLAGS_KASAN := $(call cc-option, $(CFLAGS_KASAN) \
-			-fasan-shadow-offset=$(CONFIG_KASAN_SHADOW_OFFSET) \
-			--param asan-stack=1)
-endif
-
 ifdef CONFIG_KASAN_INLINE
-  kasan_inline := $(call cc-option, $(CFLAGS_KASAN) \
-			-fasan-shadow-offset=$(CONFIG_KASAN_SHADOW_OFFSET) \
-			--param asan-instrumentation-with-call-threshold=10000)
-  ifeq ($(kasan_inline),)
-    $(warning Cannot use CONFIG_KASAN_INLINE: \
-	      inline instrumentation is not supported by compiler. Trying CONFIG_KASAN_OUTLINE.)
-  else
-    CFLAGS_KASAN := $(kasan_inline)
-  endif
-
+	call_threshold := 10000
+else
+	call_threshold := 0
 endif
-  ifeq ($(CFLAGS_KASAN),)
-    $(warning Cannot use CONFIG_KASAN: \
-	      -fsanitize=kernel-address is not supported by compiler)
-  endif
+
+CFLAGS_KASAN_MINIMAL := $(call cc-option, -fsanitize=kernel-address \
+			--param asan-globals=1)
+
+CFLAGS_KASAN := $(call cc-option, -fsanitize=kernel-address \
+		-fasan-shadow-offset=$(CONFIG_KASAN_SHADOW_OFFSET) \
+		--param asan-stack=1 --param asan-globals=1 \
+		--param asan-instrumentation-with-call-threshold=$(call_threshold))
+
+    ifeq ($(CFLAGS_KASAN_MINIMAL),)
+        $(warning Cannot use CONFIG_KASAN: \
+            -fsanitize=kernel-address is not supported by compiler)
+    else
+        ifeq ($(CFLAGS_KASAN),)
+            $(warning CONFIG_KASAN: compiler does not support all options.\
+                Trying minimal configuration)
+            CFLAGS_KASAN := $(CFLAGS_KASAN_MINIMAL)
+        endif
+    endif
 endif
 
 # arch Makefile may override CC so keep this after arch Makefile is included

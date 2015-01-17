@@ -1,7 +1,7 @@
 #ifndef _ASM_X86_PAGE_64_DEFS_H
 #define _ASM_X86_PAGE_64_DEFS_H
 
-#ifdef CONFIG_KASAN_STACK
+#ifdef CONFIG_KASAN
 #define KASAN_STACK_ORDER 1
 #else
 #define KASAN_STACK_ORDER 0

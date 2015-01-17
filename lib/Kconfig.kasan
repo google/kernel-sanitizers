@@ -52,14 +52,4 @@ config KASAN_INLINE
 
 endchoice
 
-config KASAN_STACK
-	bool "Stack instrumentation"
-	depends on KASAN
-	default y
-	help
-	  Enables stack instrumentation. Compiler adds redzones around
-	  every variable on stack and poisons redzones in function's prologue.
-	  This allows to detect out of bounds memory accesses for varibles
-	  allocated on stack.
-
 endif
