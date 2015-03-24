@@ -87,6 +87,15 @@ A typical out of bounds access report looks like this:
  Object allocated with size 123 bytes.
  Allocation:
  PID = 2754, CPU = 0, timestamp = 4294707705
+  [<ffffffff813f6eea>] kmem_cache_alloc_trace+0xda/0x190
+  [<ffffffffa0008772>] kmalloc_oob_right+0x81/0x117 [test_kasan]
+  [<ffffffffa000001e>] run_test+0x1e/0x40 [test_kasan]
+  [<ffffffffa0008f54>] init_module+0x17/0x128 [test_kasan]
+  [<ffffffff81000351>] do_one_initcall+0x111/0x2b0
+  [<ffffffff82c92904>] do_init_module+0x1d2/0x531
+  [<ffffffff8122c5bf>] load_module+0x55cf/0x73e0
+  [<ffffffff8122e4da>] SyS_init_module+0x10a/0x140
+  [<ffffffff82cae409>] system_call_fastpath+0x12/0x17
  Memory state around the buggy address:
   ffff8800b9124f80: fc fc fc fc fc fc fc fc 00 00 00 00 00 00 00 00
   ffff8800b9125000: 00 00 00 00 00 fc fc fc fc fc fc fc fc fc fc fc
