@@ -34,6 +34,7 @@
 #include <linux/stacktrace.h>
 #include <linux/prefetch.h>
 #include <linux/memcontrol.h>
+#include <linux/kasan.h>
 
 #include <trace/events/kmem.h>
 
@@ -286,6 +287,9 @@ static inline int slab_index(void *p, struct kmem_cache *s, void *addr)
 
 static inline size_t slab_ksize(const struct kmem_cache *s)
 {
+#ifdef CONFIG_KASAN
+	return s->object_size;
+#else
 #ifdef CONFIG_SLUB_DEBUG
 	/*
 	 * Debugging requires use of the padding between object
@@ -306,6 +310,7 @@ static inline size_t slab_ksize(const struct kmem_cache *s)
 	 * Else we can use all the padding etc for the allocation
 	 */
 	return s->size;
+#endif
 }
 
 static inline int order_objects(int order, unsigned long size, int reserved)
@@ -650,7 +655,7 @@ static void print_trailer(struct kmem_cache *s, struct page *page, u8 *p)
 	dump_stack();
 }
 
-void object_err(struct kmem_cache *s, struct page *page,
+static void object_err(struct kmem_cache *s, struct page *page,
 			u8 *object, char *reason)
 {
 	slab_bug(s, "%s", reason);
@@ -1251,7 +1256,7 @@ static inline void dec_slabs_node(struct kmem_cache *s, int node,
 static inline void kmalloc_large_node_hook(void *ptr, size_t size, gfp_t flags)
 {
 	kmemleak_alloc(ptr, size, 1, flags);
-	kasan_kmalloc_large(ptr, size);
+	kasan_kmalloc_large(ptr, size, flags);
 }
 
 static inline void kfree_hook(const void *x)
@@ -1280,7 +1285,7 @@ static inline void slab_post_alloc_hook(struct kmem_cache *s,
 	kmemcheck_slab_alloc(s, flags, object, slab_ksize(s));
 	kmemleak_alloc_recursive(object, s->object_size, 1, s->flags, flags);
 	memcg_kmem_put_cache(s);
-	kasan_slab_alloc(s, object);
+	kasan_slab_alloc(s, object, flags);
 }
 
 static inline void slab_free_hook(struct kmem_cache *s, void *x)
@@ -1305,7 +1310,6 @@ static inline void slab_free_hook(struct kmem_cache *s, void *x)
 	if (!(s->flags & SLAB_DEBUG_OBJECTS))
 		debug_check_no_obj_freed(x, s->object_size);
 
-	kasan_slab_free(s, x);
 }
 
 /*
@@ -1403,8 +1407,8 @@ static void setup_object(struct kmem_cache *s, struct page *page,
 	if (unlikely(s->ctor)) {
 		kasan_unpoison_object_data(s, object);
 		s->ctor(object);
-		kasan_poison_object_data(s, object);
 	}
+	kasan_poison_object_data(s, object);
 }
 
 static struct page *new_slab(struct kmem_cache *s, gfp_t flags, int node)
@@ -1432,6 +1436,7 @@ static struct page *new_slab(struct kmem_cache *s, gfp_t flags, int node)
 	if (page->pfmemalloc)
 		SetPageSlabPfmemalloc(page);
 
+	kasan_poison_slab(page);
 	start = page_address(page);
 
 	if (unlikely(s->flags & SLAB_POISON))
@@ -2532,7 +2537,7 @@ void *kmem_cache_alloc_trace(struct kmem_cache *s, gfp_t gfpflags, size_t size)
 {
 	void *ret = slab_alloc(s, gfpflags, _RET_IP_);
 	trace_kmalloc(_RET_IP_, ret, size, s->size, gfpflags);
-	kasan_kmalloc(s, ret, size);
+	kasan_kmalloc(s, ret, size, gfpflags);
 	return ret;
 }
 EXPORT_SYMBOL(kmem_cache_alloc_trace);
@@ -2560,7 +2565,7 @@ void *kmem_cache_alloc_node_trace(struct kmem_cache *s,
 	trace_kmalloc_node(_RET_IP_, ret,
 			   size, s->size, gfpflags, node);
 
-	kasan_kmalloc(s, ret, size);
+	kasan_kmalloc(s, ret, size, gfpflags);
 	return ret;
 }
 EXPORT_SYMBOL(kmem_cache_alloc_node_trace);
@@ -2702,6 +2707,15 @@ slab_empty:
 static __always_inline void slab_free(struct kmem_cache *s,
 			struct page *page, void *x, unsigned long addr)
 {
+#ifdef CONFIG_KASAN
+	if (!kasan_slab_free(s, x))
+		nokasan_free(s, x, addr);
+}
+
+void nokasan_free(struct kmem_cache *s, void *x, unsigned long addr)
+{
+	struct page *page = virt_to_head_page(x);
+#endif
 	void **object = (void *)x;
 	struct kmem_cache_cpu *c;
 	unsigned long tid;
@@ -2946,7 +2960,8 @@ static void early_kmem_cache_node_alloc(int node)
 	init_object(kmem_cache_node, n, SLUB_RED_ACTIVE);
 	init_tracking(kmem_cache_node, n);
 #endif
-	kasan_kmalloc(kmem_cache_node, n, sizeof(struct kmem_cache_node));
+	kasan_kmalloc(kmem_cache_node, n, sizeof(struct kmem_cache_node),
+		      GFP_KERNEL);
 	init_kmem_cache_node(n);
 	inc_slabs_node(kmem_cache_node, node, page->objects);
 
@@ -3079,6 +3094,8 @@ static int calculate_sizes(struct kmem_cache *s, int forced_order)
 		 */
 		size += sizeof(void *);
 #endif
+
+	kasan_cache_create(s, &size, &s->flags);
 
 	/*
 	 * SLUB stores one object immediately after another beginning from
@@ -3319,7 +3336,7 @@ void *__kmalloc(size_t size, gfp_t flags)
 
 	trace_kmalloc(_RET_IP_, ret, size, s->size, flags);
 
-	kasan_kmalloc(s, ret, size);
+	kasan_kmalloc(s, ret, size, flags);
 
 	return ret;
 }
@@ -3364,7 +3381,7 @@ void *__kmalloc_node(size_t size, gfp_t flags, int node)
 
 	trace_kmalloc_node(_RET_IP_, ret, size, s->size, flags, node);
 
-	kasan_kmalloc(s, ret, size);
+	kasan_kmalloc(s, ret, size, flags);
 
 	return ret;
 }
@@ -3384,7 +3401,6 @@ static size_t __ksize(const void *object)
 		WARN_ON(!PageCompound(page));
 		return PAGE_SIZE << compound_order(page);
 	}
-
 	return slab_ksize(page->slab_cache);
 }
 
@@ -3393,7 +3409,8 @@ size_t ksize(const void *object)
 	size_t size = __ksize(object);
 	/* We assume that ksize callers could use whole allocated area,
 	   so we need unpoison this area. */
-	kasan_krealloc(object, size);
+	kasan_krealloc(object, size, GFP_NOWAIT);
+
 	return size;
 }
 EXPORT_SYMBOL(ksize);

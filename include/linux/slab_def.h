@@ -72,6 +72,9 @@ struct kmem_cache {
 #ifdef CONFIG_MEMCG_KMEM
 	struct memcg_cache_params memcg_params;
 #endif
+#ifdef CONFIG_KASAN
+	struct kasan_cache kasan_info;
+#endif
 
 	struct kmem_cache_node *node[MAX_NUMNODES];
 };

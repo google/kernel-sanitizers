@@ -91,12 +91,14 @@ struct kmem_cache {
 	struct kset *memcg_kset;
 #endif
 #endif
-
 #ifdef CONFIG_NUMA
 	/*
 	 * Defragmentation by allocating from a remote node.
 	 */
 	int remote_node_defrag_ratio;
+#endif
+#ifdef CONFIG_KASAN
+	struct kasan_cache kasan_info;
 #endif
 	struct kmem_cache_node *node[MAX_NUMNODES];
 };
@@ -125,8 +127,5 @@ static inline void *virt_to_obj(struct kmem_cache *s,
 {
 	return (void *)x - ((x - slab_page) % s->size);
 }
-
-void object_err(struct kmem_cache *s, struct page *page,
-		u8 *object, char *reason);
 
 #endif /* _LINUX_SLUB_DEF_H */
