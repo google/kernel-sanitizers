@@ -383,14 +383,6 @@ LDFLAGS_MODULE  =
 CFLAGS_KERNEL	=
 AFLAGS_KERNEL	=
 CFLAGS_GCOV	= -fprofile-arcs -ftest-coverage
-CFLAGS_KASAN	= -fsanitize=address \
-			--param asan-use-after-return=0 \
-			--param asan-globals=0 \
-			--param asan-memintrin=0 \
-			--param asan-instrumentation-with-call-threshold=0 \
-			--param asan-fixed-shadow-offset=0 \
-			-DKASAN_HOOKS
-
 
 # Use USERINCLUDE when you must reference the UAPI directories only.
 USERINCLUDE    := \
@@ -787,6 +779,7 @@ ifeq ($(shell $(CONFIG_SHELL) $(srctree)/scripts/gcc-goto.sh $(CC)), y)
 	KBUILD_CFLAGS += -DCC_HAVE_ASM_GOTO
 endif
 
+include $(srctree)/scripts/Makefile.kasan
 include $(srctree)/scripts/Makefile.extrawarn
 
 # Add user supplied CPPFLAGS, AFLAGS and CFLAGS as the last assignments
