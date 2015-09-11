@@ -47,6 +47,9 @@ void ktsan_print_diagnostics(void);
 
 void ktsan_cpu_start(void);
 
+void ktsan_context_switch_begin(struct ktsan_task_s* prev);
+void ktsan_context_switch_end(struct ktsan_task_s* next);
+
 void ktsan_task_create(struct ktsan_task_s *new, int pid);
 void ktsan_task_destroy(struct ktsan_task_s *old);
 void ktsan_task_start(void);
@@ -145,6 +148,9 @@ static inline void ktsan_init(void) {}
 static inline void ktsan_print_diagnostics(void) {}
 
 static inline void ktsan_cpu_start(void) {}
+
+static inline void ktsan_context_switch_begin(struct ktsan_task_s* prev) {}
+static inline void ktsan_context_switch_end(struct ktsan_task_s* next) {}
 
 static inline void ktsan_task_create(struct ktsan_task_s *new, int pid) {}
 static inline void ktsan_task_destroy(struct ktsan_task_s *old) {}

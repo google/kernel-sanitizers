@@ -2607,8 +2607,10 @@ context_switch(struct rq *rq, struct task_struct *prev,
 	spin_release(&rq->lock.dep_map, 1, _THIS_IP_);
 
 	/* Here we just switch the register state and the stack. */
+	ktsan_context_switch_begin(&prev->ktsan);
 	switch_to(prev, next, prev);
 	barrier();
+	ktsan_context_switch_end(&next->ktsan);
 
 	return finish_task_switch(prev);
 }

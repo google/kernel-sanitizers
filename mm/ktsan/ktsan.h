@@ -35,8 +35,9 @@
 #define KT_MAX_MEMBLOCK_COUNT (200 * 1000)
 #define KT_MAX_PERCPU_SYNC_COUNT (30 * 1000)
 
+#define KT_MAX_CPU_COUNT 4
 #define KT_MAX_TASK_COUNT 1024
-#define KT_MAX_THREAD_COUNT KT_MAX_TASK_COUNT
+#define KT_MAX_THREAD_COUNT KT_MAX_CPU_COUNT
 
 #define KT_MAX_STACK_FRAMES 96
 #define KT_TAME_COUNTER_LIMIT 3
@@ -147,6 +148,8 @@ enum kt_event_type_e {
 	kt_event_unlock,
 	kt_event_runlock,
 	kt_event_interrupt,
+	kt_event_context_switch_begin,
+	kt_event_context_switch_end,
 #if KT_DEBUG
 	kt_event_acquire,
 	kt_event_release,
@@ -382,7 +385,7 @@ struct kt_stats_s {
 /* KTSAN per-cpu state. */
 
 struct kt_cpu_s {
-	/* Thread that currently runs on the CPU or NULL. */
+	bool			running;
 	kt_thr_t		*thr;
 	kt_stats_t		stat;
 	u64			sync_uid_pos;
@@ -393,10 +396,7 @@ struct kt_cpu_s {
 /* KTSAN per-task state. */
 
 struct kt_task_s {
-	/* Thread that is associated with this task. Never NULL. */
-	kt_thr_t		*thr;
-	/* Shows whether this task is being executed. */
-	bool			running;
+	kt_stack_t stack; /* before context switch */
 };
 
 /* Global. */
@@ -478,10 +478,8 @@ static __always_inline u32 kt_stack_pop(kt_stack_t *stack)
 void kt_stack_copy(kt_stack_t *dst, kt_stack_t *src);
 void kt_stack_print(kt_stack_t *stack, uptr_t top_pc);
 
-#if KT_DEBUG
 void kt_stack_print_current(unsigned long strip_addr);
 void kt_stack_save_current(kt_stack_t *stack, unsigned long strip_addr);
-#endif
 
 /* Stack depot. */
 

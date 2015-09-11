@@ -24,7 +24,6 @@ void kt_stack_print(kt_stack_t *stack, uptr_t top_pc)
 	pr_err("\n");
 }
 
-#if KT_DEBUG
 /* The following functions can't work reliably without frame pointers and are
  * for debugging only (consider removing -fomit-frame-pointer from Makefile
  * locally if you use them). */
@@ -59,4 +58,3 @@ void kt_stack_save_current(kt_stack_t *stack, unsigned long strip_addr)
 		stack->pc[i] = kt_compress(entries[end - 1 - i]);
 	stack->size = end - beg;
 }
-#endif

@@ -124,9 +124,8 @@ void kt_thr_start(kt_thr_t *thr, uptr_t pc)
 	kt_trace_add_event(thr, kt_event_thr_start,
 		smp_processor_id() | ((u32)thr->pid << 16));
 
+	BUG_ON(thr->cpu != NULL);
 	thr->cpu = this_cpu_ptr(kt_ctx.cpus);
-	BUG_ON(thr->cpu->thr != NULL);
-	thr->cpu->thr = thr;
 }
 
 void kt_thr_stop(kt_thr_t *thr, uptr_t pc)
@@ -141,8 +140,6 @@ void kt_thr_stop(kt_thr_t *thr, uptr_t pc)
 	kt_trace_add_event(thr, kt_event_thr_stop, smp_processor_id());
 
 	BUG_ON(thr->cpu == NULL);
-	BUG_ON(thr->cpu->thr != thr);
-	thr->cpu->thr = NULL;
 	thr->cpu = NULL;
 }
 

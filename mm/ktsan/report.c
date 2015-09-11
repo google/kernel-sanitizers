@@ -187,7 +187,7 @@ void kt_report_race(kt_thr_t *new, kt_race_info_t *info)
 	print_mop(false, !info->old.read, info->old.atomic, info->addr,
 		(1 << info->old.size), old_state.pid, old_state.cpu_id);
 	kt_stack_print(&old_state.stack, 0);
-
+/*
 	if (new->mutexset.size) {
 		pr_err("Mutexes locked by thread %d:\n", new->pid);
 		kt_print_mutexset(&new->mutexset);
@@ -197,7 +197,7 @@ void kt_report_race(kt_thr_t *new, kt_race_info_t *info)
 		pr_err("Mutexes locked by thread %d:\n", old_state.pid);
 		kt_print_mutexset(&old_state.mutexset);
 	}
-
+*/
 #if KT_DEBUG
 	pr_err("Thread %d clock: {T%d: %lu, T%d: %lu}\n", new->pid,
 			new->pid, kt_clk_get(&new->clk, new->id),
@@ -226,6 +226,7 @@ void kt_report_race(kt_thr_t *new, kt_race_info_t *info)
 
 void kt_report_bad_mtx_unlock(kt_thr_t *new, uptr_t pc, kt_tab_sync_t *sync)
 {
+/*
 	kt_thr_t *old;
 	kt_trace_state_t state;
 
@@ -254,4 +255,5 @@ void kt_report_bad_mtx_unlock(kt_thr_t *new, uptr_t pc, kt_tab_sync_t *sync)
 	pr_err("\n");
 
 	pr_err("==================================================================\n");
+*/
 }
