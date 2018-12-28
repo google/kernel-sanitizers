@@ -26,6 +26,7 @@
 #include <linux/elf-randomize.h>
 #include <trace/events/power.h>
 #include <linux/hw_breakpoint.h>
+#include <linux/ktsan.h>
 #include <asm/cpu.h>
 #include <asm/apic.h>
 #include <asm/syscalls.h>
@@ -96,7 +97,10 @@ EXPORT_PER_CPU_SYMBOL_GPL(__tss_limit_invalid);
  */
 int arch_dup_task_struct(struct task_struct *dst, struct task_struct *src)
 {
+	/* src is concurrently mutated which causes data races */
+	ktsan_thr_event_disable();
 	memcpy(dst, src, arch_task_struct_size);
+	ktsan_thr_event_enable();
 #ifdef CONFIG_VM86
 	dst->thread.vm86 = NULL;
 #endif

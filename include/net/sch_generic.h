@@ -138,7 +138,7 @@ static inline bool qdisc_is_running(struct Qdisc *qdisc)
 {
 	if (qdisc->flags & TCQ_F_NOLOCK)
 		return spin_is_locked(&qdisc->seqlock);
-	return (raw_read_seqcount(&qdisc->running) & 1) ? true : false;
+	return (raw_read_seqcount_nocritical(&qdisc->running) & 1) ? true : false;
 }
 
 static inline bool qdisc_is_percpu_stats(const struct Qdisc *q)

@@ -26,6 +26,8 @@
 #include <linux/sched/clock.h>
 #include <linux/export.h>
 #include <linux/rwsem.h>
+#include <linux/ktsan.h>
+
 #include <linux/atomic.h>
 
 #include "rwsem.h"
@@ -323,6 +325,7 @@ rwsem_owner_flags(struct rw_semaphore *sem, unsigned long *pflags)
 void __init_rwsem(struct rw_semaphore *sem, const char *name,
 		  struct lock_class_key *key)
 {
+	ktsan_thr_event_disable();
 #ifdef CONFIG_DEBUG_LOCK_ALLOC
 	/*
 	 * Make sure we are not reinitializing a held semaphore:
@@ -337,6 +340,7 @@ void __init_rwsem(struct rw_semaphore *sem, const char *name,
 #ifdef CONFIG_RWSEM_SPIN_ON_OWNER
 	osq_lock_init(&sem->osq);
 #endif
+	ktsan_thr_event_enable();
 }
 EXPORT_SYMBOL(__init_rwsem);
 
@@ -1087,7 +1091,9 @@ queue:
 			/* Ordered by sem->wait_lock against rwsem_mark_wake(). */
 			break;
 		}
+		ktsan_mtx_post_lock(sem, false, false, false);
 		schedule();
+		ktsan_mtx_pre_lock(sem, false, false);
 		lockevent_inc(rwsem_sleep_reader);
 	}
 
@@ -1211,7 +1217,9 @@ wait:
 			if (signal_pending_state(state, current))
 				goto out_nolock;
 
+			ktsan_mtx_post_lock(sem, true, false, false);
 			schedule();
+			ktsan_mtx_pre_lock(sem, true, false);
 			lockevent_inc(rwsem_sleep_writer);
 			set_current_state(state);
 			/*
@@ -1458,22 +1466,27 @@ static inline void __downgrade_write(struct rw_semaphore *sem)
 void __sched down_read(struct rw_semaphore *sem)
 {
 	might_sleep();
+	ktsan_mtx_pre_lock(sem, false, false);
 	rwsem_acquire_read(&sem->dep_map, 0, 0, _RET_IP_);
 
 	LOCK_CONTENDED(sem, __down_read_trylock, __down_read);
+	ktsan_mtx_post_lock(sem, false, false, true);
 }
 EXPORT_SYMBOL(down_read);
 
 int __sched down_read_killable(struct rw_semaphore *sem)
 {
 	might_sleep();
+	ktsan_mtx_pre_lock(sem, false, false);
 	rwsem_acquire_read(&sem->dep_map, 0, 0, _RET_IP_);
 
 	if (LOCK_CONTENDED_RETURN(sem, __down_read_trylock, __down_read_killable)) {
 		rwsem_release(&sem->dep_map, 1, _RET_IP_);
+		ktsan_mtx_post_lock(sem, false, false, false);
 		return -EINTR;
 	}
 
+	ktsan_mtx_post_lock(sem, false, false, true);
 	return 0;
 }
 EXPORT_SYMBOL(down_read_killable);
@@ -1483,10 +1496,14 @@ EXPORT_SYMBOL(down_read_killable);
  */
 int down_read_trylock(struct rw_semaphore *sem)
 {
-	int ret = __down_read_trylock(sem);
+	int ret;
+
+	ktsan_mtx_pre_lock(sem, false, true);
+	ret = __down_read_trylock(sem);
 
 	if (ret == 1)
 		rwsem_acquire_read(&sem->dep_map, 0, 1, _RET_IP_);
+	ktsan_mtx_post_lock(sem, false, true, ret == 1);
 	return ret;
 }
 EXPORT_SYMBOL(down_read_trylock);
@@ -1497,8 +1514,10 @@ EXPORT_SYMBOL(down_read_trylock);
 void __sched down_write(struct rw_semaphore *sem)
 {
 	might_sleep();
+	ktsan_mtx_pre_lock(sem, true, false);
 	rwsem_acquire(&sem->dep_map, 0, 0, _RET_IP_);
 	LOCK_CONTENDED(sem, __down_write_trylock, __down_write);
+	ktsan_mtx_post_lock(sem, true, false, true);
 }
 EXPORT_SYMBOL(down_write);
 
@@ -1508,14 +1527,17 @@ EXPORT_SYMBOL(down_write);
 int __sched down_write_killable(struct rw_semaphore *sem)
 {
 	might_sleep();
+	ktsan_mtx_pre_lock(sem, true, false);
 	rwsem_acquire(&sem->dep_map, 0, 0, _RET_IP_);
 
 	if (LOCK_CONTENDED_RETURN(sem, __down_write_trylock,
 				  __down_write_killable)) {
 		rwsem_release(&sem->dep_map, 1, _RET_IP_);
+		ktsan_mtx_post_lock(sem, true, false, false);
 		return -EINTR;
 	}
 
+	ktsan_mtx_post_lock(sem, true, false, true);
 	return 0;
 }
 EXPORT_SYMBOL(down_write_killable);
@@ -1525,10 +1547,14 @@ EXPORT_SYMBOL(down_write_killable);
  */
 int down_write_trylock(struct rw_semaphore *sem)
 {
-	int ret = __down_write_trylock(sem);
+	int ret;
+
+	ktsan_mtx_pre_lock(sem, true, true);
+	ret = __down_write_trylock(sem);
 
 	if (ret == 1)
 		rwsem_acquire(&sem->dep_map, 0, 1, _RET_IP_);
+	ktsan_mtx_post_lock(sem, true, true, ret == 1);
 
 	return ret;
 }
@@ -1539,8 +1565,10 @@ EXPORT_SYMBOL(down_write_trylock);
  */
 void up_read(struct rw_semaphore *sem)
 {
+	ktsan_mtx_pre_unlock(sem, false);
 	rwsem_release(&sem->dep_map, 1, _RET_IP_);
 	__up_read(sem);
+	ktsan_mtx_post_unlock(sem, false);
 }
 EXPORT_SYMBOL(up_read);
 
@@ -1549,8 +1577,10 @@ EXPORT_SYMBOL(up_read);
  */
 void up_write(struct rw_semaphore *sem)
 {
+	ktsan_mtx_pre_unlock(sem, true);
 	rwsem_release(&sem->dep_map, 1, _RET_IP_);
 	__up_write(sem);
+	ktsan_mtx_post_unlock(sem, true);
 }
 EXPORT_SYMBOL(up_write);
 
@@ -1559,6 +1589,7 @@ EXPORT_SYMBOL(up_write);
  */
 void downgrade_write(struct rw_semaphore *sem)
 {
+	ktsan_mtx_downgrade(sem);
 	lock_downgrade(&sem->dep_map, _RET_IP_);
 	__downgrade_write(sem);
 }
@@ -1569,46 +1600,57 @@ EXPORT_SYMBOL(downgrade_write);
 void down_read_nested(struct rw_semaphore *sem, int subclass)
 {
 	might_sleep();
+	ktsan_mtx_pre_lock(sem, false, false);
 	rwsem_acquire_read(&sem->dep_map, subclass, 0, _RET_IP_);
 	LOCK_CONTENDED(sem, __down_read_trylock, __down_read);
+	ktsan_mtx_post_lock(sem, false, false, true);
 }
 EXPORT_SYMBOL(down_read_nested);
 
 void _down_write_nest_lock(struct rw_semaphore *sem, struct lockdep_map *nest)
 {
 	might_sleep();
+	ktsan_mtx_pre_lock(sem, true, false);
 	rwsem_acquire_nest(&sem->dep_map, 0, 0, nest, _RET_IP_);
 	LOCK_CONTENDED(sem, __down_write_trylock, __down_write);
+	ktsan_mtx_post_lock(sem, true, false, true);
 }
 EXPORT_SYMBOL(_down_write_nest_lock);
 
 void down_read_non_owner(struct rw_semaphore *sem)
 {
 	might_sleep();
+	ktsan_mtx_pre_lock(sem, false, false);
 	__down_read(sem);
 	__rwsem_set_reader_owned(sem, NULL);
+	ktsan_mtx_post_lock(sem, false, false, true);
 }
 EXPORT_SYMBOL(down_read_non_owner);
 
 void down_write_nested(struct rw_semaphore *sem, int subclass)
 {
 	might_sleep();
+	ktsan_mtx_pre_lock(sem, true, false);
 	rwsem_acquire(&sem->dep_map, subclass, 0, _RET_IP_);
 	LOCK_CONTENDED(sem, __down_write_trylock, __down_write);
+	ktsan_mtx_post_lock(sem, true, false, true);
 }
 EXPORT_SYMBOL(down_write_nested);
 
 int __sched down_write_killable_nested(struct rw_semaphore *sem, int subclass)
 {
 	might_sleep();
+	ktsan_mtx_pre_lock(sem, true, false);
 	rwsem_acquire(&sem->dep_map, subclass, 0, _RET_IP_);
 
 	if (LOCK_CONTENDED_RETURN(sem, __down_write_trylock,
 				  __down_write_killable)) {
 		rwsem_release(&sem->dep_map, 1, _RET_IP_);
+		ktsan_mtx_post_lock(sem, true, false, false);
 		return -EINTR;
 	}
 
+	ktsan_mtx_post_lock(sem, true, false, true);
 	return 0;
 }
 EXPORT_SYMBOL(down_write_killable_nested);
@@ -1616,7 +1658,9 @@ EXPORT_SYMBOL(down_write_killable_nested);
 void up_read_non_owner(struct rw_semaphore *sem)
 {
 	DEBUG_RWSEMS_WARN_ON(!is_rwsem_reader_owned(sem), sem);
+	ktsan_mtx_pre_unlock(sem, false);
 	__up_read(sem);
+	ktsan_mtx_post_unlock(sem, false);
 }
 EXPORT_SYMBOL(up_read_non_owner);
 

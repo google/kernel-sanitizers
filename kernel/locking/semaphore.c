@@ -54,12 +54,17 @@ void down(struct semaphore *sem)
 {
 	unsigned long flags;
 
+	// Are semaphores used for critical section guarding?
+	// It seems semaphores are not owned by a single thread. Any thread
+	// can up/down it and KTSAN seems confused by it.
+	// ktsan_mtx_pre_lock(sem, true, false);
 	raw_spin_lock_irqsave(&sem->lock, flags);
 	if (likely(sem->count > 0))
 		sem->count--;
 	else
 		__down(sem);
 	raw_spin_unlock_irqrestore(&sem->lock, flags);
+	// ktsan_mtx_post_lock(sem, true, false, true);
 }
 EXPORT_SYMBOL(down);
 
@@ -77,12 +82,14 @@ int down_interruptible(struct semaphore *sem)
 	unsigned long flags;
 	int result = 0;
 
+	// ktsan_mtx_pre_lock(sem, true, false);
 	raw_spin_lock_irqsave(&sem->lock, flags);
 	if (likely(sem->count > 0))
 		sem->count--;
 	else
 		result = __down_interruptible(sem);
 	raw_spin_unlock_irqrestore(&sem->lock, flags);
+	// ktsan_mtx_post_lock(sem, true, false, true);
 
 	return result;
 }
@@ -103,12 +110,14 @@ int down_killable(struct semaphore *sem)
 	unsigned long flags;
 	int result = 0;
 
+	// ktsan_mtx_pre_lock(sem, true, false);
 	raw_spin_lock_irqsave(&sem->lock, flags);
 	if (likely(sem->count > 0))
 		sem->count--;
 	else
 		result = __down_killable(sem);
 	raw_spin_unlock_irqrestore(&sem->lock, flags);
+	// ktsan_mtx_post_lock(sem, true, false, true);
 
 	return result;
 }
@@ -132,11 +141,13 @@ int down_trylock(struct semaphore *sem)
 	unsigned long flags;
 	int count;
 
+	// ktsan_mtx_pre_lock(sem, true, false);
 	raw_spin_lock_irqsave(&sem->lock, flags);
 	count = sem->count - 1;
 	if (likely(count >= 0))
 		sem->count = count;
 	raw_spin_unlock_irqrestore(&sem->lock, flags);
+	// ktsan_mtx_post_lock(sem, true, false, count >= 0);
 
 	return (count < 0);
 }
@@ -157,12 +168,14 @@ int down_timeout(struct semaphore *sem, long timeout)
 	unsigned long flags;
 	int result = 0;
 
+	// ktsan_mtx_pre_lock(sem, true, false);
 	raw_spin_lock_irqsave(&sem->lock, flags);
 	if (likely(sem->count > 0))
 		sem->count--;
 	else
 		result = __down_timeout(sem, timeout);
 	raw_spin_unlock_irqrestore(&sem->lock, flags);
+	// ktsan_mtx_post_lock(sem, true, false, result == 0);
 
 	return result;
 }
@@ -179,12 +192,14 @@ void up(struct semaphore *sem)
 {
 	unsigned long flags;
 
+	// ktsan_mtx_pre_unlock(sem, true);
 	raw_spin_lock_irqsave(&sem->lock, flags);
 	if (likely(list_empty(&sem->wait_list)))
 		sem->count++;
 	else
 		__up(sem);
 	raw_spin_unlock_irqrestore(&sem->lock, flags);
+	// ktsan_mtx_post_unlock(sem, true);
 }
 EXPORT_SYMBOL(up);
 
@@ -217,7 +232,9 @@ static inline int __sched __down_common(struct semaphore *sem, long state,
 			goto timed_out;
 		__set_current_state(state);
 		raw_spin_unlock_irq(&sem->lock);
+		// ktsan_mtx_post_lock(sem, true, false, false);
 		timeout = schedule_timeout(timeout);
+		// ktsan_mtx_pre_lock(sem, true, false);
 		raw_spin_lock_irq(&sem->lock);
 		if (waiter.up)
 			return 0;

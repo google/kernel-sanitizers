@@ -34,6 +34,7 @@
 #include <linux/llist.h>
 #include <linux/bitops.h>
 #include <linux/rbtree_augmented.h>
+#include <linux/ktsan.h>
 
 #include <linux/uaccess.h>
 #include <asm/tlbflush.h>

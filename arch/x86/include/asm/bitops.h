@@ -14,6 +14,7 @@
 #endif
 
 #include <linux/compiler.h>
+#include <linux/ktsan.h>
 #include <asm/alternative.h>
 #include <asm/rmwcc.h>
 #include <asm/barrier.h>
@@ -52,6 +53,7 @@
 static __always_inline void
 arch_set_bit(long nr, volatile unsigned long *addr)
 {
+#ifndef CONFIG_KTSAN
 	if (IS_IMMEDIATE(nr)) {
 		asm volatile(LOCK_PREFIX "orb %1,%0"
 			: CONST_MASK_ADDR(nr, addr)
@@ -61,6 +63,9 @@ arch_set_bit(long nr, volatile unsigned long *addr)
 		asm volatile(LOCK_PREFIX __ASM_SIZE(bts) " %1,%0"
 			: : RLONG_ADDR(addr), "Ir" (nr) : "memory");
 	}
+#else /* CONFIG_KTSAN */
+	ktsan_atomic_set_bit((void *)addr, nr, ktsan_memory_order_relaxed);
+#endif /* CONFIG_KTSAN */
 }
 
 static __always_inline void
@@ -72,6 +77,7 @@ arch___set_bit(long nr, volatile unsigned long *addr)
 static __always_inline void
 arch_clear_bit(long nr, volatile unsigned long *addr)
 {
+#ifndef CONFIG_KTSAN
 	if (IS_IMMEDIATE(nr)) {
 		asm volatile(LOCK_PREFIX "andb %1,%0"
 			: CONST_MASK_ADDR(nr, addr)
@@ -80,13 +86,20 @@ arch_clear_bit(long nr, volatile unsigned long *addr)
 		asm volatile(LOCK_PREFIX __ASM_SIZE(btr) " %1,%0"
 			: : RLONG_ADDR(addr), "Ir" (nr) : "memory");
 	}
+#else /* CONFIG_KTSAN */
+	ktsan_atomic_clear_bit((void *)addr, nr, ktsan_memory_order_relaxed);
+#endif /* CONFIG_KTSAN */
 }
 
 static __always_inline void
 arch_clear_bit_unlock(long nr, volatile unsigned long *addr)
 {
+#ifndef CONFIG_KTSAN
 	barrier();
 	arch_clear_bit(nr, addr);
+#else /* CONFIG_KTSAN */
+	ktsan_atomic_clear_bit((void *)addr, nr, ktsan_memory_order_release);
+#endif /* CONFIG_KTSAN */
 }
 
 static __always_inline void
@@ -111,7 +124,12 @@ arch_clear_bit_unlock_is_negative_byte(long nr, volatile unsigned long *addr)
 static __always_inline void
 arch___clear_bit_unlock(long nr, volatile unsigned long *addr)
 {
+#ifndef CONFIG_KTSAN
 	arch___clear_bit(nr, addr);
+#else /* CONFIG_KTSAN */
+	ktsan_atomic64_store((void *)addr, *(unsigned long *)addr & ~(1 << nr),
+			ktsan_memory_order_release);
+#endif /* CONFIG_KTSAN */
 }
 
 static __always_inline void
@@ -123,6 +141,7 @@ arch___change_bit(long nr, volatile unsigned long *addr)
 static __always_inline void
 arch_change_bit(long nr, volatile unsigned long *addr)
 {
+#ifndef CONFIG_KTSAN
 	if (IS_IMMEDIATE(nr)) {
 		asm volatile(LOCK_PREFIX "xorb %1,%0"
 			: CONST_MASK_ADDR(nr, addr)
@@ -131,18 +150,31 @@ arch_change_bit(long nr, volatile unsigned long *addr)
 		asm volatile(LOCK_PREFIX __ASM_SIZE(btc) " %1,%0"
 			: : RLONG_ADDR(addr), "Ir" (nr) : "memory");
 	}
+#else /* CONFIG_KTSAN */
+	ktsan_atomic_change_bit((void *)addr, nr, ktsan_memory_order_relaxed);
+#endif /* CONFIG_KTSAN */
 }
 
 static __always_inline bool
 arch_test_and_set_bit(long nr, volatile unsigned long *addr)
 {
+#ifndef CONFIG_KTSAN
 	return GEN_BINARY_RMWcc(LOCK_PREFIX __ASM_SIZE(bts), *addr, c, "Ir", nr);
+#else /* CONFIG_KTSAN */
+	return ktsan_atomic_fetch_set_bit((void *)addr, nr,
+			ktsan_memory_order_acq_rel);
+#endif /* CONFIG_KTSAN */
 }
 
 static __always_inline bool
 arch_test_and_set_bit_lock(long nr, volatile unsigned long *addr)
 {
+#ifndef CONFIG_KTSAN
 	return arch_test_and_set_bit(nr, addr);
+#else /* CONFIG_KTSAN */
+	return ktsan_atomic_fetch_set_bit((void *)addr, nr,
+			ktsan_memory_order_acquire);
+#endif /* CONFIG_KTSAN */
 }
 
 static __always_inline bool
@@ -160,7 +192,12 @@ arch___test_and_set_bit(long nr, volatile unsigned long *addr)
 static __always_inline bool
 arch_test_and_clear_bit(long nr, volatile unsigned long *addr)
 {
+#ifndef CONFIG_KTSAN
 	return GEN_BINARY_RMWcc(LOCK_PREFIX __ASM_SIZE(btr), *addr, c, "Ir", nr);
+#else /* CONFIG_KTSAN */
+	return ktsan_atomic_fetch_clear_bit((void *)addr, nr,
+			ktsan_memory_order_acq_rel);
+#endif /* CONFIG_KTSAN */
 }
 
 /*
@@ -199,7 +236,12 @@ arch___test_and_change_bit(long nr, volatile unsigned long *addr)
 static __always_inline bool
 arch_test_and_change_bit(long nr, volatile unsigned long *addr)
 {
+#ifndef CONFIG_KTSAN
 	return GEN_BINARY_RMWcc(LOCK_PREFIX __ASM_SIZE(btc), *addr, c, "Ir", nr);
+#else /* CONFIG_KTSAN */
+	return ktsan_atomic_fetch_change_bit((void *)addr, nr,
+			ktsan_memory_order_acq_rel);
+#endif /* CONFIG_KTSAN */
 }
 
 static __always_inline bool constant_test_bit(long nr, const volatile unsigned long *addr)

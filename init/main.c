@@ -93,6 +93,7 @@
 #include <linux/rodata_test.h>
 #include <linux/jump_label.h>
 #include <linux/mem_encrypt.h>
+#include <linux/ktsan.h>
 
 #include <asm/io.h>
 #include <asm/bugs.h>
@@ -620,6 +621,7 @@ asmlinkage __visible void __init start_kernel(void)
 	 * These use large bootmem allocations and must precede
 	 * kmem_cache_init()
 	 */
+	ktsan_init_early();
 	setup_log_buf(0);
 	vfs_caches_init_early();
 	sort_main_extable();
@@ -780,6 +782,10 @@ asmlinkage __visible void __init start_kernel(void)
 	acpi_subsystem_init();
 	arch_post_acpi_subsys_init();
 	sfi_init_late();
+
+	ktsan_init();
+	ktsan_cpu_start();
+	ktsan_task_start();
 
 	/* Do the rest non-__init'ed, we're now alive */
 	arch_call_rest_init();

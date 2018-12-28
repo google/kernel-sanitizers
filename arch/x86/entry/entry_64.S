@@ -38,6 +38,7 @@
 #include <asm/export.h>
 #include <asm/frame.h>
 #include <asm/nospec-branch.h>
+#include <asm/ktsan.h>
 #include <linux/err.h>
 
 #include "calling.h"
@@ -604,7 +605,9 @@ common_interrupt:
 	addq	$-0x80, (%rsp)			/* Adjust vector to [-256, -1] range */
 	call	interrupt_entry
 	UNWIND_HINT_REGS indirect=1
+	KTSAN_INTERRUPT_ENTER
 	call	do_IRQ	/* rdi points to pt_regs */
+	KTSAN_INTERRUPT_EXIT
 	/* 0(%rsp): old RSP */
 ret_from_intr:
 	DISABLE_INTERRUPTS(CLBR_ANY)

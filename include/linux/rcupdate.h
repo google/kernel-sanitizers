@@ -29,6 +29,7 @@
 #include <linux/lockdep.h>
 #include <asm/processor.h>
 #include <linux/cpumask.h>
+#include <linux/ktsan.h>
 
 #define ULONG_CMP_GE(a, b)	(ULONG_MAX / 2 >= (a) - (b))
 #define ULONG_CMP_LT(a, b)	(ULONG_MAX / 2 < (a) - (b))
@@ -639,6 +640,7 @@ static __always_inline void rcu_read_lock(void)
  */
 static inline void rcu_read_unlock(void)
 {
+	ktsan_sync_release(&ktsan_glob_sync[ktsan_glob_sync_type_rcu_common]);
 	RCU_LOCKDEP_WARN(!rcu_is_watching(),
 			 "rcu_read_unlock() used illegally while idle");
 	__release(RCU);
@@ -674,6 +676,7 @@ static inline void rcu_read_lock_bh(void)
  */
 static inline void rcu_read_unlock_bh(void)
 {
+	ktsan_sync_release(&ktsan_glob_sync[ktsan_glob_sync_type_rcu_bh]);
 	RCU_LOCKDEP_WARN(!rcu_is_watching(),
 			 "rcu_read_unlock_bh() used illegally while idle");
 	rcu_lock_release(&rcu_bh_lock_map);
@@ -716,6 +719,7 @@ static inline notrace void rcu_read_lock_sched_notrace(void)
  */
 static inline void rcu_read_unlock_sched(void)
 {
+	ktsan_sync_release(&ktsan_glob_sync[ktsan_glob_sync_type_rcu_sched]);
 	RCU_LOCKDEP_WARN(!rcu_is_watching(),
 			 "rcu_read_unlock_sched() used illegally while idle");
 	rcu_lock_release(&rcu_sched_lock_map);
@@ -726,6 +730,7 @@ static inline void rcu_read_unlock_sched(void)
 /* Used by lockdep and tracing: cannot be traced, cannot call lockdep. */
 static inline notrace void rcu_read_unlock_sched_notrace(void)
 {
+	ktsan_sync_release(&ktsan_glob_sync[ktsan_glob_sync_type_rcu_sched]);
 	__release(RCU_SCHED);
 	preempt_enable_notrace();
 }
