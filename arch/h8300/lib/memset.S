@@ -19,13 +19,15 @@
 ;; c   = er1(r1l)
 ;; count = er2
 memset:
-	btst	#0,r0l
+	mov.l	er4,@-sp
+	mov.l	er0,er4
+	btst	#0,r4l
 	beq	2f
 
 	;; odd address
 1:
-	mov.b	r1l,@er0
-	adds	#1,er0
+	mov.b	r1l,@er4
+	adds	#1,er4
 	dec.l	#1,er2
 	beq	6f
 
@@ -46,8 +48,8 @@ memset:
 	mov.b	r1l,r1h
 	mov.w	r1,e1
 3:
-	mov.l	er1,@er0
-	adds	#4,er0
+	mov.l	er1,@er4
+	adds	#4,er4
 	dec.l	#1,er2
 	bne	3b
 4:
@@ -55,11 +57,12 @@ memset:
 	and.b	#3,r3l
 	beq	6f
 5:
-	mov.b	r1l,@er0
-	adds	#1,er0
+	mov.b	r1l,@er4
+	adds	#1,er4
 	dec.b	r3l
 	bne	5b
 6:
+	mov.l	@sp+,er4
 	rts
 
 clear_user:
