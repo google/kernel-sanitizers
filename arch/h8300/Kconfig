@@ -48,7 +48,4 @@ config NR_CPUS
 	int
 	default 1
 
-config BOOT_LINK_OFFSET
-	hex	"zImage link offset"
-
 source "arch/h8300/Kconfig.cpu"
