@@ -1805,7 +1805,7 @@ struct sock *sk_clone_lock(const struct sock *sk, const gfp_t priority)
 		sock_lock_init(newsk);
 		bh_lock_sock(newsk);
 		newsk->sk_backlog.head	= newsk->sk_backlog.tail = NULL;
-		newsk->sk_backlog.len = 0;
+		atomic_set(&newsk->sk_backlog.len, 0);
 
 		atomic_set(&newsk->sk_rmem_alloc, 0);
 		/*
@@ -2438,7 +2438,7 @@ void __release_sock(struct sock *sk)
 	 * Doing the zeroing here guarantee we can not loop forever
 	 * while a wild producer attempts to flood us.
 	 */
-	sk->sk_backlog.len = 0;
+	atomic_set(&sk->sk_backlog.len, 0);
 }
 
 void __sk_flush_backlog(struct sock *sk)
@@ -3202,7 +3202,7 @@ void sk_get_meminfo(const struct sock *sk, u32 *mem)
 	mem[SK_MEMINFO_FWD_ALLOC] = sk->sk_forward_alloc;
 	mem[SK_MEMINFO_WMEM_QUEUED] = sk->sk_wmem_queued;
 	mem[SK_MEMINFO_OPTMEM] = atomic_read(&sk->sk_omem_alloc);
-	mem[SK_MEMINFO_BACKLOG] = sk->sk_backlog.len;
+	mem[SK_MEMINFO_BACKLOG] = atomic_read(&sk->sk_backlog.len);
 	mem[SK_MEMINFO_DROPS] = atomic_read(&sk->sk_drops);
 }
 

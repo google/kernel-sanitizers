@@ -1719,7 +1719,7 @@ bool tcp_add_backlog(struct sock *sk, struct sk_buff *skb)
 		gso_segs = skb_shinfo(tail)->gso_segs + shinfo->gso_segs;
 		skb_shinfo(tail)->gso_segs = min_t(u32, gso_segs, 0xFFFF);
 
-		sk->sk_backlog.len += delta;
+		atomic_add(delta, &sk->sk_backlog.len);
 		__NET_INC_STATS(sock_net(sk),
 				LINUX_MIB_TCPBACKLOGCOALESCE);
 		kfree_skb_partial(skb, fragstolen);

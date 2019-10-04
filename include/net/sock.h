@@ -377,7 +377,7 @@ struct sock {
 	 */
 	struct {
 		atomic_t	rmem_alloc;
-		int		len;
+		atomic_t	len;
 		struct sk_buff	*head;
 		struct sk_buff	*tail;
 	} sk_backlog;
@@ -910,7 +910,8 @@ static inline void __sk_add_backlog(struct sock *sk, struct sk_buff *skb)
  */
 static inline bool sk_rcvqueues_full(const struct sock *sk, unsigned int limit)
 {
-	unsigned int qsize = sk->sk_backlog.len + atomic_read(&sk->sk_rmem_alloc);
+	unsigned int qsize = atomic_read(&sk->sk_backlog.len) +
+			     atomic_read(&sk->sk_rmem_alloc);
 
 	return qsize > limit;
 }
@@ -931,7 +932,7 @@ static inline __must_check int sk_add_backlog(struct sock *sk, struct sk_buff *s
 		return -ENOMEM;
 
 	__sk_add_backlog(sk, skb);
-	sk->sk_backlog.len += skb->truesize;
+	atomic_add(skb->truesize, &sk->sk_backlog.len);
 	return 0;
 }
 

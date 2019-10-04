@@ -2257,7 +2257,7 @@ static void tipc_sk_enqueue(struct sk_buff_head *inputq, struct sock *sk,
 
 		/* Try backlog, compensating for double-counted bytes */
 		dcnt = &tipc_sk(sk)->dupl_rcvcnt;
-		if (!sk->sk_backlog.len)
+		if (!atomic_read(&sk->sk_backlog.len))
 			atomic_set(dcnt, 0);
 		lim = rcvbuf_limit(sk, skb) + atomic_read(dcnt);
 		if (likely(!sk_add_backlog(sk, skb, lim))) {
@@ -3709,7 +3709,7 @@ bool tipc_sk_overlimit1(struct sock *sk, struct sk_buff *skb)
 {
 	atomic_t *dcnt = &tipc_sk(sk)->dupl_rcvcnt;
 	unsigned int lim = rcvbuf_limit(sk, skb) + atomic_read(dcnt);
-	unsigned int qsize = sk->sk_backlog.len + sk_rmem_alloc_get(sk);
+	unsigned int qsize = atomic_read(&sk->sk_backlog.len) + sk_rmem_alloc_get(sk);
 
 	return (qsize > lim * 90 / 100);
 }
@@ -3790,7 +3790,7 @@ int tipc_sk_dump(struct sock *sk, u16 dqueues, char *buf)
 	i += scnprintf(buf + i, sz - i, " %d", sk->sk_sndbuf);
 	i += scnprintf(buf + i, sz - i, " | %d", sk_rmem_alloc_get(sk));
 	i += scnprintf(buf + i, sz - i, " %d", sk->sk_rcvbuf);
-	i += scnprintf(buf + i, sz - i, " | %d\n", sk->sk_backlog.len);
+	i += scnprintf(buf + i, sz - i, " | %d\n", atomic_read(&sk->sk_backlog.len));
 
 	if (dqueues & TIPC_DUMP_SK_SNDQ) {
 		i += scnprintf(buf + i, sz - i, "sk_write_queue: ");
