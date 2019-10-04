@@ -899,7 +899,7 @@ static inline void __sk_add_backlog(struct sock *sk, struct sk_buff *skb)
 	else
 		sk->sk_backlog.tail->next = skb;
 
-	sk->sk_backlog.tail = skb;
+	WRITE_ONCE(sk->sk_backlog.tail, skb);
 	skb->next = NULL;
 }
 
