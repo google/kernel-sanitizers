@@ -16,6 +16,7 @@ LDFLAGS_purgatory.ro := -e purgatory_start -r --no-undefined -nostdlib -z nodefa
 targets += purgatory.ro
 
 KASAN_SANITIZE	:= n
+KCSAN_SANITIZE	:= n
 KCOV_INSTRUMENT := n
 
 # These are adjustments to the compiler flags used for objects that
