@@ -178,6 +178,7 @@ void ftrace_likely_update(struct ftrace_likely_data *f, int val,
 #endif
 
 #include <uapi/linux/types.h>
+#include <linux/kcsan-checks.h>
 
 #define __READ_ONCE_SIZE						\
 ({									\
@@ -193,12 +194,6 @@ void ftrace_likely_update(struct ftrace_likely_data *f, int val,
 	}								\
 })
 
-static __always_inline
-void __read_once_size(const volatile void *p, void *res, int size)
-{
-	__READ_ONCE_SIZE;
-}
-
 #ifdef CONFIG_KASAN
 /*
  * We can't declare function 'inline' because __no_sanitize_address confilcts
@@ -211,14 +206,38 @@ void __read_once_size(const volatile void *p, void *res, int size)
 # define __no_kasan_or_inline __always_inline
 #endif
 
-static __no_kasan_or_inline
+#ifdef CONFIG_KCSAN
+# define __no_kcsan_or_inline __no_sanitize_thread notrace __maybe_unused
+#else
+# define __no_kcsan_or_inline __always_inline
+#endif
+
+#if defined(CONFIG_KASAN) || defined(CONFIG_KCSAN)
+/* Avoid any instrumentation or inline. */
+#define __no_sanitize_or_inline                                                \
+	__no_sanitize_address __no_sanitize_thread notrace __maybe_unused
+#else
+#define __no_sanitize_or_inline __always_inline
+#endif
+
+static __no_kcsan_or_inline
+void __read_once_size(const volatile void *p, void *res, int size)
+{
+	kcsan_check_atomic((const void*)p, size, false);
+	__READ_ONCE_SIZE;
+}
+
+static __no_sanitize_or_inline
 void __read_once_size_nocheck(const volatile void *p, void *res, int size)
 {
 	__READ_ONCE_SIZE;
 }
 
-static __always_inline void __write_once_size(volatile void *p, void *res, int size)
+static __no_kcsan_or_inline
+void __write_once_size(volatile void *p, void *res, int size)
 {
+	kcsan_check_atomic((const void *)p, size, true);
+
 	switch (size) {
 	case 1: *(volatile __u8 *)p = *(__u8 *)res; break;
 	case 2: *(volatile __u16 *)p = *(__u16 *)res; break;
@@ -255,6 +274,7 @@ static __always_inline void __write_once_size(volatile void *p, void *res, int s
  */
 #include <asm/barrier.h>
 #include <linux/kasan-checks.h>
+#include <linux/kcsan-checks.h>
 
 #define __READ_ONCE(x, check)						\
 ({									\
@@ -274,7 +294,7 @@ static __always_inline void __write_once_size(volatile void *p, void *res, int s
  */
 #define READ_ONCE_NOCHECK(x) __READ_ONCE(x, 0)
 
-static __no_kasan_or_inline
+static __no_sanitize_or_inline
 unsigned long read_word_at_a_time(const void *addr)
 {
 	kasan_check_read(addr, 1);
