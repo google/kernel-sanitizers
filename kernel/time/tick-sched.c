@@ -59,7 +59,7 @@ static void tick_do_update_jiffies64(ktime_t now)
 	/*
 	 * Do a quick check without holding jiffies_lock:
 	 */
-	delta = ktime_sub(now, last_jiffies_update);
+	delta = ktime_sub(now, READ_ONCE(last_jiffies_update));
 	if (delta < tick_period)
 		return;
 
@@ -70,8 +70,8 @@ static void tick_do_update_jiffies64(ktime_t now)
 	if (delta >= tick_period) {
 
 		delta = ktime_sub(delta, tick_period);
-		last_jiffies_update = ktime_add(last_jiffies_update,
-						tick_period);
+		WRITE_ONCE(last_jiffies_update,
+			   ktime_add(last_jiffies_update, tick_period));
 
 		/* Slow path for long timeouts */
 		if (unlikely(delta >= tick_period)) {
@@ -79,8 +79,9 @@ static void tick_do_update_jiffies64(ktime_t now)
 
 			ticks = ktime_divns(delta, incr);
 
-			last_jiffies_update = ktime_add_ns(last_jiffies_update,
-							   incr * ticks);
+			WRITE_ONCE(last_jiffies_update,
+				   ktime_add_ns(last_jiffies_update,
+						incr * ticks));
 		}
 		do_timer(++ticks);
 
@@ -104,7 +105,7 @@ static ktime_t tick_init_jiffy_update(void)
 	write_seqlock(&jiffies_lock);
 	/* Did we start the jiffies update yet ? */
 	if (last_jiffies_update == 0)
-		last_jiffies_update = tick_next_period;
+		WRITE_ONCE(last_jiffies_update, tick_next_period);
 	period = last_jiffies_update;
 	write_sequnlock(&jiffies_lock);
 	return period;
