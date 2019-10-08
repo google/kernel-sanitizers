@@ -12,15 +12,20 @@ gen_param_check()
 	local type="${arg%%:*}"
 	local name="$(gen_param_name "${arg}")"
 	local rw="write"
+	local is_write="true"
 
 	case "${type#c}" in
 	i) return;;
 	esac
 
 	# We don't write to constant parameters
-	[ ${type#c} != ${type} ] && rw="read"
+	if [ ${type#c} != ${type} ]; then
+		rw="read"
+		is_write="false"
+	fi
 
 	printf "\tkasan_check_${rw}(${name}, sizeof(*${name}));\n"
+	printf "\tkcsan_check_atomic(${name}, sizeof(*${name}), ${is_write});\n"
 }
 
 #gen_param_check(arg...)
@@ -108,6 +113,7 @@ cat <<EOF
 ({									\\
 	typeof(ptr) __ai_ptr = (ptr);					\\
 	kasan_check_write(__ai_ptr, ${mult}sizeof(*__ai_ptr));		\\
+	kcsan_check_atomic(__ai_ptr, ${mult}sizeof(*__ai_ptr), true);	\\
 	arch_${xchg}(__ai_ptr, __VA_ARGS__);				\\
 })
 EOF
@@ -148,6 +154,7 @@ cat << EOF
 
 #include <linux/build_bug.h>
 #include <linux/kasan-checks.h>
+#include <linux/kcsan-checks.h>
 
 EOF
 
