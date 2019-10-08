@@ -1180,6 +1180,13 @@ struct task_struct {
 #ifdef CONFIG_KASAN
 	unsigned int			kasan_depth;
 #endif
+#ifdef CONFIG_KCSAN
+	/* See comments at kernel/kcsan/core.c: struct cpu_state. */
+	int				kcsan_disable;
+	int				kcsan_atomic_next;
+	int				kcsan_atomic_region;
+	bool				kcsan_atomic_region_flat;
+#endif
 
 #ifdef CONFIG_FUNCTION_GRAPH_TRACER
 	/* Index of current stored address in ret_stack: */

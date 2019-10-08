@@ -1,0 +1,82 @@
+# SPDX-License-Identifier: GPL-2.0-only
+
+config HAVE_ARCH_KCSAN
+	bool
+
+menuconfig KCSAN
+	bool "KCSAN: watchpoint-based dynamic data-race detector"
+	depends on HAVE_ARCH_KCSAN && !KASAN && STACKTRACE
+	default n
+	help
+	  Kernel Concurrency Sanitizer is a dynamic data-race detector, which
+	  uses a watchpoint-based sampling approach to detect races.
+
+if KCSAN
+
+config KCSAN_EARLY_ENABLE
+	bool "KCSAN: early enable"
+	default y
+	help
+	  If KCSAN should be enabled globally as soon as possible. KCSAN can
+	  later be enabled/disabled by writing on/off to /proc/kcsaninfo.
+
+config KCSAN_UDELAY_MAX_TASK
+	int "KCSAN: maximum delay in microseconds (for tasks)"
+	default 80
+	help
+	  For tasks, the max. microsecond delay after setting up a watchpoint.
+
+config KCSAN_UDELAY_MAX_INTERRUPT
+	int "KCSAN: maximum delay in microseconds (for interrupts)"
+	default 20
+	help
+	  For interrupts, the max. microsecond delay after setting up a watchpoint.
+
+config KCSAN_DELAY_RANDOMIZE
+	bool "KCSAN: randomize delays"
+	default y
+	help
+	  If delays should be randomized; if false, the chosen delay is simply
+	  the maximum values defined above.
+
+config KCSAN_WATCH_SKIP_INST
+	int "KCSAN: watchpoint instruction skip"
+	default 2000
+	help
+	  The number of per-CPU memory operations to skip watching, before
+	  another watchpoint is set up; in other words, 1 in
+	  KCSAN_WATCH_SKIP_INST per-CPU memory operations are used to set up a
+	  watchpoint. A smaller value results in more aggressive race
+	  detection, whereas a larger value improves system performance at the
+	  cost of missing some races.
+
+config KCSAN_REPORT_RACE_UNKNOWN_ORIGIN
+	bool "KCSAN: report races of unknown origin"
+	default y
+	help
+	  If KCSAN should report races where only one access is known, and the
+	  conflicting access is of unknown origin. This type of race is
+	  reported if it was only possible to infer a race due to a data-value
+	  change while an access is being delayed on a watchpoint.
+
+config KCSAN_IGNORE_ATOMICS
+	bool "KCSAN: do not instrument atomic accesses"
+	default n
+	help
+	  If enabled, never instruments atomic accesses. This results in not
+	  reporting data-races where one access is atomic and the other is a
+	  plain access.
+
+config KCSAN_PLAIN_WRITE_PRETEND_ONCE
+	bool "KCSAN: pretend plain writes are WRITE_ONCE"
+	default n
+	help
+	  This option makes KCSAN pretend that all plain writes are WRITE_ONCE.
+	  This option should only be used to prune initial data-races found in
+	  existing code. Please see the LKMM for more guidance.
+
+config KCSAN_DEBUG
+	bool "Debugging of KCSAN internals"
+	default n
+
+endif # KCSAN
