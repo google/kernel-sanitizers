@@ -5,11 +5,13 @@
 
 # Produces uninteresting flaky coverage.
 KCOV_INSTRUMENT_delay.o	:= n
+KCSAN_SANITIZE_delay.o := n
 
 # Early boot use of cmdline; don't instrument it
 ifdef CONFIG_AMD_MEM_ENCRYPT
 KCOV_INSTRUMENT_cmdline.o := n
 KASAN_SANITIZE_cmdline.o  := n
+KCSAN_SANITIZE_cmdline.o  := n
 
 ifdef CONFIG_FUNCTION_TRACER
 CFLAGS_REMOVE_cmdline.o = -pg
