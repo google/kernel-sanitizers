@@ -163,6 +163,12 @@ struct task_struct init_task
 #ifdef CONFIG_KASAN
 	.kasan_depth	= 1,
 #endif
+#ifdef CONFIG_KCSAN
+	.kcsan_disable			= 1,
+	.kcsan_atomic_next		= 0,
+	.kcsan_atomic_region		= 0,
+	.kcsan_atomic_region_flat	= 0,
+#endif
 #ifdef CONFIG_TRACE_IRQFLAGS
 	.softirqs_enabled = 1,
 #endif
