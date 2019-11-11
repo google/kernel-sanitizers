@@ -178,6 +178,7 @@ void ftrace_likely_update(struct ftrace_likely_data *f, int val,
 #endif
 
 #include <uapi/linux/types.h>
+#include <linux/kcsan-checks.h>
 
 #define __READ_ONCE_SIZE						\
 ({									\
@@ -193,12 +194,6 @@ void ftrace_likely_update(struct ftrace_likely_data *f, int val,
 	}								\
 })
 
-static __always_inline
-void __read_once_size(const volatile void *p, void *res, int size)
-{
-	__READ_ONCE_SIZE;
-}
-
 #ifdef CONFIG_KASAN
 /*
  * We can't declare function 'inline' because __no_sanitize_address confilcts
@@ -211,14 +206,38 @@ void __read_once_size(const volatile void *p, void *res, int size)
 # define __no_kasan_or_inline __always_inline
 #endif
 
-static __no_kasan_or_inline
+#ifdef CONFIG_KCSAN
+# define __no_kcsan_or_inline __no_sanitize_thread notrace __maybe_unused
+#else
+# define __no_kcsan_or_inline __always_inline
+#endif
+
+#if defined(CONFIG_KASAN) || defined(CONFIG_KCSAN)
+/* Avoid any instrumentation or inline. */
+#define __no_sanitize_or_inline                                                \
+	__no_sanitize_address __no_sanitize_thread notrace __maybe_unused
+#else
+#define __no_sanitize_or_inline __always_inline
+#endif
+
+static __no_kcsan_or_inline
+void __read_once_size(const volatile void *p, void *res, int size)
+{
+	kcsan_check_atomic_read(p, size);
+	__READ_ONCE_SIZE;
+}
+
+static __no_sanitize_or_inline
 void __read_once_size_nocheck(const volatile void *p, void *res, int size)
 {
 	__READ_ONCE_SIZE;
 }
 
-static __always_inline void __write_once_size(volatile void *p, void *res, int size)
+static __no_kcsan_or_inline
+void __write_once_size(volatile void *p, void *res, int size)
 {
+	kcsan_check_atomic_write(p, size);
+
 	switch (size) {
 	case 1: *(volatile __u8 *)p = *(__u8 *)res; break;
 	case 2: *(volatile __u16 *)p = *(__u16 *)res; break;
