@@ -61,7 +61,7 @@
 		compatible = "renesas,h8s-intc", "renesas,h8300-intc";
 		#interrupt-cells = <2>;
 		interrupt-controller;
-		reg = <0xfffe00 24>;
+		reg = <0xfffe00 24>, <0xffff30 6>;
 	};
 
 	bsc: memory-controller@fffec0 {
@@ -79,7 +79,7 @@
 	timer8: timer@ffffb0 {
 		compatible = "renesas,8bit-timer";
 		reg = <0xffffb0 10>;
-		interrupts = <72 0>;
+		interrupts = <72 0>, <73 0>, <74 0>;
 		clocks = <&fclk>;
 		clock-names = "fck";
 	};
@@ -104,5 +104,11 @@
 		interrupts = <96 0>, <97 0>, <98 0>, <99 0>;
 		clocks = <&fclk>;
 		clock-names = "fck";
+	};
+	ethernet: ethernet@f80000 {
+		compatible = "smsc,lan91c94";
+		reg = <0xf80000 0xfbffff>;
+		reg-io-width = <1>;
+		interrupts = <16 0>;
 	};
 };
