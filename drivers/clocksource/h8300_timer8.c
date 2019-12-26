@@ -25,8 +25,8 @@
 #define TCORB	6
 #define _8TCNT	8
 
-#define CMIEA	6
-#define CMFA	6
+#define OVIE	5
+#define OVF	5
 
 #define FLAG_STARTED (1 << 3)
 
@@ -40,6 +40,7 @@ struct timer8_priv {
 	void __iomem *mapbase;
 	unsigned long flags;
 	unsigned int rate;
+	uint16_t cnt;
 };
 
 static irqreturn_t timer8_interrupt(int irq, void *dev_id)
@@ -51,7 +52,8 @@ static irqreturn_t timer8_interrupt(int irq, void *dev_id)
 
 	p->ced.event_handler(&p->ced);
 
-	bclr(CMFA, p->mapbase + _8TCSR);
+	iowrite16be(p->cnt, p->mapbase + _8TCNT);
+	bclr(OVF, p->mapbase + _8TCSR);
 
 	return IRQ_HANDLED;
 }
@@ -60,16 +62,14 @@ static void timer8_set_next(struct timer8_priv *p, unsigned long delta)
 {
 	if (delta >= 0x10000)
 		pr_warn("delta out of range\n");
-	bclr(CMIEA, p->mapbase + _8TCR);
-	iowrite16be(delta, p->mapbase + TCORA);
-	iowrite16be(0x0000, p->mapbase + _8TCNT);
-	bclr(CMFA, p->mapbase + _8TCSR);
-	bset(CMIEA, p->mapbase + _8TCR);
+	p->cnt = 0x10000 - delta;
+	iowrite16be(p->cnt, p->mapbase + _8TCNT);
+	bclr(OVF, p->mapbase + _8TCSR);
+	bset(OVIE, p->mapbase + _8TCR);
 }
 
 static int timer8_enable(struct timer8_priv *p)
 {
-	iowrite16be(0xffff, p->mapbase + TCORA);
 	iowrite16be(0x0000, p->mapbase + _8TCNT);
 	iowrite16be(0x0c02, p->mapbase + _8TCR);
 
@@ -177,7 +177,7 @@ static int __init h8300_8timer_init(struct device_node *node)
 	}
 
 	ret = -EINVAL;
-	irq = irq_of_parse_and_map(node, 0);
+	irq = irq_of_parse_and_map(node, 2);
 	if (!irq) {
 		pr_err("failed to get irq for clockevent\n");
 		goto unmap_reg;
