@@ -11,8 +11,9 @@
 #include <linux/of_irq.h>
 #include <asm/io.h>
 
-static void *intc_baseaddr;
-#define IPRA (intc_baseaddr)
+static void *ipr_base;
+static void *icr_base;
+#define IPRA (ipr_base)
 
 static const unsigned char ipr_table[] = {
 	0x03, 0x02, 0x01, 0x00, 0x13, 0x12, 0x11, 0x10, /* 16 - 23 */
@@ -41,8 +42,8 @@ static void h8s_disable_irq(struct irq_data *data)
 	addr = IPRA + ((ipr_table[irq - 16] & 0xf0) >> 3);
 	pos = (ipr_table[irq - 16] & 0x0f) * 4;
 	pri = ~(0x000f << pos);
-	pri &= readw(addr);
-	writew(pri, addr);
+	pri &= __raw_readw(addr);
+	__raw_writew(pri, addr);
 }
 
 static void h8s_enable_irq(struct irq_data *data)
@@ -55,15 +56,30 @@ static void h8s_enable_irq(struct irq_data *data)
 	addr = IPRA + ((ipr_table[irq - 16] & 0xf0) >> 3);
 	pos = (ipr_table[irq - 16] & 0x0f) * 4;
 	pri = ~(0x000f << pos);
-	pri &= readw(addr);
+	pri &= __raw_readw(addr);
 	pri |= 1 << pos;
-	writew(pri, addr);
+	__raw_writew(pri, addr);
+}
+
+static void h8s_ack_irq(struct irq_data *data)
+{
+	void __iomem *isr_addr = icr_base + 4;
+	int irq = data->irq;
+	uint16_t isr;
+
+	if (irq >= 16 && irq < 32) {
+		irq -= 16;
+		isr = __raw_readw(isr_addr);
+		isr &= ~(1 << irq);
+		__raw_writew(isr, isr_addr);
+	}
 }
 
 struct irq_chip h8s_irq_chip = {
 	.name		= "H8S-INTC",
 	.irq_enable	= h8s_enable_irq,
 	.irq_disable	= h8s_disable_irq,
+	.irq_ack	= h8s_ack_irq,
 };
 
 static __init int irq_map(struct irq_domain *h, unsigned int virq,
@@ -85,14 +101,16 @@ static int __init h8s_intc_of_init(struct device_node *intc,
 	struct irq_domain *domain;
 	int n;
 
-	intc_baseaddr = of_iomap(intc, 0);
-	BUG_ON(!intc_baseaddr);
+	ipr_base = of_iomap(intc, 0);
+	icr_base = of_iomap(intc, 1);
+	BUG_ON(!ipr_base || !icr_base);
 
 	/* All interrupt priority is 0 (disable) */
 	/* IPRA to IPRK */
 	for (n = 0; n <= 'k' - 'a'; n++)
-		writew(0x0000, IPRA + (n * 2));
+		__raw_writew(0x0000, IPRA + (n * 2));
 
+	__raw_writew(0xffff, icr_base + 2);
 	domain = irq_domain_add_linear(intc, NR_IRQS, &irq_ops, NULL);
 	BUG_ON(!domain);
 	irq_set_default_host(domain);
