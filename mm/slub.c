@@ -27,6 +27,7 @@
 #include <linux/ctype.h>
 #include <linux/debugobjects.h>
 #include <linux/kallsyms.h>
+#include <linux/kfence.h>
 #include <linux/memory.h>
 #include <linux/math64.h>
 #include <linux/fault-inject.h>
@@ -2559,6 +2560,13 @@ static void *___slab_alloc(struct kmem_cache *s, gfp_t gfpflags, int node,
 {
 	void *freelist;
 	struct page *page;
+	void *ret;
+
+#ifdef CONFIG_KFENCE
+	ret = kfence_alloc_and_fix_freelist(s);
+	if (ret)
+		return ret;
+#endif
 
 	page = c->page;
 	if (!page) {
@@ -2866,6 +2874,11 @@ static void __slab_free(struct kmem_cache *s, struct page *page,
 	unsigned long uninitialized_var(flags);
 
 	stat(s, FREE_SLOWPATH);
+
+#ifdef CONFIG_KFENCE
+	if (kfence_free(s, page, head, tail, cnt, addr))
+		return;
+#endif
 
 	if (kmem_cache_debug(s) &&
 	    !free_debug_processing(s, page, head, tail, cnt, addr))
@@ -3371,7 +3384,7 @@ init_kmem_cache_node(struct kmem_cache_node *n)
 #endif
 }
 
-static inline int alloc_kmem_cache_cpus(struct kmem_cache *s)
+int alloc_kmem_cache_cpus(struct kmem_cache *s)
 {
 	BUILD_BUG_ON(PERCPU_DYNAMIC_EARLY_SIZE <
 			KMALLOC_SHIFT_HIGH * sizeof(struct kmem_cache_cpu));
@@ -3390,6 +3403,7 @@ static inline int alloc_kmem_cache_cpus(struct kmem_cache *s)
 
 	return 1;
 }
+EXPORT_SYMBOL(alloc_kmem_cache_cpus);
 
 static struct kmem_cache *kmem_cache_node;
 
@@ -3966,6 +3980,10 @@ size_t __ksize(const void *object)
 		WARN_ON(!PageCompound(page));
 		return page_size(page);
 	}
+#ifdef CONFIG_KFENCE
+	if (page->slab_cache->flags & SLAB_KFENCE)
+		return kfence_ksize(object);
+#endif
 
 	return slab_ksize(page->slab_cache);
 }
