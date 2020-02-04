@@ -112,6 +112,13 @@
 #define SLAB_KASAN		0
 #endif
 
+#ifdef CONFIG_KFENCE
+#ifdef CONFIG_KASAN
+#error Conflicting definitions
+#endif
+#define SLAB_KFENCE		((slab_flags_t __force)0x08000000U)
+#endif
+
 /* The following flags affect the page allocator grouping pages by mobility */
 /* Objects are reclaimable */
 #define SLAB_RECLAIM_ACCOUNT	((slab_flags_t __force)0x00020000U)
