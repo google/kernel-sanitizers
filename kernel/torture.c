@@ -236,6 +236,7 @@ torture_onoff(void *arg)
 			schedule_timeout_interruptible(HZ / 10);
 			continue;
 		}
+		rcutorture_sched_setaffinity(current->pid, cpumask_of(0));
 		cpu = (torture_random(&rand) >> 4) % (maxcpu + 1);
 		if (!torture_offline(cpu,
 				     &n_offline_attempts, &n_offline_successes,
