@@ -422,6 +422,26 @@ retry:
 			return false;
 		}
 
+		access_type |= other_info.access_type;
+		if ((access_type & KCSAN_ACCESS_WRITE) == 0) {
+			/*
+			 * This is not the other_info from the thread that
+			 * consumed our watchpoint.
+			 *
+			 * There are concurrent races between more than 3
+			 * threads on the same address. The thread that set up
+			 * the watchpoint here was a read, as well as the one
+			 * that is currently in other_info.
+			 *
+			 * It's fine if we simply omit this report, since the
+			 * chances of one of the other reports including the
+			 * same info is high, as well as the chances that we
+			 * simply re-report the race again.
+			 */
+			release_report(flags, KCSAN_REPORT_RACE_SIGNAL);
+			return false;
+		}
+
 		/*
 		 * Matching & usable access in other_info: keep other_info_lock
 		 * locked, as this thread consumes it to print the full report;
