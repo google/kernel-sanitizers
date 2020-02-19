@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: GPL-2.0
 
+#include <linux/debug_locks.h>
 #include <linux/jiffies.h>
 #include <linux/kernel.h>
 #include <linux/lockdep.h>
 #include <linux/preempt.h>
 #include <linux/printk.h>
+#include <linux/rcupdate.h>
 #include <linux/sched.h>
 #include <linux/spinlock.h>
 #include <linux/stacktrace.h>
@@ -245,6 +247,29 @@ static int sym_strcmp(void *addr1, void *addr2)
 	return strncmp(buf1, buf2, sizeof(buf1));
 }
 
+static void print_verbose_info(struct task_struct *task)
+{
+	if (!task)
+		return;
+
+	if (task != current && task->state == TASK_RUNNING)
+		/*
+		 * Showing held locks for a running task is unreliable, so just
+		 * skip this. The printed locks are very likely inconsistent,
+		 * since the stack trace was obtained when the actual race
+		 * occurred and the task has since continued execution. Since we
+		 * cannot display the below information from the racing thread,
+		 * but must print it all from the watcher thread, bail out.
+		 * Note: Even if the task is not running, there is a chance that
+		 * the locks held may be inconsistent.
+		 */
+		return;
+
+	pr_err("\n");
+	debug_show_held_locks(task);
+	print_irqtrace_events(task);
+}
+
 /*
  * Returns true if a report was generated, false otherwise.
  */
@@ -319,6 +344,26 @@ static bool print_report(const volatile void *ptr, size_t size, int access_type,
 				  other_info.num_stack_entries - other_skipnr,
 				  0);
 
+		if (IS_ENABLED(CONFIG_KCSAN_VERBOSE) && other_info.task_pid != -1) {
+			struct task_struct *other_task;
+
+			/*
+			 * Rather than passing @current from the other task via
+			 * @other_info, obtain task_struct here. The problem
+			 * with passing @current via @other_info is that, we
+			 * would have to get_task_struct/put_task_struct, and if
+			 * we race with a task being released, we would have to
+			 * release it in release_report(). This may result in
+			 * deadlock if we want to use KCSAN on the allocators.
+			 * Instead, make this best-effort, and if the task was
+			 * already released, we just do not print anything here.
+			 */
+			rcu_read_lock();
+			other_task = find_task_by_pid_ns(other_info.task_pid, &init_pid_ns);
+			print_verbose_info(other_task);
+			rcu_read_unlock();
+		}
+
 		pr_err("\n");
 		pr_err("%s to 0x%px of %zu bytes by %s on cpu %i:\n",
 		       get_access_type(access_type), ptr, size,
@@ -339,6 +384,9 @@ static bool print_report(const volatile void *ptr, size_t size, int access_type,
 	/* Print stack trace of this thread. */
 	stack_trace_print(stack_entries + skipnr, num_stack_entries - skipnr,
 			  0);
+
+	if (IS_ENABLED(CONFIG_KCSAN_VERBOSE))
+		print_verbose_info(current);
 
 	/* Print report footer. */
 	pr_err("\n");
