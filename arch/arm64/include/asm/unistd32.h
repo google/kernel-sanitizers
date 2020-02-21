@@ -885,6 +885,8 @@ __SYSCALL(__NR_openat2, sys_openat2)
 __SYSCALL(__NR_pidfd_getfd, sys_pidfd_getfd)
 #define __NR_faccessat2 439
 __SYSCALL(__NR_faccessat2, sys_faccessat2)
+#define __NR_watch_mount 440
+__SYSCALL(__NR_watch_mount, sys_watch_mount)
 
 /*
  * Please add new compat syscalls above this comment and update
