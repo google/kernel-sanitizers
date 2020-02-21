@@ -178,6 +178,7 @@ void ftrace_likely_update(struct ftrace_likely_data *f, int val,
 #endif
 
 #include <uapi/linux/types.h>
+#include <linux/kcsan-checks.h>
 
 #define __READ_ONCE_SIZE						\
 ({									\
@@ -193,12 +194,6 @@ void ftrace_likely_update(struct ftrace_likely_data *f, int val,
 	}								\
 })
 
-static __always_inline
-void __read_once_size(const volatile void *p, void *res, int size)
-{
-	__READ_ONCE_SIZE;
-}
-
 #ifdef CONFIG_KASAN
 /*
  * We can't declare function 'inline' because __no_sanitize_address confilcts
@@ -207,18 +202,47 @@ void __read_once_size(const volatile void *p, void *res, int size)
  * '__maybe_unused' allows us to avoid defined-but-not-used warnings.
  */
 # define __no_kasan_or_inline __no_sanitize_address notrace __maybe_unused
+# define __no_sanitize_or_inline __no_kasan_or_inline
 #else
 # define __no_kasan_or_inline __always_inline
 #endif
 
-static __no_kasan_or_inline
+#define __no_kcsan __no_sanitize_thread
+#ifdef __SANITIZE_THREAD__
+/*
+ * Rely on __SANITIZE_THREAD__ instead of CONFIG_KCSAN, to avoid not inlining in
+ * compilation units where instrumentation is disabled. The attribute 'noinline'
+ * is required for older compilers, where implicit inlining of very small
+ * functions renders __no_sanitize_thread ineffective.
+ */
+# define __no_kcsan_or_inline __no_kcsan noinline notrace __maybe_unused
+# define __no_sanitize_or_inline __no_kcsan_or_inline
+#else
+# define __no_kcsan_or_inline __always_inline
+#endif
+
+#ifndef __no_sanitize_or_inline
+#define __no_sanitize_or_inline __always_inline
+#endif
+
+static __no_kcsan_or_inline
+void __read_once_size(const volatile void *p, void *res, int size)
+{
+	kcsan_check_atomic_read(p, size);
+	__READ_ONCE_SIZE;
+}
+
+static __no_sanitize_or_inline
 void __read_once_size_nocheck(const volatile void *p, void *res, int size)
 {
 	__READ_ONCE_SIZE;
 }
 
-static __always_inline void __write_once_size(volatile void *p, void *res, int size)
+static __no_kcsan_or_inline
+void __write_once_size(volatile void *p, void *res, int size)
 {
+	kcsan_check_atomic_write(p, size);
+
 	switch (size) {
 	case 1: *(volatile __u8 *)p = *(__u8 *)res; break;
 	case 2: *(volatile __u16 *)p = *(__u16 *)res; break;
@@ -288,6 +312,26 @@ unsigned long read_word_at_a_time(const void *addr)
 	__write_once_size(&(x), __u.__c, sizeof(x));	\
 	__u.__val;					\
 })
+
+/**
+ * data_race - mark an expression as containing intentional data races
+ *
+ * This data_race() macro is useful for situations in which data races
+ * should be forgiven.  One example is diagnostic code that accesses
+ * shared variables but is not a part of the core synchronization design.
+ *
+ * This macro *does not* affect normal code generation, but is a hint
+ * to tooling that data races here are to be ignored.
+ */
+#define data_race(expr)                                                        \
+	({                                                                     \
+		typeof(({ expr; })) __val;                                     \
+		kcsan_nestable_atomic_begin();                                 \
+		__val = ({ expr; });                                           \
+		kcsan_nestable_atomic_end();                                   \
+		__val;                                                         \
+	})
+#else
 
 #endif /* __KERNEL__ */
 
