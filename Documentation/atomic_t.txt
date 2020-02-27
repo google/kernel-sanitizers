@@ -91,15 +91,15 @@ ops. That is:
   C atomic-set
 
   {
-    atomic_set(v, 1);
+    atomic_t v = ATOMIC_INIT(1);
+  }
+
+  P0(atomic_t *v)
+  {
+    (void)atomic_add_unless(v, 1, 0);
   }
 
   P1(atomic_t *v)
-  {
-    atomic_add_unless(v, 1, 0);
-  }
-
-  P2(atomic_t *v)
   {
     atomic_set(v, 0);
   }
