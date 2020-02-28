@@ -9,15 +9,10 @@ config PROVE_RCU
 	def_bool PROVE_LOCKING
 
 config PROVE_RCU_LIST
-	bool "RCU list lockdep debugging"
-	depends on PROVE_RCU && RCU_EXPERT
-	default n
+	def_bool PROVE_RCU
 	help
-	  Enable RCU lockdep checking for list usages. By default it is
-	  turned off since there are several list RCU users that still
-	  need to be converted to pass a lockdep expression. To prevent
-	  false-positive splats, we keep it default disabled but once all
-	  users are converted, we can remove this config option.
+	  Enable RCU lockdep checking for list usages. It is default
+	  enabled with CONFIG_PROVE_RCU.
 
 config TORTURE_TEST
 	tristate
