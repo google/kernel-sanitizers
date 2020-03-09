@@ -447,6 +447,8 @@ source "lib/Kconfig.kgdb"
 
 source "lib/Kconfig.ubsan"
 
+source "lib/Kconfig.kcsan"
+
 endmenu
 
 config DEBUG_KERNEL
