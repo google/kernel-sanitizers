@@ -560,11 +560,10 @@ void __init kfence_init(void)
 	if (!kfence_sampling_rate)
 		/* The tool is disabled. */
 		return;
-	spin_lock_init(&kfence_caches_lock);
-	spin_lock_init(&kfence_alloc_lock);
+
 	INIT_LIST_HEAD(&kfence_freelist.list);
 	INIT_LIST_HEAD(&kfence_recycle.list);
-	memset(&kfence_slab_cache, 0, sizeof(struct kmem_cache));
+
 	kfence_slab_cache.name = "kfence_slab_cache";
 	alloc_kmem_cache_cpus(&kfence_slab_cache);
 	kfence_slab_cache.flags = SLAB_KFENCE;
