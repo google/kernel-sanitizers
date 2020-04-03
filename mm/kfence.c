@@ -3,12 +3,11 @@
 #include <asm/pgtable.h>
 #include <asm/tlbflush.h>
 
-#include <linux/mm.h>  // required by slub_def.h, should be included there.
+#include <linux/mm.h> // required by slub_def.h, should be included there.
 #include <linux/slab.h>
 #include <linux/slub_def.h>
 #include <linux/spinlock_types.h>
 #include <linux/timer.h>
-
 
 static void kfence_heartbeat(struct timer_list *timer);
 static DEFINE_TIMER(kfence_timer, kfence_heartbeat);
@@ -48,28 +47,27 @@ unsigned long kernel_physical_mapping_change(unsigned long start,
 void __meminit kfence_protect(unsigned long addr)
 {
 	unsigned long addr_end;
-        pte_t *pte;
-        unsigned int level;
-	int res;
+	pte_t *pte;
+	unsigned int level;
 	unsigned long psize, pmask;
 	int split_page_size_mask;
 
 	addr_end = addr + PAGE_SIZE;
-        pte = lookup_address(addr, &level);
-        BUG_ON(!pte);
+	pte = lookup_address(addr, &level);
+	BUG_ON(!pte);
 	if (level != PG_LEVEL_4K) {
 		psize = page_level_size(level);
 		pmask = page_level_mask(level);
 		split_page_size_mask = 1 << PG_LEVEL_4K;
 		kernel_physical_mapping_change(__pa(addr & pmask),
-			__pa((addr_end & pmask) + psize),
-			split_page_size_mask);
+					       __pa((addr_end & pmask) + psize),
+					       split_page_size_mask);
 		flush_tlb_all();
 		pte = lookup_address(addr, &level);
 	}
-        BUG_ON(level != PG_LEVEL_4K);
+	BUG_ON(level != PG_LEVEL_4K);
 	set_pte(pte, __pte(pte_val(*pte) & ~_PAGE_PRESENT));
-        __flush_tlb_one_kernel(addr);
+	__flush_tlb_one_kernel(addr);
 }
 
 /* TODO: comb is a poor analogy, come up with a better term. */
@@ -77,7 +75,7 @@ void allocate_comb(void)
 {
 	struct page *pages;
 	struct kfence_freelist_t *objects;
-	char *addr;
+	char *addr; /* TODO: addr is never initialized */
 	int i;
 
 	pages = alloc_pages(GFP_KERNEL, KFENCE_NUM_OBJ_LOG + 1);
@@ -94,18 +92,18 @@ void allocate_comb(void)
 		}
 	}
 	addr = page_address(pages);
-	addr += PAGE_SIZE;  // skip the first page: metadata
+	addr += PAGE_SIZE; // skip the first page: metadata
 	kfence_protect(addr); // first redzone
 	addr += PAGE_SIZE;
-	objects = (struct kfence_freelist_t *)kmalloc_array(KFENCE_NUM_OBJ,
-			sizeof(struct kfence_freelist_t), GFP_KERNEL);
+	objects = (struct kfence_freelist_t *)kmalloc_array(
+		KFENCE_NUM_OBJ, sizeof(struct kfence_freelist_t), GFP_KERNEL);
 	for (i = 0; i < KFENCE_NUM_OBJ; i++) {
 		if (i == KFENCE_NUM_OBJ)
 			objects[i].list.next = NULL;
 		else
 			objects[i].list.next = &(objects[i + 1].list);
 		objects[i].obj = addr;
-		kfence_protect(addr + PAGE_SIZE);  // redzone
+		kfence_protect(addr + PAGE_SIZE); // redzone
 		addr += 2 * PAGE_SIZE;
 	}
 	kfence_freelist.list.next = (void *)(&objects[0].list);
@@ -132,7 +130,7 @@ void *guarded_alloc(size_t size)
 
 	spin_unlock_irqrestore(&kfence_alloc_lock, flags);
 	if (obj)
-		ret = (void *)((char*)obj + PAGE_SIZE - size);
+		ret = (void *)((char *)obj + PAGE_SIZE - size);
 	else
 		ret = NULL;
 	pr_info("guarded_alloc(%d) returns %px\n", size, ret);
@@ -142,7 +140,7 @@ void *guarded_alloc(size_t size)
 void guarded_free(void *addr)
 {
 	unsigned long flags;
-	void *aligned_addr = ALIGN_DOWN((unsigned long)addr, PAGE_SIZE);
+	void *aligned_addr = (void *)ALIGN_DOWN((unsigned long)addr, PAGE_SIZE);
 	struct kfence_freelist_t *item;
 
 	spin_lock_irqsave(&kfence_alloc_lock, flags);
@@ -179,11 +177,10 @@ void *kfence_alloc_and_fix_freelist(struct kmem_cache *s)
 	return NULL;
 }
 
-bool kfence_free(struct kmem_cache *s, struct page *page,
-		 void *head, void *tail, int cnt,
-		 unsigned long addr)
+bool kfence_free(struct kmem_cache *s, struct page *page, void *head,
+		 void *tail, int cnt, unsigned long addr)
 {
-	void *aligned_head = ALIGN_DOWN((unsigned long)head, PAGE_SIZE);
+	void *aligned_head = (void *)ALIGN_DOWN((unsigned long)head, PAGE_SIZE);
 
 	if (s != &kfence_slab_cache)
 		return false;
@@ -196,7 +193,7 @@ bool kfence_free(struct kmem_cache *s, struct page *page,
 
 size_t kfence_ksize(void *object)
 {
-	char *upper = ALIGN((unsigned long)object, PAGE_SIZE);
+	char *upper = (void *)ALIGN((unsigned long)object, PAGE_SIZE);
 	return upper - (char *)object;
 }
 
@@ -207,8 +204,8 @@ static void steal_freelist_locked(void)
 	unsigned long int index;
 
 	/* TODO: need a random number here. */
-	index = (jiffies / 13) % (KMALLOC_SHIFT_HIGH - 2 - KMALLOC_SHIFT_LOW)
-		+ KMALLOC_SHIFT_LOW;
+	index = (jiffies / 13) % (KMALLOC_SHIFT_HIGH - 2 - KMALLOC_SHIFT_LOW) +
+		KMALLOC_SHIFT_LOW;
 
 	cache = kmalloc_caches[0][index];
 	if (!cache) {
