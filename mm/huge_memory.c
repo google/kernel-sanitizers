@@ -2705,6 +2705,7 @@ bool can_split_huge_page(struct page *page, int *pextra_pins)
  */
 int split_huge_page_to_list(struct page *page, struct list_head *list)
 {
+	pr_err("HERE: %s:%d, page: %px(%px)\n", __FILE__, __LINE__, page, page_address(page));
 	struct page *head = compound_head(page);
 	struct pglist_data *pgdata = NODE_DATA(page_to_nid(head));
 	struct deferred_split *ds_queue = get_deferred_split_queue(head);

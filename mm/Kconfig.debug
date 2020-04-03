@@ -138,3 +138,9 @@ config PTDUMP_DEBUGFS
 	  kernel.
 
 	  If in doubt, say N.
+
+config KFENCE
+	bool "KFence"
+	#depends on DEBUG_KERNEL
+	---help---
+	  Nothing here
