@@ -2162,6 +2162,13 @@ config TEST_MEMINIT
 
 	  If unsure, say N.
 
+config TEST_KFENCE
+	tristate "Test KFENCE"
+	help
+	  Test that KFENCE works.
+
+	  If unsure, say N.
+
 endif # RUNTIME_TESTING_MENU
 
 config MEMTEST
