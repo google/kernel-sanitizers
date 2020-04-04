@@ -12,7 +12,13 @@
 static void kfence_heartbeat(struct timer_list *timer);
 static DEFINE_TIMER(kfence_timer, kfence_heartbeat);
 
-DEFINE_PER_CPU(void *, stored_freelist);
+#define STORED_FREELISTS 8
+struct stored_freelist {
+	struct kmem_cache *cache;
+	void *freelist;
+};
+DEFINE_PER_CPU(struct stored_freelist[STORED_FREELISTS], stored_freelists);
+DEFINE_PER_CPU(int, num_stored_freelists);
 DEFINE_PER_CPU(struct kmem_cache *, stored_cache);
 struct kmem_cache kfence_slab_cache;
 EXPORT_SYMBOL(kfence_slab_cache);
@@ -152,28 +158,44 @@ void guarded_free(void *addr)
 	spin_unlock_irqrestore(&kfence_alloc_lock, flags);
 }
 
+static int find_freelist(struct kmem_cache *c)
+{
+	int i;
+	for (i = 0; i < STORED_FREELISTS; i++) {
+		if (this_cpu_read(stored_freelists[i].cache) == c)
+			return i;
+	}
+	return -1;
+}
+
 void *kfence_alloc_and_fix_freelist(struct kmem_cache *s)
 {
 	unsigned long flags;
 	struct kmem_cache_cpu *c = raw_cpu_ptr(s->cpu_slab);
-	struct kmem_cache *stored = this_cpu_read(stored_cache);
+	int fl, num_fl;
+	struct kmem_cache *stored;
 	void *ret = NULL;
 	struct page *page;
+	void *freelist;
 
-	if (stored && (s == stored)) {
-		spin_lock_irqsave(&kfence_lock, flags);
-		stored = this_cpu_read(stored_cache);
-		if (stored && (s == stored)) {
-			ret = guarded_alloc(s->size);
-			c->freelist = this_cpu_read(stored_freelist);
-			this_cpu_write(stored_freelist, NULL);
-			this_cpu_write(stored_cache, NULL);
-			page = virt_to_page(ret);
-		}
-		spin_unlock_irqrestore(&kfence_lock, flags);
-		pr_info("kfence_alloc_and_fix_freelist returns %px\n", ret);
-		return ret;
-	}
+	fl = find_freelist(s);
+	if (fl == -1)
+		return NULL;
+	spin_lock_irqsave(&kfence_lock, flags);
+	fl = find_freelist(s);
+	if (fl == -1)
+		goto leave;
+	freelist = this_cpu_read(stored_freelists[fl].freelist);
+	ret = guarded_alloc(s->size);
+	c->freelist = freelist;
+	num_fl = this_cpu_read(num_stored_freelists);
+	this_cpu_write(stored_freelists[fl].cache, NULL);
+	this_cpu_write(num_stored_freelists, num_fl - 1);
+	spin_unlock_irqrestore(&kfence_lock, flags);
+	pr_info("kfence_alloc_and_fix_freelist returns %px\n", ret);
+	return ret;
+leave:
+	spin_unlock_irqrestore(&kfence_lock, flags);
 	return NULL;
 }
 
@@ -197,12 +219,23 @@ size_t kfence_ksize(void *object)
 	return upper - (char *)object;
 }
 
-static void steal_freelist_locked(void)
+static void steal_freelist(void)
 {
 	struct kmem_cache_cpu *c;
 	struct kmem_cache *cache;
 	unsigned long int index;
+	unsigned long flags;
+	int num_stored, fl;
 
+	num_stored = this_cpu_read(num_stored_freelists);
+	if (num_stored == STORED_FREELISTS)
+		return;
+
+	spin_lock_irqsave(&kfence_lock, flags);
+	num_stored = this_cpu_read(num_stored_freelists);
+	if (num_stored == STORED_FREELISTS)
+		goto leave;
+	fl = find_freelist(NULL);
 	/* TODO: need a random number here. */
 	index = (jiffies / 13) % (KMALLOC_SHIFT_HIGH - 2 - KMALLOC_SHIFT_LOW) +
 		KMALLOC_SHIFT_LOW;
@@ -212,14 +245,20 @@ static void steal_freelist_locked(void)
 		pr_info("kmalloc_caches[0][%ld] is NULL!\n", index);
 		BUG_ON(!cache);
 	}
+	if (find_freelist(cache) != -1)
+		goto leave;
 	c = raw_cpu_ptr(cache->cpu_slab);
 	BUG_ON(!c);
-	this_cpu_write(stored_freelist, c->freelist);
+	this_cpu_write(stored_freelists[fl].freelist, c->freelist);
+	this_cpu_write(stored_freelists[fl].cache, cache);
+	this_cpu_write(num_stored_freelists, num_stored + 1);
 	this_cpu_write(stored_cache, cache);
 	/* TODO: should locking/atomics be involved? */
 	c->freelist = 0;
 	pr_info("stole freelist from cache %s on CPU%d!\n", cache->name,
 		smp_processor_id());
+leave:
+	spin_unlock_irqrestore(&kfence_lock, flags);
 }
 
 static void kfence_arm_heartbeat(struct timer_list *timer)
@@ -231,14 +270,7 @@ static void kfence_arm_heartbeat(struct timer_list *timer)
 
 static void kfence_heartbeat(struct timer_list *timer)
 {
-	unsigned long flags;
-
-	if (!this_cpu_read(stored_freelist)) {
-		spin_lock_irqsave(&kfence_lock, flags);
-		if (!this_cpu_read(stored_freelist))
-			steal_freelist_locked();
-		spin_unlock_irqrestore(&kfence_lock, flags);
-	}
+	steal_freelist();
 	kfence_arm_heartbeat(timer);
 }
 
