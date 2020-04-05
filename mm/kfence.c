@@ -7,6 +7,7 @@
 #include <linux/slab.h>
 #include <linux/slub_def.h>
 #include <linux/spinlock_types.h>
+#include <linux/stackdepot.h>
 #include <linux/timer.h>
 
 static void kfence_heartbeat(struct timer_list *timer);
@@ -17,19 +18,21 @@ struct stored_freelist {
 	struct kmem_cache *cache;
 	void *freelist;
 };
+struct alloc_metadata {
+	depot_stack_handle_t alloc_stack, free_stack;
+	/* >0: left alignment, <0: right alignment. */
+	int size;
+
+};
+
+/* Protects kfence pool state. */
+static DEFINE_SPINLOCK(kfence_lock);
+
 DEFINE_PER_CPU(struct stored_freelist[STORED_FREELISTS], stored_freelists);
 DEFINE_PER_CPU(int, num_stored_freelists);
 DEFINE_PER_CPU(struct kmem_cache *, stored_cache);
 struct kmem_cache kfence_slab_cache;
 EXPORT_SYMBOL(kfence_slab_cache);
-
-static DEFINE_SPINLOCK(kfence_lock);
-static DEFINE_SPINLOCK(kfence_alloc_lock);
-
-struct kfence_freelist_t {
-	struct list_head list;
-	void *obj;
-};
 
 /*
  * It's handy (but not strictly required) that 255 objects with redzones occupy
@@ -38,12 +41,37 @@ struct kfence_freelist_t {
 #define KFENCE_NUM_OBJ_LOG 8
 #define KFENCE_NUM_OBJ ((1 << KFENCE_NUM_OBJ_LOG) - 1)
 
-#define KFENCE_SAMPLING_MS 113
-
-struct kfence_freelist_t *kfence_pool;
-struct list_head kfence_freelist_old;
-struct kfence_freelist_t kfence_freelist, kfence_recycle;
 unsigned long kfence_pool_start, kfence_pool_end;
+
+/* Protects kfence_freelist, kfence_recycle, kfence_metadata */
+static DEFINE_SPINLOCK(kfence_alloc_lock);
+
+struct kfence_freelist_t {
+	struct list_head list;
+	void *obj;
+};
+struct kfence_freelist_t kfence_freelist, kfence_recycle;
+
+struct alloc_metadata *kfence_metadata;
+
+
+#define KFENCE_SAMPLING_MS 113
+#define KFENCE_STACK_DEPTH 64
+
+/* TODO: there's a similar function in KASAN already. */
+static inline depot_stack_handle_t save_stack(gfp_t flags)
+{
+	unsigned long entries[KFENCE_STACK_DEPTH];
+	unsigned long nr_entries;
+
+	nr_entries = stack_trace_save(entries, ARRAY_SIZE(entries), 0);
+	/*
+	 * TODO: filter_irq_stacks() is in linux-next, uncomment when it reaches
+	 * mainline.
+	 */
+	/*nr_entries = filter_irq_stacks(entries, nr_entries);*/
+	return stack_depot_save(entries, nr_entries, flags);
+}
 
 /* TODO(glider): kernel_physical_mapping_change() is x86-only */
 unsigned long kernel_physical_mapping_change(unsigned long start,
@@ -83,7 +111,10 @@ void allocate_pool(void)
 	struct kfence_freelist_t *objects;
 	char *addr;
 	int i;
+	gfp_t gfp_flags = GFP_KERNEL | __GFP_ZERO;
+	unsigned long flags;
 
+	spin_lock_irqsave(&kfence_alloc_lock, flags);
 	pages = alloc_pages(GFP_KERNEL, KFENCE_NUM_OBJ_LOG + 1);
 	kfence_pool_start = page_address(pages);
 	kfence_pool_end =
@@ -105,7 +136,7 @@ void allocate_pool(void)
 	kfence_protect(addr); // first redzone
 	addr += PAGE_SIZE;
 	objects = (struct kfence_freelist_t *)kmalloc_array(
-		KFENCE_NUM_OBJ, sizeof(struct kfence_freelist_t), GFP_KERNEL);
+		KFENCE_NUM_OBJ, sizeof(struct kfence_freelist_t), gfp_flags);
 	for (i = 0; i < KFENCE_NUM_OBJ; i++) {
 		if (i == KFENCE_NUM_OBJ)
 			objects[i].list.next = NULL;
@@ -117,7 +148,21 @@ void allocate_pool(void)
 	}
 	kfence_freelist.list.next = (void *)(&objects[0].list);
 	kfence_freelist.list.prev = (void *)(&objects[KFENCE_NUM_OBJ].list);
-	kfence_pool = objects;
+
+	/* Set up metadata nodes. */
+	kfence_metadata = (struct alloc_metadata *)kmalloc_array(
+		KFENCE_NUM_OBJ, sizeof(struct alloc_metadata), gfp_flags);
+	spin_unlock_irqrestore(&kfence_alloc_lock, flags);
+}
+
+static inline int kfence_addr_to_index(unsigned long addr)
+{
+	int ret;
+
+	if ((addr < kfence_pool_start) || (addr >= kfence_pool_end))
+		return -1;
+
+	return ((addr - kfence_pool_start) / PAGE_SIZE / 2) - 1;
 }
 
 void *guarded_alloc(size_t size)
@@ -125,6 +170,7 @@ void *guarded_alloc(size_t size)
 	unsigned long flags;
 	void *obj = NULL, *ret;
 	struct kfence_freelist_t *item;
+	int index;
 
 	BUG_ON(size > PAGE_SIZE);
 	spin_lock_irqsave(&kfence_alloc_lock, flags);
@@ -138,10 +184,19 @@ void *guarded_alloc(size_t size)
 	}
 
 	spin_unlock_irqrestore(&kfence_alloc_lock, flags);
-	if (obj)
+	if (obj) {
+		/*
+		 * TODO: randomply place the object at the beginning/end of the
+		 * page.
+		 */
 		ret = (void *)((char *)obj + PAGE_SIZE - size);
-	else
+		index = kfence_addr_to_index(obj);
+		BUG_ON(index > KFENCE_NUM_OBJ - 1);
+		kfence_metadata[index].alloc_stack = save_stack(GFP_KERNEL);
+		kfence_metadata[index].size = -size;
+	} else {
 		ret = NULL;
+	}
 	pr_info("guarded_alloc(%d) returns %px\n", size, ret);
 	return ret;
 }
@@ -151,6 +206,7 @@ void guarded_free(void *addr)
 	unsigned long flags;
 	void *aligned_addr = (void *)ALIGN_DOWN((unsigned long)addr, PAGE_SIZE);
 	struct kfence_freelist_t *item;
+	int index;
 
 	spin_lock_irqsave(&kfence_alloc_lock, flags);
 	item = list_entry(kfence_recycle.list.next, struct kfence_freelist_t,
@@ -158,6 +214,8 @@ void guarded_free(void *addr)
 	item->obj = aligned_addr;
 	kfence_recycle.list.next = item->list.next;
 	list_add(&(item->list), &kfence_freelist.list);
+	index = kfence_addr_to_index(addr);
+	kfence_metadata[index].free_stack = save_stack(GFP_KERNEL);
 	spin_unlock_irqrestore(&kfence_alloc_lock, flags);
 }
 
