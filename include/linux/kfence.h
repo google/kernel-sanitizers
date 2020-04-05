@@ -17,6 +17,8 @@ bool kfence_free(struct kmem_cache *s, struct page *page, void *head,
 
 size_t kfence_ksize(void *object);
 
+bool kfence_handle_page_fault(unsigned long address);
+
 #else
 static inline void kfence_init(void)
 {
@@ -34,5 +36,9 @@ static inline bool kfence_free(struct kmem_cache *s, struct page *page,
 static size_t kfence_ksize(void *object)
 {
 	return 0;
+}
+bool kfence_handle_page_fault(unsigned long address)
+{
+	return false;
 }
 #endif
