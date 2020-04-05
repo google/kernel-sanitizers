@@ -40,9 +40,10 @@ struct kfence_freelist_t {
 
 #define KFENCE_SAMPLING_MS 113
 
-struct kfence_freelist_t *kfence_comb;
+struct kfence_freelist_t *kfence_pool;
 struct list_head kfence_freelist_old;
 struct kfence_freelist_t kfence_freelist, kfence_recycle;
+unsigned long kfence_pool_start, kfence_pool_end;
 
 /* TODO(glider): kernel_physical_mapping_change() is x86-only */
 unsigned long kernel_physical_mapping_change(unsigned long start,
@@ -76,17 +77,19 @@ void __meminit kfence_protect(unsigned long addr)
 	__flush_tlb_one_kernel(addr);
 }
 
-/* TODO: comb is a poor analogy, come up with a better term. */
-void allocate_comb(void)
+void allocate_pool(void)
 {
 	struct page *pages;
 	struct kfence_freelist_t *objects;
-	char *addr; /* TODO: addr is never initialized */
+	char *addr;
 	int i;
 
 	pages = alloc_pages(GFP_KERNEL, KFENCE_NUM_OBJ_LOG + 1);
-	pr_info("kfence allocated pages: %px--%px\n", addr,
-		addr + (KFENCE_NUM_OBJ + 1) * 2 * PAGE_SIZE);
+	kfence_pool_start = page_address(pages);
+	kfence_pool_end =
+		kfence_pool_start + (KFENCE_NUM_OBJ + 1) * 2 * PAGE_SIZE;
+	pr_info("kfence allocated pages: %px--%px\n", kfence_pool_start,
+		kfence_pool_end);
 	/*
 	 * Set up non-redzone pages: they must have PG_slab flag and point to
 	 * kfence slab cache.
@@ -97,7 +100,7 @@ void allocate_comb(void)
 			pages[i].slab_cache = &kfence_slab_cache;
 		}
 	}
-	addr = page_address(pages);
+	addr = kfence_pool_start;
 	addr += PAGE_SIZE; // skip the first page: metadata
 	kfence_protect(addr); // first redzone
 	addr += PAGE_SIZE;
@@ -114,7 +117,7 @@ void allocate_comb(void)
 	}
 	kfence_freelist.list.next = (void *)(&objects[0].list);
 	kfence_freelist.list.prev = (void *)(&objects[KFENCE_NUM_OBJ].list);
-	kfence_comb = objects;
+	kfence_pool = objects;
 }
 
 void *guarded_alloc(size_t size)
@@ -287,7 +290,7 @@ void __init kfence_init(void)
 	kfence_slab_cache.name = "kfence_slab_cache";
 	alloc_kmem_cache_cpus(&kfence_slab_cache);
 	kfence_slab_cache.flags = SLAB_KFENCE;
-	allocate_comb();
+	allocate_pool();
 	kfence_arm_heartbeat(&kfence_timer);
 	pr_info("kfence_init done\n");
 }
