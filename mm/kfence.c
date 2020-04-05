@@ -18,10 +18,14 @@ struct stored_freelist {
 	struct kmem_cache *cache;
 	void *freelist;
 };
+
+enum kfence_object_state { KOS_UNUSED, KOS_ALLOCATED, KOS_FREED };
+
 struct alloc_metadata {
 	depot_stack_handle_t alloc_stack, free_stack;
 	/* >0: left alignment, <0: right alignment. */
 	int size;
+	enum kfence_object_state state;
 };
 
 /* Protects kfence pool state. */
@@ -103,6 +107,20 @@ static void __meminit kfence_protect(unsigned long addr)
 	__flush_tlb_one_kernel(addr);
 }
 
+static void __meminit kfence_unprotect(unsigned long addr)
+{
+	unsigned long addr_end;
+	pte_t *pte;
+	unsigned int level;
+
+	addr_end = addr + PAGE_SIZE;
+	pte = lookup_address(addr, &level);
+	BUG_ON(!pte);
+	BUG_ON(level != PG_LEVEL_4K);
+	set_pte(pte, __pte(pte_val(*pte) | _PAGE_PRESENT));
+	__flush_tlb_one_kernel(addr);
+}
+
 static void __meminit allocate_pool(void)
 {
 	struct page *pages;
@@ -161,6 +179,20 @@ static inline int kfence_addr_to_index(unsigned long addr)
 	return ((addr - kfence_pool_start) / PAGE_SIZE / 2) - 1;
 }
 
+static inline unsigned long kfence_index_to_addr(int index)
+{
+	int size = kfence_metadata[index].size;
+	unsigned long ret;
+
+	if ((index < 0) || (index >= KFENCE_NUM_OBJ))
+		return 0;
+	ret = kfence_pool_start + PAGE_SIZE * 2 * (index + 1);
+	if (size > 0)
+		return ret;
+	else
+		return ret + PAGE_SIZE + size;
+}
+
 void *guarded_alloc(size_t size)
 {
 	unsigned long flags;
@@ -190,6 +222,7 @@ void *guarded_alloc(size_t size)
 		BUG_ON(index > KFENCE_NUM_OBJ - 1);
 		kfence_metadata[index].alloc_stack = save_stack(GFP_KERNEL);
 		kfence_metadata[index].size = -size;
+		kfence_metadata[index].state = KOS_ALLOCATED;
 	} else {
 		ret = NULL;
 	}
@@ -212,6 +245,7 @@ void guarded_free(void *addr)
 	list_add(&(item->list), &kfence_freelist.list);
 	index = kfence_addr_to_index((unsigned long)addr);
 	kfence_metadata[index].free_stack = save_stack(GFP_KERNEL);
+	kfence_metadata[index].state = KOS_FREED;
 	spin_unlock_irqrestore(&kfence_alloc_lock, flags);
 }
 
@@ -272,6 +306,100 @@ size_t kfence_ksize(void *object)
 {
 	char *upper = (void *)ALIGN((unsigned long)object, PAGE_SIZE);
 	return upper - (char *)object;
+}
+
+static void kfence_print_stack(int obj_index, bool is_alloc)
+{
+	unsigned long *entries;
+	unsigned long nr_entries;
+	depot_stack_handle_t handle;
+
+	if (is_alloc)
+		handle = kfence_metadata[obj_index].alloc_stack;
+	else
+		handle = kfence_metadata[obj_index].free_stack;
+	if (handle) {
+		nr_entries = stack_depot_fetch(handle, &entries);
+		stack_trace_print(entries, nr_entries, 0);
+	} else {
+		pr_err("  no %s stack.\n",
+		       is_alloc ? "allocation" : "deallocation");
+	}
+}
+
+static void kfence_dump_object(int obj_index)
+{
+	int size = abs(kfence_metadata[obj_index].size);
+	unsigned long start = kfence_index_to_addr(obj_index);
+
+	pr_err("Object #%d: starts at %px, size=%d\n", obj_index, start, size);
+	pr_err("allocated at:\n");
+	kfence_print_stack(obj_index, true);
+	if (kfence_metadata[obj_index].state == KOS_FREED) {
+		pr_err("freed at:\n");
+		kfence_print_stack(obj_index, true);
+	}
+}
+
+static inline void kfence_report_oob(unsigned long address, int obj_index)
+{
+	unsigned long object = kfence_index_to_addr(obj_index);
+	bool is_left = address < object;
+
+	pr_err("BUG: KFENCE: slab-out-of-bounds at address %px to the %s of object #%d\n",
+	       address, is_left ? "left" : "right", obj_index);
+	dump_stack();
+	kfence_dump_object(obj_index);
+}
+
+bool kfence_handle_page_fault(unsigned long addr)
+{
+	int page_index, obj_index, report_index = -1, dist = 0, ndist;
+	unsigned long flags;
+
+	if ((addr < kfence_pool_start) || (addr >= kfence_pool_end))
+		return false;
+
+	spin_lock_irqsave(&kfence_lock, flags);
+	page_index = (addr - kfence_pool_start) / PAGE_SIZE;
+	if (page_index % 2) {
+		/* This is a redzone, report a buffer overflow. */
+		if (page_index > 1) {
+			obj_index = kfence_addr_to_index(addr - PAGE_SIZE);
+			if (kfence_metadata[obj_index].state == KOS_ALLOCATED) {
+				report_index = obj_index;
+				dist = addr -
+				       (kfence_index_to_addr(obj_index) +
+					abs(kfence_metadata[obj_index].size));
+			}
+		}
+		if (page_index < (KFENCE_NUM_OBJ + 1) * 2) {
+			obj_index = kfence_addr_to_index(addr + PAGE_SIZE);
+			if (kfence_metadata[obj_index].state == KOS_ALLOCATED) {
+				ndist = kfence_index_to_addr(obj_index) - addr;
+				if ((report_index == -1) || (dist > ndist))
+					report_index = obj_index;
+			}
+		}
+		if (report_index != -1) {
+			kfence_report_oob(addr, report_index);
+		} else {
+			pr_err("BUG: KFENCE: wild redzone access.\n");
+			/* Let the kernel deal with it. */
+			spin_unlock_irqrestore(&kfence_lock, flags);
+			return false;
+		}
+	} else {
+		/* This is a freed object, report a use-after-free. */
+		/* TODO: do nothing for now. */
+	}
+	spin_unlock_irqrestore(&kfence_lock, flags);
+	/*
+	 * Let the kernel proceed.
+	 * TODO: either disable KFENCE here, or reinstate the protection later.
+	 */
+	kfence_unprotect(addr);
+	return true;
 }
 
 static void steal_freelist(void)
