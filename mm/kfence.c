@@ -22,7 +22,6 @@ struct alloc_metadata {
 	depot_stack_handle_t alloc_stack, free_stack;
 	/* >0: left alignment, <0: right alignment. */
 	int size;
-
 };
 
 /* Protects kfence pool state. */
@@ -54,7 +53,6 @@ struct kfence_freelist_t kfence_freelist, kfence_recycle;
 
 struct alloc_metadata *kfence_metadata;
 
-
 #define KFENCE_SAMPLING_MS 113
 #define KFENCE_STACK_DEPTH 64
 
@@ -79,7 +77,7 @@ unsigned long kernel_physical_mapping_change(unsigned long start,
 					     unsigned long page_size_mask);
 
 /* TODO: need to separate away code that splits physical mappings. */
-void __meminit kfence_protect(unsigned long addr)
+static void __meminit kfence_protect(unsigned long addr)
 {
 	unsigned long addr_end;
 	pte_t *pte;
@@ -105,18 +103,18 @@ void __meminit kfence_protect(unsigned long addr)
 	__flush_tlb_one_kernel(addr);
 }
 
-void allocate_pool(void)
+static void __meminit allocate_pool(void)
 {
 	struct page *pages;
 	struct kfence_freelist_t *objects;
-	char *addr;
+	unsigned long addr;
 	int i;
 	gfp_t gfp_flags = GFP_KERNEL | __GFP_ZERO;
 	unsigned long flags;
 
 	spin_lock_irqsave(&kfence_alloc_lock, flags);
 	pages = alloc_pages(GFP_KERNEL, KFENCE_NUM_OBJ_LOG + 1);
-	kfence_pool_start = page_address(pages);
+	kfence_pool_start = (unsigned long)page_address(pages);
 	kfence_pool_end =
 		kfence_pool_start + (KFENCE_NUM_OBJ + 1) * 2 * PAGE_SIZE;
 	pr_info("kfence allocated pages: %px--%px\n", kfence_pool_start,
@@ -142,7 +140,7 @@ void allocate_pool(void)
 			objects[i].list.next = NULL;
 		else
 			objects[i].list.next = &(objects[i + 1].list);
-		objects[i].obj = addr;
+		objects[i].obj = (void *)addr;
 		kfence_protect(addr + PAGE_SIZE); // redzone
 		addr += 2 * PAGE_SIZE;
 	}
@@ -157,8 +155,6 @@ void allocate_pool(void)
 
 static inline int kfence_addr_to_index(unsigned long addr)
 {
-	int ret;
-
 	if ((addr < kfence_pool_start) || (addr >= kfence_pool_end))
 		return -1;
 
@@ -214,7 +210,7 @@ void guarded_free(void *addr)
 	item->obj = aligned_addr;
 	kfence_recycle.list.next = item->list.next;
 	list_add(&(item->list), &kfence_freelist.list);
-	index = kfence_addr_to_index(addr);
+	index = kfence_addr_to_index((unsigned long)addr);
 	kfence_metadata[index].free_stack = save_stack(GFP_KERNEL);
 	spin_unlock_irqrestore(&kfence_alloc_lock, flags);
 }
@@ -234,9 +230,7 @@ void *kfence_alloc_and_fix_freelist(struct kmem_cache *s)
 	unsigned long flags;
 	struct kmem_cache_cpu *c = raw_cpu_ptr(s->cpu_slab);
 	int fl, num_fl;
-	struct kmem_cache *stored;
 	void *ret = NULL;
-	struct page *page;
 	void *freelist;
 
 	fl = find_freelist(s);
