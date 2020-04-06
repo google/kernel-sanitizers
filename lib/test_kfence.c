@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0
 /*
- * Test cases for SL[AOU]B/page initialization at alloc/free time.
+ * Test cases for KFENCE memory safety error detector.
+ * TODO: switch to KUnit.
  */
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
 

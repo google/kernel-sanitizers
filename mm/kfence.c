@@ -19,7 +19,11 @@ struct stored_freelist {
 	void *freelist;
 };
 
-enum kfence_object_state { KOS_UNUSED, KOS_ALLOCATED, KOS_FREED };
+enum kfence_object_state {
+	KFENCE_OBJECT_UNUSED,
+	KFENCE_OBJECT_ALLOCATED,
+	KFENCE_OBJECT_FREED
+};
 
 struct alloc_metadata {
 	depot_stack_handle_t alloc_stack, free_stack;
@@ -222,7 +226,7 @@ void *guarded_alloc(size_t size)
 		BUG_ON(index > KFENCE_NUM_OBJ - 1);
 		kfence_metadata[index].alloc_stack = save_stack(GFP_KERNEL);
 		kfence_metadata[index].size = -size;
-		kfence_metadata[index].state = KOS_ALLOCATED;
+		kfence_metadata[index].state = KFENCE_OBJECT_ALLOCATED;
 	} else {
 		ret = NULL;
 	}
@@ -245,40 +249,39 @@ void guarded_free(void *addr)
 	list_add(&(item->list), &kfence_freelist.list);
 	index = kfence_addr_to_index((unsigned long)addr);
 	kfence_metadata[index].free_stack = save_stack(GFP_KERNEL);
-	kfence_metadata[index].state = KOS_FREED;
+	kfence_metadata[index].state = KFENCE_OBJECT_FREED;
 	spin_unlock_irqrestore(&kfence_alloc_lock, flags);
 }
 
-static int find_freelist(struct kmem_cache *c)
+static struct stored_freelist *find_freelist(struct kmem_cache *c)
 {
 	int i;
+
 	for (i = 0; i < STORED_FREELISTS; i++) {
 		if (this_cpu_read(stored_freelists[i].cache) == c)
-			return i;
+			return this_cpu_ptr(&stored_freelists[i]);
 	}
-	return -1;
+	return NULL;
 }
 
 void *kfence_alloc_and_fix_freelist(struct kmem_cache *s)
 {
 	unsigned long flags;
 	struct kmem_cache_cpu *c = raw_cpu_ptr(s->cpu_slab);
-	int fl, num_fl;
+	int num_fl;
+	struct stored_freelist *fl;
 	void *ret = NULL;
 	void *freelist;
 
-	fl = find_freelist(s);
-	if (fl == -1)
-		return NULL;
 	spin_lock_irqsave(&kfence_lock, flags);
 	fl = find_freelist(s);
-	if (fl == -1)
+	if (fl == NULL)
 		goto leave;
-	freelist = this_cpu_read(stored_freelists[fl].freelist);
+	freelist = fl->freelist;
 	ret = guarded_alloc(s->size);
 	c->freelist = freelist;
 	num_fl = this_cpu_read(num_stored_freelists);
-	this_cpu_write(stored_freelists[fl].cache, NULL);
+	fl->cache = NULL;
 	this_cpu_write(num_stored_freelists, num_fl - 1);
 	spin_unlock_irqrestore(&kfence_lock, flags);
 	pr_debug("kfence_alloc_and_fix_freelist returns %px\n", ret);
@@ -335,7 +338,7 @@ static void kfence_dump_object(int obj_index)
 	pr_err("Object #%d: starts at %px, size=%d\n", obj_index, start, size);
 	pr_err("allocated at:\n");
 	kfence_print_stack(obj_index, true);
-	if (kfence_metadata[obj_index].state == KOS_FREED) {
+	if (kfence_metadata[obj_index].state == KFENCE_OBJECT_FREED) {
 		pr_err("freed at:\n");
 		kfence_print_stack(obj_index, true);
 	}
@@ -366,7 +369,8 @@ bool kfence_handle_page_fault(unsigned long addr)
 		/* This is a redzone, report a buffer overflow. */
 		if (page_index > 1) {
 			obj_index = kfence_addr_to_index(addr - PAGE_SIZE);
-			if (kfence_metadata[obj_index].state == KOS_ALLOCATED) {
+			if (kfence_metadata[obj_index].state ==
+			    KFENCE_OBJECT_ALLOCATED) {
 				report_index = obj_index;
 				dist = addr -
 				       (kfence_index_to_addr(obj_index) +
@@ -375,7 +379,8 @@ bool kfence_handle_page_fault(unsigned long addr)
 		}
 		if (page_index < (KFENCE_NUM_OBJ + 1) * 2) {
 			obj_index = kfence_addr_to_index(addr + PAGE_SIZE);
-			if (kfence_metadata[obj_index].state == KOS_ALLOCATED) {
+			if (kfence_metadata[obj_index].state ==
+			    KFENCE_OBJECT_ALLOCATED) {
 				ndist = kfence_index_to_addr(obj_index) - addr;
 				if ((report_index == -1) || (dist > ndist))
 					report_index = obj_index;
@@ -408,7 +413,8 @@ static void steal_freelist(void)
 	struct kmem_cache *cache;
 	unsigned long int index;
 	unsigned long flags;
-	int num_stored, fl;
+	int num_stored;
+	struct stored_freelist *fl;
 
 	num_stored = this_cpu_read(num_stored_freelists);
 	if (num_stored == STORED_FREELISTS)
@@ -428,12 +434,12 @@ static void steal_freelist(void)
 		pr_info("kmalloc_caches[0][%ld] is NULL!\n", index);
 		BUG_ON(!cache);
 	}
-	if (find_freelist(cache) != -1)
+	if (find_freelist(cache))
 		goto leave;
 	c = raw_cpu_ptr(cache->cpu_slab);
 	BUG_ON(!c);
-	this_cpu_write(stored_freelists[fl].freelist, c->freelist);
-	this_cpu_write(stored_freelists[fl].cache, cache);
+	fl->freelist = c->freelist;
+	fl->cache = cache;
 	this_cpu_write(num_stored_freelists, num_stored + 1);
 	this_cpu_write(stored_cache, cache);
 	/* TODO: should locking/atomics be involved? */
