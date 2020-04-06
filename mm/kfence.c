@@ -226,7 +226,7 @@ void *guarded_alloc(size_t size)
 	} else {
 		ret = NULL;
 	}
-	pr_info("guarded_alloc(%d) returns %px\n", size, ret);
+	pr_debug("guarded_alloc(%d) returns %px\n", size, ret);
 	return ret;
 }
 
@@ -281,7 +281,7 @@ void *kfence_alloc_and_fix_freelist(struct kmem_cache *s)
 	this_cpu_write(stored_freelists[fl].cache, NULL);
 	this_cpu_write(num_stored_freelists, num_fl - 1);
 	spin_unlock_irqrestore(&kfence_lock, flags);
-	pr_info("kfence_alloc_and_fix_freelist returns %px\n", ret);
+	pr_debug("kfence_alloc_and_fix_freelist returns %px\n", ret);
 	return ret;
 leave:
 	spin_unlock_irqrestore(&kfence_lock, flags);
@@ -296,7 +296,7 @@ bool kfence_free(struct kmem_cache *s, struct page *page, void *head,
 	if (s != &kfence_slab_cache)
 		return false;
 	BUG_ON(head != tail);
-	pr_info("kfence_free(%px)\n", head);
+	pr_debug("kfence_free(%px)\n", head);
 	BUG_ON(aligned_head != page_address(page));
 	guarded_free(head);
 	return true;
@@ -438,8 +438,8 @@ static void steal_freelist(void)
 	this_cpu_write(stored_cache, cache);
 	/* TODO: should locking/atomics be involved? */
 	c->freelist = 0;
-	pr_info("stole freelist from cache %s on CPU%d!\n", cache->name,
-		smp_processor_id());
+	pr_debug("stole freelist from cache %s on CPU%d!\n", cache->name,
+		 smp_processor_id());
 leave:
 	spin_unlock_irqrestore(&kfence_lock, flags);
 }
