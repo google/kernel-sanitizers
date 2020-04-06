@@ -142,5 +142,6 @@ config PTDUMP_DEBUGFS
 config KFENCE
 	bool "KFence"
 	#depends on DEBUG_KERNEL
+	select STACKDEPOT
 	---help---
 	  Nothing here
