@@ -2563,7 +2563,7 @@ static void *___slab_alloc(struct kmem_cache *s, gfp_t gfpflags, int node,
 	void *ret;
 
 #ifdef CONFIG_KFENCE
-	ret = kfence_alloc_and_fix_freelist(s);
+	ret = kfence_alloc_and_fix_freelist(s, gfpflags);
 	if (ret)
 		return ret;
 #endif
