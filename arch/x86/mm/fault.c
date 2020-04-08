@@ -804,7 +804,7 @@ no_context(struct pt_regs *regs, unsigned long error_code,
 	}
 #endif
 
-	if (kfence_handle_page_fault(address));
+	if (kfence_handle_page_fault(address))
 		return;
 
 	/*
