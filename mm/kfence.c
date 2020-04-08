@@ -128,7 +128,7 @@ static void __meminit kfence_protect(unsigned long addr)
 	__flush_tlb_one_kernel(addr);
 }
 
-static void __meminit kfence_unprotect(unsigned long addr)
+static void kfence_unprotect(unsigned long addr)
 {
 	unsigned long addr_end;
 	pte_t *pte;
@@ -149,14 +149,13 @@ static void __meminit allocate_pool(void)
 	unsigned long addr;
 	int i;
 	gfp_t gfp_flags = GFP_KERNEL | __GFP_ZERO;
-	unsigned long flags;
 
 	pages = alloc_pages(GFP_KERNEL, KFENCE_NUM_OBJ_LOG + 1);
 	kfence_pool_start = (unsigned long)page_address(pages);
 	kfence_pool_end =
 		kfence_pool_start + (KFENCE_NUM_OBJ + 1) * 2 * PAGE_SIZE;
-	pr_info("kfence allocated pages: %px--%px\n", kfence_pool_start,
-		kfence_pool_end);
+	pr_info("kfence allocated pages: %px--%px\n", (void *)kfence_pool_start,
+		(void *)kfence_pool_end);
 	/*
 	 * Set up non-redzone pages: they must have PG_slab flag and point to
 	 * kfence slab cache.
@@ -237,7 +236,7 @@ void *guarded_alloc(size_t size, gfp_t gfp)
 		 * page.
 		 */
 		ret = (void *)((char *)obj + PAGE_SIZE - size);
-		index = kfence_addr_to_index(obj);
+		index = kfence_addr_to_index((unsigned long)obj);
 		kfence_assert(index <= KFENCE_NUM_OBJ - 1);
 		/*
 		 * Reclaiming memory when storing stacks may result in unnecessary
@@ -250,7 +249,7 @@ void *guarded_alloc(size_t size, gfp_t gfp)
 	} else {
 		ret = NULL;
 	}
-	pr_debug("guarded_alloc(%d) returns %px\n", size, ret);
+	pr_debug("guarded_alloc(%ld) returns %px\n", size, ret);
 	return ret;
 }
 
@@ -357,7 +356,8 @@ static void kfence_dump_object(int obj_index)
 	int size = abs(kfence_metadata[obj_index].size);
 	unsigned long start = kfence_index_to_addr(obj_index);
 
-	pr_err("Object #%d: starts at %px, size=%d\n", obj_index, start, size);
+	pr_err("Object #%d: starts at %px, size=%d\n", obj_index, (void *)start,
+	       size);
 	pr_err("allocated at:\n");
 	kfence_print_stack(obj_index, true);
 	if (kfence_metadata[obj_index].state == KFENCE_OBJECT_FREED) {
@@ -372,7 +372,7 @@ static inline void kfence_report_oob(unsigned long address, int obj_index)
 	bool is_left = address < object;
 
 	pr_err("BUG: KFENCE: slab-out-of-bounds at address %px to the %s of object #%d\n",
-	       address, is_left ? "left" : "right", obj_index);
+	       (void *)address, is_left ? "left" : "right", obj_index);
 	dump_stack();
 	kfence_dump_object(obj_index);
 }
