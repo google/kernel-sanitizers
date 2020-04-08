@@ -10,7 +10,7 @@ struct page;
 
 void kfence_init(void);
 
-void *kfence_alloc_and_fix_freelist(struct kmem_cache *s);
+void *kfence_alloc_and_fix_freelist(struct kmem_cache *s, gfp_t gfp);
 
 bool kfence_free(struct kmem_cache *s, struct page *page, void *head,
 		 void *tail, int cnt, unsigned long addr);

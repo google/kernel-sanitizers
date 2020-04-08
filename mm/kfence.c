@@ -34,8 +34,8 @@ struct alloc_metadata {
 	enum kfence_object_state state;
 };
 
-/* Protects kfence pool state. */
-static DEFINE_SPINLOCK(kfence_lock);
+/* Protects stolen freelists */
+static DEFINE_SPINLOCK(kfence_caches_lock);
 
 DEFINE_PER_CPU(struct stored_freelist[STORED_FREELISTS], stored_freelists);
 DEFINE_PER_CPU(int, num_stored_freelists);
@@ -151,7 +151,6 @@ static void __meminit allocate_pool(void)
 	gfp_t gfp_flags = GFP_KERNEL | __GFP_ZERO;
 	unsigned long flags;
 
-	spin_lock_irqsave(&kfence_alloc_lock, flags);
 	pages = alloc_pages(GFP_KERNEL, KFENCE_NUM_OBJ_LOG + 1);
 	kfence_pool_start = (unsigned long)page_address(pages);
 	kfence_pool_end =
@@ -189,7 +188,6 @@ static void __meminit allocate_pool(void)
 	/* Set up metadata nodes. */
 	kfence_metadata = (struct alloc_metadata *)kmalloc_array(
 		KFENCE_NUM_OBJ, sizeof(struct alloc_metadata), gfp_flags);
-	spin_unlock_irqrestore(&kfence_alloc_lock, flags);
 }
 
 static inline int kfence_addr_to_index(unsigned long addr)
@@ -214,7 +212,7 @@ static inline unsigned long kfence_index_to_addr(int index)
 		return ret + PAGE_SIZE + size;
 }
 
-void *guarded_alloc(size_t size)
+void *guarded_alloc(size_t size, gfp_t gfp)
 {
 	unsigned long flags;
 	void *obj = NULL, *ret;
@@ -241,7 +239,12 @@ void *guarded_alloc(size_t size)
 		ret = (void *)((char *)obj + PAGE_SIZE - size);
 		index = kfence_addr_to_index(obj);
 		kfence_assert(index <= KFENCE_NUM_OBJ - 1);
-		kfence_metadata[index].alloc_stack = save_stack(GFP_KERNEL);
+		/*
+		 * Reclaiming memory when storing stacks may result in unnecessary
+		 * locking.
+		 */
+		kfence_metadata[index].alloc_stack =
+			save_stack(gfp & ~__GFP_RECLAIM);
 		kfence_metadata[index].size = -size;
 		kfence_metadata[index].state = KFENCE_OBJECT_ALLOCATED;
 	} else {
@@ -281,7 +284,7 @@ static struct stored_freelist *find_freelist(struct kmem_cache *c)
 	return NULL;
 }
 
-void *kfence_alloc_and_fix_freelist(struct kmem_cache *s)
+void *kfence_alloc_and_fix_freelist(struct kmem_cache *s, gfp_t gfp)
 {
 	unsigned long flags;
 	struct kmem_cache_cpu *c = raw_cpu_ptr(s->cpu_slab);
@@ -290,21 +293,23 @@ void *kfence_alloc_and_fix_freelist(struct kmem_cache *s)
 	void *ret = NULL;
 	void *freelist;
 
-	spin_lock_irqsave(&kfence_lock, flags);
+	if (!READ_ONCE(kfence_enabled))
+		return NULL;
+	spin_lock_irqsave(&kfence_caches_lock, flags);
 	fl = find_freelist(s);
 	if (fl == NULL)
 		goto leave;
 	freelist = fl->freelist;
-	ret = guarded_alloc(s->size);
+	ret = guarded_alloc(s->size, gfp);
 	c->freelist = freelist;
 	num_fl = this_cpu_read(num_stored_freelists);
 	fl->cache = NULL;
 	this_cpu_write(num_stored_freelists, num_fl - 1);
-	spin_unlock_irqrestore(&kfence_lock, flags);
+	spin_unlock_irqrestore(&kfence_caches_lock, flags);
 	pr_debug("kfence_alloc_and_fix_freelist returns %px\n", ret);
 	return ret;
 leave:
-	spin_unlock_irqrestore(&kfence_lock, flags);
+	spin_unlock_irqrestore(&kfence_caches_lock, flags);
 	return NULL;
 }
 
@@ -386,7 +391,7 @@ bool kfence_handle_page_fault(unsigned long addr)
 		return true;
 	}
 
-	spin_lock_irqsave(&kfence_lock, flags);
+	spin_lock_irqsave(&kfence_alloc_lock, flags);
 	page_index = (addr - kfence_pool_start) / PAGE_SIZE;
 	if (page_index % 2) {
 		/* This is a redzone, report a buffer overflow. */
@@ -414,14 +419,14 @@ bool kfence_handle_page_fault(unsigned long addr)
 		} else {
 			pr_err("BUG: KFENCE: wild redzone access.\n");
 			/* Let the kernel deal with it. */
-			spin_unlock_irqrestore(&kfence_lock, flags);
+			spin_unlock_irqrestore(&kfence_alloc_lock, flags);
 			return false;
 		}
 	} else {
 		/* This is a freed object, report a use-after-free. */
 		/* TODO: do nothing for now. */
 	}
-	spin_unlock_irqrestore(&kfence_lock, flags);
+	spin_unlock_irqrestore(&kfence_alloc_lock, flags);
 	/*
 	 * Let the kernel proceed.
 	 * TODO: either disable KFENCE here, or reinstate the protection later.
@@ -443,7 +448,7 @@ static void steal_freelist(void)
 	if (num_stored == STORED_FREELISTS)
 		return;
 
-	spin_lock_irqsave(&kfence_lock, flags);
+	spin_lock_irqsave(&kfence_caches_lock, flags);
 	num_stored = this_cpu_read(num_stored_freelists);
 	if (num_stored == STORED_FREELISTS)
 		goto leave;
@@ -470,7 +475,7 @@ static void steal_freelist(void)
 	pr_debug("stole freelist from cache %s on CPU%d!\n", cache->name,
 		 smp_processor_id());
 leave:
-	spin_unlock_irqrestore(&kfence_lock, flags);
+	spin_unlock_irqrestore(&kfence_caches_lock, flags);
 }
 
 static void kfence_arm_heartbeat(struct timer_list *timer)
@@ -494,7 +499,7 @@ int alloc_kmem_cache_cpus(struct kmem_cache *s);
 
 void __init kfence_init(void)
 {
-	spin_lock_init(&kfence_lock);
+	spin_lock_init(&kfence_caches_lock);
 	spin_lock_init(&kfence_alloc_lock);
 	INIT_LIST_HEAD(&kfence_freelist.list);
 	INIT_LIST_HEAD(&kfence_recycle.list);
