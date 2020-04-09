@@ -101,45 +101,55 @@ unsigned long kernel_physical_mapping_change(unsigned long start,
 					     unsigned long end,
 					     unsigned long page_size_mask);
 
-/* TODO: need to separate away code that splits physical mappings. */
-static void __meminit kfence_protect(unsigned long addr)
+static void kfence_force_4k_pages(void)
 {
-	unsigned long addr_end;
-	pte_t *pte;
+	unsigned long addr = kfence_pool_start, addr_end;
 	unsigned int level;
 	unsigned long psize, pmask;
-	int split_page_size_mask;
+	pte_t *pte;
+
+	while (addr < kfence_pool_end) {
+		pte = lookup_address(addr, &level);
+		if (level != PG_LEVEL_4K) {
+			psize = page_level_size(level);
+			pmask = page_level_mask(level);
+			addr_end = ((addr + PAGE_SIZE) & pmask) + psize;
+			kernel_physical_mapping_change(__pa(addr & pmask),
+						       __pa(addr_end),
+						       1 << PG_LEVEL_4K);
+			addr = addr_end;
+		} else {
+			addr += PAGE_SIZE;
+		}
+	}
+	flush_tlb_all();
+}
+
+static void kfence_change_page_prot(unsigned long addr, bool protect)
+{
+	unsigned long addr_end;
+	pte_t *pte, new_pte;
+	unsigned int level;
 
 	addr_end = addr + PAGE_SIZE;
 	pte = lookup_address(addr, &level);
 	kfence_assert(pte);
-	if (level != PG_LEVEL_4K) {
-		psize = page_level_size(level);
-		pmask = page_level_mask(level);
-		split_page_size_mask = 1 << PG_LEVEL_4K;
-		kernel_physical_mapping_change(__pa(addr & pmask),
-					       __pa((addr_end & pmask) + psize),
-					       split_page_size_mask);
-		flush_tlb_all();
-		pte = lookup_address(addr, &level);
-	}
 	kfence_assert(level == PG_LEVEL_4K);
-	set_pte(pte, __pte(pte_val(*pte) & ~_PAGE_PRESENT));
+	new_pte = __pte(protect ? (pte_val(*pte) & ~_PAGE_PRESENT) :
+				  (pte_val(*pte) | _PAGE_PRESENT));
+	set_pte(pte, new_pte);
+	/* TODO: figure out how to flush TLB properly here. */
 	__flush_tlb_one_kernel(addr);
 }
 
-static void kfence_unprotect(unsigned long addr)
+static inline void kfence_protect(unsigned long addr)
 {
-	unsigned long addr_end;
-	pte_t *pte;
-	unsigned int level;
+	kfence_change_page_prot(addr, true);
+}
 
-	addr_end = addr + PAGE_SIZE;
-	pte = lookup_address(addr, &level);
-	kfence_assert(pte);
-	kfence_assert(level == PG_LEVEL_4K);
-	set_pte(pte, __pte(pte_val(*pte) | _PAGE_PRESENT));
-	__flush_tlb_one_kernel(addr);
+static inline void kfence_unprotect(unsigned long addr)
+{
+	kfence_change_page_prot(addr, false);
 }
 
 static void __meminit allocate_pool(void)
@@ -154,6 +164,7 @@ static void __meminit allocate_pool(void)
 	kfence_pool_start = (unsigned long)page_address(pages);
 	kfence_pool_end =
 		kfence_pool_start + (KFENCE_NUM_OBJ + 1) * 2 * PAGE_SIZE;
+	kfence_force_4k_pages();
 	pr_info("kfence allocated pages: %px--%px\n", (void *)kfence_pool_start,
 		(void *)kfence_pool_end);
 	/*
