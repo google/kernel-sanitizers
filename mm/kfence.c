@@ -87,21 +87,19 @@ static inline void kfence_disable(void)
 	WRITE_ONCE(kfence_enabled, false);
 }
 
-#define kfence_assert(cond)                                                    \
-	do {                                                                   \
-		if (unlikely(!(cond))) {                                       \
-			WARN(1, "KFENCE assertion failure at %s:%d\n",         \
-			     __FILE__, __LINE__);                              \
-			kfence_disable();                                      \
-		}                                                              \
-	} while (0)
+#define KFENCE_WARN_ON(cond) ({	\
+	bool __cond = WARN_ON(cond);	\
+	if (__cond) \
+	kfence_disable(); \
+	__cond; \
+	})
 
 /* TODO(glider): kernel_physical_mapping_change() is x86-only */
 unsigned long kernel_physical_mapping_change(unsigned long start,
 					     unsigned long end,
 					     unsigned long page_size_mask);
 
-static void kfence_force_4k_pages(void)
+static bool kfence_force_4k_pages(void)
 {
 	unsigned long addr = kfence_pool_start, addr_end;
 	unsigned int level;
@@ -110,6 +108,8 @@ static void kfence_force_4k_pages(void)
 
 	while (addr < kfence_pool_end) {
 		pte = lookup_address(addr, &level);
+		if (!pte)
+			return false;
 		if (level != PG_LEVEL_4K) {
 			psize = page_level_size(level);
 			pmask = page_level_mask(level);
@@ -123,9 +123,10 @@ static void kfence_force_4k_pages(void)
 		}
 	}
 	flush_tlb_all();
+	return true;
 }
 
-static void kfence_change_page_prot(unsigned long addr, bool protect)
+static bool kfence_change_page_prot(unsigned long addr, bool protect)
 {
 	unsigned long addr_end;
 	pte_t *pte, new_pte;
@@ -133,38 +134,42 @@ static void kfence_change_page_prot(unsigned long addr, bool protect)
 
 	addr_end = addr + PAGE_SIZE;
 	pte = lookup_address(addr, &level);
-	kfence_assert(pte);
-	kfence_assert(level == PG_LEVEL_4K);
+	if (KFENCE_WARN_ON(!pte) || KFENCE_WARN_ON(level != PG_LEVEL_4K))
+		return false;
 	new_pte = __pte(protect ? (pte_val(*pte) & ~_PAGE_PRESENT) :
 				  (pte_val(*pte) | _PAGE_PRESENT));
 	set_pte(pte, new_pte);
 	/* TODO: figure out how to flush TLB properly here. */
 	__flush_tlb_one_kernel(addr);
+	return true;
 }
 
-static inline void kfence_protect(unsigned long addr)
+static inline bool kfence_protect(unsigned long addr)
 {
-	kfence_change_page_prot(addr, true);
+	return kfence_change_page_prot(addr, true);
 }
 
-static inline void kfence_unprotect(unsigned long addr)
+static inline bool kfence_unprotect(unsigned long addr)
 {
-	kfence_change_page_prot(addr, false);
+	return kfence_change_page_prot(addr, false);
 }
 
-static void __meminit allocate_pool(void)
+static bool __meminit allocate_pool(void)
 {
-	struct page *pages;
-	struct kfence_freelist_t *objects;
+	struct page *pages = NULL;
+	struct kfence_freelist_t *objects = NULL;
 	unsigned long addr;
 	int i;
 	gfp_t gfp_flags = GFP_KERNEL | __GFP_ZERO;
 
 	pages = alloc_pages(GFP_KERNEL, KFENCE_NUM_OBJ_LOG + 1);
+	if (!pages)
+		goto error;
 	kfence_pool_start = (unsigned long)page_address(pages);
 	kfence_pool_end =
 		kfence_pool_start + (KFENCE_NUM_OBJ + 1) * 2 * PAGE_SIZE;
-	kfence_force_4k_pages();
+	if (!kfence_force_4k_pages())
+		goto error;
 	pr_info("kfence allocated pages: %px--%px\n", (void *)kfence_pool_start,
 		(void *)kfence_pool_end);
 	/*
@@ -178,18 +183,25 @@ static void __meminit allocate_pool(void)
 		}
 	}
 	addr = kfence_pool_start;
-	addr += PAGE_SIZE; // skip the first page: metadata
-	kfence_protect(addr); // first redzone
+	/* Skip the first page: it is reserved. */
+	addr += PAGE_SIZE;
+	/* Protect the leading redzone. */
+	if (!kfence_protect(addr))
+		goto error;
 	addr += PAGE_SIZE;
 	objects = (struct kfence_freelist_t *)kmalloc_array(
 		KFENCE_NUM_OBJ, sizeof(struct kfence_freelist_t), gfp_flags);
+	if (!objects)
+		goto error;
 	for (i = 0; i < KFENCE_NUM_OBJ; i++) {
 		if (i == KFENCE_NUM_OBJ)
 			objects[i].list.next = NULL;
 		else
 			objects[i].list.next = &(objects[i + 1].list);
 		objects[i].obj = (void *)addr;
-		kfence_protect(addr + PAGE_SIZE); // redzone
+		/* Protect the right redzone. */
+		if (!kfence_protect(addr + PAGE_SIZE))
+			goto error;
 		addr += 2 * PAGE_SIZE;
 	}
 	kfence_freelist.list.next = (void *)(&objects[0].list);
@@ -198,6 +210,12 @@ static void __meminit allocate_pool(void)
 	/* Set up metadata nodes. */
 	kfence_metadata = (struct alloc_metadata *)kmalloc_array(
 		KFENCE_NUM_OBJ, sizeof(struct alloc_metadata), gfp_flags);
+	return true;
+error:
+	if (pages)
+		__free_pages(pages, KFENCE_NUM_OBJ_LOG + 1);
+	kfree(objects);
+	return false;
 }
 
 static inline int kfence_addr_to_index(unsigned long addr)
@@ -229,7 +247,8 @@ void *guarded_alloc(size_t size, gfp_t gfp)
 	struct kfence_freelist_t *item;
 	int index;
 
-	kfence_assert(size <= PAGE_SIZE);
+	if (KFENCE_WARN_ON(size > PAGE_SIZE))
+		return NULL;
 	spin_lock_irqsave(&kfence_alloc_lock, flags);
 
 	if (!list_empty(&kfence_freelist.list)) {
@@ -248,7 +267,6 @@ void *guarded_alloc(size_t size, gfp_t gfp)
 		 */
 		ret = (void *)((char *)obj + PAGE_SIZE - size);
 		index = kfence_addr_to_index((unsigned long)obj);
-		kfence_assert(index <= KFENCE_NUM_OBJ - 1);
 		/*
 		 * Reclaiming memory when storing stacks may result in unnecessary
 		 * locking.
@@ -330,9 +348,11 @@ bool kfence_free(struct kmem_cache *s, struct page *page, void *head,
 
 	if (s != &kfence_slab_cache)
 		return false;
-	kfence_assert(head == tail);
+	if (KFENCE_WARN_ON(head != tail))
+		return false;
 	pr_debug("kfence_free(%px)\n", head);
-	kfence_assert(aligned_head == page_address(page));
+	if (KFENCE_WARN_ON(aligned_head != page_address(page)))
+		return false;
 	guarded_free(head);
 	return true;
 }
@@ -398,8 +418,7 @@ bool kfence_handle_page_fault(unsigned long addr)
 
 	if (!READ_ONCE(kfence_enabled)) {
 		/* KFENCE has been disabled, unprotect the page and go on. */
-		kfence_unprotect(addr);
-		return true;
+		return kfence_unprotect(addr);
 	}
 
 	spin_lock_irqsave(&kfence_alloc_lock, flags);
@@ -442,8 +461,7 @@ bool kfence_handle_page_fault(unsigned long addr)
 	 * Let the kernel proceed.
 	 * TODO: either disable KFENCE here, or reinstate the protection later.
 	 */
-	kfence_unprotect(addr);
-	return true;
+	return kfence_unprotect(addr);
 }
 
 static void steal_freelist(void)
@@ -469,14 +487,13 @@ static void steal_freelist(void)
 		KMALLOC_SHIFT_LOW;
 
 	cache = kmalloc_caches[0][index];
-	if (!cache) {
-		pr_info("kmalloc_caches[0][%ld] is NULL!\n", index);
-		kfence_assert(cache);
-	}
+	if (KFENCE_WARN_ON(!cache))
+		goto leave;
 	if (find_freelist(cache))
 		goto leave;
 	c = raw_cpu_ptr(cache->cpu_slab);
-	kfence_assert(c);
+	if (KFENCE_WARN_ON(!c))
+		goto leave;
 	fl->freelist = c->freelist;
 	fl->cache = cache;
 	this_cpu_write(num_stored_freelists, num_stored + 1);
@@ -518,9 +535,12 @@ void __init kfence_init(void)
 	kfence_slab_cache.name = "kfence_slab_cache";
 	alloc_kmem_cache_cpus(&kfence_slab_cache);
 	kfence_slab_cache.flags = SLAB_KFENCE;
-	allocate_pool();
-	WRITE_ONCE(kfence_enabled, true);
-	kfence_arm_heartbeat(&kfence_timer);
-	pr_info("kfence_init done\n");
+	if (allocate_pool()) {
+		WRITE_ONCE(kfence_enabled, true);
+		kfence_arm_heartbeat(&kfence_timer);
+		pr_info("kfence_init done\n");
+	} else {
+		pr_err("kfence_init failed\n");
+	}
 }
 EXPORT_SYMBOL(kfence_init);
