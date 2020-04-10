@@ -36,10 +36,8 @@ struct alloc_metadata {
 
 /* Protects stolen freelists */
 static DEFINE_SPINLOCK(kfence_caches_lock);
-
-DEFINE_PER_CPU(struct stored_freelist[STORED_FREELISTS], stored_freelists);
-DEFINE_PER_CPU(int, num_stored_freelists);
-DEFINE_PER_CPU(struct kmem_cache *, stored_cache);
+struct stored_freelist stored_freelists[STORED_FREELISTS];
+int num_stored_freelists;
 struct kmem_cache kfence_slab_cache;
 EXPORT_SYMBOL(kfence_slab_cache);
 
@@ -306,8 +304,8 @@ static struct stored_freelist *find_freelist(struct kmem_cache *c)
 	int i;
 
 	for (i = 0; i < STORED_FREELISTS; i++) {
-		if (this_cpu_read(stored_freelists[i].cache) == c)
-			return this_cpu_ptr(&stored_freelists[i]);
+		if (stored_freelists[i].cache == c)
+			return &stored_freelists[i];
 	}
 	return NULL;
 }
@@ -330,9 +328,8 @@ void *kfence_alloc_and_fix_freelist(struct kmem_cache *s, gfp_t gfp)
 	freelist = fl->freelist;
 	ret = guarded_alloc(s->size, gfp);
 	c->freelist = freelist;
-	num_fl = this_cpu_read(num_stored_freelists);
 	fl->cache = NULL;
-	this_cpu_write(num_stored_freelists, num_fl - 1);
+	num_stored_freelists--;
 	spin_unlock_irqrestore(&kfence_caches_lock, flags);
 	pr_debug("kfence_alloc_and_fix_freelist returns %px\n", ret);
 	return ret;
@@ -473,13 +470,8 @@ static void steal_freelist(void)
 	int num_stored;
 	struct stored_freelist *fl;
 
-	num_stored = this_cpu_read(num_stored_freelists);
-	if (num_stored == STORED_FREELISTS)
-		return;
-
 	spin_lock_irqsave(&kfence_caches_lock, flags);
-	num_stored = this_cpu_read(num_stored_freelists);
-	if (num_stored == STORED_FREELISTS)
+	if (num_stored_freelists == STORED_FREELISTS)
 		goto leave;
 	fl = find_freelist(NULL);
 	/* TODO: need a random number here. */
@@ -496,8 +488,7 @@ static void steal_freelist(void)
 		goto leave;
 	fl->freelist = c->freelist;
 	fl->cache = cache;
-	this_cpu_write(num_stored_freelists, num_stored + 1);
-	this_cpu_write(stored_cache, cache);
+	num_stored_freelists++;
 	/* TODO: should locking/atomics be involved? */
 	c->freelist = 0;
 	pr_debug("stole freelist from cache %s on CPU%d!\n", cache->name,
