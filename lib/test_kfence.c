@@ -9,8 +9,8 @@
 #include <linux/module.h>
 #include <linux/slab.h>
 
-#define MAX_ITER 1000
-int do_test(size_t size)
+#define MAX_ITER 100
+int do_test_oob(size_t size)
 {
 	int i;
 	volatile char *c;
@@ -31,11 +31,31 @@ int do_test(size_t size)
 	return 0;
 }
 
+int do_test_uaf(size_t size)
+{
+	int i;
+	volatile char *c;
+	void **buffers;
+
+	buffers = kmalloc_array(MAX_ITER, sizeof(void *), GFP_KERNEL);
+	for (i = 0; i < MAX_ITER; i++) {
+		buffers[i] = kmalloc(size, GFP_KERNEL);
+		kfree(buffers[i]);
+		c = ((char *)buffers[i]);
+		(void)*c;
+		/* TODO: sleep time depends on heartbeat period. */
+		msleep(100);
+	}
+	kfree(buffers);
+	return 0;
+}
+
 static int __init test_kfence_init(void)
 {
 	int failures = 0;
 
-	failures += do_test(32);
+	failures += do_test_oob(32);
+	failures += do_test_uaf(32);
 
 	if (failures == 0)
 		pr_info("all tests passed!\n");
