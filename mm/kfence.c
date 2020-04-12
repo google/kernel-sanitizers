@@ -85,11 +85,12 @@ static inline void kfence_disable(void)
 	WRITE_ONCE(kfence_enabled, false);
 }
 
-#define KFENCE_WARN_ON(cond) ({	\
-	bool __cond = WARN_ON(cond);	\
-	if (__cond) \
-	kfence_disable(); \
-	__cond; \
+#define KFENCE_WARN_ON(cond)                                                   \
+	({                                                                     \
+		bool __cond = WARN_ON(cond);                                   \
+		if (__cond)                                                    \
+			kfence_disable();                                      \
+		__cond;                                                        \
 	})
 
 /* TODO(glider): kernel_physical_mapping_change() is x86-only */
