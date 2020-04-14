@@ -60,15 +60,15 @@ struct kfence_freelist_t {
 /*
  * kfence_freelist_t is a wrapper around kfence page pointers that allows
  * chaining them.
- * |kfence_freelist| is a FIFO queue of non-allocated pages, |kfence_recycle| is
+ * @kfence_freelist is a FIFO queue of non-allocated pages, @kfence_recycle is
  * a stack of unused kfence_freelist_t objects.
  * When allocating a new object in guarded_alloc(), a kfence_freelist_t item is
- * taken from the queue and its |obj| is used for allocation.
- * The item is put into |kfence_recycle| - at this point its contents aren't
- * valid anymore.
+ * taken from the queue and its @kfence_freelist_t.obj member is used for
+ * allocation. The item is put into @kfence_recycle - at this point its contents
+ * aren't valid anymore.
  * When freeing an object, it is wrapped into a kfence_freelist_t taken from
- * |kfence_recycle|. This kfence_freelist_t item is placed at the end of
- * |kfence_freelist| to delay the reuse of that object.
+ * @kfence_recycle. This kfence_freelist_t item is placed at the end of
+ * @kfence_freelist to delay the reuse of that object.
  */
 struct kfence_freelist_t kfence_freelist, kfence_recycle;
 
@@ -101,7 +101,7 @@ static inline void kfence_disable(void)
 #define KFENCE_WARN_ON(cond)                                                   \
 	({                                                                     \
 		bool __cond = WARN_ON(cond);                                   \
-		if (__cond)                                                    \
+		if (unlikely(__cond))                                          \
 			kfence_disable();                                      \
 		__cond;                                                        \
 	})
