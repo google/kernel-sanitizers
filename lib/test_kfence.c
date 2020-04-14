@@ -45,6 +45,8 @@ static int do_test_oob(size_t size)
 	char *c;
 
 	buffer = alloc_from_kfence(size, GFP_KERNEL);
+	if (!buffer)
+		return 1;
 	c = ((char *)buffer) + size + 1;
 	READ_ONCE(*c);
 	kfree(buffer);
@@ -57,6 +59,8 @@ static int do_test_uaf(size_t size)
 	char *c;
 
 	buffer = alloc_from_kfence(size, GFP_KERNEL);
+	if (!buffer)
+		return 1;
 	c = (char *)buffer;
 	kfree(buffer);
 	READ_ONCE(*c);
