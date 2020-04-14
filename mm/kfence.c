@@ -36,10 +36,8 @@ struct alloc_metadata {
 
 /* Protects stolen freelists */
 static DEFINE_SPINLOCK(kfence_caches_lock);
-
-DEFINE_PER_CPU(struct stored_freelist[STORED_FREELISTS], stored_freelists);
-DEFINE_PER_CPU(int, num_stored_freelists);
-DEFINE_PER_CPU(struct kmem_cache *, stored_cache);
+struct stored_freelist stored_freelists[STORED_FREELISTS];
+int num_stored_freelists;
 struct kmem_cache kfence_slab_cache;
 EXPORT_SYMBOL(kfence_slab_cache);
 
@@ -59,6 +57,19 @@ struct kfence_freelist_t {
 	struct list_head list;
 	void *obj;
 };
+/*
+ * kfence_freelist_t is a wrapper around kfence page pointers that allows
+ * chaining them.
+ * @kfence_freelist is a FIFO queue of non-allocated pages, @kfence_recycle is
+ * a stack of unused kfence_freelist_t objects.
+ * When allocating a new object in guarded_alloc(), a kfence_freelist_t item is
+ * taken from the queue and its @kfence_freelist_t.obj member is used for
+ * allocation. The item is put into @kfence_recycle - at this point its contents
+ * aren't valid anymore.
+ * When freeing an object, it is wrapped into a kfence_freelist_t taken from
+ * @kfence_recycle. This kfence_freelist_t item is placed at the end of
+ * @kfence_freelist to delay the reuse of that object.
+ */
 struct kfence_freelist_t kfence_freelist, kfence_recycle;
 
 struct alloc_metadata *kfence_metadata;
@@ -87,11 +98,12 @@ static inline void kfence_disable(void)
 	WRITE_ONCE(kfence_enabled, false);
 }
 
-#define KFENCE_WARN_ON(cond) ({	\
-	bool __cond = WARN_ON(cond);	\
-	if (__cond) \
-	kfence_disable(); \
-	__cond; \
+#define KFENCE_WARN_ON(cond)                                                   \
+	({                                                                     \
+		bool __cond = WARN_ON(cond);                                   \
+		if (unlikely(__cond))                                          \
+			kfence_disable();                                      \
+		__cond;                                                        \
 	})
 
 /* TODO(glider): kernel_physical_mapping_change() is x86-only */
@@ -194,18 +206,13 @@ static bool __meminit allocate_pool(void)
 	if (!objects)
 		goto error;
 	for (i = 0; i < KFENCE_NUM_OBJ; i++) {
-		if (i == KFENCE_NUM_OBJ)
-			objects[i].list.next = NULL;
-		else
-			objects[i].list.next = &(objects[i + 1].list);
 		objects[i].obj = (void *)addr;
+		list_add_tail(&(objects[i].list), &kfence_freelist.list);
 		/* Protect the right redzone. */
 		if (!kfence_protect(addr + PAGE_SIZE))
 			goto error;
 		addr += 2 * PAGE_SIZE;
 	}
-	kfence_freelist.list.next = (void *)(&objects[0].list);
-	kfence_freelist.list.prev = (void *)(&objects[KFENCE_NUM_OBJ].list);
 
 	/* Set up metadata nodes. */
 	kfence_metadata = (struct alloc_metadata *)kmalloc_array(
@@ -245,7 +252,7 @@ void *guarded_alloc(size_t size, gfp_t gfp)
 	unsigned long flags;
 	void *obj = NULL, *ret;
 	struct kfence_freelist_t *item;
-	int index;
+	int index = -1;
 
 	if (KFENCE_WARN_ON(size > PAGE_SIZE))
 		return NULL;
@@ -255,18 +262,20 @@ void *guarded_alloc(size_t size, gfp_t gfp)
 		item = list_entry(kfence_freelist.list.next,
 				  struct kfence_freelist_t, list);
 		obj = item->obj;
-		kfence_freelist.list.next = item->list.next;
+		list_del(&(item->list));
 		list_add(&(item->list), &kfence_recycle.list);
 	}
 
 	spin_unlock_irqrestore(&kfence_alloc_lock, flags);
 	if (obj) {
 		/*
-		 * TODO: randomply place the object at the beginning/end of the
+		 * TODO: randomly place the object at the beginning/end of the
 		 * page.
 		 */
 		ret = (void *)((char *)obj + PAGE_SIZE - size);
 		index = kfence_addr_to_index((unsigned long)obj);
+		if (kfence_metadata[index].state == KFENCE_OBJECT_FREED)
+			kfence_unprotect(obj);
 		/*
 		 * Reclaiming memory when storing stacks may result in unnecessary
 		 * locking.
@@ -279,6 +288,7 @@ void *guarded_alloc(size_t size, gfp_t gfp)
 		ret = NULL;
 	}
 	pr_debug("guarded_alloc(%ld) returns %px\n", size, ret);
+	pr_debug("allocated object #%d\n", index);
 	return ret;
 }
 
@@ -293,12 +303,14 @@ void guarded_free(void *addr)
 	item = list_entry(kfence_recycle.list.next, struct kfence_freelist_t,
 			  list);
 	item->obj = aligned_addr;
-	kfence_recycle.list.next = item->list.next;
-	list_add(&(item->list), &kfence_freelist.list);
+	list_del(&(item->list));
+	list_add_tail(&(item->list), &kfence_freelist.list);
 	index = kfence_addr_to_index((unsigned long)addr);
 	kfence_metadata[index].free_stack = save_stack(GFP_KERNEL);
 	kfence_metadata[index].state = KFENCE_OBJECT_FREED;
+	kfence_protect(aligned_addr);
 	spin_unlock_irqrestore(&kfence_alloc_lock, flags);
+	pr_debug("freed object #%d\n", index);
 }
 
 static struct stored_freelist *find_freelist(struct kmem_cache *c)
@@ -306,8 +318,8 @@ static struct stored_freelist *find_freelist(struct kmem_cache *c)
 	int i;
 
 	for (i = 0; i < STORED_FREELISTS; i++) {
-		if (this_cpu_read(stored_freelists[i].cache) == c)
-			return this_cpu_ptr(&stored_freelists[i]);
+		if (stored_freelists[i].cache == c)
+			return &stored_freelists[i];
 	}
 	return NULL;
 }
@@ -330,9 +342,8 @@ void *kfence_alloc_and_fix_freelist(struct kmem_cache *s, gfp_t gfp)
 	freelist = fl->freelist;
 	ret = guarded_alloc(s->size, gfp);
 	c->freelist = freelist;
-	num_fl = this_cpu_read(num_stored_freelists);
 	fl->cache = NULL;
-	this_cpu_write(num_stored_freelists, num_fl - 1);
+	num_stored_freelists--;
 	spin_unlock_irqrestore(&kfence_caches_lock, flags);
 	pr_debug("kfence_alloc_and_fix_freelist returns %px\n", ret);
 	return ret;
@@ -393,7 +404,7 @@ static void kfence_dump_object(int obj_index)
 	kfence_print_stack(obj_index, true);
 	if (kfence_metadata[obj_index].state == KFENCE_OBJECT_FREED) {
 		pr_err("freed at:\n");
-		kfence_print_stack(obj_index, true);
+		kfence_print_stack(obj_index, false);
 	}
 }
 
@@ -402,10 +413,22 @@ static inline void kfence_report_oob(unsigned long address, int obj_index)
 	unsigned long object = kfence_index_to_addr(obj_index);
 	bool is_left = address < object;
 
+	pr_err("==================================================================\n");
 	pr_err("BUG: KFENCE: slab-out-of-bounds at address %px to the %s of object #%d\n",
 	       (void *)address, is_left ? "left" : "right", obj_index);
 	dump_stack();
 	kfence_dump_object(obj_index);
+	pr_err("==================================================================\n");
+}
+
+static inline void kfence_report_uaf(unsigned long address, int obj_index)
+{
+	pr_err("==================================================================\n");
+	pr_err("BUG: KFENCE: use-after-free at address %px on object #%d\n",
+	       (void *)address, obj_index);
+	dump_stack();
+	kfence_dump_object(obj_index);
+	pr_err("==================================================================\n");
 }
 
 bool kfence_handle_page_fault(unsigned long addr)
@@ -453,7 +476,8 @@ bool kfence_handle_page_fault(unsigned long addr)
 			return false;
 		}
 	} else {
-		/* This is a freed object, report a use-after-free. */
+		report_index = kfence_addr_to_index(addr);
+		kfence_report_uaf(addr, report_index);
 		/* TODO: do nothing for now. */
 	}
 	spin_unlock_irqrestore(&kfence_alloc_lock, flags);
@@ -473,13 +497,8 @@ static void steal_freelist(void)
 	int num_stored;
 	struct stored_freelist *fl;
 
-	num_stored = this_cpu_read(num_stored_freelists);
-	if (num_stored == STORED_FREELISTS)
-		return;
-
 	spin_lock_irqsave(&kfence_caches_lock, flags);
-	num_stored = this_cpu_read(num_stored_freelists);
-	if (num_stored == STORED_FREELISTS)
+	if (num_stored_freelists == STORED_FREELISTS)
 		goto leave;
 	fl = find_freelist(NULL);
 	/* TODO: need a random number here. */
@@ -496,8 +515,7 @@ static void steal_freelist(void)
 		goto leave;
 	fl->freelist = c->freelist;
 	fl->cache = cache;
-	this_cpu_write(num_stored_freelists, num_stored + 1);
-	this_cpu_write(stored_cache, cache);
+	num_stored_freelists++;
 	/* TODO: should locking/atomics be involved? */
 	c->freelist = 0;
 	pr_debug("stole freelist from cache %s on CPU%d!\n", cache->name,
