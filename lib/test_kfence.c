@@ -6,47 +6,60 @@
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
 
 #include <linux/delay.h>
+#include <linux/mm.h>
 #include <linux/module.h>
 #include <linux/slab.h>
+#include <linux/slab_def.h>
+
+static bool is_kfence_allocation(void *ptr)
+{
+	struct page *page = virt_to_page(ptr);
+
+	if (!page || !PageSlab(page))
+		return false;
+	if (page->slab_cache && page->slab_cache->name)
+		return !strcmp(page->slab_cache->name, "kfence_slab_cache");
+	return false;
+}
 
 #define MAX_ITER 100
-int do_test_oob(size_t size)
+static void *alloc_from_kfence(size_t size, gfp_t gfp)
 {
+	void *res;
 	int i;
-	volatile char *c;
-	void **buffers;
 
-	buffers = kmalloc_array(MAX_ITER, sizeof(void *), GFP_KERNEL);
 	for (i = 0; i < MAX_ITER; i++) {
-		buffers[i] = kmalloc(size, GFP_KERNEL);
-		c = ((char *)buffers[i]) + size + 1;
-		(void)*c;
+		res = kmalloc(size, gfp);
+		if (is_kfence_allocation(res))
+			return res;
+		kfree(res);
 		/* TODO: sleep time depends on heartbeat period. */
 		msleep(100);
 	}
-	for (i = 0; i < MAX_ITER; i++) {
-		kfree(buffers[i]);
-	}
-	kfree(buffers);
+	return NULL;
+}
+
+static int do_test_oob(size_t size)
+{
+	void *buffer;
+	char *c;
+
+	buffer = alloc_from_kfence(size, GFP_KERNEL);
+	c = ((char *)buffer) + size + 1;
+	READ_ONCE(*c);
+	kfree(buffer);
 	return 0;
 }
 
-int do_test_uaf(size_t size)
+static int do_test_uaf(size_t size)
 {
-	int i;
-	volatile char *c;
-	void **buffers;
+	void *buffer;
+	char *c;
 
-	buffers = kmalloc_array(MAX_ITER, sizeof(void *), GFP_KERNEL);
-	for (i = 0; i < MAX_ITER; i++) {
-		buffers[i] = kmalloc(size, GFP_KERNEL);
-		kfree(buffers[i]);
-		c = ((char *)buffers[i]);
-		(void)*c;
-		/* TODO: sleep time depends on heartbeat period. */
-		msleep(100);
-	}
-	kfree(buffers);
+	buffer = alloc_from_kfence(size, GFP_KERNEL);
+	c = (char *)buffer;
+	kfree(buffer);
+	READ_ONCE(*c);
 	return 0;
 }
 
