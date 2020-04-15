@@ -24,7 +24,10 @@ static const char ipr_bit[] = {
 
 static void __iomem *intc_baseaddr;
 
-#define IPR (intc_baseaddr + 6)
+#define ICSR (intc_baseaddr + 2)
+#define IER  (intc_baseaddr + 3)
+#define ISR  (intc_baseaddr + 4)
+#define IPR  (intc_baseaddr + 6)
 
 static void h8300h_disable_irq(struct irq_data *data)
 {
@@ -38,6 +41,8 @@ static void h8300h_disable_irq(struct irq_data *data)
 		else
 			ctrl_bclr(bit & 7, (IPR+1));
 	}
+	if (irq < 6)
+		ctrl_bclr(irq, IER);
 }
 
 static void h8300h_enable_irq(struct irq_data *data)
@@ -52,12 +57,24 @@ static void h8300h_enable_irq(struct irq_data *data)
 		else
 			ctrl_bset(bit & 7, (IPR+1));
 	}
+	if (irq < 6)
+		ctrl_bset(irq, IER);
+}
+
+static void h8300h_ack_irq(struct irq_data *data)
+{
+	int bit;
+	int irq = data->irq - 12;
+
+	if (irq < 6)
+		ctrl_bclr(irq, ISR);
 }
 
 struct irq_chip h8300h_irq_chip = {
 	.name		= "H8/300H-INTC",
 	.irq_enable	= h8300h_enable_irq,
 	.irq_disable	= h8300h_disable_irq,
+	.irq_eoi	= h8300h_ack_irq,
 };
 
 static int irq_map(struct irq_domain *h, unsigned int virq,
