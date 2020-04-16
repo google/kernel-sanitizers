@@ -37,7 +37,7 @@ static size_t kfence_ksize(void *object)
 {
 	return 0;
 }
-bool kfence_handle_page_fault(unsigned long address)
+static bool kfence_handle_page_fault(unsigned long address)
 {
 	return false;
 }
