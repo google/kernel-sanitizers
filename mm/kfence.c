@@ -79,7 +79,6 @@ struct alloc_metadata *kfence_metadata;
 
 u32 kfence_sampling_rate = KFENCE_DEFAULT_SAMPLING_RATE;
 
-
 static int kfence_sampling_rate_set(char *str)
 {
 	u32 value;
@@ -560,10 +559,9 @@ int alloc_kmem_cache_cpus(struct kmem_cache *s);
 
 void __init kfence_init(void)
 {
-	if (!kfence_sampling_rate) {
-		pr_info("kfence disabled. To enable, run with kfence_sampling_rate != 0\n");
+	if (!kfence_sampling_rate)
+		/* The tool is disabled. */
 		return;
-	}
 	spin_lock_init(&kfence_caches_lock);
 	spin_lock_init(&kfence_alloc_lock);
 	INIT_LIST_HEAD(&kfence_freelist.list);
