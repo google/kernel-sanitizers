@@ -288,10 +288,10 @@ void *guarded_alloc(size_t size, gfp_t gfp)
 		ret = (void *)((char *)obj + PAGE_SIZE - size);
 		index = kfence_addr_to_index((unsigned long)obj);
 		if (kfence_metadata[index].state == KFENCE_OBJECT_FREED)
-			kfence_unprotect(obj);
+			kfence_unprotect((unsigned long)obj);
 		/*
-		 * Reclaiming memory when storing stacks may result in unnecessary
-		 * locking.
+		 * Reclaiming memory when storing stacks may result in
+		 * unnecessary locking.
 		 */
 		kfence_metadata[index].alloc_stack =
 			save_stack(gfp & ~__GFP_RECLAIM);
@@ -308,14 +308,14 @@ void *guarded_alloc(size_t size, gfp_t gfp)
 void guarded_free(void *addr)
 {
 	unsigned long flags;
-	void *aligned_addr = (void *)ALIGN_DOWN((unsigned long)addr, PAGE_SIZE);
+	unsigned long aligned_addr = ALIGN_DOWN((unsigned long)addr, PAGE_SIZE);
 	struct kfence_freelist_t *item;
 	int index;
 
 	spin_lock_irqsave(&kfence_alloc_lock, flags);
 	item = list_entry(kfence_recycle.list.next, struct kfence_freelist_t,
 			  list);
-	item->obj = aligned_addr;
+	item->obj = (void *)aligned_addr;
 	list_del(&(item->list));
 	list_add_tail(&(item->list), &kfence_freelist.list);
 	index = kfence_addr_to_index((unsigned long)addr);
@@ -342,7 +342,6 @@ void *kfence_alloc_and_fix_freelist(struct kmem_cache *s, gfp_t gfp)
 {
 	unsigned long flags;
 	struct kmem_cache_cpu *c = raw_cpu_ptr(s->cpu_slab);
-	int num_fl;
 	struct stored_freelist *fl;
 	void *ret = NULL;
 	void *freelist;
@@ -508,7 +507,6 @@ static void steal_freelist(void)
 	struct kmem_cache *cache;
 	unsigned long int index;
 	unsigned long flags;
-	int num_stored;
 	struct stored_freelist *fl;
 
 	spin_lock_irqsave(&kfence_caches_lock, flags);
