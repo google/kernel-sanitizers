@@ -320,7 +320,8 @@ void guarded_free(void *addr)
 	list_del(&(item->list));
 	list_add_tail(&(item->list), &kfence_freelist.list);
 	index = kfence_addr_to_index((unsigned long)addr);
-	kfence_metadata[index].free_stack = save_stack(GFP_KERNEL);
+	/* GFP_ATOMIC to avoid reclaiming memory. */
+	kfence_metadata[index].free_stack = save_stack(GFP_ATOMIC);
 	kfence_metadata[index].state = KFENCE_OBJECT_FREED;
 	kfence_protect(aligned_addr);
 	spin_unlock_irqrestore(&kfence_alloc_lock, flags);
