@@ -38,7 +38,11 @@ struct alloc_metadata {
 static DEFINE_SPINLOCK(kfence_caches_lock);
 struct stored_freelist stored_freelists[STORED_FREELISTS];
 int num_stored_freelists;
-struct kmem_cache kfence_slab_cache;
+struct kmem_cache kfence_slab_cache = {
+	.name = "kfence_slab_cache",
+	.flags = SLAB_KFENCE,
+
+};
 EXPORT_SYMBOL(kfence_slab_cache);
 
 /*
@@ -70,9 +74,14 @@ struct kfence_freelist_t {
  * @kfence_recycle. This kfence_freelist_t item is placed at the end of
  * @kfence_freelist to delay the reuse of that object.
  */
-struct kfence_freelist_t kfence_freelist, kfence_recycle;
+static struct kfence_freelist_t kfence_freelist = {
+	.list = LIST_HEAD_INIT(kfence_freelist.list)
+};
+static struct kfence_freelist_t kfence_recycle = {
+	.list = LIST_HEAD_INIT(kfence_recycle.list)
+};
 
-struct alloc_metadata *kfence_metadata;
+static struct alloc_metadata *kfence_metadata;
 
 #define KFENCE_DEFAULT_SAMPLING_RATE 100
 #define KFENCE_STACK_DEPTH 64
@@ -561,12 +570,7 @@ void __init kfence_init(void)
 		/* The tool is disabled. */
 		return;
 
-	INIT_LIST_HEAD(&kfence_freelist.list);
-	INIT_LIST_HEAD(&kfence_recycle.list);
-
-	kfence_slab_cache.name = "kfence_slab_cache";
 	alloc_kmem_cache_cpus(&kfence_slab_cache);
-	kfence_slab_cache.flags = SLAB_KFENCE;
 	if (allocate_pool()) {
 		WRITE_ONCE(kfence_enabled, true);
 		kfence_arm_heartbeat(&kfence_timer);
