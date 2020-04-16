@@ -4,6 +4,7 @@
 #include <asm/tlbflush.h>
 
 #include <linux/mm.h> // required by slub_def.h, should be included there.
+#include <linux/moduleparam.h>
 #include <linux/slab.h>
 #include <linux/slub_def.h>
 #include <linux/spinlock_types.h>
@@ -83,21 +84,16 @@ static struct kfence_freelist_t kfence_recycle = {
 
 static struct alloc_metadata *kfence_metadata;
 
-#define KFENCE_DEFAULT_SAMPLING_RATE 100
+#define KFENCE_DEFAULT_SAMPLE_RATE 100
 #define KFENCE_STACK_DEPTH 64
 
-u32 kfence_sampling_rate = KFENCE_DEFAULT_SAMPLING_RATE;
+static unsigned long kfence_sample_rate = KFENCE_DEFAULT_SAMPLE_RATE;
 
-static int kfence_sampling_rate_set(char *str)
-{
-	u32 value;
-
-	if (kstrtouint(str, 10, &value))
-		return 1;
-	kfence_sampling_rate = value;
-	return 1;
-}
-__setup("kfence_sampling_rate=", kfence_sampling_rate_set);
+#ifdef MODULE_PARAM_PREFIX
+#undef MODULE_PARAM_PREFIX
+#endif
+#define MODULE_PARAM_PREFIX "kfence."
+module_param_named(sample_rate, kfence_sample_rate, ulong, 0444);
 
 /* TODO: there's a similar function in KASAN already. */
 static inline depot_stack_handle_t save_stack(gfp_t flags)
@@ -547,7 +543,7 @@ leave:
 
 static void kfence_arm_heartbeat(struct timer_list *timer)
 {
-	unsigned long delay = msecs_to_jiffies(kfence_sampling_rate);
+	unsigned long delay = msecs_to_jiffies(kfence_sample_rate);
 
 	mod_timer(timer, jiffies + delay);
 }
@@ -566,7 +562,7 @@ int alloc_kmem_cache_cpus(struct kmem_cache *s);
 
 void __init kfence_init(void)
 {
-	if (!kfence_sampling_rate)
+	if (!kfence_sample_rate)
 		/* The tool is disabled. */
 		return;
 
