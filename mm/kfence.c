@@ -5,6 +5,7 @@
 
 #include <linux/mm.h> // required by slub_def.h, should be included there.
 #include <linux/moduleparam.h>
+#include <linux/random.h>
 #include <linux/slab.h>
 #include <linux/slub_def.h>
 #include <linux/spinlock_types.h>
@@ -271,6 +272,7 @@ void *guarded_alloc(size_t size, gfp_t gfp)
 	void *obj = NULL, *ret;
 	struct kfence_freelist_t *item;
 	int index = -1;
+	bool right = get_random_int() % 2;
 
 	if (KFENCE_WARN_ON(size > PAGE_SIZE))
 		return NULL;
@@ -286,11 +288,10 @@ void *guarded_alloc(size_t size, gfp_t gfp)
 
 	spin_unlock_irqrestore(&kfence_alloc_lock, flags);
 	if (obj) {
-		/*
-		 * TODO: randomly place the object at the beginning/end of the
-		 * page.
-		 */
-		ret = (void *)((char *)obj + PAGE_SIZE - size);
+		if (right)
+			ret = (void *)((char *)obj + PAGE_SIZE - size);
+		else
+			ret = obj;
 		index = kfence_addr_to_index((unsigned long)obj);
 		if (kfence_metadata[index].state == KFENCE_OBJECT_FREED)
 			kfence_unprotect((unsigned long)obj);
@@ -300,7 +301,7 @@ void *guarded_alloc(size_t size, gfp_t gfp)
 		 */
 		kfence_metadata[index].alloc_stack =
 			save_stack(gfp & ~__GFP_RECLAIM);
-		kfence_metadata[index].size = -size;
+		kfence_metadata[index].size = right ? -size : size;
 		kfence_metadata[index].state = KFENCE_OBJECT_ALLOCATED;
 	} else {
 		ret = NULL;
@@ -388,8 +389,17 @@ bool kfence_free(struct kmem_cache *s, struct page *page, void *head,
 
 size_t kfence_ksize(void *object)
 {
-	char *upper = (void *)ALIGN((unsigned long)object, PAGE_SIZE);
-	return upper - (char *)object;
+	unsigned long flags;
+	size_t ret;
+	int obj_index = kfence_addr_to_index((unsigned long)object);
+
+	if (obj_index == -1)
+		return 0;
+
+	spin_lock_irqsave(&kfence_alloc_lock, flags);
+	ret = abs(kfence_metadata[obj_index].size);
+	spin_unlock_irqrestore(&kfence_alloc_lock, flags);
+	return ret;
 }
 
 static void kfence_print_stack(int obj_index, bool is_alloc)
@@ -506,11 +516,20 @@ bool kfence_handle_page_fault(unsigned long addr)
 	return kfence_unprotect(addr);
 }
 
+static struct kmem_cache *kfence_pick_cache(void)
+{
+	int index = get_random_int() %
+			    (KMALLOC_SHIFT_HIGH - 2 - KMALLOC_SHIFT_LOW) +
+		    KMALLOC_SHIFT_LOW;
+	struct kmem_cache *cache = kmalloc_caches[0][index];
+
+	return cache;
+}
+
 static void steal_freelist(void)
 {
 	struct kmem_cache_cpu *c;
 	struct kmem_cache *cache;
-	unsigned long int index;
 	unsigned long flags;
 	struct stored_freelist *fl;
 
@@ -518,11 +537,7 @@ static void steal_freelist(void)
 	if (num_stored_freelists == STORED_FREELISTS)
 		goto leave;
 	fl = find_freelist(NULL);
-	/* TODO: need a random number here. */
-	index = (jiffies / 13) % (KMALLOC_SHIFT_HIGH - 2 - KMALLOC_SHIFT_LOW) +
-		KMALLOC_SHIFT_LOW;
-
-	cache = kmalloc_caches[0][index];
+	cache = kfence_pick_cache();
 	if (KFENCE_WARN_ON(!cache))
 		goto leave;
 	if (find_freelist(cache))
