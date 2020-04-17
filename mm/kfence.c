@@ -4,6 +4,7 @@
 #include <asm/tlbflush.h>
 
 #include <linux/mm.h> // required by slub_def.h, should be included there.
+#include <linux/moduleparam.h>
 #include <linux/slab.h>
 #include <linux/slub_def.h>
 #include <linux/spinlock_types.h>
@@ -38,7 +39,11 @@ struct alloc_metadata {
 static DEFINE_SPINLOCK(kfence_caches_lock);
 struct stored_freelist stored_freelists[STORED_FREELISTS];
 int num_stored_freelists;
-struct kmem_cache kfence_slab_cache;
+struct kmem_cache kfence_slab_cache = {
+	.name = "kfence_slab_cache",
+	.flags = SLAB_KFENCE,
+
+};
 EXPORT_SYMBOL(kfence_slab_cache);
 
 /*
@@ -70,25 +75,25 @@ struct kfence_freelist_t {
  * @kfence_recycle. This kfence_freelist_t item is placed at the end of
  * @kfence_freelist to delay the reuse of that object.
  */
-struct kfence_freelist_t kfence_freelist, kfence_recycle;
+static struct kfence_freelist_t kfence_freelist = {
+	.list = LIST_HEAD_INIT(kfence_freelist.list)
+};
+static struct kfence_freelist_t kfence_recycle = {
+	.list = LIST_HEAD_INIT(kfence_recycle.list)
+};
 
-struct alloc_metadata *kfence_metadata;
+static struct alloc_metadata *kfence_metadata;
 
-#define KFENCE_DEFAULT_SAMPLING_RATE 100
+#define KFENCE_DEFAULT_SAMPLE_RATE 100
 #define KFENCE_STACK_DEPTH 64
 
-u32 kfence_sampling_rate = KFENCE_DEFAULT_SAMPLING_RATE;
+static unsigned long kfence_sample_rate = KFENCE_DEFAULT_SAMPLE_RATE;
 
-static int kfence_sampling_rate_set(char *str)
-{
-	u32 value;
-
-	if (kstrtouint(str, 10, &value))
-		return 1;
-	kfence_sampling_rate = value;
-	return 1;
-}
-__setup("kfence_sampling_rate=", kfence_sampling_rate_set);
+#ifdef MODULE_PARAM_PREFIX
+#undef MODULE_PARAM_PREFIX
+#endif
+#define MODULE_PARAM_PREFIX "kfence."
+module_param_named(sample_rate, kfence_sample_rate, ulong, 0444);
 
 /* TODO: there's a similar function in KASAN already. */
 static inline depot_stack_handle_t save_stack(gfp_t flags)
@@ -538,7 +543,7 @@ leave:
 
 static void kfence_arm_heartbeat(struct timer_list *timer)
 {
-	unsigned long delay = msecs_to_jiffies(kfence_sampling_rate);
+	unsigned long delay = msecs_to_jiffies(kfence_sample_rate);
 
 	mod_timer(timer, jiffies + delay);
 }
@@ -557,17 +562,11 @@ int alloc_kmem_cache_cpus(struct kmem_cache *s);
 
 void __init kfence_init(void)
 {
-	if (!kfence_sampling_rate)
+	if (!kfence_sample_rate)
 		/* The tool is disabled. */
 		return;
-	spin_lock_init(&kfence_caches_lock);
-	spin_lock_init(&kfence_alloc_lock);
-	INIT_LIST_HEAD(&kfence_freelist.list);
-	INIT_LIST_HEAD(&kfence_recycle.list);
-	memset(&kfence_slab_cache, 0, sizeof(struct kmem_cache));
-	kfence_slab_cache.name = "kfence_slab_cache";
+
 	alloc_kmem_cache_cpus(&kfence_slab_cache);
-	kfence_slab_cache.flags = SLAB_KFENCE;
 	if (allocate_pool()) {
 		WRITE_ONCE(kfence_enabled, true);
 		kfence_arm_heartbeat(&kfence_timer);
