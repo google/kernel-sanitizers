@@ -272,7 +272,7 @@ void *guarded_alloc(size_t size, gfp_t gfp)
 	void *obj = NULL, *ret;
 	struct kfence_freelist_t *item;
 	int index = -1;
-	bool right = get_random_int() % 2;
+	bool right = prandom_u32_max(2);
 
 	if (KFENCE_WARN_ON(size > PAGE_SIZE))
 		return NULL;
@@ -518,9 +518,9 @@ bool kfence_handle_page_fault(unsigned long addr)
 
 static struct kmem_cache *kfence_pick_cache(void)
 {
-	int index = get_random_int() %
-			    (KMALLOC_SHIFT_HIGH - 2 - KMALLOC_SHIFT_LOW) +
-		    KMALLOC_SHIFT_LOW;
+	int index =
+		prandom_u32_max(KMALLOC_SHIFT_HIGH - 2 - KMALLOC_SHIFT_LOW) +
+		KMALLOC_SHIFT_LOW;
 	struct kmem_cache *cache = kmalloc_caches[0][index];
 
 	return cache;
