@@ -17,11 +17,24 @@ bool kfence_enabled;
 static void kfence_heartbeat(struct timer_list *timer);
 static DEFINE_TIMER(kfence_timer, kfence_heartbeat);
 
-#define STORED_FREELISTS 8
+/*
+ * TODO: need to return a freelist back to the cache if it hasn't been used for
+ * a while, otherwise we may quickly run out of pages.
+ */
+#define STORED_FREELISTS 64
 struct stored_freelist {
 	struct kmem_cache *cache;
 	void *freelist;
 };
+
+#define KFENCE_MAX_CACHES 256
+/*
+ * Currently there is less than 100 caches in the running kernel that we need
+ * to track. Caches are stored in an array, so that a random cache can be
+ * quickly picked.
+ */
+struct kmem_cache *kfence_registered_caches[KFENCE_MAX_CACHES];
+int kfence_num_caches;
 
 enum kfence_object_state {
 	KFENCE_OBJECT_UNUSED,
@@ -31,6 +44,7 @@ enum kfence_object_state {
 
 struct alloc_metadata {
 	depot_stack_handle_t alloc_stack, free_stack;
+	struct kmem_cache *cache;
 	/* >0: left alignment, <0: right alignment. */
 	int size;
 	enum kfence_object_state state;
@@ -266,13 +280,14 @@ static inline unsigned long kfence_index_to_addr(int index)
 		return ret + PAGE_SIZE + size;
 }
 
-void *guarded_alloc(size_t size, gfp_t gfp)
+void *guarded_alloc(struct kmem_cache *cache, gfp_t gfp)
 {
 	unsigned long flags;
 	void *obj = NULL, *ret;
 	struct kfence_freelist_t *item;
 	int index = -1;
 	bool right = prandom_u32_max(2);
+	size_t size = cache->size;
 
 	if (KFENCE_WARN_ON(size > PAGE_SIZE))
 		return NULL;
@@ -301,6 +316,7 @@ void *guarded_alloc(size_t size, gfp_t gfp)
 		 */
 		kfence_metadata[index].alloc_stack =
 			save_stack(gfp & ~__GFP_RECLAIM);
+		kfence_metadata[index].cache = cache;
 		kfence_metadata[index].size = right ? -size : size;
 		kfence_metadata[index].state = KFENCE_OBJECT_ALLOCATED;
 	} else {
@@ -344,6 +360,17 @@ static struct stored_freelist *find_freelist(struct kmem_cache *c)
 	return NULL;
 }
 
+static int find_cache(struct kmem_cache *c)
+{
+	int i;
+
+	for (i = 0; i < KFENCE_MAX_CACHES; i++) {
+		if (kfence_registered_caches[i] == c)
+			return i;
+	}
+	return -1;
+}
+
 void *kfence_alloc_and_fix_freelist(struct kmem_cache *s, gfp_t gfp)
 {
 	unsigned long flags;
@@ -359,7 +386,7 @@ void *kfence_alloc_and_fix_freelist(struct kmem_cache *s, gfp_t gfp)
 	if (fl == NULL)
 		goto leave;
 	freelist = fl->freelist;
-	ret = guarded_alloc(s->size, gfp);
+	ret = guarded_alloc(s, gfp);
 	c->freelist = freelist;
 	fl->cache = NULL;
 	num_stored_freelists--;
@@ -516,12 +543,89 @@ bool kfence_handle_page_fault(unsigned long addr)
 	return kfence_unprotect(addr);
 }
 
+void kfence_cache_register(struct kmem_cache *s)
+{
+	unsigned long flags;
+	int index;
+	const char *name;
+
+	if (!s)
+		return;
+
+	if (!s->name)
+		name = "ANON";
+	else
+		name = s->name;
+
+	if (s->size > PAGE_SIZE) {
+		pr_debug("skipping cache %s because of size: %d\n", name,
+			 s->size);
+		return;
+	}
+	if (s->ctor) {
+		pr_debug("skipping cache %s because of ctor\n", name);
+		return;
+	}
+	if (s->flags & SLAB_TYPESAFE_BY_RCU) {
+		pr_debug("skipping cache %s because of RCU\n", name);
+		return;
+	}
+	pr_debug("registering cache %s\n", name);
+	spin_lock_irqsave(&kfence_caches_lock, flags);
+	if (kfence_num_caches == KFENCE_MAX_CACHES)
+		goto leave;
+	index = find_cache(s);
+	if (index == -1) {
+		kfence_registered_caches[kfence_num_caches - 1] = s;
+		kfence_num_caches++;
+	}
+leave:
+	spin_unlock_irqrestore(&kfence_caches_lock, flags);
+}
+EXPORT_SYMBOL(kfence_cache_register);
+
+/*
+ * TODO: tear down objects from the deleted cache. We may want to store a
+ * bitmask of KFENCE objects for every registered cache.
+ */
+void kfence_cache_unregister(struct kmem_cache *s)
+{
+	unsigned long flags;
+	int index;
+
+	if (!s)
+		return;
+
+	spin_lock_irqsave(&kfence_caches_lock, flags);
+	if (kfence_num_caches == 0)
+		goto leave;
+	index = find_cache(s);
+	if (index == -1)
+		goto leave;
+	if (index == kfence_num_caches - 1)
+		kfence_registered_caches[index] = NULL;
+	else
+		kfence_registered_caches[index] =
+			kfence_registered_caches[kfence_num_caches - 1];
+	kfence_num_caches--;
+leave:
+	spin_unlock_irqrestore(&kfence_caches_lock, flags);
+}
+EXPORT_SYMBOL(kfence_cache_unregister);
+
+
 static struct kmem_cache *kfence_pick_cache(void)
 {
-	int index =
-		prandom_u32_max(KMALLOC_SHIFT_HIGH - 2 - KMALLOC_SHIFT_LOW) +
-		KMALLOC_SHIFT_LOW;
-	struct kmem_cache *cache = kmalloc_caches[0][index];
+	int index;
+	struct kmem_cache *cache;
+
+	if (!kfence_num_caches)
+		return NULL;
+	index = prandom_u32_max(kfence_num_caches);
+	do {
+		cache = kfence_registered_caches[index];
+		index = (index + 1) % kfence_num_caches;
+	} while (!cache);
 
 	return cache;
 }
@@ -538,7 +642,7 @@ static void steal_freelist(void)
 		goto leave;
 	fl = find_freelist(NULL);
 	cache = kfence_pick_cache();
-	if (KFENCE_WARN_ON(!cache))
+	if (!cache)
 		goto leave;
 	if (find_freelist(cache))
 		goto leave;
