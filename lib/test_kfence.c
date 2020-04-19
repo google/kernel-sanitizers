@@ -22,7 +22,12 @@ static bool is_kfence_allocation(void *ptr)
 	return false;
 }
 
-#define MAX_ITER 100
+/*
+ * TODO: the more caches we support, the fewer is the probability of allocating
+ * an object from a particular cache. This can be fixed by a test-only hook that
+ * forces KFENCE to narrow down the set of tracked caches.
+ */
+#define MAX_ITER 500
 static void *alloc_from_kfence(size_t size, gfp_t gfp)
 {
 	void *res;
