@@ -602,9 +602,7 @@ void kfence_cache_unregister(struct kmem_cache *s)
 	index = find_cache(s);
 	if (index == -1)
 		goto leave;
-	if (index == kfence_num_caches - 1)
-		kfence_registered_caches[index] = NULL;
-	else
+	if (index != kfence_num_caches - 1)
 		kfence_registered_caches[index] =
 			kfence_registered_caches[kfence_num_caches - 1];
 	kfence_num_caches--;
