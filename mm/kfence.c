@@ -3,6 +3,7 @@
 #include <asm/pgtable.h>
 #include <asm/tlbflush.h>
 
+#include <linux/console.h>
 #include <linux/mm.h> // required by slub_def.h, should be included there.
 #include <linux/moduleparam.h>
 #include <linux/random.h>
@@ -463,17 +464,27 @@ static void kfence_dump_object(int obj_index)
 	}
 }
 
+static inline void kfence_start_report(void)
+{
+	console_lock();
+	pr_err("==================================================================\n");
+}
+
+static inline void kfence_end_report(void)
+{
+	pr_err("==================================================================\n");
+	console_unlock();
+}
+
 static inline void kfence_report_oob(unsigned long address, int obj_index)
 {
 	unsigned long object = kfence_index_to_addr(obj_index);
 	bool is_left = address < object;
 
-	pr_err("==================================================================\n");
 	pr_err("BUG: KFENCE: slab-out-of-bounds at address %px to the %s of object #%d\n",
 	       (void *)address, is_left ? "left" : "right", obj_index);
 	dump_stack();
 	kfence_dump_object(obj_index);
-	pr_err("==================================================================\n");
 }
 
 static inline void kfence_report_uaf(unsigned long address, int obj_index)
@@ -483,7 +494,6 @@ static inline void kfence_report_uaf(unsigned long address, int obj_index)
 	       (void *)address, obj_index);
 	dump_stack();
 	kfence_dump_object(obj_index);
-	pr_err("==================================================================\n");
 }
 
 bool kfence_handle_page_fault(unsigned long addr)
@@ -499,6 +509,7 @@ bool kfence_handle_page_fault(unsigned long addr)
 		return kfence_unprotect(addr);
 	}
 
+	kfence_start_report();
 	spin_lock_irqsave(&kfence_alloc_lock, flags);
 	page_index = (addr - kfence_pool_start) / PAGE_SIZE;
 	if (page_index % 2) {
@@ -528,14 +539,15 @@ bool kfence_handle_page_fault(unsigned long addr)
 			pr_err("BUG: KFENCE: wild redzone access.\n");
 			/* Let the kernel deal with it. */
 			spin_unlock_irqrestore(&kfence_alloc_lock, flags);
+			kfence_end_report();
 			return false;
 		}
 	} else {
 		report_index = kfence_addr_to_index(addr);
 		kfence_report_uaf(addr, report_index);
-		/* TODO: do nothing for now. */
 	}
 	spin_unlock_irqrestore(&kfence_alloc_lock, flags);
+	kfence_end_report();
 	/*
 	 * Let the kernel proceed.
 	 * TODO: either disable KFENCE here, or reinstate the protection later.
