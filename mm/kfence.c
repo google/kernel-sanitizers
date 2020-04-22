@@ -258,6 +258,7 @@ error:
 	return false;
 }
 
+/* Does not require kfence_alloc_lock. */
 static inline int kfence_addr_to_index(unsigned long addr)
 {
 	if ((addr < kfence_pool_start) || (addr >= kfence_pool_end))
@@ -266,9 +267,11 @@ static inline int kfence_addr_to_index(unsigned long addr)
 	return ((addr - kfence_pool_start) / PAGE_SIZE / 2) - 1;
 }
 
-static inline unsigned long kfence_index_to_addr(int index)
+/* Does not require kfence_alloc_lock. */
+static inline unsigned long kfence_obj_to_addr(struct alloc_metadata *obj,
+					       int index)
 {
-	int size = kfence_metadata[index].size;
+	int size = obj->size;
 	unsigned long ret;
 
 	if ((index < 0) || (index >= KFENCE_NUM_OBJ))
@@ -278,6 +281,14 @@ static inline unsigned long kfence_index_to_addr(int index)
 		return ret;
 	else
 		return ret + PAGE_SIZE + size;
+}
+
+/* Requires kfence_alloc_lock. */
+static inline unsigned long kfence_index_to_addr(int index)
+{
+	struct alloc_metadata *obj = &kfence_metadata[index];
+
+	return kfence_obj_to_addr(obj, index);
 }
 
 void *guarded_alloc(struct kmem_cache *cache, gfp_t gfp)
@@ -429,16 +440,16 @@ size_t kfence_ksize(void *object)
 	return ret;
 }
 
-static void kfence_print_stack(int obj_index, bool is_alloc)
+static void kfence_print_stack(struct alloc_metadata *obj, bool is_alloc)
 {
 	unsigned long *entries;
 	unsigned long nr_entries;
 	depot_stack_handle_t handle;
 
 	if (is_alloc)
-		handle = kfence_metadata[obj_index].alloc_stack;
+		handle = obj->alloc_stack;
 	else
-		handle = kfence_metadata[obj_index].free_stack;
+		handle = obj->free_stack;
 	if (handle) {
 		nr_entries = stack_depot_fetch(handle, &entries);
 		stack_trace_print(entries, nr_entries, 0);
@@ -448,48 +459,57 @@ static void kfence_print_stack(int obj_index, bool is_alloc)
 	}
 }
 
-static void kfence_dump_object(int obj_index)
+static void kfence_dump_object(int obj_index, struct alloc_metadata *obj)
 {
-	int size = abs(kfence_metadata[obj_index].size);
-	unsigned long start = kfence_index_to_addr(obj_index);
+	int size = abs(obj->size);
+	unsigned long start = kfence_obj_to_addr(obj, obj_index);
 
 	pr_err("Object #%d: starts at %px, size=%d\n", obj_index, (void *)start,
 	       size);
 	pr_err("allocated at:\n");
-	kfence_print_stack(obj_index, true);
+	kfence_print_stack(obj, true);
 	if (kfence_metadata[obj_index].state == KFENCE_OBJECT_FREED) {
 		pr_err("freed at:\n");
-		kfence_print_stack(obj_index, false);
+		kfence_print_stack(obj, false);
 	}
 }
 
-static inline void kfence_report_oob(unsigned long address, int obj_index)
+static inline void kfence_report_oob(unsigned long address, int obj_index,
+				     struct alloc_metadata *object)
 {
-	unsigned long object = kfence_index_to_addr(obj_index);
-	bool is_left = address < object;
+	bool is_left = address < kfence_obj_to_addr(object, obj_index);
 
 	pr_err("==================================================================\n");
 	pr_err("BUG: KFENCE: slab-out-of-bounds at address %px to the %s of object #%d\n",
 	       (void *)address, is_left ? "left" : "right", obj_index);
 	dump_stack();
-	kfence_dump_object(obj_index);
+	kfence_dump_object(obj_index, object);
 	pr_err("==================================================================\n");
 }
 
-static inline void kfence_report_uaf(unsigned long address, int obj_index)
+static inline void kfence_report_uaf(unsigned long address, int obj_index,
+				     struct alloc_metadata *object)
 {
 	pr_err("==================================================================\n");
 	pr_err("BUG: KFENCE: use-after-free at address %px on object #%d\n",
 	       (void *)address, obj_index);
 	dump_stack();
-	kfence_dump_object(obj_index);
+	kfence_dump_object(obj_index, object);
 	pr_err("==================================================================\n");
+}
+
+static inline void copy_obj_metadata(int index, struct alloc_metadata *obj)
+{
+	if ((index < 0) || (index >= KFENCE_NUM_OBJ))
+		memset(obj, 0, sizeof(struct alloc_metadata));
+	memcpy(obj, &kfence_metadata[index], sizeof(struct alloc_metadata));
 }
 
 bool kfence_handle_page_fault(unsigned long addr)
 {
 	int page_index, obj_index, report_index = -1, dist = 0, ndist;
 	unsigned long flags;
+	struct alloc_metadata object = {};
 
 	if ((addr < kfence_pool_start) || (addr >= kfence_pool_end))
 		return false;
@@ -523,19 +543,22 @@ bool kfence_handle_page_fault(unsigned long addr)
 			}
 		}
 		if (report_index != -1) {
-			kfence_report_oob(addr, report_index);
+			copy_obj_metadata(report_index, &object);
+			spin_unlock_irqrestore(&kfence_alloc_lock, flags);
+			kfence_report_oob(addr, report_index, &object);
 		} else {
+			spin_unlock_irqrestore(&kfence_alloc_lock, flags);
 			pr_err("BUG: KFENCE: wild redzone access.\n");
 			/* Let the kernel deal with it. */
-			spin_unlock_irqrestore(&kfence_alloc_lock, flags);
 			return false;
 		}
 	} else {
 		report_index = kfence_addr_to_index(addr);
-		kfence_report_uaf(addr, report_index);
-		/* TODO: do nothing for now. */
+		copy_obj_metadata(report_index, &object);
+		spin_unlock_irqrestore(&kfence_alloc_lock, flags);
+		kfence_report_uaf(addr, report_index, &object);
 	}
-	spin_unlock_irqrestore(&kfence_alloc_lock, flags);
+
 	/*
 	 * Let the kernel proceed.
 	 * TODO: either disable KFENCE here, or reinstate the protection later.
@@ -610,7 +633,6 @@ leave:
 	spin_unlock_irqrestore(&kfence_caches_lock, flags);
 }
 EXPORT_SYMBOL(kfence_cache_unregister);
-
 
 static struct kmem_cache *kfence_pick_cache(void)
 {
