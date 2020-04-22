@@ -498,13 +498,6 @@ static inline void kfence_report_uaf(unsigned long address, int obj_index,
 	pr_err("==================================================================\n");
 }
 
-static inline void copy_obj_metadata(int index, struct alloc_metadata *obj)
-{
-	if ((index < 0) || (index >= KFENCE_NUM_OBJ))
-		memset(obj, 0, sizeof(struct alloc_metadata));
-	memcpy(obj, &kfence_metadata[index], sizeof(struct alloc_metadata));
-}
-
 bool kfence_handle_page_fault(unsigned long addr)
 {
 	int page_index, obj_index, report_index = -1, dist = 0, ndist;
@@ -543,7 +536,7 @@ bool kfence_handle_page_fault(unsigned long addr)
 			}
 		}
 		if (report_index != -1) {
-			copy_obj_metadata(report_index, &object);
+			object = kfence_metadata[report_index];
 			spin_unlock_irqrestore(&kfence_alloc_lock, flags);
 			kfence_report_oob(addr, report_index, &object);
 		} else {
@@ -554,7 +547,7 @@ bool kfence_handle_page_fault(unsigned long addr)
 		}
 	} else {
 		report_index = kfence_addr_to_index(addr);
-		copy_obj_metadata(report_index, &object);
+		object = kfence_metadata[report_index];
 		spin_unlock_irqrestore(&kfence_alloc_lock, flags);
 		kfence_report_uaf(addr, report_index, &object);
 	}
