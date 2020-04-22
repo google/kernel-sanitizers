@@ -52,7 +52,10 @@ static int do_test_oob(size_t size)
 	buffer = alloc_from_kfence(size, GFP_KERNEL);
 	if (!buffer)
 		return 1;
+	/* We will hit KFENCE redzone at one of the buffer's ends. */
 	c = ((char *)buffer) + size + 1;
+	READ_ONCE(*c);
+	c = ((char *)buffer) - 1;
 	READ_ONCE(*c);
 	kfree(buffer);
 	return 0;
