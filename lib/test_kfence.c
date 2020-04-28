@@ -23,7 +23,8 @@
  * Allocate using either kmalloc or the given memory cache till we get an object
  * from KFENCE pool or hit the maximum number of attempts.
  */
-static void *alloc_from_kfence(struct kmem_cache *s, size_t size, gfp_t gfp, const char *caller)
+static void *alloc_from_kfence(struct kmem_cache *s, size_t size, gfp_t gfp,
+			       const char *caller)
 {
 	void *res;
 	int i;
