@@ -171,9 +171,12 @@ config PTDUMP_DEBUGFS
 
 	  If in doubt, say N.
 
+config HAVE_ARCH_KFENCE
+	bool
+
 config KFENCE
 	bool "KFence: low-overhead use-after-free and buffer-overflow detector"
-	depends on !KASAN
+	depends on HAVE_ARCH_KFENCE && !KASAN
 	select STACKDEPOT
 	help
 	  KFence is low-overhead sampling-based detector for heap
