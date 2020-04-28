@@ -3,14 +3,13 @@
 #include <asm/pgtable.h>
 #include <asm/tlbflush.h>
 
-#include <linux/mm.h> // required by slub_def.h, should be included there.
 #include <linux/moduleparam.h>
 #include <linux/random.h>
-#include <linux/slab.h>
-#include <linux/slub_def.h>
 #include <linux/spinlock_types.h>
 #include <linux/stackdepot.h>
 #include <linux/timer.h>
+
+#include "slab.h"
 
 /* Usually on, unless explicitly disabled. */
 static bool kfence_enabled;
