@@ -2309,7 +2309,8 @@ config TEST_HMM
 	  If unsure, say N.
 
 config TEST_KFENCE
-	tristate "Test KFENCE"
+	tristate "Test KFence"
+	depends on KFENCE
 	help
 	  Test that KFENCE works.
 

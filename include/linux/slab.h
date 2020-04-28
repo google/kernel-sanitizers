@@ -113,10 +113,9 @@
 #endif
 
 #ifdef CONFIG_KFENCE
-#ifdef CONFIG_KASAN
-#error Conflicting definitions
-#endif
 #define SLAB_KFENCE		((slab_flags_t __force)0x08000000U)
+#else
+#define SLAB_KFENCE		0
 #endif
 
 /* The following flags affect the page allocator grouping pages by mobility */

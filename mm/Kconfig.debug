@@ -172,8 +172,12 @@ config PTDUMP_DEBUGFS
 	  If in doubt, say N.
 
 config KFENCE
-	bool "KFence"
-	#depends on DEBUG_KERNEL
+	bool "KFence: low-overhead use-after-free and buffer-overflow detector"
+	depends on !KASAN
 	select STACKDEPOT
-	---help---
-	  Nothing here
+	help
+	  KFence is low-overhead sampling-based detector for heap
+	  use-after-free and buffer-overflow errors. KFence is designed to have
+	  negligible cost to permit enabling it in production environments.
+
+	  See <file:Documentation/vm/kfence.rst> for more details.

@@ -1,4 +1,4 @@
-/* KFENCE implementation */
+// SPDX-License-Identifier: GPL-2.0
 
 #include <asm/pgtable.h>
 #include <asm/tlbflush.h>
@@ -13,7 +13,7 @@
 #include <linux/timer.h>
 
 /* Usually on, unless explicitly disabled. */
-bool kfence_enabled;
+static bool kfence_enabled;
 static void kfence_heartbeat(struct timer_list *timer);
 static DEFINE_TIMER(kfence_timer, kfence_heartbeat);
 
@@ -439,7 +439,7 @@ bool kfence_free(struct kmem_cache *s, struct page *page, void *head,
 	return true;
 }
 
-size_t kfence_ksize(void *object)
+size_t kfence_ksize(const void *object)
 {
 	unsigned long flags;
 	size_t ret;
