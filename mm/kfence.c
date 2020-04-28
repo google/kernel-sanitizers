@@ -225,6 +225,11 @@ static bool __meminit allocate_pool(void)
 		if (i && !(i % 2)) {
 			__SetPageSlab(&pages[i]);
 			pages[i].slab_cache = &kfence_slab_cache;
+			/*
+			 * Do not add KFENCE pages to slab cache partial lists,
+			 * they will just mess up the accounting.
+			 */
+			pages[i].frozen = 1;
 		}
 	}
 	addr = kfence_pool_start;
@@ -382,25 +387,34 @@ static int find_cache(struct kmem_cache *c)
 	return -1;
 }
 
+/* Requires kfence_caches_lock. */
+bool kfence_fix_freelist(struct kmem_cache *s)
+{
+	struct kmem_cache_cpu *c = raw_cpu_ptr(s->cpu_slab);
+	struct stored_freelist *fl;
+	void *freelist;
+
+	fl = find_freelist(s);
+	if (fl == NULL)
+		return false;
+	freelist = fl->freelist;
+	c->freelist = freelist;
+	fl->cache = NULL;
+	num_stored_freelists--;
+	return true;
+}
+
 void *kfence_alloc_and_fix_freelist(struct kmem_cache *s, gfp_t gfp)
 {
 	unsigned long flags;
-	struct kmem_cache_cpu *c = raw_cpu_ptr(s->cpu_slab);
-	struct stored_freelist *fl;
 	void *ret = NULL;
-	void *freelist;
 
 	if (!READ_ONCE(kfence_enabled))
 		return NULL;
 	spin_lock_irqsave(&kfence_caches_lock, flags);
-	fl = find_freelist(s);
-	if (fl == NULL)
+	if (!kfence_fix_freelist(s))
 		goto leave;
-	freelist = fl->freelist;
 	ret = guarded_alloc(s, gfp);
-	c->freelist = freelist;
-	fl->cache = NULL;
-	num_stored_freelists--;
 	spin_unlock_irqrestore(&kfence_caches_lock, flags);
 	pr_debug("kfence_alloc_and_fix_freelist returns %px\n", ret);
 	return ret;
@@ -600,10 +614,14 @@ leave:
 }
 EXPORT_SYMBOL(kfence_cache_register);
 
-/*
- * TODO: tear down objects from the deleted cache. We may want to store a
- * bitmask of KFENCE objects for every registered cache.
- */
+bool kfence_discard_slab(struct kmem_cache *s, struct page *page)
+{
+	if (page->slab_cache != &kfence_slab_cache)
+		return false;
+	/* Nothing here for now, but maybe we need to free the objects. */
+	return true;
+}
+
 void kfence_cache_unregister(struct kmem_cache *s)
 {
 	unsigned long flags;
@@ -618,6 +636,7 @@ void kfence_cache_unregister(struct kmem_cache *s)
 	index = find_cache(s);
 	if (index == -1)
 		goto leave;
+	kfence_fix_freelist(s);
 	if (index != kfence_num_caches - 1)
 		kfence_registered_caches[index] =
 			kfence_registered_caches[kfence_num_caches - 1];
