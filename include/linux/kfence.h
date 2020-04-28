@@ -1,4 +1,6 @@
-// KFENCE api
+/* SPDX-License-Identifier: GPL-2.0 */
+#ifndef _LINUX_KFENCE_H
+#define _LINUX_KFENCE_H
 
 #include <linux/types.h>
 
@@ -21,44 +23,23 @@ void kfence_cache_unregister(struct kmem_cache *s);
 
 bool kfence_discard_slab(struct kmem_cache *s, struct page *page);
 
-size_t kfence_ksize(void *object);
+size_t kfence_ksize(const void *object);
 
 bool kfence_handle_page_fault(unsigned long address);
 
-#else
-static inline void kfence_init(void)
-{
-}
-static inline void *kfence_alloc_and_fix_freelist(struct kmem_cache *s)
-{
-	return NULL;
-}
+#else /* CONFIG_KFENCE */
+
+static inline void kfence_init(void) { }
+static inline void *kfence_alloc_and_fix_freelist(struct kmem_cache *s) { return NULL; }
 static inline bool kfence_free(struct kmem_cache *s, struct page *page,
 			       void *head, void *tail, int cnt,
-			       unsigned long addr)
-{
-	return false;
-}
+			       unsigned long addr) { return false; }
+static inline void kfence_cache_register(struct kmem_cache *s)   { }
+static inline void kfence_cache_unregister(struct kmem_cache *s) { }
+static inline bool kfence_discard_slab(struct kmem_cache *s, struct page *page) { return false; }
+static inline size_t kfence_ksize(const void *object) { return 0; }
+static inline bool kfence_handle_page_fault(unsigned long address) { return false; }
 
-static void kfence_cache_register(struct kmem_cache *s)
-{
-}
+#endif /* CONFIG_KFENCE */
 
-static void kfence_cache_unregister(struct kmem_cache *s)
-{
-}
-
-bool kfence_discard_slab(struct kmem_cache *s, struct page *page)
-{
-	return false;
-}
-
-static size_t kfence_ksize(void *object)
-{
-	return 0;
-}
-static bool kfence_handle_page_fault(unsigned long address)
-{
-	return false;
-}
-#endif
+#endif /* _LINUX_KFENCE_H */
