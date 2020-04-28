@@ -19,6 +19,8 @@ void kfence_cache_register(struct kmem_cache *s);
 
 void kfence_cache_unregister(struct kmem_cache *s);
 
+bool kfence_discard_slab(struct kmem_cache *s, struct page *page);
+
 size_t kfence_ksize(void *object);
 
 bool kfence_handle_page_fault(unsigned long address);
@@ -44,6 +46,11 @@ static void kfence_cache_register(struct kmem_cache *s)
 
 static void kfence_cache_unregister(struct kmem_cache *s)
 {
+}
+
+bool kfence_discard_slab(struct kmem_cache *s, struct page *page)
+{
+	return false;
 }
 
 static size_t kfence_ksize(void *object)
