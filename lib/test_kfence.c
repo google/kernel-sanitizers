@@ -10,7 +10,11 @@
 #include <linux/mm.h>
 #include <linux/module.h>
 #include <linux/slab.h>
-#include <linux/slab_def.h>
+/*
+ * For struct kmem_cache. We cannot include <linux/sl[au]b_def.h>, because it
+ * does not define struct memcg_cache_params used by kmem_cache.
+ */
+#include "../mm/slab.h"
 
 /*
  * TODO: the more caches we support, the fewer is the probability of allocating
