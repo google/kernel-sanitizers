@@ -27,13 +27,13 @@ static bool is_kfence_allocation(void *ptr)
  * an object from a particular cache. This can be fixed by a test-only hook that
  * forces KFENCE to narrow down the set of tracked caches.
  */
-#define MAX_ITER 1000
+#define MAX_ITER 2000
 
 /*
  * Allocate using either kmalloc or the given memory cache till we get an object
  * from KFENCE pool or hit the maximum number of attempts.
  */
-static void *alloc_from_kfence(struct kmem_cache *s, size_t size, gfp_t gfp)
+static void *alloc_from_kfence(struct kmem_cache *s, size_t size, gfp_t gfp, const char *caller)
 {
 	void *res;
 	int i;
@@ -52,6 +52,7 @@ static void *alloc_from_kfence(struct kmem_cache *s, size_t size, gfp_t gfp)
 		/* TODO: sleep time depends on heartbeat period. */
 		msleep(100);
 	}
+	pr_err("alloc_from_kfence() failed in %s\n", caller);
 	return NULL;
 }
 
@@ -60,7 +61,7 @@ static int do_test_oob(size_t size)
 	void *buffer;
 	char *c;
 
-	buffer = alloc_from_kfence(NULL, size, GFP_KERNEL);
+	buffer = alloc_from_kfence(NULL, size, GFP_KERNEL, __func__);
 	if (!buffer)
 		return 1;
 	/* We will hit KFENCE redzone at one of the buffer's ends. */
@@ -77,7 +78,7 @@ static int do_test_uaf(size_t size)
 	void *buffer;
 	char *c;
 
-	buffer = alloc_from_kfence(NULL, size, GFP_KERNEL);
+	buffer = alloc_from_kfence(NULL, size, GFP_KERNEL, __func__);
 	if (!buffer)
 		return 1;
 	c = (char *)buffer;
@@ -99,7 +100,7 @@ static int do_test_shrink(int size)
 	 * work.
 	 */
 	c = kmem_cache_create("test_cache", size, 1, SLAB_NOLEAKTRACE, NULL);
-	buffer = alloc_from_kfence(NULL, size, GFP_KERNEL);
+	buffer = alloc_from_kfence(NULL, size, GFP_KERNEL, __func__);
 	if (!buffer)
 		return 1;
 	kmem_cache_shrink(c);
