@@ -14,8 +14,6 @@
 
 /* Usually on, unless explicitly disabled. */
 static bool kfence_enabled;
-static void kfence_heartbeat(struct timer_list *timer);
-static DEFINE_TIMER(kfence_timer, kfence_heartbeat);
 
 /*
  * TODO: need to return a freelist back to the cache if it hasn't been used for
@@ -693,21 +691,17 @@ leave:
 	spin_unlock_irqrestore(&kfence_caches_lock, flags);
 }
 
-static void kfence_arm_heartbeat(struct timer_list *timer)
+static void kfence_heartbeat(struct timer_list *timer)
 {
 	unsigned long delay = msecs_to_jiffies(kfence_sample_rate);
 
-	mod_timer(timer, jiffies + delay);
-}
-
-static void kfence_heartbeat(struct timer_list *timer)
-{
 	if (!READ_ONCE(kfence_enabled))
 		return;
 
 	steal_freelist();
-	kfence_arm_heartbeat(timer);
+	mod_timer(timer, jiffies + delay);
 }
+static DEFINE_TIMER(kfence_timer, kfence_heartbeat);
 
 /* TODO: make this function part of SLAB API. */
 int alloc_kmem_cache_cpus(struct kmem_cache *s);
@@ -721,7 +715,7 @@ void __init kfence_init(void)
 	alloc_kmem_cache_cpus(&kfence_slab_cache);
 	if (allocate_pool()) {
 		WRITE_ONCE(kfence_enabled, true);
-		kfence_arm_heartbeat(&kfence_timer);
+		mod_timer(&kfence_timer, jiffies + 1);
 		pr_info("kfence_init done\n");
 	} else {
 		pr_err("kfence_init failed\n");
