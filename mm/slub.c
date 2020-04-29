@@ -2913,10 +2913,8 @@ static void __slab_free(struct kmem_cache *s, struct page *page,
 
 	stat(s, FREE_SLOWPATH);
 
-#ifdef CONFIG_KFENCE
 	if (kfence_free(s, page, head, tail, cnt, addr))
 		return;
-#endif
 
 	if (kmem_cache_debug(s) &&
 	    !free_debug_processing(s, page, head, tail, cnt, addr))
