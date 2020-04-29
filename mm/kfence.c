@@ -52,13 +52,11 @@ struct alloc_metadata {
 static DEFINE_SPINLOCK(kfence_caches_lock);
 static struct stored_freelist stored_freelists[STORED_FREELISTS];
 static int num_stored_freelists;
-struct kmem_cache kfence_slab_cache = {
+static struct kmem_cache kfence_slab_cache = {
 	.name = "kfence_slab_cache",
 	.flags = SLAB_KFENCE,
 
 };
-/* TODO: why is this exported? */
-EXPORT_SYMBOL(kfence_slab_cache);
 
 /*
  * It's handy (but not strictly required) that 255 objects with redzones occupy
@@ -693,13 +691,11 @@ leave:
 
 static void kfence_heartbeat(struct timer_list *timer)
 {
-	unsigned long delay = msecs_to_jiffies(kfence_sample_rate);
-
 	if (!READ_ONCE(kfence_enabled))
 		return;
 
 	steal_freelist();
-	mod_timer(timer, jiffies + delay);
+	mod_timer(timer, jiffies + msecs_to_jiffies(kfence_sample_rate));
 }
 static DEFINE_TIMER(kfence_timer, kfence_heartbeat);
 
@@ -721,4 +717,3 @@ void __init kfence_init(void)
 		pr_err("kfence_init failed\n");
 	}
 }
-EXPORT_SYMBOL(kfence_init);
