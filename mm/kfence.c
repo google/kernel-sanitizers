@@ -566,6 +566,7 @@ void kfence_cache_register(struct kmem_cache *s)
 	unsigned long flags;
 	int index;
 	const char *name;
+	struct kmem_cache *root;
 
 	if (!s)
 		return;
@@ -574,6 +575,21 @@ void kfence_cache_register(struct kmem_cache *s)
 		name = "ANON";
 	else
 		name = s->name;
+
+#ifdef CONFIG_MEMCG
+	/*
+	 * There are too many memcg child caches, tracking them would require
+	 * too many resources and would reduce the probability of stealing a
+	 * freelist from an "interesting" cache.
+	 * See kfence_observe_memcg_cache() for details about memcg cache
+	 * handling.
+	 */
+	root = s->memcg_params.root_cache;
+	if (root) {
+		pr_debug("skipping memcg cache %s\n", s->name);
+		return;
+	}
+#endif
 
 	if (s->size > PAGE_SIZE) {
 		pr_debug("skipping cache %s because of size: %d\n", name,
@@ -650,25 +666,20 @@ static struct kmem_cache *kfence_pick_cache(void)
 	return cache;
 }
 
-static void steal_freelist(void)
+/* Requires kfence_caches_lock. */
+static void kfence_steal_freelist(struct kmem_cache *cache)
 {
-	struct kmem_cache_cpu *c;
-	struct kmem_cache *cache;
-	unsigned long flags;
 	struct stored_freelist *fl;
+	struct kmem_cache_cpu *c;
 
-	spin_lock_irqsave(&kfence_caches_lock, flags);
 	if (num_stored_freelists == STORED_FREELISTS)
-		goto leave;
-	fl = find_freelist(NULL);
-	cache = kfence_pick_cache();
-	if (!cache)
-		goto leave;
+		return;
 	if (find_freelist(cache))
-		goto leave;
+		return;
+	fl = find_freelist(NULL);
 	c = raw_cpu_ptr(cache->cpu_slab);
 	if (KFENCE_WARN_ON(!c))
-		goto leave;
+		return;
 	fl->freelist = c->freelist;
 	fl->cache = cache;
 	num_stored_freelists++;
@@ -676,6 +687,60 @@ static void steal_freelist(void)
 	c->freelist = 0;
 	pr_debug("stole freelist from cache %s on CPU%d!\n", cache->name,
 		 smp_processor_id());
+}
+
+#ifdef CONFIG_MEMCG
+/*
+ * Tracking all caches created by memory cgroups may be hard, as there are lots
+ * of them. Instead, we only track root (non-memcg) caches. If an allocation is
+ * done from a memcg cache, we check if we stole the freelist from its root. In
+ * that case we restore the freelist of the root cache and steal the freelist of
+ * the memcg cache.
+ *
+ * TODO: this function is called for every memcg allocation, need to speed it
+ * up. Memcg allocations aren't popular in the kernel though.
+ * */
+void kfence_observe_memcg_cache(struct kmem_cache *memcg_cache)
+{
+	unsigned long flags;
+	struct kmem_cache *root;
+	char *name;
+
+	if (!memcg_cache)
+		return;
+
+	if (memcg_cache->name)
+		name = memcg_cache->name;
+	else
+		name = "ANON";
+
+	root = memcg_cache->memcg_params.root_cache;
+
+	if (!root)
+		/* This is not a valid memcg child cache. */
+		return;
+
+	spin_lock_irqsave(&kfence_caches_lock, flags);
+	if (kfence_fix_freelist(root)) {
+		kfence_steal_freelist(memcg_cache);
+		pr_debug("stole freelist from memcg cache %s\n",
+			 memcg_cache->name);
+	}
+	spin_unlock_irqrestore(&kfence_caches_lock, flags);
+}
+EXPORT_SYMBOL(kfence_observe_memcg_cache);
+#endif
+
+static void steal_random_freelist(void)
+{
+	struct kmem_cache *cache;
+	unsigned long flags;
+
+	spin_lock_irqsave(&kfence_caches_lock, flags);
+	cache = kfence_pick_cache();
+	if (!cache)
+		goto leave;
+	kfence_steal_freelist(cache);
 leave:
 	spin_unlock_irqrestore(&kfence_caches_lock, flags);
 }
@@ -685,7 +750,7 @@ static void kfence_heartbeat(struct timer_list *timer)
 	if (!READ_ONCE(kfence_enabled))
 		return;
 
-	steal_freelist();
+	steal_random_freelist();
 	mod_timer(timer, jiffies + msecs_to_jiffies(kfence_sample_rate));
 }
 static DEFINE_TIMER(kfence_timer, kfence_heartbeat);
