@@ -2564,11 +2564,9 @@ static void *___slab_alloc(struct kmem_cache *s, gfp_t gfpflags, int node,
 	struct page *page;
 	void *ret;
 
-#ifdef CONFIG_KFENCE
 	ret = kfence_alloc_and_fix_freelist(s, gfpflags);
 	if (ret)
 		return ret;
-#endif
 
 	page = c->page;
 	if (!page) {
@@ -2877,10 +2875,8 @@ static void __slab_free(struct kmem_cache *s, struct page *page,
 
 	stat(s, FREE_SLOWPATH);
 
-#ifdef CONFIG_KFENCE
 	if (kfence_free(s, page, head, tail, cnt, addr))
 		return;
-#endif
 
 	if (kmem_cache_debug(s) &&
 	    !free_debug_processing(s, page, head, tail, cnt, addr))
@@ -3981,11 +3977,8 @@ size_t __ksize(const void *object)
 	if (unlikely(!PageSlab(page))) {
 		WARN_ON(!PageCompound(page));
 		return page_size(page);
-	}
-#ifdef CONFIG_KFENCE
-	if (page->slab_cache->flags & SLAB_KFENCE)
+	} else if (unlikely(page->slab_cache->flags & SLAB_KFENCE))
 		return kfence_ksize(object);
-#endif
 
 	return slab_ksize(page->slab_cache);
 }

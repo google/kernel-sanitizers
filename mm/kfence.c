@@ -1,4 +1,4 @@
-/* KFENCE implementation */
+// SPDX-License-Identifier: GPL-2.0
 
 #include <asm/pgtable.h>
 #include <asm/tlbflush.h>
@@ -13,9 +13,7 @@
 #include <linux/timer.h>
 
 /* Usually on, unless explicitly disabled. */
-bool kfence_enabled;
-static void kfence_heartbeat(struct timer_list *timer);
-static DEFINE_TIMER(kfence_timer, kfence_heartbeat);
+static bool kfence_enabled;
 
 /*
  * TODO: need to return a freelist back to the cache if it hasn't been used for
@@ -33,8 +31,8 @@ struct stored_freelist {
  * to track. Caches are stored in an array, so that a random cache can be
  * quickly picked.
  */
-struct kmem_cache *kfence_registered_caches[KFENCE_MAX_CACHES];
-int kfence_num_caches;
+static struct kmem_cache *kfence_registered_caches[KFENCE_MAX_CACHES];
+static int kfence_num_caches;
 
 enum kfence_object_state {
 	KFENCE_OBJECT_UNUSED,
@@ -52,14 +50,13 @@ struct alloc_metadata {
 
 /* Protects stolen freelists */
 static DEFINE_SPINLOCK(kfence_caches_lock);
-struct stored_freelist stored_freelists[STORED_FREELISTS];
-int num_stored_freelists;
-struct kmem_cache kfence_slab_cache = {
+static struct stored_freelist stored_freelists[STORED_FREELISTS];
+static int num_stored_freelists;
+static struct kmem_cache kfence_slab_cache = {
 	.name = "kfence_slab_cache",
 	.flags = SLAB_KFENCE,
 
 };
-EXPORT_SYMBOL(kfence_slab_cache);
 
 /*
  * It's handy (but not strictly required) that 255 objects with redzones occupy
@@ -68,32 +65,32 @@ EXPORT_SYMBOL(kfence_slab_cache);
 #define KFENCE_NUM_OBJ_LOG 8
 #define KFENCE_NUM_OBJ ((1 << KFENCE_NUM_OBJ_LOG) - 1)
 
-unsigned long kfence_pool_start, kfence_pool_end;
+static unsigned long kfence_pool_start, kfence_pool_end;
 
 /* Protects kfence_freelist, kfence_recycle, kfence_metadata */
 static DEFINE_SPINLOCK(kfence_alloc_lock);
 
-struct kfence_freelist_t {
+struct kfence_freelist {
 	struct list_head list;
 	void *obj;
 };
 /*
- * kfence_freelist_t is a wrapper around kfence page pointers that allows
+ * kfence_freelist is a wrapper around kfence page pointers that allows
  * chaining them.
  * @kfence_freelist is a FIFO queue of non-allocated pages, @kfence_recycle is
- * a stack of unused kfence_freelist_t objects.
- * When allocating a new object in guarded_alloc(), a kfence_freelist_t item is
- * taken from the queue and its @kfence_freelist_t.obj member is used for
+ * a stack of unused kfence_freelist objects.
+ * When allocating a new object in guarded_alloc(), a kfence_freelist item is
+ * taken from the queue and its @kfence_freelist.obj member is used for
  * allocation. The item is put into @kfence_recycle - at this point its contents
  * aren't valid anymore.
- * When freeing an object, it is wrapped into a kfence_freelist_t taken from
- * @kfence_recycle. This kfence_freelist_t item is placed at the end of
+ * When freeing an object, it is wrapped into a kfence_freelist taken from
+ * @kfence_recycle. This kfence_freelist item is placed at the end of
  * @kfence_freelist to delay the reuse of that object.
  */
-static struct kfence_freelist_t kfence_freelist = {
+static struct kfence_freelist kfence_freelist = {
 	.list = LIST_HEAD_INIT(kfence_freelist.list)
 };
-static struct kfence_freelist_t kfence_recycle = {
+static struct kfence_freelist kfence_recycle = {
 	.list = LIST_HEAD_INIT(kfence_recycle.list)
 };
 
@@ -125,7 +122,7 @@ static inline depot_stack_handle_t save_stack(gfp_t flags)
 	return stack_depot_save(entries, nr_entries, flags);
 }
 
-static inline void kfence_disable(void)
+static noinline void kfence_disable(void)
 {
 	pr_err("Disabling KFENCE\n");
 	WRITE_ONCE(kfence_enabled, false);
@@ -202,7 +199,7 @@ static inline bool kfence_unprotect(unsigned long addr)
 static bool __meminit allocate_pool(void)
 {
 	struct page *pages = NULL;
-	struct kfence_freelist_t *objects = NULL;
+	struct kfence_freelist *objects = NULL;
 	unsigned long addr;
 	int i;
 	gfp_t gfp_flags = GFP_KERNEL | __GFP_ZERO;
@@ -239,8 +236,8 @@ static bool __meminit allocate_pool(void)
 	if (!kfence_protect(addr))
 		goto error;
 	addr += PAGE_SIZE;
-	objects = (struct kfence_freelist_t *)kmalloc_array(
-		KFENCE_NUM_OBJ, sizeof(struct kfence_freelist_t), gfp_flags);
+	objects = (struct kfence_freelist *)kmalloc_array(
+		KFENCE_NUM_OBJ, sizeof(struct kfence_freelist), gfp_flags);
 	if (!objects)
 		goto error;
 	for (i = 0; i < KFENCE_NUM_OBJ; i++) {
@@ -300,7 +297,7 @@ void *guarded_alloc(struct kmem_cache *cache, gfp_t gfp)
 {
 	unsigned long flags;
 	void *obj = NULL, *ret;
-	struct kfence_freelist_t *item;
+	struct kfence_freelist *item;
 	int index = -1;
 	bool right = prandom_u32_max(2);
 	size_t size = cache->size;
@@ -311,7 +308,7 @@ void *guarded_alloc(struct kmem_cache *cache, gfp_t gfp)
 
 	if (!list_empty(&kfence_freelist.list)) {
 		item = list_entry(kfence_freelist.list.next,
-				  struct kfence_freelist_t, list);
+				  struct kfence_freelist, list);
 		obj = item->obj;
 		list_del(&(item->list));
 		list_add(&(item->list), &kfence_recycle.list);
@@ -347,11 +344,11 @@ void guarded_free(void *addr)
 {
 	unsigned long flags;
 	unsigned long aligned_addr = ALIGN_DOWN((unsigned long)addr, PAGE_SIZE);
-	struct kfence_freelist_t *item;
+	struct kfence_freelist *item;
 	int index;
 
 	spin_lock_irqsave(&kfence_alloc_lock, flags);
-	item = list_entry(kfence_recycle.list.next, struct kfence_freelist_t,
+	item = list_entry(kfence_recycle.list.next, struct kfence_freelist,
 			  list);
 	item->obj = (void *)aligned_addr;
 	list_del(&(item->list));
@@ -439,7 +436,7 @@ bool kfence_free(struct kmem_cache *s, struct page *page, void *head,
 	return true;
 }
 
-size_t kfence_ksize(void *object)
+size_t kfence_ksize(const void *object)
 {
 	unsigned long flags;
 	size_t ret;
@@ -692,21 +689,15 @@ leave:
 	spin_unlock_irqrestore(&kfence_caches_lock, flags);
 }
 
-static void kfence_arm_heartbeat(struct timer_list *timer)
-{
-	unsigned long delay = msecs_to_jiffies(kfence_sample_rate);
-
-	mod_timer(timer, jiffies + delay);
-}
-
 static void kfence_heartbeat(struct timer_list *timer)
 {
 	if (!READ_ONCE(kfence_enabled))
 		return;
 
 	steal_freelist();
-	kfence_arm_heartbeat(timer);
+	mod_timer(timer, jiffies + msecs_to_jiffies(kfence_sample_rate));
 }
+static DEFINE_TIMER(kfence_timer, kfence_heartbeat);
 
 /* TODO: make this function part of SLAB API. */
 int alloc_kmem_cache_cpus(struct kmem_cache *s);
@@ -720,10 +711,9 @@ void __init kfence_init(void)
 	alloc_kmem_cache_cpus(&kfence_slab_cache);
 	if (allocate_pool()) {
 		WRITE_ONCE(kfence_enabled, true);
-		kfence_arm_heartbeat(&kfence_timer);
+		mod_timer(&kfence_timer, jiffies + 1);
 		pr_info("kfence_init done\n");
 	} else {
 		pr_err("kfence_init failed\n");
 	}
 }
-EXPORT_SYMBOL(kfence_init);
