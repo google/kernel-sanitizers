@@ -113,6 +113,7 @@
 #endif
 
 #ifdef CONFIG_KFENCE
+/* Reuse same value as KASAN (KFence and KASAN cannot be enabled together). */
 #define SLAB_KFENCE		((slab_flags_t __force)0x08000000U)
 #else
 #define SLAB_KFENCE		0

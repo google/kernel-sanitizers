@@ -184,3 +184,8 @@ config KFENCE
 	  negligible cost to permit enabling it in production environments.
 
 	  See <file:Documentation/vm/kfence.rst> for more details.
+
+	  Note that, KFence is not a substitute for explicit testing with tools
+	  such as KASAN. KFence can detect a subset of bugs that KASAN can
+	  detect (therefore enabling KFence together with KASAN does not make
+	  sense), albeit at very different performance profiles.
