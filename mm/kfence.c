@@ -427,7 +427,7 @@ bool kfence_free(struct kmem_cache *s, struct page *page, void *head,
 {
 	void *aligned_head = (void *)ALIGN_DOWN((unsigned long)head, PAGE_SIZE);
 
-	if (!is_kfence_ptr(head))
+	if (!is_kfence_ptr((unsigned long)head))
 		return false;
 	if (KFENCE_WARN_ON(head != tail))
 		return false;
@@ -620,7 +620,7 @@ EXPORT_SYMBOL(kfence_cache_register);
 
 bool kfence_discard_slab(struct kmem_cache *s, struct page *page)
 {
-	if (!is_kfence_ptr(page_address(page)))
+	if (!is_kfence_ptr((unsigned long)page_address(page)))
 		return false;
 	/* Nothing here for now, but maybe we need to free the objects. */
 	return true;
@@ -710,7 +710,7 @@ void kfence_observe_memcg_cache(struct kmem_cache *memcg_cache)
 		return;
 
 	if (memcg_cache->name)
-		name = memcg_cache->name;
+		name = (char *)memcg_cache->name;
 	else
 		name = "ANON";
 
