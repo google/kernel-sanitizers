@@ -90,7 +90,7 @@ static int do_test_shrink(int size)
 	 * work.
 	 */
 	c = kmem_cache_create("test_cache", size, 1, SLAB_NOLEAKTRACE, NULL);
-	buffer = alloc_from_kfence(NULL, size, GFP_KERNEL, __func__);
+	buffer = alloc_from_kfence(c, size, GFP_KERNEL, __func__);
 	if (!buffer)
 		return 1;
 	kmem_cache_shrink(c);
