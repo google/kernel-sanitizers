@@ -462,6 +462,7 @@ static void kfence_dump_object(int obj_index, struct alloc_metadata *obj)
 {
 	int size = abs(obj->size);
 	unsigned long start = kfence_obj_to_addr(obj, obj_index);
+	struct kmem_cache *cache;
 
 	pr_err("Object #%d: starts at %px, size=%d\n", obj_index, (void *)start,
 	       size);
@@ -471,6 +472,9 @@ static void kfence_dump_object(int obj_index, struct alloc_metadata *obj)
 		pr_err("freed at:\n");
 		kfence_print_stack(obj, false);
 	}
+	if ((cache = kfence_metadata[obj_index].cache) && cache->name)
+		pr_err("Object #%d belongs to cache %s\n", obj_index,
+		       cache->name);
 }
 
 static inline void kfence_report_oob(unsigned long address, int obj_index,
