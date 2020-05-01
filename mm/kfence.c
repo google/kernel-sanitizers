@@ -428,7 +428,7 @@ bool kfence_free(struct kmem_cache *s, struct page *page, void *head,
 {
 	void *aligned_head = (void *)ALIGN_DOWN((unsigned long)head, PAGE_SIZE);
 
-	if (!is_kfence_ptr(addr))
+	if (!is_kfence_ptr(head))
 		return false;
 	if (KFENCE_WARN_ON(head != tail))
 		return false;
