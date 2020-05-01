@@ -52,11 +52,6 @@ struct alloc_metadata {
 static DEFINE_SPINLOCK(kfence_caches_lock);
 static struct stored_freelist stored_freelists[STORED_FREELISTS];
 static int num_stored_freelists;
-static struct kmem_cache kfence_slab_cache = {
-	.name = "kfence_slab_cache",
-	.flags = SLAB_KFENCE,
-
-};
 
 /*
  * It's handy (but not strictly required) that 255 objects with redzones occupy
@@ -220,7 +215,7 @@ static bool __meminit allocate_pool(void)
 	for (i = 0; i < (2 << KFENCE_NUM_OBJ_LOG); i++) {
 		if (i && !(i % 2)) {
 			__SetPageSlab(&pages[i]);
-			pages[i].slab_cache = &kfence_slab_cache;
+			pages[i].slab_cache = NULL;
 			/*
 			 * Do not add KFENCE pages to slab cache partial lists,
 			 * they will just mess up the accounting.
@@ -306,6 +301,7 @@ void *guarded_alloc(struct kmem_cache *cache, gfp_t gfp)
 	int index = -1;
 	bool right = prandom_u32_max(2);
 	size_t size = cache->size;
+	struct page *page;
 
 	if (KFENCE_WARN_ON(size > PAGE_SIZE))
 		return NULL;
@@ -337,6 +333,8 @@ void *guarded_alloc(struct kmem_cache *cache, gfp_t gfp)
 		kfence_metadata[index].cache = cache;
 		kfence_metadata[index].size = right ? -size : size;
 		kfence_metadata[index].state = KFENCE_OBJECT_ALLOCATED;
+		page = virt_to_page(obj);
+		page->slab_cache = cache;
 	} else {
 		ret = NULL;
 	}
@@ -430,7 +428,7 @@ bool kfence_free(struct kmem_cache *s, struct page *page, void *head,
 {
 	void *aligned_head = (void *)ALIGN_DOWN((unsigned long)head, PAGE_SIZE);
 
-	if (s != &kfence_slab_cache)
+	if (!is_kfence_ptr(addr))
 		return false;
 	if (KFENCE_WARN_ON(head != tail))
 		return false;
@@ -618,7 +616,7 @@ EXPORT_SYMBOL(kfence_cache_register);
 
 bool kfence_discard_slab(struct kmem_cache *s, struct page *page)
 {
-	if (page->slab_cache != &kfence_slab_cache)
+	if (!is_kfence_ptr(page_address(page)))
 		return false;
 	/* Nothing here for now, but maybe we need to free the objects. */
 	return true;
@@ -704,16 +702,12 @@ static void kfence_heartbeat(struct timer_list *timer)
 }
 static DEFINE_TIMER(kfence_timer, kfence_heartbeat);
 
-/* TODO: make this function part of SLAB API. */
-int alloc_kmem_cache_cpus(struct kmem_cache *s);
-
 void __init kfence_init(void)
 {
 	if (!kfence_sample_rate)
 		/* The tool is disabled. */
 		return;
 
-	alloc_kmem_cache_cpus(&kfence_slab_cache);
 	if (allocate_pool()) {
 		WRITE_ONCE(kfence_enabled, true);
 		mod_timer(&kfence_timer, jiffies + 1);
