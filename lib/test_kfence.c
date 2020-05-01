@@ -6,21 +6,11 @@
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
 
 #include <linux/delay.h>
+#include <linux/kfence.h>
 #include <linux/mm.h>
 #include <linux/module.h>
 #include <linux/slab.h>
 #include <linux/slab_def.h>
-
-static bool is_kfence_allocation(void *ptr)
-{
-	struct page *page = virt_to_page(ptr);
-
-	if (!page || !PageSlab(page))
-		return false;
-	if (page->slab_cache && page->slab_cache->name)
-		return !strcmp(page->slab_cache->name, "kfence_slab_cache");
-	return false;
-}
 
 /*
  * TODO: the more caches we support, the fewer is the probability of allocating
@@ -43,7 +33,7 @@ static void *alloc_from_kfence(struct kmem_cache *s, size_t size, gfp_t gfp, con
 			res = kmalloc(size, gfp);
 		else
 			res = kmem_cache_alloc(s, gfp);
-		if (is_kfence_allocation(res))
+		if (is_kfence_ptr((unsigned long)res))
 			return res;
 		if (!s)
 			kfree(res);

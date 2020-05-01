@@ -90,9 +90,8 @@ struct kfence_freelist {
 static struct kfence_freelist kfence_freelist = {
 	.list = LIST_HEAD_INIT(kfence_freelist.list)
 };
-static struct kfence_freelist kfence_recycle = {
-	.list = LIST_HEAD_INIT(kfence_recycle.list)
-};
+static struct kfence_freelist kfence_recycle = { .list = LIST_HEAD_INIT(
+							 kfence_recycle.list) };
 
 static struct alloc_metadata *kfence_metadata;
 
@@ -260,10 +259,16 @@ error:
 	return false;
 }
 
+bool is_kfence_ptr(unsigned long addr)
+{
+	return ((addr >= kfence_pool_start) && (addr < kfence_pool_end));
+}
+EXPORT_SYMBOL(is_kfence_ptr);
+
 /* Does not require kfence_alloc_lock. */
 static inline int kfence_addr_to_index(unsigned long addr)
 {
-	if ((addr < kfence_pool_start) || (addr >= kfence_pool_end))
+	if (!is_kfence_ptr(addr))
 		return -1;
 
 	return ((addr - kfence_pool_start) / PAGE_SIZE / 2) - 1;
@@ -515,7 +520,7 @@ bool kfence_handle_page_fault(unsigned long addr)
 	unsigned long flags;
 	struct alloc_metadata object = {};
 
-	if ((addr < kfence_pool_start) || (addr >= kfence_pool_end))
+	if (!is_kfence_ptr(addr))
 		return false;
 
 	if (!READ_ONCE(kfence_enabled)) {
