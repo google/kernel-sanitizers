@@ -439,21 +439,6 @@ bool kfence_free(struct kmem_cache *s, struct page *page, void *head,
 	return true;
 }
 
-size_t kfence_ksize(const void *object)
-{
-	unsigned long flags;
-	size_t ret;
-	int obj_index = kfence_addr_to_index((unsigned long)object);
-
-	if (obj_index == -1)
-		return 0;
-
-	spin_lock_irqsave(&kfence_alloc_lock, flags);
-	ret = abs(kfence_metadata[obj_index].size);
-	spin_unlock_irqrestore(&kfence_alloc_lock, flags);
-	return ret;
-}
-
 static void kfence_print_stack(struct alloc_metadata *obj, bool is_alloc)
 {
 	unsigned long *entries;

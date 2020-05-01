@@ -4045,8 +4045,7 @@ size_t __ksize(const void *object)
 	if (unlikely(!PageSlab(page))) {
 		WARN_ON(!PageCompound(page));
 		return page_size(page);
-	} else if (unlikely(page->slab_cache->flags & SLAB_KFENCE))
-		return kfence_ksize(object);
+	}
 
 	return slab_ksize(page->slab_cache);
 }
