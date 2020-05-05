@@ -3,14 +3,13 @@
 #include <asm/pgtable.h>
 #include <asm/tlbflush.h>
 
-#include <linux/mm.h> // required by slub_def.h, should be included there.
 #include <linux/moduleparam.h>
 #include <linux/random.h>
-#include <linux/slab.h>
-#include <linux/slub_def.h>
 #include <linux/spinlock_types.h>
 #include <linux/stackdepot.h>
 #include <linux/timer.h>
+
+#include "slab.h"
 
 /* Usually on, unless explicitly disabled. */
 static bool kfence_enabled;
@@ -52,11 +51,6 @@ struct alloc_metadata {
 static DEFINE_SPINLOCK(kfence_caches_lock);
 static struct stored_freelist stored_freelists[STORED_FREELISTS];
 static int num_stored_freelists;
-static struct kmem_cache kfence_slab_cache = {
-	.name = "kfence_slab_cache",
-	.flags = SLAB_KFENCE,
-
-};
 
 /*
  * It's handy (but not strictly required) that 255 objects with redzones occupy
@@ -90,9 +84,8 @@ struct kfence_freelist {
 static struct kfence_freelist kfence_freelist = {
 	.list = LIST_HEAD_INIT(kfence_freelist.list)
 };
-static struct kfence_freelist kfence_recycle = {
-	.list = LIST_HEAD_INIT(kfence_recycle.list)
-};
+static struct kfence_freelist kfence_recycle = { .list = LIST_HEAD_INIT(
+							 kfence_recycle.list) };
 
 static struct alloc_metadata *kfence_metadata;
 
@@ -221,7 +214,6 @@ static bool __meminit allocate_pool(void)
 	for (i = 0; i < (2 << KFENCE_NUM_OBJ_LOG); i++) {
 		if (i && !(i % 2)) {
 			__SetPageSlab(&pages[i]);
-			pages[i].slab_cache = &kfence_slab_cache;
 			/*
 			 * Do not add KFENCE pages to slab cache partial lists,
 			 * they will just mess up the accounting.
@@ -260,10 +252,16 @@ error:
 	return false;
 }
 
+bool is_kfence_addr(unsigned long addr)
+{
+	return ((addr >= kfence_pool_start) && (addr < kfence_pool_end));
+}
+EXPORT_SYMBOL(is_kfence_addr);
+
 /* Does not require kfence_alloc_lock. */
 static inline int kfence_addr_to_index(unsigned long addr)
 {
-	if ((addr < kfence_pool_start) || (addr >= kfence_pool_end))
+	if (!is_kfence_addr(addr))
 		return -1;
 
 	return ((addr - kfence_pool_start) / PAGE_SIZE / 2) - 1;
@@ -301,6 +299,7 @@ void *guarded_alloc(struct kmem_cache *cache, gfp_t gfp)
 	int index = -1;
 	bool right = prandom_u32_max(2);
 	size_t size = cache->size;
+	struct page *page;
 
 	if (KFENCE_WARN_ON(size > PAGE_SIZE))
 		return NULL;
@@ -332,6 +331,8 @@ void *guarded_alloc(struct kmem_cache *cache, gfp_t gfp)
 		kfence_metadata[index].cache = cache;
 		kfence_metadata[index].size = right ? -size : size;
 		kfence_metadata[index].state = KFENCE_OBJECT_ALLOCATED;
+		page = virt_to_page(obj);
+		page->slab_cache = cache;
 	} else {
 		ret = NULL;
 	}
@@ -425,7 +426,7 @@ bool kfence_free(struct kmem_cache *s, struct page *page, void *head,
 {
 	void *aligned_head = (void *)ALIGN_DOWN((unsigned long)head, PAGE_SIZE);
 
-	if (s != &kfence_slab_cache)
+	if (!is_kfence_addr((unsigned long)head))
 		return false;
 	if (KFENCE_WARN_ON(head != tail))
 		return false;
@@ -434,21 +435,6 @@ bool kfence_free(struct kmem_cache *s, struct page *page, void *head,
 		return false;
 	guarded_free(head);
 	return true;
-}
-
-size_t kfence_ksize(const void *object)
-{
-	unsigned long flags;
-	size_t ret;
-	int obj_index = kfence_addr_to_index((unsigned long)object);
-
-	if (obj_index == -1)
-		return 0;
-
-	spin_lock_irqsave(&kfence_alloc_lock, flags);
-	ret = abs(kfence_metadata[obj_index].size);
-	spin_unlock_irqrestore(&kfence_alloc_lock, flags);
-	return ret;
 }
 
 static void kfence_print_stack(struct alloc_metadata *obj, bool is_alloc)
@@ -474,6 +460,7 @@ static void kfence_dump_object(int obj_index, struct alloc_metadata *obj)
 {
 	int size = abs(obj->size);
 	unsigned long start = kfence_obj_to_addr(obj, obj_index);
+	struct kmem_cache *cache;
 
 	pr_err("Object #%d: starts at %px, size=%d\n", obj_index, (void *)start,
 	       size);
@@ -483,6 +470,10 @@ static void kfence_dump_object(int obj_index, struct alloc_metadata *obj)
 		pr_err("freed at:\n");
 		kfence_print_stack(obj, false);
 	}
+	cache = kfence_metadata[obj_index].cache;
+	if (cache && cache->name)
+		pr_err("Object #%d belongs to cache %s\n", obj_index,
+		       cache->name);
 }
 
 static inline void kfence_report_oob(unsigned long address, int obj_index,
@@ -515,7 +506,7 @@ bool kfence_handle_page_fault(unsigned long addr)
 	unsigned long flags;
 	struct alloc_metadata object = {};
 
-	if ((addr < kfence_pool_start) || (addr >= kfence_pool_end))
+	if (!is_kfence_addr(addr))
 		return false;
 
 	if (!READ_ONCE(kfence_enabled)) {
@@ -575,6 +566,7 @@ void kfence_cache_register(struct kmem_cache *s)
 	unsigned long flags;
 	int index;
 	const char *name;
+	struct kmem_cache *root;
 
 	if (!s)
 		return;
@@ -583,6 +575,21 @@ void kfence_cache_register(struct kmem_cache *s)
 		name = "ANON";
 	else
 		name = s->name;
+
+#ifdef CONFIG_MEMCG
+	/*
+	 * There are too many memcg child caches, tracking them would require
+	 * too many resources and would reduce the probability of stealing a
+	 * freelist from an "interesting" cache.
+	 * See kfence_observe_memcg_cache() for details about memcg cache
+	 * handling.
+	 */
+	root = s->memcg_params.root_cache;
+	if (root) {
+		pr_debug("skipping memcg cache %s\n", s->name);
+		return;
+	}
+#endif
 
 	if (s->size > PAGE_SIZE) {
 		pr_debug("skipping cache %s because of size: %d\n", name,
@@ -613,7 +620,7 @@ EXPORT_SYMBOL(kfence_cache_register);
 
 bool kfence_discard_slab(struct kmem_cache *s, struct page *page)
 {
-	if (page->slab_cache != &kfence_slab_cache)
+	if (!is_kfence_addr((unsigned long)page_address(page)))
 		return false;
 	/* Nothing here for now, but maybe we need to free the objects. */
 	return true;
@@ -659,25 +666,20 @@ static struct kmem_cache *kfence_pick_cache(void)
 	return cache;
 }
 
-static void steal_freelist(void)
+/* Requires kfence_caches_lock. */
+static void kfence_steal_freelist(struct kmem_cache *cache)
 {
-	struct kmem_cache_cpu *c;
-	struct kmem_cache *cache;
-	unsigned long flags;
 	struct stored_freelist *fl;
+	struct kmem_cache_cpu *c;
 
-	spin_lock_irqsave(&kfence_caches_lock, flags);
 	if (num_stored_freelists == STORED_FREELISTS)
-		goto leave;
-	fl = find_freelist(NULL);
-	cache = kfence_pick_cache();
-	if (!cache)
-		goto leave;
+		return;
 	if (find_freelist(cache))
-		goto leave;
+		return;
+	fl = find_freelist(NULL);
 	c = raw_cpu_ptr(cache->cpu_slab);
 	if (KFENCE_WARN_ON(!c))
-		goto leave;
+		return;
 	fl->freelist = c->freelist;
 	fl->cache = cache;
 	num_stored_freelists++;
@@ -685,6 +687,60 @@ static void steal_freelist(void)
 	c->freelist = 0;
 	pr_debug("stole freelist from cache %s on CPU%d!\n", cache->name,
 		 smp_processor_id());
+}
+
+#ifdef CONFIG_MEMCG
+/*
+ * Tracking all caches created by memory cgroups may be hard, as there are lots
+ * of them. Instead, we only track root (non-memcg) caches. If an allocation is
+ * done from a memcg cache, we check if we stole the freelist from its root. In
+ * that case we restore the freelist of the root cache and steal the freelist of
+ * the memcg cache.
+ *
+ * TODO: this function is called for every memcg allocation, need to speed it
+ * up. Memcg allocations aren't popular in the kernel though.
+ * */
+void kfence_observe_memcg_cache(struct kmem_cache *memcg_cache)
+{
+	unsigned long flags;
+	struct kmem_cache *root;
+	char *name;
+
+	if (!memcg_cache)
+		return;
+
+	if (memcg_cache->name)
+		name = (char *)memcg_cache->name;
+	else
+		name = "ANON";
+
+	root = memcg_cache->memcg_params.root_cache;
+
+	if (!root)
+		/* This is not a valid memcg child cache. */
+		return;
+
+	spin_lock_irqsave(&kfence_caches_lock, flags);
+	if (kfence_fix_freelist(root)) {
+		kfence_steal_freelist(memcg_cache);
+		pr_debug("stole freelist from memcg cache %s\n",
+			 memcg_cache->name);
+	}
+	spin_unlock_irqrestore(&kfence_caches_lock, flags);
+}
+EXPORT_SYMBOL(kfence_observe_memcg_cache);
+#endif
+
+static void steal_random_freelist(void)
+{
+	struct kmem_cache *cache;
+	unsigned long flags;
+
+	spin_lock_irqsave(&kfence_caches_lock, flags);
+	cache = kfence_pick_cache();
+	if (!cache)
+		goto leave;
+	kfence_steal_freelist(cache);
 leave:
 	spin_unlock_irqrestore(&kfence_caches_lock, flags);
 }
@@ -694,13 +750,10 @@ static void kfence_heartbeat(struct timer_list *timer)
 	if (!READ_ONCE(kfence_enabled))
 		return;
 
-	steal_freelist();
+	steal_random_freelist();
 	mod_timer(timer, jiffies + msecs_to_jiffies(kfence_sample_rate));
 }
 static DEFINE_TIMER(kfence_timer, kfence_heartbeat);
-
-/* TODO: make this function part of SLAB API. */
-int alloc_kmem_cache_cpus(struct kmem_cache *s);
 
 void __init kfence_init(void)
 {
@@ -708,7 +761,6 @@ void __init kfence_init(void)
 		/* The tool is disabled. */
 		return;
 
-	alloc_kmem_cache_cpus(&kfence_slab_cache);
 	if (allocate_pool()) {
 		WRITE_ONCE(kfence_enabled, true);
 		mod_timer(&kfence_timer, jiffies + 1);

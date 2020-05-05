@@ -106,6 +106,7 @@ struct memcg_cache_params {
 #include <linux/memcontrol.h>
 #include <linux/fault-inject.h>
 #include <linux/kasan.h>
+#include <linux/kfence.h>
 #include <linux/kmemleak.h>
 #include <linux/random.h>
 #include <linux/sched/mm.h>
@@ -568,8 +569,11 @@ static inline struct kmem_cache *slab_pre_alloc_hook(struct kmem_cache *s,
 		return NULL;
 
 	if (memcg_kmem_enabled() &&
-	    ((flags & __GFP_ACCOUNT) || (s->flags & SLAB_ACCOUNT)))
-		return memcg_kmem_get_cache(s);
+	    ((flags & __GFP_ACCOUNT) || (s->flags & SLAB_ACCOUNT))) {
+		struct kmem_cache *memcg_cache = memcg_kmem_get_cache(s);
+		kfence_observe_memcg_cache(memcg_cache);
+		return memcg_cache;
+	}
 
 	return s;
 }
