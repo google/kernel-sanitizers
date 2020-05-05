@@ -253,16 +253,16 @@ error:
 	return false;
 }
 
-bool is_kfence_ptr(unsigned long addr)
+bool is_kfence_addr(unsigned long addr)
 {
 	return ((addr >= kfence_pool_start) && (addr < kfence_pool_end));
 }
-EXPORT_SYMBOL(is_kfence_ptr);
+EXPORT_SYMBOL(is_kfence_addr);
 
 /* Does not require kfence_alloc_lock. */
 static inline int kfence_addr_to_index(unsigned long addr)
 {
-	if (!is_kfence_ptr(addr))
+	if (!is_kfence_addr(addr))
 		return -1;
 
 	return ((addr - kfence_pool_start) / PAGE_SIZE / 2) - 1;
@@ -427,7 +427,7 @@ bool kfence_free(struct kmem_cache *s, struct page *page, void *head,
 {
 	void *aligned_head = (void *)ALIGN_DOWN((unsigned long)head, PAGE_SIZE);
 
-	if (!is_kfence_ptr((unsigned long)head))
+	if (!is_kfence_addr((unsigned long)head))
 		return false;
 	if (KFENCE_WARN_ON(head != tail))
 		return false;
@@ -506,7 +506,7 @@ bool kfence_handle_page_fault(unsigned long addr)
 	unsigned long flags;
 	struct alloc_metadata object = {};
 
-	if (!is_kfence_ptr(addr))
+	if (!is_kfence_addr(addr))
 		return false;
 
 	if (!READ_ONCE(kfence_enabled)) {
@@ -620,7 +620,7 @@ EXPORT_SYMBOL(kfence_cache_register);
 
 bool kfence_discard_slab(struct kmem_cache *s, struct page *page)
 {
-	if (!is_kfence_ptr((unsigned long)page_address(page)))
+	if (!is_kfence_addr((unsigned long)page_address(page)))
 		return false;
 	/* Nothing here for now, but maybe we need to free the objects. */
 	return true;
