@@ -560,8 +560,6 @@ static inline size_t slab_ksize(const struct kmem_cache *s)
 static inline struct kmem_cache *slab_pre_alloc_hook(struct kmem_cache *s,
 						     gfp_t flags)
 {
-	struct kmem_cache *memcg_cache;
-
 	flags &= gfp_allowed_mask;
 
 	fs_reclaim_acquire(flags);
@@ -574,7 +572,7 @@ static inline struct kmem_cache *slab_pre_alloc_hook(struct kmem_cache *s,
 
 	if (memcg_kmem_enabled() &&
 	    ((flags & __GFP_ACCOUNT) || (s->flags & SLAB_ACCOUNT))) {
-		memcg_cache = memcg_kmem_get_cache(s);
+		struct kmem_cache *memcg_cache = memcg_kmem_get_cache(s);
 		kfence_observe_memcg_cache(memcg_cache);
 		return memcg_cache;
 	}
