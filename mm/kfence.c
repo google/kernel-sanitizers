@@ -214,7 +214,6 @@ static bool __meminit allocate_pool(void)
 	for (i = 0; i < (2 << KFENCE_NUM_OBJ_LOG); i++) {
 		if (i && !(i % 2)) {
 			__SetPageSlab(&pages[i]);
-			pages[i].slab_cache = NULL;
 			/*
 			 * Do not add KFENCE pages to slab cache partial lists,
 			 * they will just mess up the accounting.
