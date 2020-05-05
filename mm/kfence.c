@@ -470,7 +470,8 @@ static void kfence_dump_object(int obj_index, struct alloc_metadata *obj)
 		pr_err("freed at:\n");
 		kfence_print_stack(obj, false);
 	}
-	if ((cache = kfence_metadata[obj_index].cache) && cache->name)
+	cache = kfence_metadata[obj_index].cache;
+	if (cache && cache->name)
 		pr_err("Object #%d belongs to cache %s\n", obj_index,
 		       cache->name);
 }
