@@ -474,8 +474,8 @@ static int kfence_dump_object(char *buf, size_t buf_size, int obj_index,
 	len += snprintf(buf + len, buf_size - len, "allocated at:\n");
 	len += kfence_dump_stack(buf + len, buf_size - len, obj, true);
 	if (kfence_metadata[obj_index].state == KFENCE_OBJECT_FREED) {
-		len = snprintf(buf + len, buf_size - len, "freed at:\n");
-		len = kfence_dump_stack(buf + len, buf_size - len, obj, false);
+		len += snprintf(buf + len, buf_size - len, "freed at:\n");
+		len += kfence_dump_stack(buf + len, buf_size - len, obj, false);
 	}
 	cache = kfence_metadata[obj_index].cache;
 	if (cache && cache->name)
