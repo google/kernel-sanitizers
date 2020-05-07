@@ -3,8 +3,10 @@
 #include <asm/pgtable.h>
 #include <asm/tlbflush.h>
 
+#include <linux/debugfs.h>
 #include <linux/moduleparam.h>
 #include <linux/random.h>
+#include <linux/seq_file.h>
 #include <linux/spinlock_types.h>
 #include <linux/stackdepot.h>
 #include <linux/timer.h>
@@ -91,6 +93,8 @@ static struct alloc_metadata *kfence_metadata;
 
 #define KFENCE_DEFAULT_SAMPLE_RATE 100
 #define KFENCE_STACK_DEPTH 64
+/* Order of pages to be allocated when dumping a single object. */
+#define KFENCE_DUMP_ORDER 2
 
 static unsigned long kfence_sample_rate = KFENCE_DEFAULT_SAMPLE_RATE;
 
@@ -454,8 +458,8 @@ static int kfence_dump_stack(char *buf, size_t buf_size,
 		len += stack_trace_snprint(buf + len, buf_size - len, entries,
 					   nr_entries, 0);
 	} else {
-		len += snprintf(buf + len, buf_size - len, "  no %s stack.\n",
-				is_alloc ? "allocation" : "deallocation");
+		len += scnprintf(buf + len, buf_size - len, "  no %s stack.\n",
+				 is_alloc ? "allocation" : "deallocation");
 	}
 	return len;
 }
@@ -468,37 +472,36 @@ static int kfence_dump_object(char *buf, size_t buf_size, int obj_index,
 	struct kmem_cache *cache;
 	int len = 0;
 
-	len += snprintf(buf + len, buf_size - len,
-			"Object #%d: starts at %px, size=%d\n", obj_index,
-			(void *)start, size);
-	len += snprintf(buf + len, buf_size - len, "allocated at:\n");
+	len += scnprintf(buf + len, buf_size - len,
+			 "Object #%d: starts at %px, size=%d\n", obj_index,
+			 (void *)start, size);
+	len += scnprintf(buf + len, buf_size - len, "allocated at:\n");
 	len += kfence_dump_stack(buf + len, buf_size - len, obj, true);
 	if (kfence_metadata[obj_index].state == KFENCE_OBJECT_FREED) {
-		len = snprintf(buf + len, buf_size - len, "freed at:\n");
-		len = kfence_dump_stack(buf + len, buf_size - len, obj, false);
+		len += scnprintf(buf + len, buf_size - len, "freed at:\n");
+		len += kfence_dump_stack(buf + len, buf_size - len, obj, false);
 	}
 	cache = kfence_metadata[obj_index].cache;
 	if (cache && cache->name)
-		len += snprintf(buf + len, buf_size - len,
-				"Object #%d belongs to cache %s\n", obj_index,
-				cache->name);
+		len += scnprintf(buf + len, buf_size - len,
+				 "Object #%d belongs to cache %s\n", obj_index,
+				 cache->name);
 	return len;
 }
 
 static void kfence_print_object(int obj_index, struct alloc_metadata *obj)
 {
 	struct page *buf_page;
-	const int order = 2;
 	char *buf;
 
-	buf_page = alloc_pages(GFP_KERNEL | __GFP_ZERO, order);
+	buf_page = alloc_pages(GFP_KERNEL | __GFP_ZERO, KFENCE_DUMP_ORDER);
 	if (!buf_page)
 		return;
 	buf = page_address(buf_page);
-	kfence_dump_object(buf, PAGE_SIZE << order, obj_index, obj);
+	kfence_dump_object(buf, PAGE_SIZE << KFENCE_DUMP_ORDER, obj_index, obj);
 	pr_err("%s", buf);
 
-	__free_pages(buf_page, order);
+	__free_pages(buf_page, KFENCE_DUMP_ORDER);
 }
 
 static inline void kfence_report_oob(unsigned long address, int obj_index,
@@ -780,6 +783,83 @@ static void kfence_heartbeat(struct timer_list *timer)
 }
 static DEFINE_TIMER(kfence_timer, kfence_heartbeat);
 
+/*
+ * debugfs seq_file operations for /sys/kernel/debug/kfence/objects.
+ * obj_start() and obj_next() return the object index + 1, because NULL is used
+ * to stop iteration.
+ */
+static void *obj_start(struct seq_file *seq, loff_t *pos)
+{
+	if (*pos < KFENCE_NUM_OBJ)
+		return (void *)(*pos + 1);
+	return NULL;
+}
+
+static void obj_stop(struct seq_file *seq, void *v)
+{
+}
+
+static void *obj_next(struct seq_file *seq, void *v, loff_t *pos)
+{
+	++*pos;
+	if (*pos < KFENCE_NUM_OBJ)
+		return (void *)(*pos + 1);
+	return NULL;
+}
+
+static int obj_show(struct seq_file *seq, void *v)
+{
+	long index = (long)v - 1;
+	char *buf;
+	struct page *buf_page;
+	unsigned long flags;
+
+	buf_page = alloc_pages(GFP_KERNEL | __GFP_ZERO, KFENCE_DUMP_ORDER);
+	if (!buf_page)
+		return 0;
+
+	buf = page_address(buf_page);
+	spin_lock_irqsave(&kfence_caches_lock, flags);
+	kfence_dump_object(buf, PAGE_SIZE << KFENCE_DUMP_ORDER, index,
+			   &kfence_metadata[index]);
+	spin_unlock_irqrestore(&kfence_caches_lock, flags);
+	seq_printf(seq, "%s\n", buf);
+
+	__free_pages(buf_page, KFENCE_DUMP_ORDER);
+	return 0;
+}
+
+static const struct seq_operations obj_seqops = {
+	.start = obj_start,
+	.next = obj_next,
+	.stop = obj_stop,
+	.show = obj_show,
+};
+
+static int kfence_debugfs_open(struct inode *inode, struct file *file)
+{
+	return seq_open(file, &obj_seqops);
+}
+
+static const struct file_operations obj_fops = {
+	.open = kfence_debugfs_open,
+	.read = seq_read,
+	.llseek = seq_lseek,
+};
+
+/*
+ * Current debugfs structure:
+ *  /sys/kernel/debug/kfence/ - KFENCE directory;
+ *    objects - file listing all objects.
+ */
+void __init kfence_create_debugfs(void)
+{
+	struct dentry *kfence_dir;
+	kfence_dir = debugfs_create_dir("kfence", NULL);
+	debugfs_create_file_unsafe("objects", 0600, kfence_dir, NULL,
+				   &obj_fops);
+}
+
 void __init kfence_init(void)
 {
 	if (!kfence_sample_rate)
@@ -794,3 +874,5 @@ void __init kfence_init(void)
 		pr_err("kfence_init failed\n");
 	}
 }
+
+device_initcall(kfence_create_debugfs);
