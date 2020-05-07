@@ -402,7 +402,8 @@ bool kfence_fix_freelist(struct kmem_cache *s)
 		return false;
 	freelist = fl->freelist;
 	c = per_cpu_ptr(s->cpu_slab, fl->cpu);
-	c->freelist = freelist;
+	/* Nobody else is writing to c->freelist at this point. */
+	WRITE_ONCE(c->freelist, freelist);
 	fl->cache = NULL;
 	num_stored_freelists--;
 	return true;
@@ -710,12 +711,18 @@ static void kfence_steal_freelist(struct kmem_cache *cache, int cpu)
 	c = per_cpu_ptr(cache->cpu_slab, cpu);
 	if (KFENCE_WARN_ON(!c))
 		return;
-	fl->freelist = c->freelist;
+	num_stored_freelists++;
 	fl->cache = cache;
 	fl->cpu = cpu;
-	num_stored_freelists++;
-	/* TODO: should locking/atomics be involved? */
-	c->freelist = 0;
+	/*
+	 * We need to atomically read the old value from c->freelist and write
+	 * NULL to it, but SLUB may allocate from this CPU cache and replace
+	 * c->freelist in the meantime. Use cmpxchg loop to ensure fl->freelist
+	 * contains the latest value.
+	 */
+	do {
+		fl->freelist = READ_ONCE(c->freelist);
+	} while (cmpxchg(&c->freelist, fl->freelist, NULL) != fl->freelist);
 	pr_debug("stole freelist from cache %s on CPU%d!\n", cache->name, cpu);
 }
 
