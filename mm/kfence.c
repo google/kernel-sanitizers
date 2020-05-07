@@ -458,8 +458,8 @@ static int kfence_dump_stack(char *buf, size_t buf_size,
 		len += stack_trace_snprint(buf + len, buf_size - len, entries,
 					   nr_entries, 0);
 	} else {
-		len += snprintf(buf + len, buf_size - len, "  no %s stack.\n",
-				is_alloc ? "allocation" : "deallocation");
+		len += scnprintf(buf + len, buf_size - len, "  no %s stack.\n",
+				 is_alloc ? "allocation" : "deallocation");
 	}
 	return len;
 }
@@ -472,20 +472,20 @@ static int kfence_dump_object(char *buf, size_t buf_size, int obj_index,
 	struct kmem_cache *cache;
 	int len = 0;
 
-	len += snprintf(buf + len, buf_size - len,
-			"Object #%d: starts at %px, size=%d\n", obj_index,
-			(void *)start, size);
-	len += snprintf(buf + len, buf_size - len, "allocated at:\n");
+	len += scnprintf(buf + len, buf_size - len,
+			 "Object #%d: starts at %px, size=%d\n", obj_index,
+			 (void *)start, size);
+	len += scnprintf(buf + len, buf_size - len, "allocated at:\n");
 	len += kfence_dump_stack(buf + len, buf_size - len, obj, true);
 	if (kfence_metadata[obj_index].state == KFENCE_OBJECT_FREED) {
-		len += snprintf(buf + len, buf_size - len, "freed at:\n");
+		len += scnprintf(buf + len, buf_size - len, "freed at:\n");
 		len += kfence_dump_stack(buf + len, buf_size - len, obj, false);
 	}
 	cache = kfence_metadata[obj_index].cache;
 	if (cache && cache->name)
-		len += snprintf(buf + len, buf_size - len,
-				"Object #%d belongs to cache %s\n", obj_index,
-				cache->name);
+		len += scnprintf(buf + len, buf_size - len,
+				 "Object #%d belongs to cache %s\n", obj_index,
+				 cache->name);
 	return len;
 }
 
