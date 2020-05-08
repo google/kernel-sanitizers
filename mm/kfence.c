@@ -24,6 +24,7 @@ static bool kfence_enabled;
 struct stored_freelist {
 	struct kmem_cache *cache;
 	void *freelist;
+	int cpu;
 };
 
 #define KFENCE_MAX_CACHES 256
@@ -392,7 +393,7 @@ static int find_cache(struct kmem_cache *c)
 /* Requires kfence_caches_lock. */
 bool kfence_fix_freelist(struct kmem_cache *s)
 {
-	struct kmem_cache_cpu *c = raw_cpu_ptr(s->cpu_slab);
+	struct kmem_cache_cpu *c;
 	struct stored_freelist *fl;
 	void *freelist;
 
@@ -400,7 +401,9 @@ bool kfence_fix_freelist(struct kmem_cache *s)
 	if (fl == NULL)
 		return false;
 	freelist = fl->freelist;
-	c->freelist = freelist;
+	c = per_cpu_ptr(s->cpu_slab, fl->cpu);
+	/* Nobody else is writing to c->freelist at this point. */
+	WRITE_ONCE(c->freelist, freelist);
 	fl->cache = NULL;
 	num_stored_freelists--;
 	return true;
@@ -695,7 +698,7 @@ static struct kmem_cache *kfence_pick_cache(void)
 }
 
 /* Requires kfence_caches_lock. */
-static void kfence_steal_freelist(struct kmem_cache *cache)
+static void kfence_steal_freelist(struct kmem_cache *cache, int cpu)
 {
 	struct stored_freelist *fl;
 	struct kmem_cache_cpu *c;
@@ -705,16 +708,22 @@ static void kfence_steal_freelist(struct kmem_cache *cache)
 	if (find_freelist(cache))
 		return;
 	fl = find_freelist(NULL);
-	c = raw_cpu_ptr(cache->cpu_slab);
+	c = per_cpu_ptr(cache->cpu_slab, cpu);
 	if (KFENCE_WARN_ON(!c))
 		return;
-	fl->freelist = c->freelist;
-	fl->cache = cache;
 	num_stored_freelists++;
-	/* TODO: should locking/atomics be involved? */
-	c->freelist = 0;
-	pr_debug("stole freelist from cache %s on CPU%d!\n", cache->name,
-		 smp_processor_id());
+	fl->cache = cache;
+	fl->cpu = cpu;
+	/*
+	 * We need to atomically read the old value from c->freelist and write
+	 * NULL to it, but SLUB may allocate from this CPU cache and replace
+	 * c->freelist in the meantime. Use cmpxchg loop to ensure fl->freelist
+	 * contains the latest value.
+	 */
+	do {
+		fl->freelist = READ_ONCE(c->freelist);
+	} while (cmpxchg(&c->freelist, fl->freelist, NULL) != fl->freelist);
+	pr_debug("stole freelist from cache %s on CPU%d!\n", cache->name, cpu);
 }
 
 #ifdef CONFIG_MEMCG
@@ -733,6 +742,7 @@ void kfence_observe_memcg_cache(struct kmem_cache *memcg_cache)
 	unsigned long flags;
 	struct kmem_cache *root;
 	char *name;
+	int cpu = raw_smp_processor_id();
 
 	if (!memcg_cache)
 		return;
@@ -750,9 +760,9 @@ void kfence_observe_memcg_cache(struct kmem_cache *memcg_cache)
 
 	spin_lock_irqsave(&kfence_caches_lock, flags);
 	if (kfence_fix_freelist(root)) {
-		kfence_steal_freelist(memcg_cache);
-		pr_debug("stole freelist from memcg cache %s\n",
-			 memcg_cache->name);
+		kfence_steal_freelist(memcg_cache, cpu);
+		pr_debug("stole freelist from memcg cache %s on CPU%d\n",
+			 memcg_cache->name, cpu);
 	}
 	spin_unlock_irqrestore(&kfence_caches_lock, flags);
 }
@@ -762,13 +772,15 @@ EXPORT_SYMBOL(kfence_observe_memcg_cache);
 static void steal_random_freelist(void)
 {
 	struct kmem_cache *cache;
+	int cpu;
 	unsigned long flags;
 
 	spin_lock_irqsave(&kfence_caches_lock, flags);
 	cache = kfence_pick_cache();
+	cpu = prandom_u32_max(total_cpus);
 	if (!cache)
 		goto leave;
-	kfence_steal_freelist(cache);
+	kfence_steal_freelist(cache, cpu);
 leave:
 	spin_unlock_irqrestore(&kfence_caches_lock, flags);
 }
