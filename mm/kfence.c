@@ -742,7 +742,7 @@ void kfence_observe_memcg_cache(struct kmem_cache *memcg_cache)
 	unsigned long flags;
 	struct kmem_cache *root;
 	char *name;
-	int cpu = smp_processor_id();
+	int cpu = raw_smp_processor_id();
 
 	if (!memcg_cache)
 		return;
