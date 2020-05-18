@@ -35,7 +35,7 @@ void kfence_observe_memcg_cache(struct kmem_cache *memcg_cache);
 // clang-format off
 
 static inline void kfence_init(void) { }
-static inline void *kfence_alloc_and_fix_freelist(struct kmem_cache *s) { return NULL; }
+static inline void *kfence_alloc_and_fix_freelist(struct kmem_cache *s, gfp_t gfp) { return NULL; }
 static inline bool kfence_free(struct kmem_cache *s, struct page *page,
 			       void *head, void *tail, int cnt,
 			       unsigned long addr) { return false; }
