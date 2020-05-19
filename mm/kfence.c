@@ -20,7 +20,7 @@ static bool kfence_enabled;
  * TODO: need to return a freelist back to the cache if it hasn't been used for
  * a while, otherwise we may quickly run out of pages.
  */
-#define STORED_FREELISTS 64
+#define MAX_STORED_FREELISTS 256
 struct stored_freelist {
 	struct kmem_cache *cache;
 	void *freelist;
@@ -52,7 +52,7 @@ struct alloc_metadata {
 
 /* Protects stolen freelists */
 static DEFINE_SPINLOCK(kfence_caches_lock);
-static struct stored_freelist stored_freelists[STORED_FREELISTS];
+static struct stored_freelist stored_freelists[MAX_STORED_FREELISTS];
 static int num_stored_freelists;
 
 /*
@@ -372,7 +372,7 @@ static struct stored_freelist *find_freelist(struct kmem_cache *c)
 {
 	int i;
 
-	for (i = 0; i < STORED_FREELISTS; i++) {
+	for (i = 0; i < MAX_STORED_FREELISTS; i++) {
 		if (stored_freelists[i].cache == c)
 			return &stored_freelists[i];
 	}
@@ -383,7 +383,7 @@ static int find_cache(struct kmem_cache *c)
 {
 	int i;
 
-	for (i = 0; i < KFENCE_MAX_CACHES; i++) {
+	for (i = 0; i < kfence_num_caches; i++) {
 		if (kfence_registered_caches[i] == c)
 			return i;
 	}
@@ -635,15 +635,15 @@ void kfence_cache_register(struct kmem_cache *s)
 		pr_debug("skipping cache %s because of RCU\n", name);
 		return;
 	}
-	pr_debug("registering cache %s\n", name);
 	spin_lock_irqsave(&kfence_caches_lock, flags);
 	if (kfence_num_caches == KFENCE_MAX_CACHES)
 		goto leave;
 	index = find_cache(s);
 	if (index == -1) {
-		kfence_registered_caches[kfence_num_caches - 1] = s;
+		kfence_registered_caches[kfence_num_caches] = s;
 		kfence_num_caches++;
 	}
+	pr_debug("registered cache %s as #%d\n", name, kfence_num_caches - 1);
 leave:
 	spin_unlock_irqrestore(&kfence_caches_lock, flags);
 }
@@ -665,6 +665,7 @@ void kfence_cache_unregister(struct kmem_cache *s)
 	if (!s)
 		return;
 
+	pr_debug("unregistering cache %s\n", s->name);
 	spin_lock_irqsave(&kfence_caches_lock, flags);
 	if (kfence_num_caches == 0)
 		goto leave;
@@ -683,7 +684,7 @@ EXPORT_SYMBOL(kfence_cache_unregister);
 
 static struct kmem_cache *kfence_pick_cache(void)
 {
-	int index;
+	int index, wrap = kfence_num_caches;
 	struct kmem_cache *cache;
 
 	if (!kfence_num_caches)
@@ -692,7 +693,8 @@ static struct kmem_cache *kfence_pick_cache(void)
 	do {
 		cache = kfence_registered_caches[index];
 		index = (index + 1) % kfence_num_caches;
-	} while (!cache);
+		wrap--;
+	} while (!cache && wrap);
 
 	return cache;
 }
@@ -703,7 +705,7 @@ static void kfence_steal_freelist(struct kmem_cache *cache, int cpu)
 	struct stored_freelist *fl;
 	struct kmem_cache_cpu *c;
 
-	if (num_stored_freelists == STORED_FREELISTS)
+	if (num_stored_freelists == MAX_STORED_FREELISTS)
 		return;
 	if (find_freelist(cache))
 		return;
