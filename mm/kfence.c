@@ -597,7 +597,9 @@ void kfence_cache_register(struct kmem_cache *s)
 	unsigned long flags;
 	int index;
 	const char *name;
+#ifdef CONFIG_MEMCG
 	struct kmem_cache *root;
+#endif
 
 	if (!s)
 		return;
