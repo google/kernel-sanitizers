@@ -14,7 +14,7 @@
 #include <linux/timer.h>
 
 #include "kfence_core.h"
-#include "slab.h"
+#include "../slab.h"
 
 /* Usually on, unless explicitly disabled. */
 bool kfence_enabled;

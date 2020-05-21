@@ -8,7 +8,7 @@
 #include <linux/spinlock_types.h>
 
 #include "kfence_core.h"
-#include "slab.h"
+#include "../slab.h"
 
 /*
  * TODO: need to return a freelist back to the cache if it hasn't been used for
