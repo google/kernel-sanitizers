@@ -4,7 +4,7 @@
 extern bool kfence_enabled;
 extern unsigned long kfence_sample_rate;
 
-void *guarded_alloc(struct kmem_cache *cache, gfp_t gfp);
+void *guarded_alloc(struct kmem_cache *cache, size_t override_size, gfp_t gfp);
 void guarded_free(void *addr);
 void kfence_disable(void);
 bool __meminit kfence_allocate_pool(void);
