@@ -259,14 +259,14 @@ static inline unsigned long kfence_index_to_addr(int index)
 	return kfence_obj_to_addr(obj, index);
 }
 
-void *guarded_alloc(struct kmem_cache *cache, gfp_t gfp)
+void *guarded_alloc(struct kmem_cache *cache, size_t override_size, gfp_t gfp)
 {
 	unsigned long flags;
 	void *obj = NULL, *ret;
 	struct kfence_freelist *item;
 	int index = -1;
 	bool right = prandom_u32_max(2);
-	size_t size = cache->size;
+	size_t size = override_size ? override_size : cache->size;
 	struct page *page;
 
 	if (KFENCE_WARN_ON(size > PAGE_SIZE))
