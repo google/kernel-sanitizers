@@ -1454,6 +1454,13 @@ static inline bool slab_free_freelist_hook(struct kmem_cache *s,
 	void *old_tail = *tail ? *tail : *head;
 	int rsize;
 
+	/*
+	 * TODO: slab_free_freelist_hook() doesn't work with KFENCE-allocated
+	 * addresses. Need to handle them separately.
+	 */
+	if (is_kfence_addr(*head))
+		return true;
+
 	/* Head and tail of the reconstructed freelist */
 	*head = NULL;
 	*tail = NULL;
@@ -2804,7 +2811,11 @@ static __always_inline void *slab_alloc(struct kmem_cache *s,
 
 void *kmem_cache_alloc(struct kmem_cache *s, gfp_t gfpflags)
 {
-	void *ret = slab_alloc(s, gfpflags, _RET_IP_);
+	void *ret = kfence_alloc_with_size(s, 0, gfpflags);
+	if (ret)
+		return ret;
+
+	ret = slab_alloc(s, gfpflags, _RET_IP_);
 
 	trace_kmem_cache_alloc(_RET_IP_, ret, s->object_size,
 				s->size, gfpflags);
@@ -3845,6 +3856,10 @@ void *__kmalloc(size_t size, gfp_t flags)
 
 	if (unlikely(ZERO_OR_NULL_PTR(s)))
 		return s;
+
+	ret = kfence_alloc_with_size(s, size, flags);
+	if (ret)
+		return ret;
 
 	ret = slab_alloc(s, flags, _RET_IP_);
 
