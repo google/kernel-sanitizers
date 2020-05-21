@@ -62,4 +62,20 @@ static inline void kfence_observe_memcg_cache(struct kmem_cache *memcg_cache) { 
 
 #endif /* CONFIG_KFENCE_STEAL */
 
+#ifdef CONFIG_KFENCE_NAIVE
+
+void *kfence_alloc_with_size(struct kmem_cache *s, size_t size, gfp_t flags);
+
+#else
+
+// TODO: remove for v1
+// clang-format off
+
+static inline void *kfence_alloc_with_size(struct kmem_cache *s, size_t size, gfp_t flags) { return NULL; }
+
+// TODO: remove for v1
+// clang-format on
+
+#endif /* CONFIG_KFENCE_NAIVE */
+
 #endif /* _LINUX_KFENCE_H */

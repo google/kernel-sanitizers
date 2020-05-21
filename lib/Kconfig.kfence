@@ -29,4 +29,10 @@ config KFENCE_STEAL
 	help
 	  Uses a background thread to steal the freelists from kmem_caches.
 
+config KFENCE_NAIVE
+	bool "Naive implementation"
+	help
+	  Adds branches to allocation sites to call KFENCE with a certain
+	  probability.
+
 endchoice
