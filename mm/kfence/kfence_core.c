@@ -50,6 +50,9 @@ static unsigned long kfence_pool_start, kfence_pool_end;
 /* Protects kfence_freelist, kfence_recycle, kfence_metadata */
 static DEFINE_SPINLOCK(kfence_alloc_lock);
 
+#define KFENCE_DUMP_BUF_SIZE (PAGE_SIZE * 2)
+static char kfence_dump_buf[KFENCE_DUMP_BUF_SIZE];
+
 /*
  * kfence_freelist is a wrapper around kfence page pointers that allows
  * chaining them.
@@ -73,8 +76,6 @@ static struct alloc_metadata *kfence_metadata;
 
 #define KFENCE_DEFAULT_SAMPLE_RATE 100
 #define KFENCE_STACK_DEPTH 64
-/* Order of pages to be allocated when dumping a single object. */
-#define KFENCE_DUMP_ORDER 2
 
 /* TODO: there's a similar function in KASAN already. */
 static inline depot_stack_handle_t save_stack(gfp_t flags)
@@ -397,17 +398,9 @@ static int kfence_dump_object(char *buf, size_t buf_size, int obj_index,
 
 static void kfence_print_object(int obj_index, struct alloc_metadata *obj)
 {
-	struct page *buf_page;
-	char *buf;
-
-	buf_page = alloc_pages(GFP_KERNEL | __GFP_ZERO, KFENCE_DUMP_ORDER);
-	if (!buf_page)
-		return;
-	buf = page_address(buf_page);
-	kfence_dump_object(buf, PAGE_SIZE << KFENCE_DUMP_ORDER, obj_index, obj);
-	pr_err("%s", buf);
-
-	__free_pages(buf_page, KFENCE_DUMP_ORDER);
+	kfence_dump_object(kfence_dump_buf, KFENCE_DUMP_BUF_SIZE, obj_index,
+			   obj);
+	pr_err("%s", kfence_dump_buf);
 }
 
 static inline void kfence_report_oob(unsigned long address, int obj_index,
@@ -530,22 +523,13 @@ static void *obj_next(struct seq_file *seq, void *v, loff_t *pos)
 static int obj_show(struct seq_file *seq, void *v)
 {
 	long index = (long)v - 1;
-	char *buf;
-	struct page *buf_page;
 	unsigned long flags;
 
-	buf_page = alloc_pages(GFP_KERNEL | __GFP_ZERO, KFENCE_DUMP_ORDER);
-	if (!buf_page)
-		return 0;
-
-	buf = page_address(buf_page);
 	spin_lock_irqsave(&kfence_alloc_lock, flags);
-	kfence_dump_object(buf, PAGE_SIZE << KFENCE_DUMP_ORDER, index,
+	kfence_dump_object(kfence_dump_buf, KFENCE_DUMP_BUF_SIZE, index,
 			   &kfence_metadata[index]);
 	spin_unlock_irqrestore(&kfence_alloc_lock, flags);
-	seq_printf(seq, "%s\n", buf);
-
-	__free_pages(buf_page, KFENCE_DUMP_ORDER);
+	seq_printf(seq, "%s\n", kfence_dump_buf);
 	return 0;
 }
 
