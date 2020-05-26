@@ -21,7 +21,7 @@
  * an object from a particular cache. This can be fixed by a test-only hook that
  * forces KFENCE to narrow down the set of tracked caches.
  */
-#define MAX_ITER 2000
+#define MAX_DELAY_MSEC 1000
 
 /* Cache used by tests. If empty, allocate from kmalloc instead. */
 static struct kmem_cache *current_cache;
@@ -63,9 +63,10 @@ static void free_to_kfence(void *ptr)
 static void *alloc_from_kfence(size_t size, gfp_t gfp, const char *caller)
 {
 	void *res;
-	int i;
+	unsigned long stop_at;
 
-	for (i = 0; i < MAX_ITER; i++) {
+	stop_at = jiffies + msecs_to_jiffies(MAX_DELAY_MSEC);
+	do {
 		if (!current_cache)
 			res = kmalloc(size, gfp);
 		else
@@ -73,9 +74,7 @@ static void *alloc_from_kfence(size_t size, gfp_t gfp, const char *caller)
 		if (is_kfence_addr((unsigned long)res))
 			return res;
 		free_to_kfence(res);
-		/* TODO: sleep time depends on heartbeat period. */
-		msleep(100);
-	}
+	} while (jiffies < stop_at);
 	pr_err("alloc_from_kfence() failed in %s\n", caller);
 	return NULL;
 }
