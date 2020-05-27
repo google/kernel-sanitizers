@@ -139,21 +139,3 @@ config PTDUMP_DEBUGFS
 
 	  If in doubt, say N.
 
-config HAVE_ARCH_KFENCE
-	bool
-
-config KFENCE
-	bool "KFence: low-overhead use-after-free and buffer-overflow detector"
-	depends on HAVE_ARCH_KFENCE && !KASAN
-	select STACKDEPOT
-	help
-	  KFence is low-overhead sampling-based detector for heap
-	  use-after-free and buffer-overflow errors. KFence is designed to have
-	  negligible cost to permit enabling it in production environments.
-
-	  See <file:Documentation/vm/kfence.rst> for more details.
-
-	  Note that, KFence is not a substitute for explicit testing with tools
-	  such as KASAN. KFence can detect a subset of bugs that KASAN can
-	  detect (therefore enabling KFence together with KASAN does not make
-	  sense), albeit at very different performance profiles.

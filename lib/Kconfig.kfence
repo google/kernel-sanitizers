@@ -1,0 +1,38 @@
+config HAVE_ARCH_KFENCE
+	bool
+
+config KFENCE
+	bool "KFence: low-overhead use-after-free and buffer-overflow detector"
+	depends on HAVE_ARCH_KFENCE && !KASAN
+	select STACKDEPOT
+	help
+	  KFence is low-overhead sampling-based detector for heap
+	  use-after-free and buffer-overflow errors. KFence is designed to have
+	  negligible cost to permit enabling it in production environments.
+
+	  See <file:Documentation/vm/kfence.rst> for more details.
+
+	  Note that, KFence is not a substitute for explicit testing with tools
+	  such as KASAN. KFence can detect a subset of bugs that KASAN can
+	  detect (therefore enabling KFence together with KASAN does not make
+	  sense), albeit at very different performance profiles.
+
+choice
+	prompt "KFENCE sampling algorithm"
+	depends on KFENCE
+	default KFENCE_STEAL
+	help
+	  Pick one of the sampling algorithms to be used by KFENCE
+
+config KFENCE_STEAL
+	bool "Stealing implementation"
+	help
+	  Uses a background thread to steal the freelists from kmem_caches.
+
+config KFENCE_NAIVE
+	bool "Naive implementation"
+	help
+	  Adds branches to allocation sites to call KFENCE with a certain
+	  probability.
+
+endchoice
