@@ -58,8 +58,8 @@ static char kfence_dump_buf[PAGE_SIZE * 2];
  * chaining them.
  * @kfence_freelist is a FIFO queue of non-allocated pages, @kfence_recycle is
  * a stack of unused kfence_freelist objects.
- * When allocating a new object in guarded_alloc(), a kfence_freelist item is
- * taken from the queue and its @kfence_freelist.obj member is used for
+ * When allocating a new object in kfence_guarded_alloc(), a kfence_freelist
+ * item is taken from the queue and its @kfence_freelist.obj member is used for
  * allocation. The item is put into @kfence_recycle - at this point its contents
  * aren't valid anymore.
  * When freeing an object, it is wrapped into a kfence_freelist taken from
@@ -260,7 +260,8 @@ static inline unsigned long kfence_index_to_addr(int index)
 	return kfence_obj_to_addr(obj, index);
 }
 
-void *guarded_alloc(struct kmem_cache *cache, size_t override_size, gfp_t gfp)
+void *kfence_guarded_alloc(struct kmem_cache *cache, size_t override_size,
+			   gfp_t gfp)
 {
 	unsigned long flags;
 	void *obj = NULL, *ret;
@@ -305,12 +306,12 @@ void *guarded_alloc(struct kmem_cache *cache, size_t override_size, gfp_t gfp)
 	} else {
 		ret = NULL;
 	}
-	pr_debug("guarded_alloc(%ld) returns %px\n", size, ret);
+	pr_debug("kfence_guarded_alloc(%ld) returns %px\n", size, ret);
 	pr_debug("allocated object #%d\n", index);
 	return ret;
 }
 
-void guarded_free(void *addr)
+void kfence_guarded_free(void *addr)
 {
 	unsigned long flags;
 	unsigned long aligned_addr = ALIGN_DOWN((unsigned long)addr, PAGE_SIZE);
@@ -344,7 +345,7 @@ bool kfence_free(struct kmem_cache *s, struct page *page, void *head,
 	pr_debug("kfence_free(%px)\n", head);
 	if (KFENCE_WARN_ON(aligned_head != page_address(page)))
 		return false;
-	guarded_free(head);
+	kfence_guarded_free(head);
 	return true;
 }
 
