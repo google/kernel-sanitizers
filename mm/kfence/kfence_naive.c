@@ -27,7 +27,7 @@ void *kfence_alloc_with_size(struct kmem_cache *s, size_t size, gfp_t flags)
 	rnd = prandom_u32_max(kfence_sample_rate * 5000);
 	if (rnd)
 		return NULL;
-	return guarded_alloc(s, size, flags);
+	return kfence_guarded_alloc(s, size, flags);
 }
 
 void __init kfence_init(void)

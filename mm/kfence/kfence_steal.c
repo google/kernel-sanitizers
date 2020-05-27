@@ -90,7 +90,7 @@ void *kfence_alloc_and_fix_freelist(struct kmem_cache *s, gfp_t gfp)
 	 * TODO: pass correct override_size for kmalloc.
 	 * See https://github.com/google/kasan/issues/73 for details.
 	 */
-	ret = guarded_alloc(s, 0, gfp);
+	ret = kfence_guarded_alloc(s, 0, gfp);
 	spin_unlock_irqrestore(&kfence_caches_lock, flags);
 	pr_debug("kfence_alloc_and_fix_freelist returns %px\n", ret);
 	return ret;
