@@ -50,8 +50,8 @@ static unsigned long kfence_pool_start, kfence_pool_end;
 /* Protects kfence_freelist, kfence_recycle, kfence_metadata */
 static DEFINE_SPINLOCK(kfence_alloc_lock);
 
-#define KFENCE_DUMP_BUF_SIZE (PAGE_SIZE * 2)
-static char kfence_dump_buf[KFENCE_DUMP_BUF_SIZE];
+/* Size picked to accommodate the metadata of a single KFENCE object. */
+static char kfence_dump_buf[PAGE_SIZE * 2];
 
 /*
  * kfence_freelist is a wrapper around kfence page pointers that allows
@@ -398,7 +398,7 @@ static int kfence_dump_object(char *buf, size_t buf_size, int obj_index,
 
 static void kfence_print_object(int obj_index, struct alloc_metadata *obj)
 {
-	kfence_dump_object(kfence_dump_buf, KFENCE_DUMP_BUF_SIZE, obj_index,
+	kfence_dump_object(kfence_dump_buf, sizeof(kfence_dump_buf), obj_index,
 			   obj);
 	pr_err("%s", kfence_dump_buf);
 }
@@ -526,7 +526,7 @@ static int obj_show(struct seq_file *seq, void *v)
 	unsigned long flags;
 
 	spin_lock_irqsave(&kfence_alloc_lock, flags);
-	kfence_dump_object(kfence_dump_buf, KFENCE_DUMP_BUF_SIZE, index,
+	kfence_dump_object(kfence_dump_buf, sizeof(kfence_dump_buf), index,
 			   &kfence_metadata[index]);
 	spin_unlock_irqrestore(&kfence_alloc_lock, flags);
 	seq_printf(seq, "%s\n", kfence_dump_buf);
