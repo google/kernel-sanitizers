@@ -71,7 +71,7 @@ static void *alloc_from_kfence(size_t size, gfp_t gfp, const char *caller)
 			res = kmalloc(size, gfp);
 		else
 			res = kmem_cache_alloc(current_cache, gfp);
-		if (is_kfence_addr((unsigned long)res))
+		if (is_kfence_addr(res))
 			return res;
 		free_to_kfence(res);
 	} while (jiffies < stop_at);
