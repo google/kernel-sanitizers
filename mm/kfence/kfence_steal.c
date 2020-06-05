@@ -298,7 +298,7 @@ static void kfence_heartbeat(struct timer_list *timer)
 }
 static DEFINE_TIMER(kfence_timer, kfence_heartbeat);
 
-void __init kfence_impl_init(void)
+void kfence_impl_init(void)
 {
 	mod_timer(&kfence_timer, jiffies + 1);
 }
