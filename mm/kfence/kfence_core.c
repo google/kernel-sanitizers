@@ -221,16 +221,17 @@ error:
 	return false;
 }
 
-bool is_kfence_addr(unsigned long addr)
+bool is_kfence_addr(void *addr)
 {
-	return ((addr >= kfence_pool_start) && (addr < kfence_pool_end));
+	unsigned long uaddr = (unsigned long)addr;
+	return ((uaddr >= kfence_pool_start) && (uaddr < kfence_pool_end));
 }
 EXPORT_SYMBOL(is_kfence_addr);
 
 /* Does not require kfence_alloc_lock. */
 static inline int kfence_addr_to_index(unsigned long addr)
 {
-	if (!is_kfence_addr(addr))
+	if (!is_kfence_addr((void *)addr))
 		return -1;
 
 	return ((addr - kfence_pool_start) / PAGE_SIZE / 2) - 1;
@@ -338,7 +339,7 @@ bool kfence_free(struct kmem_cache *s, struct page *page, void *head,
 {
 	void *aligned_head = (void *)ALIGN_DOWN((unsigned long)head, PAGE_SIZE);
 
-	if (!is_kfence_addr((unsigned long)head))
+	if (!is_kfence_addr(head))
 		return false;
 	if (KFENCE_WARN_ON(head != tail))
 		return false;
@@ -434,7 +435,7 @@ bool kfence_handle_page_fault(unsigned long addr)
 	unsigned long flags;
 	struct alloc_metadata object = {};
 
-	if (!is_kfence_addr(addr))
+	if (!is_kfence_addr((void *)addr))
 		return false;
 
 	if (!READ_ONCE(kfence_enabled)) {
@@ -491,7 +492,7 @@ bool kfence_handle_page_fault(unsigned long addr)
 
 bool kfence_discard_slab(struct kmem_cache *s, struct page *page)
 {
-	if (!is_kfence_addr((unsigned long)page_address(page)))
+	if (!is_kfence_addr(page_address(page)))
 		return false;
 	/* Nothing here for now, but maybe we need to free the objects. */
 	return true;
@@ -574,3 +575,31 @@ unsigned long kfence_sample_rate = KFENCE_DEFAULT_SAMPLE_RATE;
 #endif
 #define MODULE_PARAM_PREFIX "kfence."
 module_param_named(sample_rate, kfence_sample_rate, ulong, 0444);
+
+/*
+ * KFENCE depends heavily on random number generation, wait for it to be
+ * ready.
+ */
+static void kfence_enable_after_random(struct random_ready_callback *unused)
+{
+	kfence_impl_init();
+	pr_info("Starting KFENCE\n");
+	WRITE_ONCE(kfence_enabled, true);
+}
+
+static struct random_ready_callback random_ready = {
+	.func = kfence_enable_after_random
+};
+
+void __init kfence_init(void)
+{
+	if (!kfence_sample_rate)
+		/* The tool is disabled. */
+		return;
+
+	if (kfence_allocate_pool()) {
+		if (add_random_ready_callback(&random_ready) == 0)
+			return;
+	}
+	pr_err("kfence_init failed\n");
+}

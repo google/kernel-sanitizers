@@ -298,17 +298,7 @@ static void kfence_heartbeat(struct timer_list *timer)
 }
 static DEFINE_TIMER(kfence_timer, kfence_heartbeat);
 
-void __init kfence_init(void)
+void kfence_impl_init(void)
 {
-	if (!kfence_sample_rate)
-		/* The tool is disabled. */
-		return;
-
-	if (kfence_allocate_pool()) {
-		WRITE_ONCE(kfence_enabled, true);
-		mod_timer(&kfence_timer, jiffies + 1);
-		pr_info("kfence_init done\n");
-	} else {
-		pr_err("kfence_init failed\n");
-	}
+	mod_timer(&kfence_timer, jiffies + 1);
 }

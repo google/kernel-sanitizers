@@ -11,35 +11,28 @@
 void *kfence_alloc_with_size(struct kmem_cache *s, size_t size, gfp_t flags)
 {
 	u32 rnd;
+	void *ret;
+	size_t actual_size = size ? size : s->size;
 
 	if (!READ_ONCE(kfence_enabled))
 		return NULL;
-	if (size > PAGE_SIZE)
+	if (actual_size > PAGE_SIZE)
 		return NULL;
-	if ((s->size > PAGE_SIZE) || s->ctor ||
-	    (s->flags & SLAB_TYPESAFE_BY_RCU))
+	if (s->ctor || (s->flags & SLAB_TYPESAFE_BY_RCU))
 		return NULL;
 
-	/*
-	 * TODO: this is an arbitrarily chosen multiplier that lets us use the
-	 * same sample rate for different KFENCE implementations.
-	 */
-	rnd = prandom_u32_max(kfence_sample_rate * 5000);
+	rnd = prandom_u32_max(kfence_sample_rate);
 	if (rnd)
 		return NULL;
-	return kfence_guarded_alloc(s, size, flags);
+	ret = kfence_guarded_alloc(s, size, flags);
+
+	/* TODO: account for init_on_alloc=1 as well. */
+	if (flags & __GFP_ZERO)
+		memset(ret, 0, actual_size);
+	return ret;
 }
 
-void __init kfence_init(void)
+void kfence_impl_init(void)
 {
-	if (!kfence_sample_rate)
-		/* The tool is disabled. */
-		return;
-
-	if (kfence_allocate_pool()) {
-		WRITE_ONCE(kfence_enabled, true);
-		pr_info("kfence_init done\n");
-	} else {
-		pr_err("kfence_init failed\n");
-	}
+	/* Nothing here. */
 }
