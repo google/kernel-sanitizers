@@ -576,6 +576,21 @@ unsigned long kfence_sample_rate = KFENCE_DEFAULT_SAMPLE_RATE;
 #define MODULE_PARAM_PREFIX "kfence."
 module_param_named(sample_rate, kfence_sample_rate, ulong, 0444);
 
+/*
+ * KFENCE depends heavily on random number generation, wait for it to be
+ * ready.
+ */
+static void kfence_enable_after_random(struct random_ready_callback *unused)
+{
+	kfence_impl_init();
+	pr_info("Starting KFENCE\n");
+	WRITE_ONCE(kfence_enabled, true);
+}
+
+static struct random_ready_callback random_ready = {
+	.func = kfence_enable_after_random
+};
+
 void __init kfence_init(void)
 {
 	if (!kfence_sample_rate)
@@ -583,10 +598,8 @@ void __init kfence_init(void)
 		return;
 
 	if (kfence_allocate_pool()) {
-		kfence_impl_init();
-		WRITE_ONCE(kfence_enabled, true);
-		pr_info("kfence_init done\n");
-		return;
+		if (add_random_ready_callback(&random_ready) == 0)
+			return;
 	}
 	pr_err("kfence_init failed\n");
 }
