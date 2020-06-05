@@ -575,3 +575,18 @@ unsigned long kfence_sample_rate = KFENCE_DEFAULT_SAMPLE_RATE;
 #endif
 #define MODULE_PARAM_PREFIX "kfence."
 module_param_named(sample_rate, kfence_sample_rate, ulong, 0444);
+
+void __init kfence_init(void)
+{
+	if (!kfence_sample_rate)
+		/* The tool is disabled. */
+		return;
+
+	if (kfence_allocate_pool()) {
+		kfence_impl_init();
+		WRITE_ONCE(kfence_enabled, true);
+		pr_info("kfence_init done\n");
+		return;
+	}
+	pr_err("kfence_init failed\n");
+}

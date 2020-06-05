@@ -10,6 +10,9 @@ void kfence_guarded_free(void *addr);
 void kfence_disable(void);
 bool __meminit kfence_allocate_pool(void);
 
+/* Should be provided by the sampling algorithm implementation. */
+void kfence_impl_init(void);
+
 #define KFENCE_WARN_ON(cond)                                                   \
 	({                                                                     \
 		bool __cond = WARN_ON(cond);                                   \
