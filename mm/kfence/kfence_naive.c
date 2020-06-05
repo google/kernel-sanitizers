@@ -20,11 +20,7 @@ void *kfence_alloc_with_size(struct kmem_cache *s, size_t size, gfp_t flags)
 	    (s->flags & SLAB_TYPESAFE_BY_RCU))
 		return NULL;
 
-	/*
-	 * TODO: this is an arbitrarily chosen multiplier that lets us use the
-	 * same sample rate for different KFENCE implementations.
-	 */
-	rnd = prandom_u32_max(kfence_sample_rate * 5000);
+	rnd = prandom_u32_max(kfence_sample_rate);
 	if (rnd)
 		return NULL;
 	return kfence_guarded_alloc(s, size, flags);
