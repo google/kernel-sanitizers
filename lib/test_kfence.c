@@ -56,14 +56,23 @@ static void free_to_kfence(void *ptr)
 		kmem_cache_free(current_cache, ptr);
 }
 
+#define SIDE_LEFT 1
+#define SIDE_RIGHT 2
+#define SIDE_BOTH (SIDE_LEFT | SIDE_RIGHT)
+
 /*
  * Allocate using either kmalloc or the currently used memory cache till we get
  * an object from KFENCE pool or hit the maximum number of attempts.
  */
-static void *alloc_from_kfence(size_t size, gfp_t gfp, const char *caller)
+static void *alloc_from_kfence(size_t size, gfp_t gfp, int side,
+			       const char *caller)
 {
 	void *res;
 	unsigned long stop_at;
+	unsigned long rem;
+
+	if (!side)
+		return NULL;
 
 	stop_at = jiffies + msecs_to_jiffies(MAX_DELAY_MSEC);
 	do {
@@ -71,8 +80,12 @@ static void *alloc_from_kfence(size_t size, gfp_t gfp, const char *caller)
 			res = kmalloc(size, gfp);
 		else
 			res = kmem_cache_alloc(current_cache, gfp);
-		if (is_kfence_addr(res))
-			return res;
+		if (is_kfence_addr(res)) {
+			rem = (unsigned long)res % PAGE_SIZE;
+			if (((side & SIDE_LEFT) && (!rem)) ||
+			    ((side & SIDE_RIGHT) && rem))
+				return res;
+		}
 		free_to_kfence(res);
 	} while (jiffies < stop_at);
 	pr_err("alloc_from_kfence() failed in %s\n", caller);
@@ -88,7 +101,7 @@ static int do_test_oob(size_t size, bool use_cache)
 	if (use_cache)
 		if (!setup_cache(size))
 			return 1;
-	buffer = alloc_from_kfence(size, GFP_KERNEL, __func__);
+	buffer = alloc_from_kfence(size, GFP_KERNEL, SIDE_BOTH, __func__);
 	if (buffer) {
 		/* We will hit KFENCE redzone at one of the buffer's ends. */
 		c = ((char *)buffer) + size + 1;
@@ -104,6 +117,40 @@ static int do_test_oob(size_t size, bool use_cache)
 	return res;
 }
 
+static int do_test_kmalloc73_oob(void)
+{
+	void *buffer;
+	char *c;
+	int res = 0;
+	const size_t size = 73;
+
+	buffer = alloc_from_kfence(size, GFP_KERNEL, SIDE_RIGHT, __func__);
+	if (buffer) {
+		/*
+		 * The object is offset to the right, so there won't be OOBs to
+		 * the left of it.
+		 */
+		c = ((char *)buffer) - 1;
+		READ_ONCE(*c);
+
+		/*
+		 * |buffer| must be aligned on 8, therefore buffer + size + 1
+		 * belongs to the same page - no immediate OOB.
+		 */
+		c = ((char *)buffer) + size + 1;
+		READ_ONCE(*c);
+
+		/* Overflowing the buffer by 8 bytes will result in an OOB. */
+		c = ((char *)buffer) + size + 8;
+		READ_ONCE(*c);
+
+		free_to_kfence(buffer);
+	} else {
+		res = 1;
+	}
+	return res;
+}
+
 static int do_test_uaf(size_t size, bool use_cache)
 {
 	void *buffer;
@@ -113,7 +160,7 @@ static int do_test_uaf(size_t size, bool use_cache)
 	if (use_cache)
 		if (!setup_cache(size))
 			return 1;
-	buffer = alloc_from_kfence(size, GFP_KERNEL, __func__);
+	buffer = alloc_from_kfence(size, GFP_KERNEL, SIDE_BOTH, __func__);
 	if (buffer) {
 		c = (char *)buffer;
 		free_to_kfence(buffer);
@@ -134,7 +181,7 @@ static int do_test_shrink(int size)
 
 	if (!setup_cache(size))
 		return 1;
-	buffer = alloc_from_kfence(size, GFP_KERNEL, __func__);
+	buffer = alloc_from_kfence(size, GFP_KERNEL, SIDE_BOTH, __func__);
 	if (buffer) {
 		kmem_cache_shrink(current_cache);
 		free_to_kfence(buffer);
@@ -151,6 +198,7 @@ static int __init test_kfence_init(void)
 
 	failures += do_test_oob(32, false);
 	failures += do_test_oob(32, true);
+	failures += do_test_kmalloc73_oob();
 	failures += do_test_uaf(32, false);
 	failures += do_test_uaf(32, true);
 	failures += do_test_shrink(32);
