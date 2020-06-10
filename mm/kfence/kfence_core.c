@@ -237,6 +237,13 @@ static inline int kfence_addr_to_index(unsigned long addr)
 	return ((addr - kfence_pool_start) / PAGE_SIZE / 2) - 1;
 }
 
+size_t kfence_ksize(const void *addr)
+{
+	if (!is_kfence_addr((void *)addr))
+		return 0;
+	return PAGE_SIZE - ((unsigned long)addr % PAGE_SIZE);
+}
+
 /* Does not require kfence_alloc_lock. */
 static inline unsigned long kfence_obj_to_addr(struct alloc_metadata *obj,
 					       int index)
@@ -290,6 +297,7 @@ void *kfence_guarded_alloc(struct kmem_cache *cache, size_t override_size,
 			ret = (void *)((char *)obj + PAGE_SIZE - size);
 		else
 			ret = obj;
+		ret = (void *)ALIGN_DOWN((unsigned long)ret, cache->align);
 		index = kfence_addr_to_index((unsigned long)obj);
 		if (kfence_metadata[index].state == KFENCE_OBJECT_FREED)
 			kfence_unprotect((unsigned long)obj);
