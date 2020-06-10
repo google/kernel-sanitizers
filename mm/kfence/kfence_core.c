@@ -290,6 +290,7 @@ void *kfence_guarded_alloc(struct kmem_cache *cache, size_t override_size,
 			ret = (void *)((char *)obj + PAGE_SIZE - size);
 		else
 			ret = obj;
+		ret = (void *)ALIGN_DOWN((unsigned long)ret, cache->align);
 		index = kfence_addr_to_index((unsigned long)obj);
 		if (kfence_metadata[index].state == KFENCE_OBJECT_FREED)
 			kfence_unprotect((unsigned long)obj);
