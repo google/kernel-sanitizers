@@ -12,11 +12,11 @@ void *kfence_alloc_with_size(struct kmem_cache *s, size_t size, gfp_t flags)
 {
 	u32 rnd;
 	void *ret;
-	size_t actual_size = size ? size : s->size;
+	unsigned long aligned_ret;
 
 	if (!READ_ONCE(kfence_enabled))
 		return NULL;
-	if (actual_size > PAGE_SIZE)
+	if ((size > PAGE_SIZE) || (s->size > PAGE_SIZE))
 		return NULL;
 	if (s->ctor || (s->flags & SLAB_TYPESAFE_BY_RCU))
 		return NULL;
@@ -27,8 +27,10 @@ void *kfence_alloc_with_size(struct kmem_cache *s, size_t size, gfp_t flags)
 	ret = kfence_guarded_alloc(s, size, flags);
 
 	/* TODO: account for init_on_alloc=1 as well. */
-	if (flags & __GFP_ZERO)
-		memset(ret, 0, actual_size);
+	if (ret && (flags & __GFP_ZERO)) {
+		aligned_ret = ALIGN_DOWN((unsigned long)ret, PAGE_SIZE);
+		memset((void *)aligned_ret, 0, PAGE_SIZE);
+	}
 	return ret;
 }
 
