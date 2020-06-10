@@ -134,7 +134,7 @@ static int do_test_kmalloc73_oob(void)
 		READ_ONCE(*c);
 
 		/*
-		 * |buffer| must be aligned on 8, therefore buffer + size + 1
+		 * @buffer must be aligned on 8, therefore buffer + size + 1
 		 * belongs to the same page - no immediate OOB.
 		 */
 		c = ((char *)buffer) + size + 1;
