@@ -237,6 +237,16 @@ static inline int kfence_addr_to_index(unsigned long addr)
 	return ((addr - kfence_pool_start) / PAGE_SIZE / 2) - 1;
 }
 
+size_t kfence_ksize(const void *addr)
+{
+	unsigned long uaddr = (unsigned long)addr;
+	size_t rem = uaddr % PAGE_SIZE;
+
+	if (!is_kfence_addr(addr))
+		return 0;
+	return PAGE_SIZE - rem;
+}
+
 /* Does not require kfence_alloc_lock. */
 static inline unsigned long kfence_obj_to_addr(struct alloc_metadata *obj,
 					       int index)

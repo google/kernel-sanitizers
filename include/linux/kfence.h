@@ -21,6 +21,8 @@ bool kfence_handle_page_fault(unsigned long addr);
 
 bool is_kfence_addr(void *addr);
 
+size_t kfence_ksize(const void *addr);
+
 #else /* CONFIG_KFENCE */
 
 // TODO: remove for v1
@@ -33,6 +35,7 @@ static inline bool kfence_free(struct kmem_cache *s, struct page *page,
 static inline bool kfence_discard_slab(struct kmem_cache *s, struct page *page) { return false; }
 static inline bool kfence_handle_page_fault(unsigned long addr) { return false; }
 static inline bool is_kfence_addr(void *addr) { return false; }
+static inline size_t kfence_ksize(void *addr) { return 0; }
 
 // TODO: remove for v1
 // clang-format on
