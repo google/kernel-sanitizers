@@ -239,12 +239,9 @@ static inline int kfence_addr_to_index(unsigned long addr)
 
 size_t kfence_ksize(const void *addr)
 {
-	unsigned long uaddr = (unsigned long)addr;
-	size_t rem = uaddr % PAGE_SIZE;
-
-	if (!is_kfence_addr(addr))
+	if (!is_kfence_addr((void *)addr))
 		return 0;
-	return PAGE_SIZE - rem;
+	return PAGE_SIZE - ((unsigned long)addr % PAGE_SIZE);
 }
 
 /* Does not require kfence_alloc_lock. */
