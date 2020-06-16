@@ -2309,12 +2309,6 @@ config TEST_HMM
 
 	  If unsure, say N.
 
-config TEST_KFENCE
-	tristate "Test KFence"
-	depends on KFENCE
-	help
-	  Test that KFENCE works.
-
 endif # RUNTIME_TESTING_MENU
 
 config MEMTEST

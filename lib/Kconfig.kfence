@@ -1,6 +1,12 @@
 config HAVE_ARCH_KFENCE
 	bool
 
+config TEST_KFENCE
+	tristate "Test KFence"
+	depends on KFENCE
+	help
+	  Test that KFENCE works.
+
 config KFENCE
 	bool "KFence: low-overhead use-after-free and buffer-overflow detector"
 	depends on HAVE_ARCH_KFENCE && !KASAN
