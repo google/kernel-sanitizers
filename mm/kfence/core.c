@@ -13,7 +13,7 @@
 #include <linux/stackdepot.h>
 #include <linux/timer.h>
 
-#include "kfence_core.h"
+#include "core.h"
 #include "../slab.h"
 
 /* Usually on, unless explicitly disabled. */

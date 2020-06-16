@@ -5,7 +5,7 @@
 #include <linux/percpu-refcount.h> // required by slab.h
 #include <linux/random.h>
 
-#include "kfence_core.h"
+#include "core.h"
 #include "../slab.h"
 
 void *kfence_alloc_with_size(struct kmem_cache *s, size_t size, gfp_t flags)

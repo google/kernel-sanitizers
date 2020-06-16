@@ -7,7 +7,7 @@
 #include <linux/random.h>
 #include <linux/spinlock_types.h>
 
-#include "kfence_core.h"
+#include "core.h"
 #include "../slab.h"
 
 /*
