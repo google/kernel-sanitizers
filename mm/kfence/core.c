@@ -144,7 +144,7 @@ static bool kfence_change_page_prot(unsigned long addr, bool protect)
 				  (pte_val(*pte) | _PAGE_PRESENT));
 	set_pte(pte, new_pte);
 	/* TODO: figure out how to flush TLB properly here. */
-	__flush_tlb_one_kernel(addr);
+	flush_tlb_one_kernel(addr);
 	return true;
 }
 
