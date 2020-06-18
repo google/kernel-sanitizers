@@ -33,7 +33,11 @@ struct kfence_freelist {
 struct alloc_metadata {
 	depot_stack_handle_t alloc_stack, free_stack;
 	struct kmem_cache *cache;
-	/* >0: left alignment, <0: right alignment. */
+	/*
+	 * Size may be read without a lock in ksize(). We assume that ksize() is
+	 * only called for valid (allocated) pointers.
+	 * size>0 means left alignment, size<0 - right alignment.
+	 */
 	int size;
 	enum kfence_object_state state;
 };
@@ -239,9 +243,11 @@ static inline int kfence_addr_to_index(unsigned long addr)
 
 size_t kfence_ksize(const void *addr)
 {
-	if (!is_kfence_addr((void *)addr))
+	int index = kfence_addr_to_index((unsigned long)addr);
+
+	if (index == -1)
 		return 0;
-	return PAGE_SIZE - ((unsigned long)addr % PAGE_SIZE);
+	return abs(READ_ONCE(kfence_metadata[index].size));
 }
 
 /* Does not require kfence_alloc_lock. */
@@ -308,7 +314,7 @@ void *kfence_guarded_alloc(struct kmem_cache *cache, size_t override_size,
 		kfence_metadata[index].alloc_stack =
 			save_stack(gfp & ~__GFP_RECLAIM);
 		kfence_metadata[index].cache = cache;
-		kfence_metadata[index].size = right ? -size : size;
+		WRITE_ONCE(kfence_metadata[index].size, right ? -size : size);
 		kfence_metadata[index].state = KFENCE_OBJECT_ALLOCATED;
 		page = virt_to_page(obj);
 		page->slab_cache = cache;
@@ -462,7 +468,8 @@ bool kfence_handle_page_fault(unsigned long addr)
 				report_index = obj_index;
 				dist = addr -
 				       (kfence_index_to_addr(obj_index) +
-					abs(kfence_metadata[obj_index].size));
+					abs(READ_ONCE(kfence_metadata[obj_index]
+							      .size)));
 			}
 		}
 		if (page_index < (KFENCE_NUM_OBJ + 1) * 2) {
