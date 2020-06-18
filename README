@@ -1,0 +1,7 @@
+KCSAN is now in mainline:
+
+    https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/log/kernel/kcsan
+
+For more information, see:
+
+    https://github.com/google/ktsan/wiki/KCSAN
