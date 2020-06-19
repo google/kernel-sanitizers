@@ -255,6 +255,32 @@ size_t kfence_ksize(const void *addr)
 	return abs(READ_ONCE(kfence_metadata[index].size));
 }
 
+static void kfence_report_corruption(unsigned long address);
+
+void set_or_check_canary_byte(unsigned long addr, bool set)
+{
+	const char pattern[] = { 0xAA, 0xAB, 0xAA, 0xAD };
+	char p = pattern[addr % ARRAY_SIZE(pattern)];
+	if (set) {
+		*(char *)addr = p;
+	} else {
+		if (*(char *)addr != p)
+			kfence_report_corruption(addr);
+	}
+}
+
+void set_or_check_canaries(int index, bool set)
+{
+	unsigned long start = kfence_metadata[index].addr;
+	int size = abs(kfence_metadata[index].size);
+	unsigned long addr;
+
+	for (addr = ALIGN_DOWN(start, PAGE_SIZE); addr < start; addr++)
+		set_or_check_canary_byte(addr, set);
+	for (addr = start + size; addr < ALIGN(start, PAGE_SIZE); addr++)
+		set_or_check_canary_byte(addr, set);
+}
+
 void *kfence_guarded_alloc(struct kmem_cache *cache, size_t override_size,
 			   gfp_t gfp)
 {
@@ -303,6 +329,7 @@ void *kfence_guarded_alloc(struct kmem_cache *cache, size_t override_size,
 		kfence_metadata[index].state = KFENCE_OBJECT_ALLOCATED;
 		page = virt_to_page(obj);
 		page->slab_cache = cache;
+		set_or_check_canaries(index, true);
 	} else {
 		ret = NULL;
 	}
@@ -325,6 +352,7 @@ void kfence_guarded_free(void *addr)
 	list_del(&(item->list));
 	list_add_tail(&(item->list), &kfence_freelist.list);
 	index = kfence_addr_to_index((unsigned long)addr);
+	set_or_check_canaries(index, false);
 	/* GFP_ATOMIC to avoid reclaiming memory. */
 	kfence_metadata[index].free_stack = save_stack(GFP_ATOMIC);
 	kfence_metadata[index].state = KFENCE_OBJECT_FREED;
@@ -425,6 +453,18 @@ static inline void kfence_report_uaf(unsigned long address, int obj_index,
 	       (void *)address, obj_index);
 	dump_stack();
 	kfence_print_object(obj_index, object);
+	pr_err("==================================================================\n");
+}
+
+static void kfence_report_corruption(unsigned long address)
+{
+	int obj_index = kfence_addr_to_index(address);
+
+	pr_err("==================================================================\n");
+	pr_err("BUG: KFENCE: memory corruption at address %px on object #%d\n",
+	       (void *)address, obj_index);
+	dump_stack();
+	kfence_print_object(obj_index, &kfence_metadata[obj_index]);
 	pr_err("==================================================================\n");
 }
 
