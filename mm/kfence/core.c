@@ -39,6 +39,11 @@ struct alloc_metadata {
 	 * size>0 means left alignment, size<0 - right alignment.
 	 */
 	int size;
+	/*
+	 * Actual object address. Cannot be calculated from size, because of
+	 * alignment requirements.
+	 */
+	unsigned long addr;
 	enum kfence_object_state state;
 };
 
@@ -250,30 +255,6 @@ size_t kfence_ksize(const void *addr)
 	return abs(READ_ONCE(kfence_metadata[index].size));
 }
 
-/* Does not require kfence_alloc_lock. */
-static inline unsigned long kfence_obj_to_addr(struct alloc_metadata *obj,
-					       int index)
-{
-	int size = obj->size;
-	unsigned long ret;
-
-	if ((index < 0) || (index >= KFENCE_NUM_OBJ))
-		return 0;
-	ret = kfence_pool_start + PAGE_SIZE * 2 * (index + 1);
-	if (size > 0)
-		return ret;
-	else
-		return ret + PAGE_SIZE + size;
-}
-
-/* Requires kfence_alloc_lock. */
-static inline unsigned long kfence_index_to_addr(int index)
-{
-	struct alloc_metadata *obj = &kfence_metadata[index];
-
-	return kfence_obj_to_addr(obj, index);
-}
-
 void *kfence_guarded_alloc(struct kmem_cache *cache, size_t override_size,
 			   gfp_t gfp)
 {
@@ -307,6 +288,8 @@ void *kfence_guarded_alloc(struct kmem_cache *cache, size_t override_size,
 		index = kfence_addr_to_index((unsigned long)obj);
 		if (kfence_metadata[index].state == KFENCE_OBJECT_FREED)
 			kfence_unprotect((unsigned long)obj);
+
+		kfence_metadata[index].addr = (unsigned long)ret;
 		/*
 		 * Reclaiming memory when storing stacks may result in
 		 * unnecessary locking.
@@ -391,7 +374,7 @@ static int kfence_dump_object(char *buf, size_t buf_size, int obj_index,
 			      struct alloc_metadata *obj)
 {
 	int size = abs(obj->size);
-	unsigned long start = kfence_obj_to_addr(obj, obj_index);
+	unsigned long start = obj->addr;
 	struct kmem_cache *cache;
 	int len = 0;
 
@@ -422,7 +405,7 @@ static void kfence_print_object(int obj_index, struct alloc_metadata *obj)
 static inline void kfence_report_oob(unsigned long address, int obj_index,
 				     struct alloc_metadata *object)
 {
-	bool is_left = address < kfence_obj_to_addr(object, obj_index);
+	bool is_left = address < object->addr;
 
 	pr_err("==================================================================\n");
 	pr_err("BUG: KFENCE: slab-out-of-bounds at address %px to the %s of object #%d\n",
@@ -467,7 +450,7 @@ bool kfence_handle_page_fault(unsigned long addr)
 			    KFENCE_OBJECT_ALLOCATED) {
 				report_index = obj_index;
 				dist = addr -
-				       (kfence_index_to_addr(obj_index) +
+				       (kfence_metadata[obj_index].addr +
 					abs(READ_ONCE(kfence_metadata[obj_index]
 							      .size)));
 			}
@@ -476,7 +459,7 @@ bool kfence_handle_page_fault(unsigned long addr)
 			obj_index = kfence_addr_to_index(addr + PAGE_SIZE);
 			if (kfence_metadata[obj_index].state ==
 			    KFENCE_OBJECT_ALLOCATED) {
-				ndist = kfence_index_to_addr(obj_index) - addr;
+				ndist = kfence_metadata[obj_index].addr - addr;
 				if ((report_index == -1) || (dist > ndist))
 					report_index = obj_index;
 			}
