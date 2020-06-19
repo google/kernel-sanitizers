@@ -162,6 +162,30 @@ static int do_test_kmalloc_aligned_oob_read(void)
 	return res;
 }
 
+static int do_test_kmalloc_aligned_oob_write(void)
+{
+	void *buffer;
+	unsigned char *c, value;
+	int res = 0;
+	const size_t size = 73;
+
+	buffer = alloc_from_kfence(size, GFP_KERNEL, SIDE_RIGHT, __func__);
+	if (buffer) {
+		/*
+		 * The object is offset to the right, so we won't get a page
+		 * fault immediately after it.
+		 */
+		c = ((char *)buffer) + size + 1;
+		value = READ_ONCE(*c);
+		WRITE_ONCE(*c, value + 1);
+
+		free_to_kfence(buffer);
+	} else {
+		res = 1;
+	}
+	return res;
+}
+
 static int do_test_uaf(size_t size, bool use_cache)
 {
 	void *buffer;
@@ -210,6 +234,7 @@ static int __init test_kfence_init(void)
 	failures += do_test_oob(32, false);
 	failures += do_test_oob(32, true);
 	failures += do_test_kmalloc_aligned_oob_read();
+	failures += do_test_kmalloc_aligned_oob_write();
 	failures += do_test_uaf(32, false);
 	failures += do_test_uaf(32, true);
 	failures += do_test_shrink(32);
