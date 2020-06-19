@@ -290,6 +290,8 @@ void *kfence_guarded_alloc(struct kmem_cache *cache, size_t override_size,
 			kfence_unprotect((unsigned long)obj);
 
 		kfence_metadata[index].addr = (unsigned long)ret;
+		if (gfp & __GFP_ZERO)
+			memset(ret, 0, size);
 		/*
 		 * Reclaiming memory when storing stacks may result in
 		 * unnecessary locking.
