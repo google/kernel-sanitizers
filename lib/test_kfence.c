@@ -117,7 +117,18 @@ static int do_test_oob(size_t size, bool use_cache)
 	return res;
 }
 
-static int do_test_kmalloc73_oob(void)
+/*
+ * In the following situation:
+ *   char *p = kmalloc(73, GFP_KERNEL);
+ *   READ_ONCE(p[73]);
+ * @p is aligned on 8 (alignment of kmalloc-96), therefore the allocated object
+ * does not adhere to either of the page boundaries. Therefore an immediate
+ * buffer overflow won't trigger a page fault.
+ *
+ * This test checks that KFENCE is unable to detect such OOBs, but is able to
+ * detect an OOB that touches the next 8 bytes past the object.
+ */
+static int do_test_kmalloc_aligned_oob_read(void)
 {
 	void *buffer;
 	char *c;
@@ -198,7 +209,7 @@ static int __init test_kfence_init(void)
 
 	failures += do_test_oob(32, false);
 	failures += do_test_oob(32, true);
-	failures += do_test_kmalloc73_oob();
+	failures += do_test_kmalloc_aligned_oob_read();
 	failures += do_test_uaf(32, false);
 	failures += do_test_uaf(32, true);
 	failures += do_test_shrink(32);
