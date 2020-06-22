@@ -27,6 +27,7 @@ void *kfence_alloc_with_size(struct kmem_cache *s, size_t size, gfp_t flags)
 
 	return ret;
 }
+EXPORT_SYMBOL(kfence_alloc_with_size);
 
 void kfence_impl_init(void)
 {
