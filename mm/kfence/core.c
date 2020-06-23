@@ -255,9 +255,7 @@ size_t kfence_ksize(const void *addr)
 	return abs(READ_ONCE(kfence_metadata[index].size));
 }
 
-static void kfence_report_corruption(unsigned long address);
-
-void set_or_check_canary_byte(unsigned long addr, bool set)
+static void set_or_check_canary_byte(unsigned long addr, bool set)
 {
 	const char pattern[] = { 0xAA, 0xAB, 0xAA, 0xAD };
 	char p = pattern[addr % ARRAY_SIZE(pattern)];
@@ -269,7 +267,7 @@ void set_or_check_canary_byte(unsigned long addr, bool set)
 	}
 }
 
-void set_or_check_canaries(int index, bool set)
+static void set_or_check_canaries(int index, bool set)
 {
 	unsigned long start = kfence_metadata[index].addr;
 	int size = abs(kfence_metadata[index].size);
