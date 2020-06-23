@@ -132,58 +132,53 @@ static int do_test_kmalloc_aligned_oob_read(void)
 {
 	void *buffer;
 	char *c;
-	int res = 0;
 	const size_t size = 73;
 
 	buffer = alloc_from_kfence(size, GFP_KERNEL, SIDE_RIGHT, __func__);
-	if (buffer) {
-		/*
+	if (!buffer)
+		return 1;
+	/*
 		 * The object is offset to the right, so there won't be OOBs to
 		 * the left of it.
 		 */
-		c = ((char *)buffer) - 1;
-		READ_ONCE(*c);
+	c = ((char *)buffer) - 1;
+	READ_ONCE(*c);
 
-		/*
+	/*
 		 * @buffer must be aligned on 8, therefore buffer + size + 1
 		 * belongs to the same page - no immediate OOB.
 		 */
-		c = ((char *)buffer) + size + 1;
-		READ_ONCE(*c);
+	c = ((char *)buffer) + size + 1;
+	READ_ONCE(*c);
 
-		/* Overflowing the buffer by 8 bytes will result in an OOB. */
-		c = ((char *)buffer) + size + 8;
-		READ_ONCE(*c);
+	/* Overflowing the buffer by 8 bytes will result in an OOB. */
+	c = ((char *)buffer) + size + 8;
+	READ_ONCE(*c);
 
-		free_to_kfence(buffer);
-	} else {
-		res = 1;
-	}
-	return res;
+	free_to_kfence(buffer);
+	return 0;
 }
 
 static int do_test_kmalloc_aligned_oob_write(void)
 {
 	void *buffer;
 	unsigned char *c, value;
-	int res = 0;
 	const size_t size = 73;
 
 	buffer = alloc_from_kfence(size, GFP_KERNEL, SIDE_RIGHT, __func__);
-	if (buffer) {
-		/*
+	if (!buffer)
+		return 1;
+
+	/*
 		 * The object is offset to the right, so we won't get a page
 		 * fault immediately after it.
 		 */
-		c = ((char *)buffer) + size + 1;
-		value = READ_ONCE(*c);
-		WRITE_ONCE(*c, value + 1);
+	c = ((char *)buffer) + size + 1;
+	value = READ_ONCE(*c);
+	WRITE_ONCE(*c, value + 1);
 
-		free_to_kfence(buffer);
-	} else {
-		res = 1;
-	}
-	return res;
+	free_to_kfence(buffer);
+	return 0;
 }
 
 static int do_test_uaf(size_t size, bool use_cache)
