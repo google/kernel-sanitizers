@@ -255,28 +255,31 @@ size_t kfence_ksize(const void *addr)
 	return abs(READ_ONCE(kfence_metadata[index].size));
 }
 
-static void set_or_check_canary_byte(unsigned long addr, bool set)
+static const char canary_pattern[] = { 0xAA, 0xAB, 0xAA, 0xAD };
+
+static void set_canary_byte(unsigned long addr)
 {
-	const char pattern[] = { 0xAA, 0xAB, 0xAA, 0xAD };
-	char p = pattern[addr % ARRAY_SIZE(pattern)];
-	if (set) {
-		*(char *)addr = p;
-	} else {
-		if (*(char *)addr != p)
-			kfence_report_corruption(addr);
-	}
+	char p = canary_pattern[addr % ARRAY_SIZE(canary_pattern)];
+	*(char *)addr = p;
 }
 
-static void set_or_check_canaries(int index, bool set)
+static void check_canary_byte(unsigned long addr)
+{
+	char p = canary_pattern[addr % ARRAY_SIZE(canary_pattern)];
+	if (*(char *)addr != p)
+		kfence_report_corruption(addr);
+}
+
+static void for_each_canary(int index, void (*fn)(unsigned long))
 {
 	unsigned long start = kfence_metadata[index].addr;
 	int size = abs(kfence_metadata[index].size);
 	unsigned long addr;
 
 	for (addr = ALIGN_DOWN(start, PAGE_SIZE); addr < start; addr++)
-		set_or_check_canary_byte(addr, set);
+		fn(addr);
 	for (addr = start + size; addr < ALIGN(start, PAGE_SIZE); addr++)
-		set_or_check_canary_byte(addr, set);
+		fn(addr);
 }
 
 void *kfence_guarded_alloc(struct kmem_cache *cache, size_t override_size,
@@ -327,7 +330,7 @@ void *kfence_guarded_alloc(struct kmem_cache *cache, size_t override_size,
 		kfence_metadata[index].state = KFENCE_OBJECT_ALLOCATED;
 		page = virt_to_page(obj);
 		page->slab_cache = cache;
-		set_or_check_canaries(index, true);
+		for_each_canary(index, set_canary_byte);
 	} else {
 		ret = NULL;
 	}
@@ -350,7 +353,7 @@ void kfence_guarded_free(void *addr)
 	list_del(&(item->list));
 	list_add_tail(&(item->list), &kfence_freelist.list);
 	index = kfence_addr_to_index((unsigned long)addr);
-	set_or_check_canaries(index, false);
+	for_each_canary(index, check_canary_byte);
 	/* GFP_ATOMIC to avoid reclaiming memory. */
 	kfence_metadata[index].free_stack = save_stack(GFP_ATOMIC);
 	kfence_metadata[index].state = KFENCE_OBJECT_FREED;
