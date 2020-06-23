@@ -439,8 +439,10 @@ static inline void kfence_report_oob(unsigned long address, int obj_index,
 	bool is_left = address < object->addr;
 
 	pr_err("==================================================================\n");
-	pr_err("BUG: KFENCE: slab-out-of-bounds at address %px to the %s of object #%d\n",
-	       (void *)address, is_left ? "left" : "right", obj_index);
+	pr_err("BUG: KFENCE: slab-out-of-bounds at address %px\n",
+	       (void *)address);
+	pr_err("  access occurred to the %s of object #%d\n",
+	       is_left ? "left" : "right", obj_index);
 	dump_stack();
 	kfence_print_object(obj_index, object);
 	pr_err("==================================================================\n");
@@ -450,8 +452,7 @@ static inline void kfence_report_uaf(unsigned long address, int obj_index,
 				     struct alloc_metadata *object)
 {
 	pr_err("==================================================================\n");
-	pr_err("BUG: KFENCE: use-after-free at address %px on object #%d\n",
-	       (void *)address, obj_index);
+	pr_err("BUG: KFENCE: use-after-free at address %px\n", (void *)address);
 	dump_stack();
 	kfence_print_object(obj_index, object);
 	pr_err("==================================================================\n");
@@ -462,8 +463,8 @@ static void kfence_report_corruption(unsigned long address)
 	int obj_index = kfence_addr_to_index(address);
 
 	pr_err("==================================================================\n");
-	pr_err("BUG: KFENCE: memory corruption at address %px on object #%d\n",
-	       (void *)address, obj_index);
+	pr_err("BUG: KFENCE: memory corruption at address %px\n",
+	       (void *)address);
 	dump_stack();
 	kfence_print_object(obj_index, &kfence_metadata[obj_index]);
 	pr_err("==================================================================\n");
