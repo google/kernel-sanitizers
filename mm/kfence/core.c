@@ -33,8 +33,17 @@ struct kfence_freelist {
 struct alloc_metadata {
 	depot_stack_handle_t alloc_stack, free_stack;
 	struct kmem_cache *cache;
-	/* >0: left alignment, <0: right alignment. */
+	/*
+	 * Size may be read without a lock in ksize(). We assume that ksize() is
+	 * only called for valid (allocated) pointers.
+	 * size>0 means left alignment, size<0 - right alignment.
+	 */
 	int size;
+	/*
+	 * Actual object address. Cannot be calculated from size, because of
+	 * alignment requirements.
+	 */
+	unsigned long addr;
 	enum kfence_object_state state;
 };
 
@@ -239,33 +248,38 @@ static inline int kfence_addr_to_index(unsigned long addr)
 
 size_t kfence_ksize(const void *addr)
 {
-	if (!is_kfence_addr((void *)addr))
+	int index = kfence_addr_to_index((unsigned long)addr);
+
+	if (index == -1)
 		return 0;
-	return PAGE_SIZE - ((unsigned long)addr % PAGE_SIZE);
+	return abs(READ_ONCE(kfence_metadata[index].size));
 }
 
-/* Does not require kfence_alloc_lock. */
-static inline unsigned long kfence_obj_to_addr(struct alloc_metadata *obj,
-					       int index)
-{
-	int size = obj->size;
-	unsigned long ret;
+static const char canary_pattern[] = { 0xAA, 0xAB, 0xAA, 0xAD };
 
-	if ((index < 0) || (index >= KFENCE_NUM_OBJ))
-		return 0;
-	ret = kfence_pool_start + PAGE_SIZE * 2 * (index + 1);
-	if (size > 0)
-		return ret;
-	else
-		return ret + PAGE_SIZE + size;
+static void set_canary_byte(unsigned long addr)
+{
+	char p = canary_pattern[addr % ARRAY_SIZE(canary_pattern)];
+	*(char *)addr = p;
 }
 
-/* Requires kfence_alloc_lock. */
-static inline unsigned long kfence_index_to_addr(int index)
+static void check_canary_byte(unsigned long addr)
 {
-	struct alloc_metadata *obj = &kfence_metadata[index];
+	char p = canary_pattern[addr % ARRAY_SIZE(canary_pattern)];
+	if (*(char *)addr != p)
+		kfence_report_corruption(addr);
+}
 
-	return kfence_obj_to_addr(obj, index);
+static void for_each_canary(int index, void (*fn)(unsigned long))
+{
+	unsigned long start = kfence_metadata[index].addr;
+	int size = abs(kfence_metadata[index].size);
+	unsigned long addr;
+
+	for (addr = ALIGN_DOWN(start, PAGE_SIZE); addr < start; addr++)
+		fn(addr);
+	for (addr = start + size; addr < ALIGN(start, PAGE_SIZE); addr++)
+		fn(addr);
 }
 
 void *kfence_guarded_alloc(struct kmem_cache *cache, size_t override_size,
@@ -301,6 +315,10 @@ void *kfence_guarded_alloc(struct kmem_cache *cache, size_t override_size,
 		index = kfence_addr_to_index((unsigned long)obj);
 		if (kfence_metadata[index].state == KFENCE_OBJECT_FREED)
 			kfence_unprotect((unsigned long)obj);
+
+		kfence_metadata[index].addr = (unsigned long)ret;
+		if (gfp & __GFP_ZERO)
+			memset(ret, 0, size);
 		/*
 		 * Reclaiming memory when storing stacks may result in
 		 * unnecessary locking.
@@ -308,10 +326,11 @@ void *kfence_guarded_alloc(struct kmem_cache *cache, size_t override_size,
 		kfence_metadata[index].alloc_stack =
 			save_stack(gfp & ~__GFP_RECLAIM);
 		kfence_metadata[index].cache = cache;
-		kfence_metadata[index].size = right ? -size : size;
+		WRITE_ONCE(kfence_metadata[index].size, right ? -size : size);
 		kfence_metadata[index].state = KFENCE_OBJECT_ALLOCATED;
 		page = virt_to_page(obj);
 		page->slab_cache = cache;
+		for_each_canary(index, set_canary_byte);
 	} else {
 		ret = NULL;
 	}
@@ -334,6 +353,7 @@ void kfence_guarded_free(void *addr)
 	list_del(&(item->list));
 	list_add_tail(&(item->list), &kfence_freelist.list);
 	index = kfence_addr_to_index((unsigned long)addr);
+	for_each_canary(index, check_canary_byte);
 	/* GFP_ATOMIC to avoid reclaiming memory. */
 	kfence_metadata[index].free_stack = save_stack(GFP_ATOMIC);
 	kfence_metadata[index].state = KFENCE_OBJECT_FREED;
@@ -385,7 +405,7 @@ static int kfence_dump_object(char *buf, size_t buf_size, int obj_index,
 			      struct alloc_metadata *obj)
 {
 	int size = abs(obj->size);
-	unsigned long start = kfence_obj_to_addr(obj, obj_index);
+	unsigned long start = obj->addr;
 	struct kmem_cache *cache;
 	int len = 0;
 
@@ -416,7 +436,7 @@ static void kfence_print_object(int obj_index, struct alloc_metadata *obj)
 static inline void kfence_report_oob(unsigned long address, int obj_index,
 				     struct alloc_metadata *object)
 {
-	bool is_left = address < kfence_obj_to_addr(object, obj_index);
+	bool is_left = address < object->addr;
 
 	pr_err("==================================================================\n");
 	pr_err("BUG: KFENCE: slab-out-of-bounds at address %px to the %s of object #%d\n",
@@ -434,6 +454,18 @@ static inline void kfence_report_uaf(unsigned long address, int obj_index,
 	       (void *)address, obj_index);
 	dump_stack();
 	kfence_print_object(obj_index, object);
+	pr_err("==================================================================\n");
+}
+
+static void kfence_report_corruption(unsigned long address)
+{
+	int obj_index = kfence_addr_to_index(address);
+
+	pr_err("==================================================================\n");
+	pr_err("BUG: KFENCE: memory corruption at address %px on object #%d\n",
+	       (void *)address, obj_index);
+	dump_stack();
+	kfence_print_object(obj_index, &kfence_metadata[obj_index]);
 	pr_err("==================================================================\n");
 }
 
@@ -461,15 +493,16 @@ bool kfence_handle_page_fault(unsigned long addr)
 			    KFENCE_OBJECT_ALLOCATED) {
 				report_index = obj_index;
 				dist = addr -
-				       (kfence_index_to_addr(obj_index) +
-					abs(kfence_metadata[obj_index].size));
+				       (kfence_metadata[obj_index].addr +
+					abs(READ_ONCE(kfence_metadata[obj_index]
+							      .size)));
 			}
 		}
 		if (page_index < (KFENCE_NUM_OBJ + 1) * 2) {
 			obj_index = kfence_addr_to_index(addr + PAGE_SIZE);
 			if (kfence_metadata[obj_index].state ==
 			    KFENCE_OBJECT_ALLOCATED) {
-				ndist = kfence_index_to_addr(obj_index) - addr;
+				ndist = kfence_metadata[obj_index].addr - addr;
 				if ((report_index == -1) || (dist > ndist))
 					report_index = obj_index;
 			}
