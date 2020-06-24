@@ -8,7 +8,6 @@
 #include <linux/slab.h>
 #include <linux/spinlock_types.h>
 #include <linux/stackdepot.h>
-#include <linux/timer.h>
 
 #include <asm/pgtable.h>
 #include <asm/tlbflush.h>

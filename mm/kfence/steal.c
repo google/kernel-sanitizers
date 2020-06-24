@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: GPL-2.0
-//
 
 #include <linux/mm.h>
 #include <linux/percpu-defs.h>
 #include <linux/percpu-refcount.h> // required by slab.h
 #include <linux/random.h>
 #include <linux/spinlock_types.h>
+#include <linux/timer.h>
 
 #include "core.h"
 #include "../slab.h"

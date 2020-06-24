@@ -1,6 +1,9 @@
 #ifndef MM_KFENCE_H
 #define MM_KFENCE_H
 
+#include <linux/slub_def.h>
+#include <linux/types.h>
+
 extern bool kfence_enabled;
 extern unsigned long kfence_sample_rate;
 
