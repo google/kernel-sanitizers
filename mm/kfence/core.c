@@ -1,10 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0
 
-#include <asm/pgtable.h>
-#include <asm/tlbflush.h>
-
-#include <linux/list.h>
 #include <linux/debugfs.h>
+#include <linux/list.h>
 #include <linux/moduleparam.h>
 #include <linux/random.h>
 #include <linux/seq_file.h>
@@ -12,6 +9,9 @@
 #include <linux/spinlock_types.h>
 #include <linux/stackdepot.h>
 #include <linux/timer.h>
+
+#include <asm/pgtable.h>
+#include <asm/tlbflush.h>
 
 #include "core.h"
 #include "../slab.h"
