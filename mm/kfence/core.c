@@ -266,8 +266,14 @@ static void set_canary_byte(unsigned long addr)
 static void check_canary_byte(unsigned long addr)
 {
 	char p = canary_pattern[addr % ARRAY_SIZE(canary_pattern)];
-	if (*(char *)addr != p)
-		kfence_report_corruption(addr);
+	int obj_index;
+
+	if (*(char *)addr != p) {
+		obj_index = kfence_addr_to_index(addr);
+		kfence_report_error(addr, obj_index,
+				    &kfence_metadata[obj_index],
+				    KFENCE_ERROR_CORRUPTION);
+	}
 }
 
 static void for_each_canary(int index, void (*fn)(unsigned long))
@@ -433,40 +439,85 @@ static void kfence_print_object(int obj_index, struct alloc_metadata *obj)
 	pr_err("%s", kfence_dump_buf);
 }
 
-static inline void kfence_report_oob(unsigned long address, int obj_index,
-				     struct alloc_metadata *object)
-{
-	bool is_left = address < object->addr;
+#define NUM_STACK_ENTRIES 64
 
-	pr_err("==================================================================\n");
-	pr_err("BUG: KFENCE: slab-out-of-bounds at address %px\n",
-	       (void *)address);
-	pr_err("  access occurred to the %s of object #%d\n",
-	       is_left ? "left" : "right", obj_index);
-	dump_stack();
-	kfence_print_object(obj_index, object);
-	pr_err("==================================================================\n");
+bool stack_entry_matches(unsigned long addr, const char *pattern)
+{
+	char buf[64];
+	int buf_len, len;
+
+	buf_len = scnprintf(buf, sizeof(buf), "%ps", (void *)addr);
+	len = strlen(pattern);
+	if (len > buf_len)
+		return false;
+	if (strnstr(buf, pattern, len))
+		return true;
+	return false;
 }
 
-static inline void kfence_report_uaf(unsigned long address, int obj_index,
-				     struct alloc_metadata *object)
+static int scroll_stack_to(const unsigned long stack_entries[], int num_entries,
+			   const char *pattern)
 {
-	pr_err("==================================================================\n");
-	pr_err("BUG: KFENCE: use-after-free at address %px\n", (void *)address);
-	dump_stack();
-	kfence_print_object(obj_index, object);
-	pr_err("==================================================================\n");
+	int i;
+
+	for (i = 0; i < num_entries; i++) {
+		if (stack_entry_matches(stack_entries[i], pattern))
+			return i + 1;
+	}
+	return 0;
 }
 
-static void kfence_report_corruption(unsigned long address)
+static int get_stack_skipnr(const unsigned long stack_entries[],
+			    int num_entries, enum kfence_error_kind kind)
 {
-	int obj_index = kfence_addr_to_index(address);
+	switch (kind) {
+	case KFENCE_ERROR_UAF:
+	case KFENCE_ERROR_OOB:
+		return scroll_stack_to(stack_entries, num_entries,
+				       "asm_exc_page_fault");
+	case KFENCE_ERROR_CORRUPTION:
+		return scroll_stack_to(stack_entries, num_entries,
+				       "__slab_free");
+	}
+	return 0;
+}
+
+void kfence_report_error(unsigned long address, int obj_index,
+			 struct alloc_metadata *object,
+			 enum kfence_error_kind kind)
+{
+	unsigned long stack_entries[NUM_STACK_ENTRIES] = { 0 };
+	int num_stack_entries =
+		stack_trace_save(stack_entries, NUM_STACK_ENTRIES, 1);
+	int skipnr = get_stack_skipnr(stack_entries, num_stack_entries, kind);
+	bool is_left;
 
 	pr_err("==================================================================\n");
-	pr_err("BUG: KFENCE: memory corruption at address %px\n",
-	       (void *)address);
-	dump_stack();
-	kfence_print_object(obj_index, &kfence_metadata[obj_index]);
+	switch (kind) {
+	case KFENCE_ERROR_OOB:
+		is_left = address < object->addr;
+		pr_err("BUG: KFENCE: slab-out-of-bounds in %ps\n",
+		       (void *)stack_entries[skipnr]);
+		pr_err("Memory access at address %px to the %s of object #%d\n",
+		       (void *)address, is_left ? "left" : "right", obj_index);
+		break;
+	case KFENCE_ERROR_UAF:
+		pr_err("BUG: KFENCE: use-after-free in %ps\n",
+		       (void *)stack_entries[skipnr]);
+		pr_err("Memory access at address %px\n", (void *)address);
+		break;
+	case KFENCE_ERROR_CORRUPTION:
+		pr_err("BUG: KFENCE: memory corruption in %ps\n",
+		       (void *)stack_entries[skipnr]);
+		pr_err("Invalid write detected at address %px\n",
+		       (void *)address);
+		break;
+	}
+
+	stack_trace_print(stack_entries + skipnr, num_stack_entries - skipnr,
+			  0);
+	pr_err("\n");
+	kfence_print_object(obj_index, object);
 	pr_err("==================================================================\n");
 }
 
@@ -511,7 +562,8 @@ bool kfence_handle_page_fault(unsigned long addr)
 		if (report_index != -1) {
 			object = kfence_metadata[report_index];
 			spin_unlock_irqrestore(&kfence_alloc_lock, flags);
-			kfence_report_oob(addr, report_index, &object);
+			kfence_report_error(addr, report_index, &object,
+					    KFENCE_ERROR_OOB);
 		} else {
 			spin_unlock_irqrestore(&kfence_alloc_lock, flags);
 			pr_err("BUG: KFENCE: wild redzone access.\n");
@@ -522,7 +574,8 @@ bool kfence_handle_page_fault(unsigned long addr)
 		report_index = kfence_addr_to_index(addr);
 		object = kfence_metadata[report_index];
 		spin_unlock_irqrestore(&kfence_alloc_lock, flags);
-		kfence_report_uaf(addr, report_index, &object);
+		kfence_report_error(addr, report_index, &object,
+				    KFENCE_ERROR_UAF);
 	}
 
 	/*
