@@ -9,7 +9,18 @@ void *kfence_guarded_alloc(struct kmem_cache *cache, size_t override_size,
 void kfence_guarded_free(void *addr);
 void kfence_disable(void);
 bool __meminit kfence_allocate_pool(void);
-static void kfence_report_corruption(unsigned long address);
+
+struct alloc_metadata;
+
+enum kfence_error_kind {
+	KFENCE_ERROR_OOB,
+	KFENCE_ERROR_UAF,
+	KFENCE_ERROR_CORRUPTION
+};
+
+void kfence_report_error(unsigned long address, int obj_index,
+			 struct alloc_metadata *object,
+			 enum kfence_error_kind kind);
 
 /* Should be provided by the sampling algorithm implementation. */
 void kfence_impl_init(void);

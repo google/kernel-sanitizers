@@ -92,7 +92,7 @@ static void *alloc_from_kfence(size_t size, gfp_t gfp, int side,
 	return NULL;
 }
 
-static int do_test_oob(size_t size, bool use_cache)
+static noinline int do_test_oob(size_t size, bool use_cache)
 {
 	void *buffer;
 	char *c;
@@ -128,7 +128,7 @@ static int do_test_oob(size_t size, bool use_cache)
  * This test checks that KFENCE is unable to detect such OOBs, but is able to
  * detect an OOB that touches the next 8 bytes past the object.
  */
-static int do_test_kmalloc_aligned_oob_read(void)
+static noinline int do_test_kmalloc_aligned_oob_read(void)
 {
 	void *buffer;
 	char *c;
@@ -159,7 +159,7 @@ static int do_test_kmalloc_aligned_oob_read(void)
 	return 0;
 }
 
-static int do_test_kmalloc_aligned_oob_write(void)
+static noinline int do_test_kmalloc_aligned_oob_write(void)
 {
 	void *buffer;
 	unsigned char *c, value;
@@ -170,9 +170,9 @@ static int do_test_kmalloc_aligned_oob_write(void)
 		return 1;
 
 	/*
-		 * The object is offset to the right, so we won't get a page
-		 * fault immediately after it.
-		 */
+	 * The object is offset to the right, so we won't get a page
+	 * fault immediately after it.
+	 */
 	c = ((char *)buffer) + size + 1;
 	value = READ_ONCE(*c);
 	WRITE_ONCE(*c, value + 1);
@@ -181,7 +181,7 @@ static int do_test_kmalloc_aligned_oob_write(void)
 	return 0;
 }
 
-static int do_test_uaf(size_t size, bool use_cache)
+static noinline int do_test_uaf(size_t size, bool use_cache)
 {
 	void *buffer;
 	char *c;
@@ -204,7 +204,7 @@ static int do_test_uaf(size_t size, bool use_cache)
 }
 
 /* Test cache creation, shrinking and destroying with KFENCE. */
-static int do_test_shrink(int size)
+static noinline int do_test_shrink(int size)
 {
 	void *buffer;
 	int res = 0;
