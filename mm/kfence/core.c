@@ -496,18 +496,18 @@ void kfence_report_error(unsigned long address, int obj_index,
 	switch (kind) {
 	case KFENCE_ERROR_OOB:
 		is_left = address < object->addr;
-		pr_err("BUG: KFENCE: slab-out-of-bounds in %ps\n",
+		pr_err("BUG: KFENCE: slab-out-of-bounds in %pS\n",
 		       (void *)stack_entries[skipnr]);
 		pr_err("Memory access at address %px to the %s of object #%d\n",
 		       (void *)address, is_left ? "left" : "right", obj_index);
 		break;
 	case KFENCE_ERROR_UAF:
-		pr_err("BUG: KFENCE: use-after-free in %ps\n",
+		pr_err("BUG: KFENCE: use-after-free in %pS\n",
 		       (void *)stack_entries[skipnr]);
 		pr_err("Memory access at address %px\n", (void *)address);
 		break;
 	case KFENCE_ERROR_CORRUPTION:
-		pr_err("BUG: KFENCE: memory corruption in %ps\n",
+		pr_err("BUG: KFENCE: memory corruption in %pS\n",
 		       (void *)stack_entries[skipnr]);
 		pr_err("Invalid write detected at address %px\n",
 		       (void *)address);
