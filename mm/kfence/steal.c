@@ -7,7 +7,7 @@
 #include <linux/spinlock_types.h>
 #include <linux/timer.h>
 
-#include "core.h"
+#include "kfence.h"
 #include "../slab.h"
 
 /*
@@ -81,7 +81,7 @@ void *kfence_alloc_and_fix_freelist(struct kmem_cache *s, gfp_t gfp)
 	unsigned long flags;
 	void *ret = NULL;
 
-	if (!READ_ONCE(kfence_enabled))
+	if (!kfence_is_enabled())
 		return NULL;
 	spin_lock_irqsave(&kfence_caches_lock, flags);
 	if (!kfence_fix_freelist(s))
@@ -290,7 +290,7 @@ leave:
 
 static void kfence_heartbeat(struct timer_list *timer)
 {
-	if (!READ_ONCE(kfence_enabled))
+	if (!kfence_is_enabled())
 		return;
 
 	steal_random_freelist();

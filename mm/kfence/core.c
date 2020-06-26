@@ -12,7 +12,7 @@
 #include <asm/pgtable.h>
 #include <asm/tlbflush.h>
 
-#include "core.h"
+#include "kfence.h"
 #include "../slab.h"
 
 /* Usually on, unless explicitly disabled. */
@@ -529,7 +529,7 @@ bool kfence_handle_page_fault(unsigned long addr)
 	if (!is_kfence_addr((void *)addr))
 		return false;
 
-	if (!READ_ONCE(kfence_enabled)) {
+	if (!kfence_is_enabled()) {
 		/* KFENCE has been disabled, unprotect the page and go on. */
 		return kfence_unprotect(addr);
 	}
