@@ -35,9 +35,9 @@ static int scroll_stack_to(const unsigned long stack_entries[], int num_entries,
 }
 
 static int get_stack_skipnr(const unsigned long stack_entries[],
-			    int num_entries, enum kfence_error_kind kind)
+			    int num_entries, enum kfence_error_type type)
 {
-	switch (kind) {
+	switch (type) {
 	case KFENCE_ERROR_UAF:
 	case KFENCE_ERROR_OOB:
 		return scroll_stack_to(stack_entries, num_entries,
@@ -107,16 +107,16 @@ static void kfence_print_object(int obj_index,
 
 void kfence_report_error(unsigned long address, int obj_index,
 			 struct kfence_alloc_metadata *object,
-			 enum kfence_error_kind kind)
+			 enum kfence_error_type type)
 {
 	unsigned long stack_entries[NUM_STACK_ENTRIES] = { 0 };
 	int num_stack_entries =
 		stack_trace_save(stack_entries, NUM_STACK_ENTRIES, 1);
-	int skipnr = get_stack_skipnr(stack_entries, num_stack_entries, kind);
+	int skipnr = get_stack_skipnr(stack_entries, num_stack_entries, type);
 	bool is_left;
 
 	pr_err("==================================================================\n");
-	switch (kind) {
+	switch (type) {
 	case KFENCE_ERROR_OOB:
 		is_left = address < object->addr;
 		pr_err("BUG: KFENCE: slab-out-of-bounds in %pS\n",
