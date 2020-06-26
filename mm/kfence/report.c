@@ -29,7 +29,7 @@ static int scroll_stack_to(const unsigned long stack_entries[], int num_entries,
 
 	for (i = 0; i < num_entries; i++) {
 		if (stack_entry_matches(stack_entries[i], pattern))
-			return i + 1;
+			return (i + 1 < num_entries) ? (i + 1) : 0;
 	}
 	return 0;
 }
