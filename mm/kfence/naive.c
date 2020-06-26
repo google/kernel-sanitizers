@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: GPL-2.0
-//
 
 #include <linux/mm.h>
 #include <linux/percpu-refcount.h> // required by slab.h

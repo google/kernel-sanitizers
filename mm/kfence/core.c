@@ -166,7 +166,7 @@ static inline bool kfence_unprotect(unsigned long addr)
 	return kfence_change_page_prot(addr, false);
 }
 
-bool __meminit kfence_allocate_pool(void)
+static bool __meminit kfence_allocate_pool(void)
 {
 	struct page *pages = NULL;
 	struct kfence_freelist *objects = NULL;
