@@ -1,0 +1,78 @@
+// SPDX-License-Identifier: GPL-2.0
+
+#ifndef MM_KFENCE_KFENCE_H
+#define MM_KFENCE_KFENCE_H
+
+#include <linux/mm.h>
+#include <linux/slub_def.h>
+#include <linux/stackdepot.h>
+#include <linux/types.h>
+
+/*
+ * KFENCE_WARN_ON() disables KFENCE on the first warning, to avoid potential
+ * further errors if KFENCE is enabled in a non-test environment.
+ */
+#define KFENCE_WARN_ON(cond)                                                   \
+	({                                                                     \
+		bool __cond = WARN_ON(cond);                                   \
+		if (unlikely(__cond))                                          \
+			kfence_disable();                                      \
+		__cond;                                                        \
+	})
+
+enum kfence_object_state {
+	KFENCE_OBJECT_UNUSED,
+	KFENCE_OBJECT_ALLOCATED,
+	KFENCE_OBJECT_FREED
+};
+
+struct kfence_alloc_metadata {
+	depot_stack_handle_t alloc_stack, free_stack;
+	struct kmem_cache *cache;
+	/*
+	 * Size may be read without a lock in ksize(). We assume that ksize() is
+	 * only called for valid (allocated) pointers.
+	 * size>0 means left alignment, size<0 - right alignment.
+	 */
+	int size;
+	/*
+	 * Actual object address. Cannot be calculated from size, because of
+	 * alignment requirements.
+	 */
+	unsigned long addr;
+	enum kfence_object_state state;
+};
+
+extern bool kfence_enabled;
+extern unsigned long kfence_sample_rate;
+extern struct kfence_alloc_metadata *kfence_metadata;
+extern char kfence_dump_buf[PAGE_SIZE * 2];
+
+static inline bool kfence_is_enabled(void)
+{
+	return READ_ONCE(kfence_enabled);
+}
+
+void kfence_disable(void);
+
+void *kfence_guarded_alloc(struct kmem_cache *cache, size_t override_size,
+			   gfp_t gfp);
+void kfence_guarded_free(void *addr);
+
+enum kfence_error_type {
+	KFENCE_ERROR_OOB,
+	KFENCE_ERROR_UAF,
+	KFENCE_ERROR_CORRUPTION
+};
+
+void kfence_report_error(unsigned long address, int obj_index,
+			 struct kfence_alloc_metadata *metadata,
+			 enum kfence_error_type type);
+
+int kfence_dump_object(char *buf, size_t buf_size, int obj_index,
+		       struct kfence_alloc_metadata *obj);
+
+/* Should be provided by the sampling algorithm implementation. */
+void kfence_impl_init(void);
+
+#endif /* MM_KFENCE_H */

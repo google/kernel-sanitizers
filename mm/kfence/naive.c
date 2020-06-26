@@ -1,11 +1,10 @@
 // SPDX-License-Identifier: GPL-2.0
-//
 
 #include <linux/mm.h>
 #include <linux/percpu-refcount.h> // required by slab.h
 #include <linux/random.h>
 
-#include "core.h"
+#include "kfence.h"
 #include "../slab.h"
 
 void *kfence_alloc_with_size(struct kmem_cache *s, size_t size, gfp_t flags)
@@ -13,8 +12,9 @@ void *kfence_alloc_with_size(struct kmem_cache *s, size_t size, gfp_t flags)
 	u32 rnd;
 	void *ret;
 
-	if (!READ_ONCE(kfence_enabled))
+	if (!kfence_is_enabled())
 		return NULL;
+
 	if ((size > PAGE_SIZE) || (s->size > PAGE_SIZE))
 		return NULL;
 	if (s->ctor || (s->flags & SLAB_TYPESAFE_BY_RCU))

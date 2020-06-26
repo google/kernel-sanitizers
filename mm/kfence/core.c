@@ -1,50 +1,25 @@
 // SPDX-License-Identifier: GPL-2.0
 
-#include <asm/pgtable.h>
-#include <asm/tlbflush.h>
-
-#include <linux/list.h>
 #include <linux/debugfs.h>
+#include <linux/list.h>
 #include <linux/moduleparam.h>
 #include <linux/random.h>
 #include <linux/seq_file.h>
 #include <linux/slab.h>
-#include <linux/spinlock_types.h>
-#include <linux/stackdepot.h>
-#include <linux/timer.h>
+#include <linux/spinlock.h>
 
-#include "core.h"
+#include <asm/pgtable.h>
+#include <asm/tlbflush.h>
+
+#include "kfence.h"
 #include "../slab.h"
 
 /* Usually on, unless explicitly disabled. */
 bool kfence_enabled;
 
-enum kfence_object_state {
-	KFENCE_OBJECT_UNUSED,
-	KFENCE_OBJECT_ALLOCATED,
-	KFENCE_OBJECT_FREED
-};
-
 struct kfence_freelist {
 	struct list_head list;
 	void *obj;
-};
-
-struct alloc_metadata {
-	depot_stack_handle_t alloc_stack, free_stack;
-	struct kmem_cache *cache;
-	/*
-	 * Size may be read without a lock in ksize(). We assume that ksize() is
-	 * only called for valid (allocated) pointers.
-	 * size>0 means left alignment, size<0 - right alignment.
-	 */
-	int size;
-	/*
-	 * Actual object address. Cannot be calculated from size, because of
-	 * alignment requirements.
-	 */
-	unsigned long addr;
-	enum kfence_object_state state;
 };
 
 /*
@@ -60,7 +35,7 @@ static unsigned long kfence_pool_start, kfence_pool_end;
 static DEFINE_SPINLOCK(kfence_alloc_lock);
 
 /* Size picked to accommodate the metadata of a single KFENCE object. */
-static char kfence_dump_buf[PAGE_SIZE * 2];
+char kfence_dump_buf[PAGE_SIZE * 2];
 
 /*
  * kfence_freelist is a wrapper around kfence page pointers that allows
@@ -81,7 +56,7 @@ static struct kfence_freelist kfence_freelist = {
 static struct kfence_freelist kfence_recycle = { .list = LIST_HEAD_INIT(
 							 kfence_recycle.list) };
 
-static struct alloc_metadata *kfence_metadata;
+struct kfence_alloc_metadata *kfence_metadata;
 
 #define KFENCE_DEFAULT_SAMPLE_RATE 100
 #define KFENCE_STACK_DEPTH 64
@@ -167,7 +142,7 @@ static inline bool kfence_unprotect(unsigned long addr)
 	return kfence_change_page_prot(addr, false);
 }
 
-bool __meminit kfence_allocate_pool(void)
+static bool __meminit kfence_allocate_pool(void)
 {
 	struct page *pages = NULL;
 	struct kfence_freelist *objects = NULL;
@@ -220,8 +195,8 @@ bool __meminit kfence_allocate_pool(void)
 	}
 
 	/* Set up metadata nodes. */
-	kfence_metadata = (struct alloc_metadata *)kmalloc_array(
-		KFENCE_NUM_OBJ, sizeof(struct alloc_metadata), gfp_flags);
+	kfence_metadata = (struct kfence_alloc_metadata *)kmalloc_array(
+		KFENCE_NUM_OBJ, sizeof(struct kfence_alloc_metadata), gfp_flags);
 	return true;
 error:
 	if (pages)
@@ -384,153 +359,16 @@ bool kfence_free(struct kmem_cache *s, struct page *page, void *head,
 	return true;
 }
 
-static int kfence_dump_stack(char *buf, size_t buf_size,
-			     struct alloc_metadata *obj, bool is_alloc)
-{
-	unsigned long *entries;
-	unsigned long nr_entries;
-	depot_stack_handle_t handle;
-	int len = 0;
-
-	if (is_alloc)
-		handle = obj->alloc_stack;
-	else
-		handle = obj->free_stack;
-	if (handle) {
-		nr_entries = stack_depot_fetch(handle, &entries);
-		len += stack_trace_snprint(buf + len, buf_size - len, entries,
-					   nr_entries, 0);
-	} else {
-		len += scnprintf(buf + len, buf_size - len, "  no %s stack.\n",
-				 is_alloc ? "allocation" : "deallocation");
-	}
-	return len;
-}
-
-static int kfence_dump_object(char *buf, size_t buf_size, int obj_index,
-			      struct alloc_metadata *obj)
-{
-	int size = abs(obj->size);
-	unsigned long start = obj->addr;
-	struct kmem_cache *cache;
-	int len = 0;
-
-	len += scnprintf(buf + len, buf_size - len,
-			 "Object #%d: starts at %px, size=%d\n", obj_index,
-			 (void *)start, size);
-	len += scnprintf(buf + len, buf_size - len, "allocated at:\n");
-	len += kfence_dump_stack(buf + len, buf_size - len, obj, true);
-	if (kfence_metadata[obj_index].state == KFENCE_OBJECT_FREED) {
-		len += scnprintf(buf + len, buf_size - len, "freed at:\n");
-		len += kfence_dump_stack(buf + len, buf_size - len, obj, false);
-	}
-	cache = kfence_metadata[obj_index].cache;
-	if (cache && cache->name)
-		len += scnprintf(buf + len, buf_size - len,
-				 "Object #%d belongs to cache %s\n", obj_index,
-				 cache->name);
-	return len;
-}
-
-static void kfence_print_object(int obj_index, struct alloc_metadata *obj)
-{
-	kfence_dump_object(kfence_dump_buf, sizeof(kfence_dump_buf), obj_index,
-			   obj);
-	pr_err("%s", kfence_dump_buf);
-}
-
-#define NUM_STACK_ENTRIES 64
-
-bool stack_entry_matches(unsigned long addr, const char *pattern)
-{
-	char buf[64];
-	int buf_len, len;
-
-	buf_len = scnprintf(buf, sizeof(buf), "%ps", (void *)addr);
-	len = strlen(pattern);
-	if (len > buf_len)
-		return false;
-	if (strnstr(buf, pattern, len))
-		return true;
-	return false;
-}
-
-static int scroll_stack_to(const unsigned long stack_entries[], int num_entries,
-			   const char *pattern)
-{
-	int i;
-
-	for (i = 0; i < num_entries; i++) {
-		if (stack_entry_matches(stack_entries[i], pattern))
-			return i + 1;
-	}
-	return 0;
-}
-
-static int get_stack_skipnr(const unsigned long stack_entries[],
-			    int num_entries, enum kfence_error_kind kind)
-{
-	switch (kind) {
-	case KFENCE_ERROR_UAF:
-	case KFENCE_ERROR_OOB:
-		return scroll_stack_to(stack_entries, num_entries,
-				       "asm_exc_page_fault");
-	case KFENCE_ERROR_CORRUPTION:
-		return scroll_stack_to(stack_entries, num_entries,
-				       "__slab_free");
-	}
-	return 0;
-}
-
-void kfence_report_error(unsigned long address, int obj_index,
-			 struct alloc_metadata *object,
-			 enum kfence_error_kind kind)
-{
-	unsigned long stack_entries[NUM_STACK_ENTRIES] = { 0 };
-	int num_stack_entries =
-		stack_trace_save(stack_entries, NUM_STACK_ENTRIES, 1);
-	int skipnr = get_stack_skipnr(stack_entries, num_stack_entries, kind);
-	bool is_left;
-
-	pr_err("==================================================================\n");
-	switch (kind) {
-	case KFENCE_ERROR_OOB:
-		is_left = address < object->addr;
-		pr_err("BUG: KFENCE: slab-out-of-bounds in %pS\n",
-		       (void *)stack_entries[skipnr]);
-		pr_err("Memory access at address %px to the %s of object #%d\n",
-		       (void *)address, is_left ? "left" : "right", obj_index);
-		break;
-	case KFENCE_ERROR_UAF:
-		pr_err("BUG: KFENCE: use-after-free in %pS\n",
-		       (void *)stack_entries[skipnr]);
-		pr_err("Memory access at address %px\n", (void *)address);
-		break;
-	case KFENCE_ERROR_CORRUPTION:
-		pr_err("BUG: KFENCE: memory corruption in %pS\n",
-		       (void *)stack_entries[skipnr]);
-		pr_err("Invalid write detected at address %px\n",
-		       (void *)address);
-		break;
-	}
-
-	stack_trace_print(stack_entries + skipnr, num_stack_entries - skipnr,
-			  0);
-	pr_err("\n");
-	kfence_print_object(obj_index, object);
-	pr_err("==================================================================\n");
-}
-
 bool kfence_handle_page_fault(unsigned long addr)
 {
 	int page_index, obj_index, report_index = -1, dist = 0, ndist;
 	unsigned long flags;
-	struct alloc_metadata object = {};
+	struct kfence_alloc_metadata object = {};
 
 	if (!is_kfence_addr((void *)addr))
 		return false;
 
-	if (!READ_ONCE(kfence_enabled)) {
+	if (!kfence_is_enabled()) {
 		/* KFENCE has been disabled, unprotect the page and go on. */
 		return kfence_unprotect(addr);
 	}
