@@ -222,6 +222,24 @@ static noinline int do_test_shrink(int size)
 	return res;
 }
 
+/*
+ * Test bulk free. No reports expected.
+ *
+ * build_detached_freelist() in mm/slub.c may modify the freelist pointer
+ * located at (object + kmem_cache->offset). KFENCE should ignore such changes.
+ */
+static noinline int do_test_free_bulk(int size)
+{
+	void *objects[4];
+
+	objects[0] = alloc_from_kfence(size, GFP_KERNEL, SIDE_BOTH, __func__);
+	objects[1] = kmalloc(size, GFP_KERNEL);
+	objects[2] = alloc_from_kfence(size, GFP_KERNEL, SIDE_BOTH, __func__);
+	objects[3] = kmalloc(size, GFP_KERNEL);
+	kfree_bulk(ARRAY_SIZE(objects), objects);
+	return 0;
+}
+
 static int __init test_kfence_init(void)
 {
 	int failures = 0;
@@ -233,6 +251,7 @@ static int __init test_kfence_init(void)
 	failures += do_test_uaf(32, false);
 	failures += do_test_uaf(32, true);
 	failures += do_test_shrink(32);
+	failures += do_test_free_bulk(259);
 
 	if (failures == 0)
 		pr_info("all tests passed!\n");
