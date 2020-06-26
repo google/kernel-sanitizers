@@ -4,9 +4,10 @@
 #define MM_KFENCE_KFENCE_H
 
 #include <linux/mm.h>
-#include <linux/slub_def.h>
 #include <linux/stackdepot.h>
 #include <linux/types.h>
+
+#include "../slab.h"
 
 /*
  * KFENCE_WARN_ON() disables KFENCE on the first warning, to avoid potential
