@@ -125,7 +125,7 @@ static bool kfence_change_page_prot(unsigned long addr, bool protect)
 	if (KFENCE_WARN_ON(!pte) || KFENCE_WARN_ON(level != PG_LEVEL_4K))
 		return false;
 	new_pte = __pte(protect ? (pte_val(*pte) & ~_PAGE_PRESENT) :
-				  (pte_val(*pte) | _PAGE_PRESENT));
+					(pte_val(*pte) | _PAGE_PRESENT));
 	set_pte(pte, new_pte);
 	/* TODO: figure out how to flush TLB properly here. */
 	flush_tlb_one_kernel(addr);
@@ -196,7 +196,8 @@ static bool __meminit kfence_allocate_pool(void)
 
 	/* Set up metadata nodes. */
 	kfence_metadata = (struct kfence_alloc_metadata *)kmalloc_array(
-		KFENCE_NUM_OBJ, sizeof(struct kfence_alloc_metadata), gfp_flags);
+		KFENCE_NUM_OBJ, sizeof(struct kfence_alloc_metadata),
+		gfp_flags);
 	return true;
 error:
 	if (pages)
@@ -249,6 +250,31 @@ static void check_canary_byte(unsigned long addr)
 				    &kfence_metadata[obj_index],
 				    KFENCE_ERROR_CORRUPTION);
 	}
+}
+
+/*
+ * When performing bulk deallocations the freelist pointer in our object may be
+ * overwritten with a NULL. If this happened, reinstate the pattern bytes so
+ * that we don't report a false memory corruption.
+ */
+static void check_cache_freelist_ptr(int index)
+{
+	struct kfence_alloc_metadata *meta = &kfence_metadata[index];
+	unsigned long freeptr;
+	int i;
+
+	if (!meta->cache)
+		return;
+	freeptr = meta->addr + meta->cache->offset;
+	/*
+	 * kfree_bulk() might have set @freeptr to zero. If so, restore the
+	 * pattern. A different @freeptr value will be detected by
+	 * check_canary_byte() later on.
+	 */
+	if (*(void **)freeptr)
+		return;
+	for (i = 0; i < sizeof(void *); i++)
+		set_canary_byte(freeptr + i);
 }
 
 static void for_each_canary(int index, void (*fn)(unsigned long))
@@ -334,6 +360,7 @@ void kfence_guarded_free(void *addr)
 	list_del(&(item->list));
 	list_add_tail(&(item->list), &kfence_freelist.list);
 	index = kfence_addr_to_index((unsigned long)addr);
+	check_cache_freelist_ptr(index);
 	for_each_canary(index, check_canary_byte);
 	/* GFP_ATOMIC to avoid reclaiming memory. */
 	kfence_metadata[index].free_stack = save_stack(GFP_ATOMIC);
