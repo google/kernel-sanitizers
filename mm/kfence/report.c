@@ -105,6 +105,22 @@ static void kfence_print_object(int obj_index,
 	pr_err("%s", kfence_dump_buf);
 }
 
+#define BYTES_TO_DUMP 16
+static void dump_bytes_at(unsigned long addr)
+{
+	unsigned char *c = (unsigned char *)addr;
+	unsigned char *max_addr = (unsigned char *)min(ALIGN(addr, PAGE_SIZE),
+						       addr + BYTES_TO_DUMP);
+	char bytes[BYTES_TO_DUMP * 3 + 1];
+	int len = 0;
+
+	for (; c < max_addr; c++)
+		len += scnprintf(bytes + len, sizeof(bytes) - len, "%02X ", *c);
+
+	pr_err("Bytes at %px: %s\n", (void *)addr, bytes);
+}
+#undef BYTES_TO_DUMP
+
 void kfence_report_error(unsigned long address, int obj_index,
 			 struct kfence_alloc_metadata *object,
 			 enum kfence_error_type type)
@@ -134,6 +150,7 @@ void kfence_report_error(unsigned long address, int obj_index,
 		       (void *)stack_entries[skipnr]);
 		pr_err("Invalid write detected at address %px\n",
 		       (void *)address);
+		dump_bytes_at(address);
 		break;
 	}
 
