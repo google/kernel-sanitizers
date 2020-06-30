@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0
 
 #include <linux/mm.h>
-#include <linux/percpu-defs.h>
+#include <linux/percpu.h>
 
 #include "kfence.h"
 #include "../slab.h"
@@ -16,11 +16,6 @@ void *kfence_alloc_with_size(struct kmem_cache *s, size_t size, gfp_t flags)
 {
 	int cnt;
 	void *ret;
-
-	cnt = this_cpu_dec_return(kfence_sample_cnt);
-	if (cnt > 0)
-		return NULL;
-	this_cpu_write(kfence_sample_cnt, kfence_sample_rate);
 
 	if (!kfence_is_enabled())
 		return NULL;
@@ -46,6 +41,6 @@ void kfence_impl_init(void)
 	 * TODO: a better idea would be to use a normal distribution around
 	 * kfence_sample_rate.
 	 */
-	for_each_possible_cpu(i)
+	for_each_possible_cpu (i)
 		per_cpu(kfence_sample_cnt, i) = kfence_sample_rate;
 }

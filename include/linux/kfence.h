@@ -2,6 +2,7 @@
 #ifndef _LINUX_KFENCE_H
 #define _LINUX_KFENCE_H
 
+#include <linux/percpu.h>
 #include <linux/types.h>
 
 struct kmem_cache;
@@ -43,7 +44,8 @@ static inline size_t kfence_ksize(void *addr) { return 0; }
 #endif /* CONFIG_KFENCE */
 
 #ifdef CONFIG_KFENCE_STEAL
-void *kfence_alloc_and_fix_freelist(struct kmem_cache *s, gfp_t gfp);
+void *kfence_alloc_and_fix_freelist(struct kmem_cache *s, gfp_t gfp,
+				    size_t size);
 
 void kfence_cache_register(struct kmem_cache *s);
 
@@ -55,7 +57,7 @@ void kfence_observe_memcg_cache(struct kmem_cache *memcg_cache);
 // TODO: remove for v1
 // clang-format off
 
-static inline void *kfence_alloc_and_fix_freelist(struct kmem_cache *s, gfp_t gfp) { return NULL; }
+static inline void *kfence_alloc_and_fix_freelist(struct kmem_cache *s, gfp_t gfp, size_t size) { return NULL; }
 static inline void kfence_cache_register(struct kmem_cache *s)   { }
 static inline void kfence_cache_unregister(struct kmem_cache *s) { }
 static inline void kfence_observe_memcg_cache(struct kmem_cache *memcg_cache) { }
@@ -67,7 +69,20 @@ static inline void kfence_observe_memcg_cache(struct kmem_cache *memcg_cache) { 
 
 #ifdef CONFIG_KFENCE_NAIVE
 
+DECLARE_PER_CPU(int, kfence_sample_cnt);
+extern unsigned long kfence_sample_rate;
+
 void *kfence_alloc_with_size(struct kmem_cache *s, size_t size, gfp_t flags);
+static __always_inline void *
+kfence_sampled_alloc_with_size(struct kmem_cache *s, gfp_t flags, size_t size)
+{
+	int cnt = this_cpu_dec_return(kfence_sample_cnt);
+
+	if (likely(cnt > 0))
+		return NULL;
+	this_cpu_write(kfence_sample_cnt, kfence_sample_rate);
+	return kfence_alloc_with_size(s, size, flags);
+}
 
 #else
 
@@ -75,6 +90,7 @@ void *kfence_alloc_with_size(struct kmem_cache *s, size_t size, gfp_t flags);
 // clang-format off
 
 static inline void *kfence_alloc_with_size(struct kmem_cache *s, size_t size, gfp_t flags) { return NULL; }
+static __always_inline void *kfence_sampled_alloc_with_size(struct kmem_cache *s, gfp_t flags, size_t size) { return NULL; }
 
 // TODO: remove for v1
 // clang-format on
