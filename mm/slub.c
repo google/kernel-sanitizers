@@ -2584,6 +2584,20 @@ static inline void *get_freelist(struct kmem_cache *s, struct page *page)
 }
 
 /*
+ * If using KFENCE, allow passing object size in the top 16 bits of _RET_IP_,
+ * assuming they are set to 0xFFFF otherwise (currently only 64-bit systems).
+ */
+#ifdef CONFIG_KFENCE
+#define RET_IP_SIZE(size) \
+	((((unsigned long)(_RET_IP_) << 16) >> 16) | \
+	 ((unsigned long)size << 48))
+#define FIX_RET_IP(addr) ((unsigned long)addr | ((unsigned long)0xFFFF << 48))
+#else
+#define RET_IP_SIZE(size) (_RET_IP_)
+#define FIX_RET_IP(addr) (addr)
+#endif
+
+/*
  * Slow path. The lockless freelist is empty or we need to perform
  * debugging duties.
  *
@@ -2612,6 +2626,7 @@ static void *___slab_alloc(struct kmem_cache *s, gfp_t gfpflags, int node,
 	ret = kfence_alloc_and_fix_freelist(s, gfpflags, addr);
 	if (ret)
 		return ret;
+	addr = FIX_RET_IP(addr);
 
 	page = c->page;
 	if (!page) {
@@ -3929,7 +3944,7 @@ void *__kmalloc(size_t size, gfp_t flags)
 	if (ret)
 		return ret;
 
-	ret = slab_alloc(s, flags, _RET_IP_);
+	ret = slab_alloc(s, flags, RET_IP_SIZE(size));
 
 	trace_kmalloc(_RET_IP_, ret, size, s->size, flags);
 
@@ -3981,7 +3996,7 @@ void *__kmalloc_node(size_t size, gfp_t flags, int node)
 	if (ret)
 		return ret;
 
-	ret = slab_alloc_node(s, flags, node, _RET_IP_);
+	ret = slab_alloc_node(s, flags, node, RET_IP_SIZE(size));
 
 	trace_kmalloc_node(_RET_IP_, ret, size, s->size, flags, node);
 
