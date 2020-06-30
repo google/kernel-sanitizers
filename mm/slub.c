@@ -2817,6 +2817,9 @@ redo:
 	if (unlikely(!object || !node_match(page, node))) {
 		object = __slab_alloc(s, gfpflags, node, addr, c);
 		stat(s, ALLOC_SLOWPATH);
+		/* Skip initialization for KFENCE objects. */
+		if (is_kfence_addr(object))
+			goto leave;
 	} else {
 		void *next_object = get_freepointer_safe(s, object);
 
@@ -2851,6 +2854,7 @@ redo:
 	if (unlikely(slab_want_init_on_alloc(gfpflags, s)) && object)
 		memset(object, 0, s->object_size);
 
+leave:
 	slab_post_alloc_hook(s, gfpflags, 1, &object);
 
 	return object;
