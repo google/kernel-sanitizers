@@ -2609,7 +2609,7 @@ static void *___slab_alloc(struct kmem_cache *s, gfp_t gfpflags, int node,
 	struct page *page;
 	void *ret;
 
-	ret = kfence_alloc_and_fix_freelist(s, gfpflags);
+	ret = kfence_alloc_and_fix_freelist(s, gfpflags, addr);
 	if (ret)
 		return ret;
 

@@ -76,23 +76,26 @@ bool kfence_fix_freelist(struct kmem_cache *s)
 	return true;
 }
 
-void *kfence_alloc_and_fix_freelist(struct kmem_cache *s, gfp_t gfp)
+void *kfence_alloc_and_fix_freelist(struct kmem_cache *s, gfp_t gfp,
+				    unsigned long addr)
 {
 	unsigned long flags;
 	void *ret = NULL;
+	unsigned short size;
 
 	if (!kfence_is_enabled())
 		return NULL;
 	spin_lock_irqsave(&kfence_caches_lock, flags);
 	if (!kfence_fix_freelist(s))
 		goto leave;
-	/*
-	 * TODO: pass correct override_size for kmalloc.
-	 * See https://github.com/google/kasan/issues/73 for details.
-	 */
-	ret = kfence_guarded_alloc(s, 0, gfp);
+	/* If available, take allocation size from the caller address. */
+	size = addr >> 48;
+	if (size == 0xffff)
+		size = 0;
+	ret = kfence_guarded_alloc(s, size, gfp);
 	spin_unlock_irqrestore(&kfence_caches_lock, flags);
-	pr_debug("kfence_alloc_and_fix_freelist returns %px\n", ret);
+	pr_debug("kfence_alloc_and_fix_freelist(%s) returns %px\n", s->name,
+		 ret);
 	return ret;
 leave:
 	spin_unlock_irqrestore(&kfence_caches_lock, flags);

@@ -43,7 +43,8 @@ static inline size_t kfence_ksize(void *addr) { return 0; }
 #endif /* CONFIG_KFENCE */
 
 #ifdef CONFIG_KFENCE_STEAL
-void *kfence_alloc_and_fix_freelist(struct kmem_cache *s, gfp_t gfp);
+void *kfence_alloc_and_fix_freelist(struct kmem_cache *s, gfp_t gfp,
+				    unsigned long addr);
 
 void kfence_cache_register(struct kmem_cache *s);
 
@@ -55,7 +56,7 @@ void kfence_observe_memcg_cache(struct kmem_cache *memcg_cache);
 // TODO: remove for v1
 // clang-format off
 
-static inline void *kfence_alloc_and_fix_freelist(struct kmem_cache *s, gfp_t gfp) { return NULL; }
+static inline void *kfence_alloc_and_fix_freelist(struct kmem_cache *s, gfp_t gfp, unsigned long addr) { return NULL; }
 static inline void kfence_cache_register(struct kmem_cache *s)   { }
 static inline void kfence_cache_unregister(struct kmem_cache *s) { }
 static inline void kfence_observe_memcg_cache(struct kmem_cache *memcg_cache) { }
