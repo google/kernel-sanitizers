@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0
+
 /*
  * Test cases for KFENCE memory safety error detector.
  * TODO: switch to KUnit.
@@ -92,12 +93,21 @@ static void *alloc_from_kfence(size_t size, gfp_t gfp, int side,
 	return NULL;
 }
 
+static void print_test_header(const char *expect, const char *fn)
+{
+	pr_err("---------------------------------------------\n");
+	pr_err("%s: %s\n", fn, expect);
+}
+
+#define PRINT_TEST_HEADER(ex)	print_test_header(ex, __func__)
+
 static noinline int do_test_oob(size_t size, bool use_cache)
 {
 	void *buffer;
 	char *c;
 	int res = 0;
 
+	PRINT_TEST_HEADER("expecting an OOB report");
 	if (use_cache)
 		if (!setup_cache(size))
 			return 1;
@@ -134,6 +144,7 @@ static noinline int do_test_kmalloc_aligned_oob_read(void)
 	char *c;
 	const size_t size = 73;
 
+	PRINT_TEST_HEADER("expecting an OOB report");
 	buffer = alloc_from_kfence(size, GFP_KERNEL, SIDE_RIGHT, __func__);
 	if (!buffer)
 		return 1;
@@ -165,6 +176,7 @@ static noinline int do_test_kmalloc_aligned_oob_write(void)
 	unsigned char *c, value;
 	const size_t size = 73;
 
+	PRINT_TEST_HEADER("expecting a heap corruption report");
 	buffer = alloc_from_kfence(size, GFP_KERNEL, SIDE_RIGHT, __func__);
 	if (!buffer)
 		return 1;
@@ -187,6 +199,7 @@ static noinline int do_test_uaf(size_t size, bool use_cache)
 	char *c;
 	int res = 0;
 
+	PRINT_TEST_HEADER("expecting an UAF report");
 	if (use_cache)
 		if (!setup_cache(size))
 			return 1;
@@ -209,6 +222,7 @@ static noinline int do_test_shrink(int size)
 	void *buffer;
 	int res = 0;
 
+	PRINT_TEST_HEADER("no reports expected");
 	if (!setup_cache(size))
 		return 1;
 	buffer = alloc_from_kfence(size, GFP_KERNEL, SIDE_BOTH, __func__);
@@ -231,13 +245,19 @@ static noinline int do_test_shrink(int size)
 static noinline int do_test_free_bulk(int size)
 {
 	void *objects[4];
+	int res = 0;
 
+	PRINT_TEST_HEADER("no reports expected");
 	objects[0] = alloc_from_kfence(size, GFP_KERNEL, SIDE_BOTH, __func__);
+	if (!objects[0])
+		res = 1;
 	objects[1] = kmalloc(size, GFP_KERNEL);
 	objects[2] = alloc_from_kfence(size, GFP_KERNEL, SIDE_BOTH, __func__);
+	if (!objects[2])
+		res = 1;
 	objects[3] = kmalloc(size, GFP_KERNEL);
 	kfree_bulk(ARRAY_SIZE(objects), objects);
-	return 0;
+	return res;
 }
 
 static int __init test_kfence_init(void)
