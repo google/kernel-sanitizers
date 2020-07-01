@@ -1407,7 +1407,7 @@ struct btrfs_map_token {
 };
 
 #define BTRFS_BYTES_TO_BLKS(fs_info, bytes) \
-				((bytes) >> (fs_info)->sb->s_blocksize_bits)
+				((bytes) >> (fs_info)->sectorsize_bits)
 
 static inline void btrfs_init_map_token(struct btrfs_map_token *token,
 					struct extent_buffer *eb)
