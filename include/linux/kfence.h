@@ -2,6 +2,7 @@
 #ifndef _LINUX_KFENCE_H
 #define _LINUX_KFENCE_H
 
+#include <linux/percpu.h>
 #include <linux/types.h>
 
 struct kmem_cache;
@@ -68,7 +69,23 @@ static inline void kfence_observe_memcg_cache(struct kmem_cache *memcg_cache) { 
 
 #ifdef CONFIG_KFENCE_NAIVE
 
+DECLARE_PER_CPU(int, kfence_sample_cnt);
+extern unsigned long kfence_sample_rate;
+
 void *kfence_alloc_with_size(struct kmem_cache *s, size_t size, gfp_t flags);
+static __always_inline void *kfence_alloc_with_addr(struct kmem_cache *s, gfp_t flags, unsigned long addr)
+{
+	int cnt = this_cpu_dec_return(kfence_sample_cnt);
+	size_t size;
+
+	if (likely(cnt > 0))
+		return NULL;
+	this_cpu_write(kfence_sample_cnt, kfence_sample_rate);
+	size = addr >> 48;
+	if (size == 0xffff)
+		size = 0;
+	return kfence_alloc_with_size(s, size, flags);
+}
 
 #else
 
@@ -76,6 +93,7 @@ void *kfence_alloc_with_size(struct kmem_cache *s, size_t size, gfp_t flags);
 // clang-format off
 
 static inline void *kfence_alloc_with_size(struct kmem_cache *s, size_t size, gfp_t flags) { return NULL; }
+static __always_inline void *kfence_alloc_with_addr(struct kmem_cache *s, gfp_t flags, unsigned long addr) { return NULL; }
 
 // TODO: remove for v1
 // clang-format on

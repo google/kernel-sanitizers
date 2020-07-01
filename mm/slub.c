@@ -2775,6 +2775,10 @@ static __always_inline void *slab_alloc_node(struct kmem_cache *s,
 	struct page *page;
 	unsigned long tid;
 
+	object = kfence_alloc_with_addr(s, gfpflags, addr);
+	if (object)
+		return object;
+
 	s = slab_pre_alloc_hook(s, gfpflags);
 	if (!s)
 		return NULL;
@@ -2868,11 +2872,7 @@ static __always_inline void *slab_alloc(struct kmem_cache *s,
 
 void *kmem_cache_alloc(struct kmem_cache *s, gfp_t gfpflags)
 {
-	void *ret = kfence_alloc_with_size(s, 0, gfpflags);
-	if (ret)
-		return ret;
-
-	ret = slab_alloc(s, gfpflags, _RET_IP_);
+	void *ret = slab_alloc(s, gfpflags, _RET_IP_);
 
 	trace_kmem_cache_alloc(_RET_IP_, ret, s->object_size,
 				s->size, gfpflags);
@@ -3944,10 +3944,6 @@ void *__kmalloc(size_t size, gfp_t flags)
 	if (unlikely(ZERO_OR_NULL_PTR(s)))
 		return s;
 
-	ret = kfence_alloc_with_size(s, size, flags);
-	if (ret)
-		return ret;
-
 	ret = slab_alloc(s, flags, RET_IP_SIZE(size));
 
 	trace_kmalloc(_RET_IP_, ret, size, s->size, flags);
@@ -3995,10 +3991,6 @@ void *__kmalloc_node(size_t size, gfp_t flags, int node)
 
 	if (unlikely(ZERO_OR_NULL_PTR(s)))
 		return s;
-
-	ret = kfence_alloc_with_size(s, size, flags);
-	if (ret)
-		return ret;
 
 	ret = slab_alloc_node(s, flags, node, RET_IP_SIZE(size));
 
