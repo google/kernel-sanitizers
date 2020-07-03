@@ -34,9 +34,6 @@ static unsigned long kfence_pool_start, kfence_pool_end;
 /* Protects kfence_freelist, kfence_recycle, kfence_metadata */
 static DEFINE_SPINLOCK(kfence_alloc_lock);
 
-/* Size picked to accommodate the metadata of a single KFENCE object. */
-char kfence_dump_buf[PAGE_SIZE * 2];
-
 /*
  * kfence_freelist is a wrapper around kfence page pointers that allows
  * chaining them.
@@ -488,10 +485,10 @@ static int obj_show(struct seq_file *seq, void *v)
 	unsigned long flags;
 
 	spin_lock_irqsave(&kfence_alloc_lock, flags);
-	kfence_dump_object(kfence_dump_buf, sizeof(kfence_dump_buf), index,
-			   &kfence_metadata[index]);
+	kfence_dump_object(seq, index, &kfence_metadata[index]);
 	spin_unlock_irqrestore(&kfence_alloc_lock, flags);
-	seq_printf(seq, "%s\n", kfence_dump_buf);
+	seq_printf(seq, "---------------------------------\n");
+
 	return 0;
 }
 

@@ -1,12 +1,28 @@
 // SPDX-License-Identifier: GPL-2.0
 
+#include <stdarg.h>
+
 #include <linux/kernel.h>
+#include <linux/printk.h>
 #include <linux/stacktrace.h>
 #include <linux/string.h>
 
 #include "kfence.h"
 
 #define NUM_STACK_ENTRIES 64
+
+/* Helper function to either print to a seq_file or to console. */
+static void seq_con_printf(struct seq_file *seq, const char *fmt, ...)
+{
+	va_list args;
+
+	va_start(args, fmt);
+	if (seq)
+		seq_vprintf(seq, fmt, args);
+	else
+		vprintk(fmt, args);
+	va_end(args);
+}
 
 bool stack_entry_matches(unsigned long addr, const char *pattern)
 {
@@ -49,60 +65,59 @@ static int get_stack_skipnr(const unsigned long stack_entries[],
 	return 0;
 }
 
-static int kfence_dump_stack(char *buf, size_t buf_size,
-			     struct kfence_alloc_metadata *obj, bool is_alloc)
+static void kfence_dump_stack(struct seq_file *seq,
+			      struct kfence_alloc_metadata *obj, bool is_alloc)
 {
-	unsigned long *entries;
-	unsigned long nr_entries;
-	depot_stack_handle_t handle;
-	int len = 0;
+	const depot_stack_handle_t handle =
+		is_alloc ? obj->alloc_stack : obj->free_stack;
 
-	if (is_alloc)
-		handle = obj->alloc_stack;
-	else
-		handle = obj->free_stack;
 	if (handle) {
+		/*
+		 * Unfortunately stack_trace_seq_print() does not exist, and we
+		 * require a temporary buffer for printing the stack trace. We
+		 * expect that printing KFENCE object information is serialized
+		 * under the KFENCE lock.
+		 */
+		static char buf[PAGE_SIZE];
+		unsigned long *entries;
+		unsigned long nr_entries;
+
 		nr_entries = stack_depot_fetch(handle, &entries);
-		len += stack_trace_snprint(buf + len, buf_size - len, entries,
-					   nr_entries, 0);
+		stack_trace_snprint(buf, sizeof(buf), entries, nr_entries, 0);
+		seq_con_printf(seq, "%s\n", buf);
 	} else {
-		len += scnprintf(buf + len, buf_size - len, "  no %s stack.\n",
-				 is_alloc ? "allocation" : "deallocation");
+		seq_con_printf(seq, "  no %s stack.\n",
+			       is_alloc ? "allocation" : "deallocation");
 	}
-	return len;
 }
 
-int kfence_dump_object(char *buf, size_t buf_size, int obj_index,
-		       struct kfence_alloc_metadata *obj)
+void kfence_dump_object(struct seq_file *seq, int obj_index,
+			struct kfence_alloc_metadata *obj)
 {
 	int size = abs(obj->size);
 	unsigned long start = obj->addr;
 	struct kmem_cache *cache;
-	int len = 0;
 
-	len += scnprintf(buf + len, buf_size - len,
-			 "Object #%d: starts at %px, size=%d\n", obj_index,
-			 (void *)start, size);
-	len += scnprintf(buf + len, buf_size - len, "allocated at:\n");
-	len += kfence_dump_stack(buf + len, buf_size - len, obj, true);
+	seq_con_printf(seq, "Object #%d: starts at %px, size=%d\n", obj_index,
+		       (void *)start, size);
+	seq_con_printf(seq, "allocated at:\n");
+	kfence_dump_stack(seq, obj, true);
+
 	if (kfence_metadata[obj_index].state == KFENCE_OBJECT_FREED) {
-		len += scnprintf(buf + len, buf_size - len, "freed at:\n");
-		len += kfence_dump_stack(buf + len, buf_size - len, obj, false);
+		seq_con_printf(seq, "freed at:\n");
+		kfence_dump_stack(seq, obj, false);
 	}
+
 	cache = kfence_metadata[obj_index].cache;
 	if (cache && cache->name)
-		len += scnprintf(buf + len, buf_size - len,
-				 "Object #%d belongs to cache %s\n", obj_index,
-				 cache->name);
-	return len;
+		seq_con_printf(seq, "Object #%d belongs to cache %s\n",
+			       obj_index, cache->name);
 }
 
 static void kfence_print_object(int obj_index,
 				struct kfence_alloc_metadata *obj)
 {
-	kfence_dump_object(kfence_dump_buf, sizeof(kfence_dump_buf), obj_index,
-			   obj);
-	pr_err("%s", kfence_dump_buf);
+	kfence_dump_object(NULL, obj_index, obj);
 }
 
 static void dump_bytes_at(unsigned long addr)

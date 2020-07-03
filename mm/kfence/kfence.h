@@ -4,6 +4,7 @@
 #define MM_KFENCE_KFENCE_H
 
 #include <linux/mm.h>
+#include <linux/seq_file.h>
 #include <linux/stackdepot.h>
 #include <linux/types.h>
 
@@ -47,7 +48,6 @@ struct kfence_alloc_metadata {
 extern bool kfence_enabled;
 extern unsigned long kfence_sample_rate;
 extern struct kfence_alloc_metadata *kfence_metadata;
-extern char kfence_dump_buf[PAGE_SIZE * 2];
 
 static inline bool kfence_is_enabled(void)
 {
@@ -70,8 +70,8 @@ void kfence_report_error(unsigned long address, int obj_index,
 			 struct kfence_alloc_metadata *metadata,
 			 enum kfence_error_type type);
 
-int kfence_dump_object(char *buf, size_t buf_size, int obj_index,
-		       struct kfence_alloc_metadata *obj);
+void kfence_dump_object(struct seq_file *seq, int obj_index,
+			struct kfence_alloc_metadata *obj);
 
 /* Should be provided by the sampling algorithm implementation. */
 void kfence_impl_init(void);
