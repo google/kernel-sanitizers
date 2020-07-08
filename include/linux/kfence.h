@@ -84,6 +84,21 @@ kfence_sampled_alloc_with_size(struct kmem_cache *s, gfp_t flags, size_t size)
 	return kfence_alloc_with_size(s, size, flags);
 }
 
+#elif defined(CONFIG_KFENCE_STATIC_KEY)
+
+#include <linux/static_key.h>
+
+extern struct static_key_false kfence_allocation_key;
+
+void *kfence_alloc_with_size(struct kmem_cache *s, size_t size, gfp_t flags);
+static __always_inline void *
+kfence_sampled_alloc_with_size(struct kmem_cache *s, gfp_t flags, size_t size)
+{
+	return static_branch_unlikely(&kfence_allocation_key) ?
+			     kfence_alloc_with_size(s, size, flags) :
+			     NULL;
+}
+
 #else
 
 // TODO: remove for v1

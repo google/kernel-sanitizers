@@ -41,4 +41,11 @@ config KFENCE_NAIVE
 	  Adds branches to allocation sites to call KFENCE with a certain
 	  probability.
 
+config KFENCE_STATIC_KEY
+	bool "Static key implementation"
+	depends on JUMP_LABEL # To ensure performance, require jump labels
+	help
+	  Adds static keys to allocation sites to call KFENCE with a certain
+	  probability.
+
 endchoice
