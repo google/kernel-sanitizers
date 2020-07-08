@@ -13,7 +13,6 @@
 #define	_LINUX_SLAB_H
 
 #include <linux/gfp.h>
-#include <linux/kfence.h>
 #include <linux/overflow.h>
 #include <linux/types.h>
 #include <linux/workqueue.h>
@@ -544,7 +543,6 @@ static __always_inline void *kmalloc(size_t size, gfp_t flags)
 	if (__builtin_constant_p(size)) {
 #ifndef CONFIG_SLOB
 		unsigned int index;
-		void *ret;
 #endif
 		if (size > KMALLOC_MAX_CACHE_SIZE)
 			return kmalloc_large(size, flags);
@@ -553,16 +551,6 @@ static __always_inline void *kmalloc(size_t size, gfp_t flags)
 
 		if (!index)
 			return ZERO_SIZE_PTR;
-
-		/*
-		 * TODO: __kmalloc() also calls kfence_alloc_with_size().
-		 * need to ensure it is called only once.
-		 */
-		ret = kfence_alloc_with_size(
-			kmalloc_caches[kmalloc_type(flags)][index], size,
-			flags);
-		if (ret)
-			return ret;
 
 		return kmem_cache_alloc_trace(
 				kmalloc_caches[kmalloc_type(flags)][index],
