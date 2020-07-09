@@ -13,8 +13,8 @@ struct page;
 
 void kfence_init(void);
 
-bool kfence_free(struct kmem_cache *s, struct page *page, void *head,
-		 void *tail, int cnt, unsigned long addr);
+bool kfence_free(struct kmem_cache *s, struct page *page, void *head, void *tail, int cnt,
+		 unsigned long addr);
 
 bool kfence_discard_slab(struct kmem_cache *s, struct page *page);
 
@@ -45,8 +45,7 @@ static inline size_t kfence_ksize(void *addr) { return 0; }
 #endif /* CONFIG_KFENCE */
 
 #ifdef CONFIG_KFENCE_STEAL
-void *kfence_alloc_and_fix_freelist(struct kmem_cache *s, gfp_t gfp,
-				    size_t size);
+void *kfence_alloc_and_fix_freelist(struct kmem_cache *s, gfp_t gfp, size_t size);
 
 void kfence_cache_register(struct kmem_cache *s);
 
@@ -74,8 +73,8 @@ DECLARE_PER_CPU(int, kfence_sample_cnt);
 extern unsigned long kfence_sample_rate;
 
 void *kfence_alloc_with_size(struct kmem_cache *s, size_t size, gfp_t flags);
-static __always_inline void *
-kfence_sampled_alloc_with_size(struct kmem_cache *s, gfp_t flags, size_t size)
+static __always_inline void *kfence_sampled_alloc_with_size(struct kmem_cache *s, gfp_t flags,
+							    size_t size)
 {
 	int cnt = this_cpu_dec_return(kfence_sample_cnt);
 
@@ -101,8 +100,8 @@ extern struct static_key_false kfence_allocation_key;
 void *kfence_alloc_with_size(struct kmem_cache *s, size_t size, gfp_t flags);
 
 // TODO(elver): Add API doc.
-static __always_inline void *
-kfence_sampled_alloc_with_size(struct kmem_cache *s, gfp_t flags, size_t size)
+static __always_inline void *kfence_sampled_alloc_with_size(struct kmem_cache *s, gfp_t flags,
+							    size_t size)
 {
 	return static_branch_unlikely(&kfence_allocation_key) ?
 			     kfence_alloc_with_size(s, size, flags) :

@@ -76,8 +76,7 @@ bool kfence_fix_freelist(struct kmem_cache *s)
 	return true;
 }
 
-void *kfence_alloc_and_fix_freelist(struct kmem_cache *s, gfp_t gfp,
-				    size_t size)
+void *kfence_alloc_and_fix_freelist(struct kmem_cache *s, gfp_t gfp, size_t size)
 {
 	unsigned long flags;
 	void *ret = NULL;
@@ -89,8 +88,7 @@ void *kfence_alloc_and_fix_freelist(struct kmem_cache *s, gfp_t gfp,
 		goto leave;
 	ret = kfence_guarded_alloc(s, size, gfp);
 	spin_unlock_irqrestore(&kfence_caches_lock, flags);
-	pr_debug("kfence_alloc_and_fix_freelist(%s) returns %px\n", s->name,
-		 ret);
+	pr_debug("kfence_alloc_and_fix_freelist(%s) returns %px\n", s->name, ret);
 	return ret;
 leave:
 	spin_unlock_irqrestore(&kfence_caches_lock, flags);
@@ -130,12 +128,7 @@ void kfence_cache_register(struct kmem_cache *s)
 #endif
 
 	if (s->size > PAGE_SIZE) {
-		pr_debug("skipping cache %s because of size: %d\n", name,
-			 s->size);
-		return;
-	}
-	if (s->ctor) {
-		pr_debug("skipping cache %s because of ctor\n", name);
+		pr_debug("skipping cache %s because of size: %d\n", name, s->size);
 		return;
 	}
 	if (s->flags & SLAB_TYPESAFE_BY_RCU) {
@@ -173,8 +166,7 @@ void kfence_cache_unregister(struct kmem_cache *s)
 		goto leave;
 	kfence_fix_freelist(s);
 	if (index != kfence_num_caches - 1)
-		kfence_registered_caches[index] =
-			kfence_registered_caches[kfence_num_caches - 1];
+		kfence_registered_caches[index] = kfence_registered_caches[kfence_num_caches - 1];
 	kfence_num_caches--;
 leave:
 	spin_unlock_irqrestore(&kfence_caches_lock, flags);
@@ -262,8 +254,7 @@ void kfence_observe_memcg_cache(struct kmem_cache *memcg_cache)
 	spin_lock_irqsave(&kfence_caches_lock, flags);
 	if (kfence_fix_freelist(root)) {
 		kfence_steal_freelist(memcg_cache, cpu);
-		pr_debug("stole freelist from memcg cache %s on CPU%d\n",
-			 memcg_cache->name, cpu);
+		pr_debug("stole freelist from memcg cache %s on CPU%d\n", memcg_cache->name, cpu);
 	}
 	spin_unlock_irqrestore(&kfence_caches_lock, flags);
 }
