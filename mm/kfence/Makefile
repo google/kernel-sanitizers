@@ -3,3 +3,4 @@
 obj-$(CONFIG_KFENCE) := core.o report.o
 obj-$(CONFIG_KFENCE_STEAL) += steal.o
 obj-$(CONFIG_KFENCE_NAIVE) += naive.o
+obj-$(CONFIG_KFENCE_STATIC_KEY) += static_key.o

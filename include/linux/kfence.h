@@ -20,6 +20,7 @@ bool kfence_discard_slab(struct kmem_cache *s, struct page *page);
 
 bool kfence_handle_page_fault(unsigned long addr);
 
+// TODO(elver): Make is_kfence_addr inlinable.
 bool is_kfence_addr(void *addr);
 
 size_t kfence_ksize(const void *addr);
@@ -82,6 +83,30 @@ kfence_sampled_alloc_with_size(struct kmem_cache *s, gfp_t flags, size_t size)
 		return NULL;
 	this_cpu_write(kfence_sample_cnt, kfence_sample_rate);
 	return kfence_alloc_with_size(s, size, flags);
+}
+
+#elif defined(CONFIG_KFENCE_STATIC_KEY)
+
+#include <linux/static_key.h>
+
+extern struct static_key_false kfence_allocation_key;
+
+// TODO(elver): The order of size,flags is inconsistent between the 2 functions.
+// Fix it by preferring size,flags throughout (which is kmalloc's argument
+// order).
+
+// TODO(elver): Shorten function names, and make kfence_alloc_with_size private.
+// Simply rename them to __kfence_alloc and kfence_alloc respectively.
+
+void *kfence_alloc_with_size(struct kmem_cache *s, size_t size, gfp_t flags);
+
+// TODO(elver): Add API doc.
+static __always_inline void *
+kfence_sampled_alloc_with_size(struct kmem_cache *s, gfp_t flags, size_t size)
+{
+	return static_branch_unlikely(&kfence_allocation_key) ?
+			     kfence_alloc_with_size(s, size, flags) :
+			     NULL;
 }
 
 #else
