@@ -27,7 +27,7 @@
 /* Cache used by tests. If empty, allocate from kmalloc instead. */
 static struct kmem_cache *current_cache;
 
-static bool setup_cache(size_t size)
+static bool setup_cache(size_t size, void (*ctor)(void *))
 {
 	/*
 	 * Use SLAB_NOLEAKTRACE to prevent merging this cache with existing
@@ -37,7 +37,7 @@ static bool setup_cache(size_t size)
 	 * Use SLAB_ACCOUNT to allocate via memcg, if enabled.
 	 */
 	current_cache = kmem_cache_create(
-		"test_cache", size, 1, SLAB_NOLEAKTRACE | SLAB_ACCOUNT, NULL);
+		"test_cache", size, 1, SLAB_NOLEAKTRACE | SLAB_ACCOUNT, ctor);
 	if (!current_cache)
 		return false;
 	return true;
@@ -99,7 +99,7 @@ static void print_test_header(const char *expect, const char *fn)
 	pr_err("%s: %s\n", fn, expect);
 }
 
-#define PRINT_TEST_HEADER(ex)	print_test_header(ex, __func__)
+#define PRINT_TEST_HEADER(ex) print_test_header(ex, __func__)
 
 static noinline int do_test_oob(size_t size, bool use_cache)
 {
@@ -109,7 +109,7 @@ static noinline int do_test_oob(size_t size, bool use_cache)
 
 	PRINT_TEST_HEADER("expecting an OOB report");
 	if (use_cache)
-		if (!setup_cache(size))
+		if (!setup_cache(size, NULL))
 			return 1;
 	buffer = alloc_from_kfence(size, GFP_KERNEL, SIDE_BOTH, __func__);
 	if (buffer) {
@@ -201,7 +201,7 @@ static noinline int do_test_uaf(size_t size, bool use_cache)
 
 	PRINT_TEST_HEADER("expecting an UAF report");
 	if (use_cache)
-		if (!setup_cache(size))
+		if (!setup_cache(size, NULL))
 			return 1;
 	buffer = alloc_from_kfence(size, GFP_KERNEL, SIDE_BOTH, __func__);
 	if (buffer) {
@@ -223,7 +223,7 @@ static noinline int do_test_shrink(int size)
 	int res = 0;
 
 	PRINT_TEST_HEADER("no reports expected");
-	if (!setup_cache(size))
+	if (!setup_cache(size, NULL))
 		return 1;
 	buffer = alloc_from_kfence(size, GFP_KERNEL, SIDE_BOTH, __func__);
 	if (buffer) {
@@ -260,6 +260,40 @@ static noinline int do_test_free_bulk(int size)
 	return res;
 }
 
+static void dummy_ctor(void *obj)
+{
+	/* Every object has at least 8 bytes. */
+	memset(obj, 0xc7, 8);
+}
+
+/* Ensure that constructors work properly. */
+static noinline int do_test_ctor(void)
+{
+	const int size = 32;
+	int res = 0, i;
+	unsigned char *buffer;
+
+	PRINT_TEST_HEADER("no reports expected");
+	if (!setup_cache(size, dummy_ctor))
+		return 1;
+	buffer = (unsigned char *)alloc_from_kfence(size, GFP_KERNEL, SIDE_BOTH,
+						    __func__);
+	if (buffer) {
+		for (i = 0; i < 8; i++)
+			if (buffer[i] != 0xc7) {
+				pr_err("Incorrect buffer contents: %px\n",
+				       *(void **)buffer);
+				res = 1;
+				break;
+			}
+		free_to_kfence(buffer);
+	} else {
+		res = 1;
+	}
+	teardown_cache();
+	return res;
+}
+
 static int __init test_kfence_init(void)
 {
 	int failures = 0;
@@ -272,6 +306,7 @@ static int __init test_kfence_init(void)
 	failures += do_test_uaf(32, true);
 	failures += do_test_shrink(32);
 	failures += do_test_free_bulk(259);
+	failures += do_test_ctor();
 
 	if (failures == 0)
 		pr_info("all tests passed!\n");
