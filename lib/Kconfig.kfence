@@ -10,7 +10,6 @@ config TEST_KFENCE
 config KFENCE
 	bool "KFence: low-overhead use-after-free and buffer-overflow detector"
 	depends on HAVE_ARCH_KFENCE && !KASAN
-	select STACKDEPOT
 	help
 	  KFence is low-overhead sampling-based detector for heap
 	  use-after-free and buffer-overflow errors. KFence is designed to have

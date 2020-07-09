@@ -48,21 +48,21 @@ static struct kfence_freelist kfence_recycle = { .list = LIST_HEAD_INIT(kfence_r
 struct kfence_alloc_metadata *kfence_metadata;
 
 #define KFENCE_DEFAULT_SAMPLE_RATE 100
-#define KFENCE_STACK_DEPTH 64
 
-/* TODO: there's a similar function in KASAN already. */
-static inline depot_stack_handle_t save_stack(gfp_t flags)
+/* Requres kfence_alloc_lock. */
+static void save_stack(int index, bool is_alloc)
 {
-	unsigned long entries[KFENCE_STACK_DEPTH];
 	unsigned long nr_entries;
+	unsigned long *entries =
+		is_alloc ? kfence_metadata[index].stack_alloc : kfence_metadata[index].stack_free;
 
-	nr_entries = stack_trace_save(entries, ARRAY_SIZE(entries), 0);
-	/*
-	 * TODO: filter_irq_stacks() is in linux-next, uncomment when it reaches
-	 * mainline.
-	 */
-	/*nr_entries = filter_irq_stacks(entries, nr_entries);*/
-	return stack_depot_save(entries, nr_entries, flags);
+	nr_entries = stack_trace_save(entries, KFENCE_STACK_DEPTH, 0);
+	/* TODO(glider): filter_irq_stacks() requires stackdepot. */
+	/* nr_entries = filter_irq_stacks(entries, nr_entries); */
+	if (is_alloc)
+		kfence_metadata[index].nr_alloc = nr_entries;
+	else
+		kfence_metadata[index].nr_free = nr_entries;
 }
 
 noinline void kfence_disable(void)
@@ -182,11 +182,14 @@ static bool __meminit kfence_allocate_pool(void)
 	/* Set up metadata nodes. */
 	kfence_metadata = (struct kfence_alloc_metadata *)kmalloc_array(
 		KFENCE_NUM_OBJ, sizeof(struct kfence_alloc_metadata), gfp_flags);
+	if (!kfence_metadata)
+		goto error;
 	return true;
 error:
 	if (pages)
 		__free_pages(pages, KFENCE_NUM_OBJ_LOG + 1);
 	kfree(objects);
+	kfree(kfence_metadata);
 	return false;
 }
 
@@ -300,11 +303,7 @@ void *kfence_guarded_alloc(struct kmem_cache *cache, size_t override_size, gfp_t
 		kfence_metadata[index].addr = (unsigned long)ret;
 		if (gfp & __GFP_ZERO)
 			memset(ret, 0, size);
-		/*
-		 * Reclaiming memory when storing stacks may result in
-		 * unnecessary locking.
-		 */
-		kfence_metadata[index].alloc_stack = save_stack(gfp & ~__GFP_RECLAIM);
+		save_stack(index, true);
 		kfence_metadata[index].cache = cache;
 		WRITE_ONCE(kfence_metadata[index].size, right ? -size : size);
 		kfence_metadata[index].state = KFENCE_OBJECT_ALLOCATED;
@@ -336,8 +335,7 @@ void kfence_guarded_free(void *addr)
 	index = kfence_addr_to_index((unsigned long)addr);
 	check_cache_freelist_ptr(index);
 	for_each_canary(index, check_canary_byte);
-	/* GFP_ATOMIC to avoid reclaiming memory. */
-	kfence_metadata[index].free_stack = save_stack(GFP_ATOMIC);
+	save_stack(index, false);
 	kfence_metadata[index].state = KFENCE_OBJECT_FREED;
 	kfence_protect(aligned_addr);
 	spin_unlock_irqrestore(&kfence_alloc_lock, flags);
