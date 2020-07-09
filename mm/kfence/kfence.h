@@ -5,7 +5,6 @@
 
 #include <linux/mm.h>
 #include <linux/seq_file.h>
-#include <linux/stackdepot.h>
 #include <linux/types.h>
 
 #include "../slab.h"
@@ -24,8 +23,8 @@
 
 enum kfence_object_state { KFENCE_OBJECT_UNUSED, KFENCE_OBJECT_ALLOCATED, KFENCE_OBJECT_FREED };
 
+#define KFENCE_STACK_DEPTH 64
 struct kfence_alloc_metadata {
-	depot_stack_handle_t alloc_stack, free_stack;
 	struct kmem_cache *cache;
 	/*
 	 * Size may be read without a lock in ksize(). We assume that ksize() is
@@ -39,6 +38,9 @@ struct kfence_alloc_metadata {
 	 */
 	unsigned long addr;
 	enum kfence_object_state state;
+	unsigned long nr_alloc, nr_free;
+	unsigned long stack_alloc[KFENCE_STACK_DEPTH];
+	unsigned long stack_free[KFENCE_STACK_DEPTH];
 };
 
 extern bool kfence_enabled;

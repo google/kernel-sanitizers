@@ -66,9 +66,10 @@ static int get_stack_skipnr(const unsigned long stack_entries[], int num_entries
 static void kfence_dump_stack(struct seq_file *seq, struct kfence_alloc_metadata *obj,
 			      bool is_alloc)
 {
-	const depot_stack_handle_t handle = is_alloc ? obj->alloc_stack : obj->free_stack;
+	unsigned long *entries = is_alloc ? obj->stack_alloc : obj->stack_free;
+	unsigned long nr_entries = is_alloc ? obj->nr_alloc : obj->nr_free;
 
-	if (handle) {
+	if (nr_entries) {
 		/*
 		 * Unfortunately stack_trace_seq_print() does not exist, and we
 		 * require a temporary buffer for printing the stack trace. We
@@ -76,10 +77,7 @@ static void kfence_dump_stack(struct seq_file *seq, struct kfence_alloc_metadata
 		 * under the KFENCE lock.
 		 */
 		static char buf[PAGE_SIZE];
-		unsigned long *entries;
-		unsigned long nr_entries;
 
-		nr_entries = stack_depot_fetch(handle, &entries);
 		stack_trace_snprint(buf, sizeof(buf), entries, nr_entries, 0);
 		seq_con_printf(seq, "%s\n", buf);
 	} else {
