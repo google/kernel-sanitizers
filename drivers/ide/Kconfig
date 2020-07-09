@@ -98,7 +98,7 @@ config IDE_GD_ATAPI
 
 	  For information about jumper settings and the question
 	  of when a ZIP drive uses a partition table, see
-	  <http://www.win.tue.nl/~aeb/linux/zip/zip-1.html>.
+	  <https://www.win.tue.nl/~aeb/linux/zip/zip-1.html>.
 
 	  If unsure, say N.
 
