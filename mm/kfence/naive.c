@@ -22,7 +22,7 @@ void *kfence_alloc_with_size(struct kmem_cache *s, size_t size, gfp_t flags)
 
 	if ((size > PAGE_SIZE) || (s->size > PAGE_SIZE))
 		return NULL;
-	if (s->ctor || (s->flags & SLAB_TYPESAFE_BY_RCU))
+	if (s->flags & SLAB_TYPESAFE_BY_RCU)
 		return NULL;
 
 	ret = kfence_guarded_alloc(s, size, flags);

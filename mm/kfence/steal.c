@@ -134,10 +134,6 @@ void kfence_cache_register(struct kmem_cache *s)
 			 s->size);
 		return;
 	}
-	if (s->ctor) {
-		pr_debug("skipping cache %s because of ctor\n", name);
-		return;
-	}
 	if (s->flags & SLAB_TYPESAFE_BY_RCU) {
 		pr_debug("skipping cache %s because of RCU\n", name);
 		return;

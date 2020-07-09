@@ -335,6 +335,8 @@ void *kfence_guarded_alloc(struct kmem_cache *cache, size_t override_size,
 		page = virt_to_page(obj);
 		page->slab_cache = cache;
 		for_each_canary(index, set_canary_byte);
+		if (cache->ctor)
+			cache->ctor(ret);
 	} else {
 		ret = NULL;
 	}
