@@ -50,26 +50,23 @@ static int scroll_stack_to(const unsigned long stack_entries[], int num_entries,
 	return 0;
 }
 
-static int get_stack_skipnr(const unsigned long stack_entries[],
-			    int num_entries, enum kfence_error_type type)
+static int get_stack_skipnr(const unsigned long stack_entries[], int num_entries,
+			    enum kfence_error_type type)
 {
 	switch (type) {
 	case KFENCE_ERROR_UAF:
 	case KFENCE_ERROR_OOB:
-		return scroll_stack_to(stack_entries, num_entries,
-				       "asm_exc_page_fault");
+		return scroll_stack_to(stack_entries, num_entries, "asm_exc_page_fault");
 	case KFENCE_ERROR_CORRUPTION:
-		return scroll_stack_to(stack_entries, num_entries,
-				       "__slab_free");
+		return scroll_stack_to(stack_entries, num_entries, "__slab_free");
 	}
 	return 0;
 }
 
-static void kfence_dump_stack(struct seq_file *seq,
-			      struct kfence_alloc_metadata *obj, bool is_alloc)
+static void kfence_dump_stack(struct seq_file *seq, struct kfence_alloc_metadata *obj,
+			      bool is_alloc)
 {
-	const depot_stack_handle_t handle =
-		is_alloc ? obj->alloc_stack : obj->free_stack;
+	const depot_stack_handle_t handle = is_alloc ? obj->alloc_stack : obj->free_stack;
 
 	if (handle) {
 		/*
@@ -86,20 +83,17 @@ static void kfence_dump_stack(struct seq_file *seq,
 		stack_trace_snprint(buf, sizeof(buf), entries, nr_entries, 0);
 		seq_con_printf(seq, "%s\n", buf);
 	} else {
-		seq_con_printf(seq, "  no %s stack.\n",
-			       is_alloc ? "allocation" : "deallocation");
+		seq_con_printf(seq, "  no %s stack.\n", is_alloc ? "allocation" : "deallocation");
 	}
 }
 
-void kfence_dump_object(struct seq_file *seq, int obj_index,
-			struct kfence_alloc_metadata *obj)
+void kfence_dump_object(struct seq_file *seq, int obj_index, struct kfence_alloc_metadata *obj)
 {
 	int size = abs(obj->size);
 	unsigned long start = obj->addr;
 	struct kmem_cache *cache;
 
-	seq_con_printf(seq, "Object #%d: starts at %px, size=%d\n", obj_index,
-		       (void *)start, size);
+	seq_con_printf(seq, "Object #%d: starts at %px, size=%d\n", obj_index, (void *)start, size);
 	seq_con_printf(seq, "allocated at:\n");
 	kfence_dump_stack(seq, obj, true);
 
@@ -110,12 +104,10 @@ void kfence_dump_object(struct seq_file *seq, int obj_index,
 
 	cache = kfence_metadata[obj_index].cache;
 	if (cache && cache->name)
-		seq_con_printf(seq, "Object #%d belongs to cache %s\n",
-			       obj_index, cache->name);
+		seq_con_printf(seq, "Object #%d belongs to cache %s\n", obj_index, cache->name);
 }
 
-static void kfence_print_object(int obj_index,
-				struct kfence_alloc_metadata *obj)
+static void kfence_print_object(int obj_index, struct kfence_alloc_metadata *obj)
 {
 	kfence_dump_object(NULL, obj_index, obj);
 }
@@ -123,21 +115,18 @@ static void kfence_print_object(int obj_index,
 static void dump_bytes_at(unsigned long addr)
 {
 	unsigned char *c = (unsigned char *)addr;
-	unsigned char *max_addr =
-		(unsigned char *)min(ALIGN(addr, PAGE_SIZE), addr + 16);
+	unsigned char *max_addr = (unsigned char *)min(ALIGN(addr, PAGE_SIZE), addr + 16);
 	pr_err("Bytes at %px:", (void *)addr);
 	for (; c < max_addr; c++)
 		pr_cont(" %02X", *c);
 	pr_cont("\n");
 }
 
-void kfence_report_error(unsigned long address, int obj_index,
-			 struct kfence_alloc_metadata *object,
+void kfence_report_error(unsigned long address, int obj_index, struct kfence_alloc_metadata *object,
 			 enum kfence_error_type type)
 {
 	unsigned long stack_entries[NUM_STACK_ENTRIES] = { 0 };
-	int num_stack_entries =
-		stack_trace_save(stack_entries, NUM_STACK_ENTRIES, 1);
+	int num_stack_entries = stack_trace_save(stack_entries, NUM_STACK_ENTRIES, 1);
 	int skipnr = get_stack_skipnr(stack_entries, num_stack_entries, type);
 	bool is_left;
 
@@ -145,27 +134,22 @@ void kfence_report_error(unsigned long address, int obj_index,
 	switch (type) {
 	case KFENCE_ERROR_OOB:
 		is_left = address < object->addr;
-		pr_err("BUG: KFENCE: slab-out-of-bounds in %pS\n",
-		       (void *)stack_entries[skipnr]);
-		pr_err("Memory access at address %px to the %s of object #%d\n",
-		       (void *)address, is_left ? "left" : "right", obj_index);
+		pr_err("BUG: KFENCE: slab-out-of-bounds in %pS\n", (void *)stack_entries[skipnr]);
+		pr_err("Memory access at address %px to the %s of object #%d\n", (void *)address,
+		       is_left ? "left" : "right", obj_index);
 		break;
 	case KFENCE_ERROR_UAF:
-		pr_err("BUG: KFENCE: use-after-free in %pS\n",
-		       (void *)stack_entries[skipnr]);
+		pr_err("BUG: KFENCE: use-after-free in %pS\n", (void *)stack_entries[skipnr]);
 		pr_err("Memory access at address %px\n", (void *)address);
 		break;
 	case KFENCE_ERROR_CORRUPTION:
-		pr_err("BUG: KFENCE: memory corruption in %pS\n",
-		       (void *)stack_entries[skipnr]);
-		pr_err("Invalid write detected at address %px\n",
-		       (void *)address);
+		pr_err("BUG: KFENCE: memory corruption in %pS\n", (void *)stack_entries[skipnr]);
+		pr_err("Invalid write detected at address %px\n", (void *)address);
 		dump_bytes_at(address);
 		break;
 	}
 
-	stack_trace_print(stack_entries + skipnr, num_stack_entries - skipnr,
-			  0);
+	stack_trace_print(stack_entries + skipnr, num_stack_entries - skipnr, 0);
 	pr_err("\n");
 	kfence_print_object(obj_index, object);
 	pr_err("==================================================================\n");

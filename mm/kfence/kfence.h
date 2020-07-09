@@ -14,19 +14,15 @@
  * KFENCE_WARN_ON() disables KFENCE on the first warning, to avoid potential
  * further errors if KFENCE is enabled in a non-test environment.
  */
-#define KFENCE_WARN_ON(cond)                                                   \
-	({                                                                     \
-		bool __cond = WARN_ON(cond);                                   \
-		if (unlikely(__cond))                                          \
-			kfence_disable();                                      \
-		__cond;                                                        \
+#define KFENCE_WARN_ON(cond)                                                                       \
+	({                                                                                         \
+		bool __cond = WARN_ON(cond);                                                       \
+		if (unlikely(__cond))                                                              \
+			kfence_disable();                                                          \
+		__cond;                                                                            \
 	})
 
-enum kfence_object_state {
-	KFENCE_OBJECT_UNUSED,
-	KFENCE_OBJECT_ALLOCATED,
-	KFENCE_OBJECT_FREED
-};
+enum kfence_object_state { KFENCE_OBJECT_UNUSED, KFENCE_OBJECT_ALLOCATED, KFENCE_OBJECT_FREED };
 
 struct kfence_alloc_metadata {
 	depot_stack_handle_t alloc_stack, free_stack;
@@ -56,22 +52,15 @@ static inline bool kfence_is_enabled(void)
 
 void kfence_disable(void);
 
-void *kfence_guarded_alloc(struct kmem_cache *cache, size_t override_size,
-			   gfp_t gfp);
+void *kfence_guarded_alloc(struct kmem_cache *cache, size_t override_size, gfp_t gfp);
 void kfence_guarded_free(void *addr);
 
-enum kfence_error_type {
-	KFENCE_ERROR_OOB,
-	KFENCE_ERROR_UAF,
-	KFENCE_ERROR_CORRUPTION
-};
+enum kfence_error_type { KFENCE_ERROR_OOB, KFENCE_ERROR_UAF, KFENCE_ERROR_CORRUPTION };
 
 void kfence_report_error(unsigned long address, int obj_index,
-			 struct kfence_alloc_metadata *metadata,
-			 enum kfence_error_type type);
+			 struct kfence_alloc_metadata *metadata, enum kfence_error_type type);
 
-void kfence_dump_object(struct seq_file *seq, int obj_index,
-			struct kfence_alloc_metadata *obj);
+void kfence_dump_object(struct seq_file *seq, int obj_index, struct kfence_alloc_metadata *obj);
 
 /* Should be provided by the sampling algorithm implementation. */
 void kfence_impl_init(void);

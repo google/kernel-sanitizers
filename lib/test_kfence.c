@@ -36,8 +36,8 @@ static bool setup_cache(size_t size, void (*ctor)(void *))
 	 * work.
 	 * Use SLAB_ACCOUNT to allocate via memcg, if enabled.
 	 */
-	current_cache = kmem_cache_create(
-		"test_cache", size, 1, SLAB_NOLEAKTRACE | SLAB_ACCOUNT, ctor);
+	current_cache =
+		kmem_cache_create("test_cache", size, 1, SLAB_NOLEAKTRACE | SLAB_ACCOUNT, ctor);
 	if (!current_cache)
 		return false;
 	return true;
@@ -65,8 +65,7 @@ static void free_to_kfence(void *ptr)
  * Allocate using either kmalloc or the currently used memory cache till we get
  * an object from KFENCE pool or hit the maximum number of attempts.
  */
-static void *alloc_from_kfence(size_t size, gfp_t gfp, int side,
-			       const char *caller)
+static void *alloc_from_kfence(size_t size, gfp_t gfp, int side, const char *caller)
 {
 	void *res;
 	unsigned long stop_at;
@@ -83,8 +82,7 @@ static void *alloc_from_kfence(size_t size, gfp_t gfp, int side,
 			res = kmem_cache_alloc(current_cache, gfp);
 		if (is_kfence_addr(res)) {
 			rem = (unsigned long)res % PAGE_SIZE;
-			if (((side & SIDE_LEFT) && (!rem)) ||
-			    ((side & SIDE_RIGHT) && rem))
+			if (((side & SIDE_LEFT) && (!rem)) || ((side & SIDE_RIGHT) && rem))
 				return res;
 		}
 		free_to_kfence(res);
@@ -276,13 +274,11 @@ static noinline int do_test_ctor(void)
 	PRINT_TEST_HEADER("no reports expected");
 	if (!setup_cache(size, dummy_ctor))
 		return 1;
-	buffer = (unsigned char *)alloc_from_kfence(size, GFP_KERNEL, SIDE_BOTH,
-						    __func__);
+	buffer = (unsigned char *)alloc_from_kfence(size, GFP_KERNEL, SIDE_BOTH, __func__);
 	if (buffer) {
 		for (i = 0; i < 8; i++)
 			if (buffer[i] != 0xc7) {
-				pr_err("Incorrect buffer contents: %px\n",
-				       *(void **)buffer);
+				pr_err("Incorrect buffer contents: %px\n", *(void **)buffer);
 				res = 1;
 				break;
 			}

@@ -47,11 +47,8 @@ static DEFINE_SPINLOCK(kfence_alloc_lock);
  * @kfence_recycle. This kfence_freelist item is placed at the end of
  * @kfence_freelist to delay the reuse of that object.
  */
-static struct kfence_freelist kfence_freelist = {
-	.list = LIST_HEAD_INIT(kfence_freelist.list)
-};
-static struct kfence_freelist kfence_recycle = { .list = LIST_HEAD_INIT(
-							 kfence_recycle.list) };
+static struct kfence_freelist kfence_freelist = { .list = LIST_HEAD_INIT(kfence_freelist.list) };
+static struct kfence_freelist kfence_recycle = { .list = LIST_HEAD_INIT(kfence_recycle.list) };
 
 struct kfence_alloc_metadata *kfence_metadata;
 
@@ -80,8 +77,7 @@ noinline void kfence_disable(void)
 }
 
 /* TODO(glider): kernel_physical_mapping_change() is x86-only */
-unsigned long kernel_physical_mapping_change(unsigned long start,
-					     unsigned long end,
+unsigned long kernel_physical_mapping_change(unsigned long start, unsigned long end,
 					     unsigned long page_size_mask);
 
 static bool kfence_force_4k_pages(void)
@@ -99,8 +95,7 @@ static bool kfence_force_4k_pages(void)
 			psize = page_level_size(level);
 			pmask = page_level_mask(level);
 			addr_end = ((addr + PAGE_SIZE) & pmask) + psize;
-			kernel_physical_mapping_change(__pa(addr & pmask),
-						       __pa(addr_end),
+			kernel_physical_mapping_change(__pa(addr & pmask), __pa(addr_end),
 						       1 << PG_LEVEL_4K);
 			addr = addr_end;
 		} else {
@@ -121,8 +116,8 @@ static bool kfence_change_page_prot(unsigned long addr, bool protect)
 	pte = lookup_address(addr, &level);
 	if (KFENCE_WARN_ON(!pte) || KFENCE_WARN_ON(level != PG_LEVEL_4K))
 		return false;
-	new_pte = __pte(protect ? (pte_val(*pte) & ~_PAGE_PRESENT) :
-					(pte_val(*pte) | _PAGE_PRESENT));
+	new_pte =
+		__pte(protect ? (pte_val(*pte) & ~_PAGE_PRESENT) : (pte_val(*pte) | _PAGE_PRESENT));
 	set_pte(pte, new_pte);
 	/* TODO: figure out how to flush TLB properly here. */
 	flush_tlb_one_kernel(addr);
@@ -151,8 +146,7 @@ static bool __meminit kfence_allocate_pool(void)
 	if (!pages)
 		goto error;
 	kfence_pool_start = (unsigned long)page_address(pages);
-	kfence_pool_end =
-		kfence_pool_start + (KFENCE_NUM_OBJ + 1) * 2 * PAGE_SIZE;
+	kfence_pool_end = kfence_pool_start + (KFENCE_NUM_OBJ + 1) * 2 * PAGE_SIZE;
 	if (!kfence_force_4k_pages())
 		goto error;
 	pr_info("kfence allocated pages: %px--%px\n", (void *)kfence_pool_start,
@@ -193,8 +187,7 @@ static bool __meminit kfence_allocate_pool(void)
 
 	/* Set up metadata nodes. */
 	kfence_metadata = (struct kfence_alloc_metadata *)kmalloc_array(
-		KFENCE_NUM_OBJ, sizeof(struct kfence_alloc_metadata),
-		gfp_flags);
+		KFENCE_NUM_OBJ, sizeof(struct kfence_alloc_metadata), gfp_flags);
 	return true;
 error:
 	if (pages)
@@ -243,8 +236,7 @@ static void check_canary_byte(unsigned long addr)
 
 	if (*(char *)addr != p) {
 		obj_index = kfence_addr_to_index(addr);
-		kfence_report_error(addr, obj_index,
-				    &kfence_metadata[obj_index],
+		kfence_report_error(addr, obj_index, &kfence_metadata[obj_index],
 				    KFENCE_ERROR_CORRUPTION);
 	}
 }
@@ -286,8 +278,7 @@ static void for_each_canary(int index, void (*fn)(unsigned long))
 		fn(addr);
 }
 
-void *kfence_guarded_alloc(struct kmem_cache *cache, size_t override_size,
-			   gfp_t gfp)
+void *kfence_guarded_alloc(struct kmem_cache *cache, size_t override_size, gfp_t gfp)
 {
 	unsigned long flags;
 	void *obj = NULL, *ret;
@@ -302,8 +293,7 @@ void *kfence_guarded_alloc(struct kmem_cache *cache, size_t override_size,
 	spin_lock_irqsave(&kfence_alloc_lock, flags);
 
 	if (!list_empty(&kfence_freelist.list)) {
-		item = list_entry(kfence_freelist.list.next,
-				  struct kfence_freelist, list);
+		item = list_entry(kfence_freelist.list.next, struct kfence_freelist, list);
 		obj = item->obj;
 		list_del(&(item->list));
 		list_add(&(item->list), &kfence_recycle.list);
@@ -327,8 +317,7 @@ void *kfence_guarded_alloc(struct kmem_cache *cache, size_t override_size,
 		 * Reclaiming memory when storing stacks may result in
 		 * unnecessary locking.
 		 */
-		kfence_metadata[index].alloc_stack =
-			save_stack(gfp & ~__GFP_RECLAIM);
+		kfence_metadata[index].alloc_stack = save_stack(gfp & ~__GFP_RECLAIM);
 		kfence_metadata[index].cache = cache;
 		WRITE_ONCE(kfence_metadata[index].size, right ? -size : size);
 		kfence_metadata[index].state = KFENCE_OBJECT_ALLOCATED;
@@ -353,8 +342,7 @@ void kfence_guarded_free(void *addr)
 	int index;
 
 	spin_lock_irqsave(&kfence_alloc_lock, flags);
-	item = list_entry(kfence_recycle.list.next, struct kfence_freelist,
-			  list);
+	item = list_entry(kfence_recycle.list.next, struct kfence_freelist, list);
 	item->obj = (void *)aligned_addr;
 	list_del(&(item->list));
 	list_add_tail(&(item->list), &kfence_freelist.list);
@@ -369,8 +357,8 @@ void kfence_guarded_free(void *addr)
 	pr_debug("freed object #%d\n", index);
 }
 
-bool kfence_free(struct kmem_cache *s, struct page *page, void *head,
-		 void *tail, int cnt, unsigned long addr)
+bool kfence_free(struct kmem_cache *s, struct page *page, void *head, void *tail, int cnt,
+		 unsigned long addr)
 {
 	void *aligned_head = (void *)ALIGN_DOWN((unsigned long)head, PAGE_SIZE);
 
@@ -405,19 +393,15 @@ bool kfence_handle_page_fault(unsigned long addr)
 		/* This is a redzone, report a buffer overflow. */
 		if (page_index > 1) {
 			obj_index = kfence_addr_to_index(addr - PAGE_SIZE);
-			if (kfence_metadata[obj_index].state ==
-			    KFENCE_OBJECT_ALLOCATED) {
+			if (kfence_metadata[obj_index].state == KFENCE_OBJECT_ALLOCATED) {
 				report_index = obj_index;
-				dist = addr -
-				       (kfence_metadata[obj_index].addr +
-					abs(READ_ONCE(kfence_metadata[obj_index]
-							      .size)));
+				dist = addr - (kfence_metadata[obj_index].addr +
+					       abs(READ_ONCE(kfence_metadata[obj_index].size)));
 			}
 		}
 		if (page_index < (KFENCE_NUM_OBJ + 1) * 2) {
 			obj_index = kfence_addr_to_index(addr + PAGE_SIZE);
-			if (kfence_metadata[obj_index].state ==
-			    KFENCE_OBJECT_ALLOCATED) {
+			if (kfence_metadata[obj_index].state == KFENCE_OBJECT_ALLOCATED) {
 				ndist = kfence_metadata[obj_index].addr - addr;
 				if ((report_index == -1) || (dist > ndist))
 					report_index = obj_index;
@@ -426,8 +410,7 @@ bool kfence_handle_page_fault(unsigned long addr)
 		if (report_index != -1) {
 			object = kfence_metadata[report_index];
 			spin_unlock_irqrestore(&kfence_alloc_lock, flags);
-			kfence_report_error(addr, report_index, &object,
-					    KFENCE_ERROR_OOB);
+			kfence_report_error(addr, report_index, &object, KFENCE_ERROR_OOB);
 		} else {
 			spin_unlock_irqrestore(&kfence_alloc_lock, flags);
 			pr_err("BUG: KFENCE: wild redzone access.\n");
@@ -438,8 +421,7 @@ bool kfence_handle_page_fault(unsigned long addr)
 		report_index = kfence_addr_to_index(addr);
 		object = kfence_metadata[report_index];
 		spin_unlock_irqrestore(&kfence_alloc_lock, flags);
-		kfence_report_error(addr, report_index, &object,
-				    KFENCE_ERROR_UAF);
+		kfence_report_error(addr, report_index, &object, KFENCE_ERROR_UAF);
 	}
 
 	/*
@@ -521,8 +503,7 @@ void __init kfence_create_debugfs(void)
 {
 	struct dentry *kfence_dir;
 	kfence_dir = debugfs_create_dir("kfence", NULL);
-	debugfs_create_file_unsafe("objects", 0600, kfence_dir, NULL,
-				   &obj_fops);
+	debugfs_create_file_unsafe("objects", 0600, kfence_dir, NULL, &obj_fops);
 }
 
 device_initcall(kfence_create_debugfs);
@@ -546,9 +527,7 @@ static void kfence_enable_after_random(struct random_ready_callback *unused)
 	WRITE_ONCE(kfence_enabled, true);
 }
 
-static struct random_ready_callback random_ready = {
-	.func = kfence_enable_after_random
-};
+static struct random_ready_callback random_ready = { .func = kfence_enable_after_random };
 
 void __init kfence_init(void)
 {
