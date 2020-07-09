@@ -2,14 +2,28 @@
 #ifndef _LINUX_KFENCE_H
 #define _LINUX_KFENCE_H
 
+#include <linux/mm.h>
 #include <linux/percpu.h>
 #include <linux/types.h>
 
 struct kmem_cache;
-struct page;
 
 #ifdef CONFIG_KFENCE
 /* TODO: API documentation */
+
+/*
+ * It's handy (but not strictly required) that 255 objects with redzones occupy
+ * exactly 2Mb.
+ */
+#define KFENCE_NUM_OBJ_LOG 8
+#define KFENCE_NUM_OBJ ((1 << KFENCE_NUM_OBJ_LOG) - 1)
+
+extern unsigned long __kfence_pool_start;
+
+static inline unsigned long __kfence_pool_end(void)
+{
+	return __kfence_pool_start + (KFENCE_NUM_OBJ + 1) * 2 * PAGE_SIZE;
+}
 
 void kfence_init(void);
 
@@ -20,8 +34,12 @@ bool kfence_discard_slab(struct kmem_cache *s, struct page *page);
 
 bool kfence_handle_page_fault(unsigned long addr);
 
-// TODO(elver): Make is_kfence_addr inlinable.
-bool is_kfence_addr(void *addr);
+static inline bool is_kfence_addr(void *addr)
+{
+	const unsigned long uaddr = (unsigned long)addr;
+
+	return unlikely(uaddr >= __kfence_pool_start && uaddr < __kfence_pool_end());
+}
 
 size_t kfence_ksize(const void *addr);
 

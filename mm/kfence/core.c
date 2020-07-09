@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0
 
 #include <linux/debugfs.h>
+#include <linux/kfence.h>
 #include <linux/list.h>
 #include <linux/moduleparam.h>
 #include <linux/random.h>
@@ -22,14 +23,8 @@ struct kfence_freelist {
 	void *obj;
 };
 
-/*
- * It's handy (but not strictly required) that 255 objects with redzones occupy
- * exactly 2Mb.
- */
-#define KFENCE_NUM_OBJ_LOG 8
-#define KFENCE_NUM_OBJ ((1 << KFENCE_NUM_OBJ_LOG) - 1)
-
-static unsigned long kfence_pool_start, kfence_pool_end;
+unsigned long __kfence_pool_start;
+EXPORT_SYMBOL(__kfence_pool_start);
 
 /* Protects kfence_freelist, kfence_recycle, kfence_metadata */
 static DEFINE_SPINLOCK(kfence_alloc_lock);
@@ -82,12 +77,12 @@ unsigned long kernel_physical_mapping_change(unsigned long start, unsigned long 
 
 static bool kfence_force_4k_pages(void)
 {
-	unsigned long addr = kfence_pool_start, addr_end;
+	unsigned long addr = __kfence_pool_start, addr_end;
 	unsigned int level;
 	unsigned long psize, pmask;
 	pte_t *pte;
 
-	while (addr < kfence_pool_end) {
+	while (addr < __kfence_pool_end()) {
 		pte = lookup_address(addr, &level);
 		if (!pte)
 			return false;
@@ -145,12 +140,11 @@ static bool __meminit kfence_allocate_pool(void)
 	pages = alloc_pages(GFP_KERNEL, KFENCE_NUM_OBJ_LOG + 1);
 	if (!pages)
 		goto error;
-	kfence_pool_start = (unsigned long)page_address(pages);
-	kfence_pool_end = kfence_pool_start + (KFENCE_NUM_OBJ + 1) * 2 * PAGE_SIZE;
+	__kfence_pool_start = (unsigned long)page_address(pages);
 	if (!kfence_force_4k_pages())
 		goto error;
-	pr_info("kfence allocated pages: %px--%px\n", (void *)kfence_pool_start,
-		(void *)kfence_pool_end);
+	pr_info("kfence allocated pages: %px--%px\n",
+		(void *)__kfence_pool_start, (void *)__kfence_pool_end());
 	/*
 	 * Set up non-redzone pages: they must have PG_slab flag and point to
 	 * kfence slab cache.
@@ -165,7 +159,7 @@ static bool __meminit kfence_allocate_pool(void)
 			pages[i].frozen = 1;
 		}
 	}
-	addr = kfence_pool_start;
+	addr = __kfence_pool_start;
 	/* Skip the first page: it is reserved. */
 	addr += PAGE_SIZE;
 	/* Protect the leading redzone. */
@@ -196,20 +190,13 @@ error:
 	return false;
 }
 
-bool is_kfence_addr(void *addr)
-{
-	unsigned long uaddr = (unsigned long)addr;
-	return ((uaddr >= kfence_pool_start) && (uaddr < kfence_pool_end));
-}
-EXPORT_SYMBOL(is_kfence_addr);
-
 /* Does not require kfence_alloc_lock. */
 static inline int kfence_addr_to_index(unsigned long addr)
 {
 	if (!is_kfence_addr((void *)addr))
 		return -1;
 
-	return ((addr - kfence_pool_start) / PAGE_SIZE / 2) - 1;
+	return ((addr - __kfence_pool_start) / PAGE_SIZE / 2) - 1;
 }
 
 size_t kfence_ksize(const void *addr)
@@ -388,7 +375,7 @@ bool kfence_handle_page_fault(unsigned long addr)
 	}
 
 	spin_lock_irqsave(&kfence_alloc_lock, flags);
-	page_index = (addr - kfence_pool_start) / PAGE_SIZE;
+	page_index = (addr - __kfence_pool_start) / PAGE_SIZE;
 	if (page_index % 2) {
 		/* This is a redzone, report a buffer overflow. */
 		if (page_index > 1) {
