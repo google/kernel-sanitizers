@@ -309,8 +309,7 @@ static struct pci_driver aec62xx_pci_driver = {
 	.id_table	= aec62xx_pci_tbl,
 	.probe		= aec62xx_init_one,
 	.remove		= aec62xx_remove,
-	.suspend	= ide_pci_suspend,
-	.resume		= ide_pci_resume,
+	.driver.pm	= &ide_pci_pm_ops,
 };
 
 static int __init aec62xx_ide_init(void)

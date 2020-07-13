@@ -535,8 +535,7 @@ static struct pci_driver pdc202new_pci_driver = {
 	.id_table	= pdc202new_pci_tbl,
 	.probe		= pdc202new_init_one,
 	.remove		= pdc202new_remove,
-	.suspend	= ide_pci_suspend,
-	.resume		= ide_pci_resume,
+	.driver.pm	= &ide_pci_pm_ops,
 };
 
 static int __init pdc202new_ide_init(void)
