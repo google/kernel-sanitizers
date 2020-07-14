@@ -18,9 +18,9 @@ struct kmem_cache;
 #define KFENCE_NUM_OBJ_LOG 8
 #define KFENCE_NUM_OBJ ((1 << KFENCE_NUM_OBJ_LOG) - 1)
 
-extern unsigned long __kfence_pool_start;
+extern char __kfence_pool_start[];
 
-static inline unsigned long __kfence_pool_end(void)
+static inline char *__kfence_pool_end(void)
 {
 	return __kfence_pool_start + (KFENCE_NUM_OBJ + 1) * 2 * PAGE_SIZE;
 }
@@ -36,9 +36,7 @@ bool kfence_handle_page_fault(unsigned long addr);
 
 static inline bool is_kfence_addr(void *addr)
 {
-	const unsigned long uaddr = (unsigned long)addr;
-
-	return unlikely(uaddr >= __kfence_pool_start && uaddr < __kfence_pool_end());
+	return unlikely((char *)addr >= __kfence_pool_start && (char *)addr < __kfence_pool_end());
 }
 
 size_t kfence_ksize(const void *addr);
