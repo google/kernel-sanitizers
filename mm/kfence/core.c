@@ -387,8 +387,11 @@ void *kfence_guarded_alloc(struct kmem_cache *cache, size_t override_size, gfp_t
 	struct kfence_freelist *item;
 	int index = -1;
 	/*
-	 * TODO(glider): for allocations made before RNG initialization prandom_u32_max() will
-	 * always return 0.
+	 * Note: for allocations made before RNG initialization prandom_u32_max() will always return
+	 * zero. We still benefit from enabling KFENCE as early as possible, even when the RNG is
+	 * not yet available, as this will allow KFENCE to detect bugs due to earlier allocations.
+	 * The only downside is that the out-of-bounds accesses detected are deterministic for such
+	 * allocations.
 	 */
 	bool right = prandom_u32_max(2);
 	size_t size = override_size ? override_size : cache->size;
