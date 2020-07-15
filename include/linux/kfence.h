@@ -4,6 +4,7 @@
 
 #include <linux/mm.h>
 #include <linux/percpu.h>
+#include <linux/static_key.h>
 #include <linux/types.h>
 
 struct kmem_cache;
@@ -19,6 +20,20 @@ struct kmem_cache;
 #define KFENCE_NUM_OBJ ((1 << KFENCE_NUM_OBJ_LOG) - 1)
 
 extern char __kfence_pool_start[];
+extern struct static_key_false kfence_allocation_key;
+
+// TODO(elver): Shorten function names, and make __kfence_alloc private.
+// Simply rename them to __kfence_alloc and kfence_alloc respectively.
+
+void *__kfence_alloc(struct kmem_cache *s, size_t size, gfp_t flags);
+
+// TODO(elver): Add API doc.
+static __always_inline void *kfence_sampled_alloc_with_size(struct kmem_cache *s, size_t size,
+							    gfp_t flags)
+{
+	return static_branch_unlikely(&kfence_allocation_key) ? __kfence_alloc(s, size, flags) :
+								      NULL;
+}
 
 static inline char *__kfence_pool_end(void)
 {
@@ -55,86 +70,12 @@ static inline bool kfence_handle_page_fault(unsigned long addr) { return false; 
 static inline bool is_kfence_addr(void *addr) { return false; }
 static inline size_t kfence_ksize(void *addr) { return 0; }
 
-// TODO: remove for v1
-// clang-format on
-
-#endif /* CONFIG_KFENCE */
-
-#ifdef CONFIG_KFENCE_STEAL
-void *kfence_alloc_and_fix_freelist(struct kmem_cache *s, gfp_t gfp, size_t size);
-
-void kfence_cache_register(struct kmem_cache *s);
-
-void kfence_cache_unregister(struct kmem_cache *s);
-
-void kfence_observe_memcg_cache(struct kmem_cache *memcg_cache);
-#else
-
-// TODO: remove for v1
-// clang-format off
-
-static inline void *kfence_alloc_and_fix_freelist(struct kmem_cache *s, gfp_t gfp, size_t size) { return NULL; }
-static inline void kfence_cache_register(struct kmem_cache *s)   { }
-static inline void kfence_cache_unregister(struct kmem_cache *s) { }
-static inline void kfence_observe_memcg_cache(struct kmem_cache *memcg_cache) { }
+static inline void *__kfence_alloc(struct kmem_cache *s, size_t size, gfp_t flags) { return NULL; }
+static __always_inline void *kfence_sampled_alloc_with_size(struct kmem_cache *s, size_t size, gfp_t flags) { return NULL; }
 
 // TODO: remove for v1
 // clang-format on
 
-#endif /* CONFIG_KFENCE_STEAL */
-
-#ifdef CONFIG_KFENCE_NAIVE
-
-DECLARE_PER_CPU(int, kfence_sample_cnt);
-extern unsigned long kfence_sample_rate;
-
-void *kfence_alloc_with_size(struct kmem_cache *s, size_t size, gfp_t flags);
-static __always_inline void *kfence_sampled_alloc_with_size(struct kmem_cache *s, gfp_t flags,
-							    size_t size)
-{
-	int cnt = this_cpu_dec_return(kfence_sample_cnt);
-
-	if (likely(cnt > 0))
-		return NULL;
-	this_cpu_write(kfence_sample_cnt, kfence_sample_rate);
-	return kfence_alloc_with_size(s, size, flags);
-}
-
-#elif defined(CONFIG_KFENCE_STATIC_KEY)
-
-#include <linux/static_key.h>
-
-extern struct static_key_false kfence_allocation_key;
-
-// TODO(elver): The order of size,flags is inconsistent between the 2 functions.
-// Fix it by preferring size,flags throughout (which is kmalloc's argument
-// order).
-
-// TODO(elver): Shorten function names, and make kfence_alloc_with_size private.
-// Simply rename them to __kfence_alloc and kfence_alloc respectively.
-
-void *kfence_alloc_with_size(struct kmem_cache *s, size_t size, gfp_t flags);
-
-// TODO(elver): Add API doc.
-static __always_inline void *kfence_sampled_alloc_with_size(struct kmem_cache *s, gfp_t flags,
-							    size_t size)
-{
-	return static_branch_unlikely(&kfence_allocation_key) ?
-			     kfence_alloc_with_size(s, size, flags) :
-			     NULL;
-}
-
-#else
-
-// TODO: remove for v1
-// clang-format off
-
-static inline void *kfence_alloc_with_size(struct kmem_cache *s, size_t size, gfp_t flags) { return NULL; }
-static __always_inline void *kfence_sampled_alloc_with_size(struct kmem_cache *s, gfp_t flags, size_t size) { return NULL; }
-
-// TODO: remove for v1
-// clang-format on
-
-#endif /* CONFIG_KFENCE_NAIVE */
+#endif
 
 #endif /* _LINUX_KFENCE_H */

@@ -2,49 +2,23 @@ config HAVE_ARCH_KFENCE
 	bool
 
 config TEST_KFENCE
-	tristate "Test KFence"
+	tristate "Test KFENCE"
 	depends on KFENCE
 	help
 	  Test that KFENCE works.
 
 config KFENCE
-	bool "KFence: low-overhead use-after-free and buffer-overflow detector"
+	bool "KFENCE: low-overhead use-after-free and buffer-overflow detector"
 	depends on HAVE_ARCH_KFENCE && !KASAN
+	depends on JUMP_LABEL # To ensure performance, require jump labels
 	help
-	  KFence is low-overhead sampling-based detector for heap
-	  use-after-free and buffer-overflow errors. KFence is designed to have
+	  KFENCE is low-overhead sampling-based detector for heap
+	  use-after-free and buffer-overflow errors. KFENCE is designed to have
 	  negligible cost to permit enabling it in production environments.
 
 	  See <file:Documentation/vm/kfence.rst> for more details.
 
-	  Note that, KFence is not a substitute for explicit testing with tools
-	  such as KASAN. KFence can detect a subset of bugs that KASAN can
-	  detect (therefore enabling KFence together with KASAN does not make
+	  Note that, KFENCE is not a substitute for explicit testing with tools
+	  such as KASAN. KFENCE can detect a subset of bugs that KASAN can
+	  detect (therefore enabling KFENCE together with KASAN does not make
 	  sense), albeit at very different performance profiles.
-
-choice
-	prompt "KFENCE sampling algorithm"
-	depends on KFENCE
-	default KFENCE_STATIC_KEY
-	help
-	  Pick one of the sampling algorithms to be used by KFENCE
-
-config KFENCE_STEAL
-	bool "Stealing implementation"
-	help
-	  Uses a background thread to steal the freelists from kmem_caches.
-
-config KFENCE_NAIVE
-	bool "Naive implementation"
-	help
-	  Adds branches to allocation sites to call KFENCE with a certain
-	  probability.
-
-config KFENCE_STATIC_KEY
-	bool "Static key implementation"
-	depends on JUMP_LABEL # To ensure performance, require jump labels
-	help
-	  Adds static keys to allocation sites to call KFENCE with a certain
-	  probability.
-
-endchoice

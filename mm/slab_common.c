@@ -415,7 +415,6 @@ static struct kmem_cache *create_cache(const char *name,
 out:
 	if (err)
 		return ERR_PTR(err);
-	kfence_cache_register(s);
 	return s;
 
 out_free_cache:
@@ -604,7 +603,6 @@ static int shutdown_cache(struct kmem_cache *s)
 {
 	/* free asan quarantined objects */
 	kasan_cache_shutdown(s);
-	kfence_cache_unregister(s);
 
 	if (__kmem_cache_shutdown(s) != 0)
 		return -EBUSY;
@@ -1264,7 +1262,6 @@ new_kmalloc_cache(int idx, enum kmalloc_cache_type type, slab_flags_t flags)
 					kmalloc_info[idx].name[type],
 					kmalloc_info[idx].size, flags, 0,
 					kmalloc_info[idx].size);
-	kfence_cache_register(kmalloc_caches[type][idx]);
 }
 
 /*
