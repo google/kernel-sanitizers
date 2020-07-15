@@ -22,18 +22,13 @@ struct kmem_cache;
 extern char __kfence_pool_start[];
 extern struct static_key_false kfence_allocation_key;
 
-// TODO(elver): The order of size,flags is inconsistent between the 2 functions.
-// Fix it by preferring size,flags throughout (which is kmalloc's argument
-// order).
-
 // TODO(elver): Shorten function names, and make kfence_alloc_with_size private.
 // Simply rename them to __kfence_alloc and kfence_alloc respectively.
 
 void *kfence_alloc_with_size(struct kmem_cache *s, size_t size, gfp_t flags);
 
 // TODO(elver): Add API doc.
-static __always_inline void *kfence_sampled_alloc_with_size(struct kmem_cache *s, gfp_t flags,
-							    size_t size)
+static __always_inline void *kfence_sampled_alloc_with_size(struct kmem_cache *s, size_t size, gfp_t flags)
 {
 	return static_branch_unlikely(&kfence_allocation_key) ?
 			     kfence_alloc_with_size(s, size, flags) :
@@ -76,7 +71,7 @@ static inline bool is_kfence_addr(void *addr) { return false; }
 static inline size_t kfence_ksize(void *addr) { return 0; }
 
 static inline void *kfence_alloc_with_size(struct kmem_cache *s, size_t size, gfp_t flags) { return NULL; }
-static __always_inline void *kfence_sampled_alloc_with_size(struct kmem_cache *s, gfp_t flags, size_t size) { return NULL; }
+static __always_inline void *kfence_sampled_alloc_with_size(struct kmem_cache *s, size_t size, gfp_t flags) { return NULL; }
 
 // TODO: remove for v1
 // clang-format on
