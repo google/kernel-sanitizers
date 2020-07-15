@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0
 
-#include <asm/pgalloc.h>
-
 #include <linux/debugfs.h>
 #include <linux/kfence.h>
 #include <linux/list.h>
@@ -11,6 +9,7 @@
 #include <linux/slab.h>
 #include <linux/spinlock.h>
 
+#include <asm/pgalloc.h>
 #include <asm/pgtable.h>
 #include <asm/tlbflush.h>
 
@@ -25,7 +24,7 @@ struct kfence_freelist {
 	void *obj;
 };
 
-char __kfence_pool_start[PAGE_SIZE << (KFENCE_NUM_OBJ_LOG + 1)] __attribute__((aligned(2 << 21)));
+char __kfence_pool_start[PAGE_SIZE << (KFENCE_NUM_OBJ_LOG + 1)] __aligned(2 << 21);
 EXPORT_SYMBOL(__kfence_pool_start);
 
 /* Protects kfence_freelist, kfence_recycle, kfence_metadata */
@@ -90,7 +89,11 @@ static pgprot_t pgprot_clear_protnone_bits(pgprot_t prot)
 	return prot;
 }
 
-/* Some code borrowed from arch/x86/mm/pat/set_memory.c. */
+/*
+ * Some code borrowed from arch/x86/mm/pat/set_memory.c.
+ * TODO(glider): need to figure out whether this code can be used on ARM64 and change it
+ * accordingly.
+ */
 static bool split_large_page(pte_t *kpte, unsigned long address, unsigned int level)
 {
 	unsigned long lpaddr, lpinc, ref_pfn, pfn, pfninc = 1;
