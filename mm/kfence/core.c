@@ -386,6 +386,10 @@ void *kfence_guarded_alloc(struct kmem_cache *cache, size_t override_size, gfp_t
 	void *obj = NULL, *ret;
 	struct kfence_freelist *item;
 	int index = -1;
+	/*
+	 * TODO(glider): for allocations made before RNG initialization prandom_u32_max() will
+	 * always return 0.
+	 */
 	bool right = prandom_u32_max(2);
 	size_t size = override_size ? override_size : cache->size;
 	struct page *page;
@@ -654,26 +658,11 @@ static void kfence_heartbeat(struct work_struct *work)
 }
 static DECLARE_DELAYED_WORK(kfence_timer, kfence_heartbeat);
 
-
-
 #ifdef MODULE_PARAM_PREFIX
 #undef MODULE_PARAM_PREFIX
 #endif
 #define MODULE_PARAM_PREFIX "kfence."
 module_param_named(sample_rate, kfence_sample_rate, ulong, 0444);
-
-/*
- * KFENCE depends heavily on random number generation, wait for it to be
- * ready.
- */
-static void kfence_enable_after_random(struct random_ready_callback *unused)
-{
-	kfence_impl_init();
-	pr_info("Starting KFENCE\n");
-	WRITE_ONCE(kfence_enabled, true);
-}
-
-static struct random_ready_callback random_ready = { .func = kfence_enable_after_random };
 
 void __init kfence_init(void)
 {
@@ -681,17 +670,11 @@ void __init kfence_init(void)
 		/* The tool is disabled. */
 		return;
 
-	if (kfence_allocate_pool()) {
-		if (add_random_ready_callback(&random_ready) == 0)
-			return;
+	if (!kfence_allocate_pool()) {
+		pr_err("kfence_init failed\n");
+		return;
 	}
-	pr_err("kfence_init failed\n");
-}
-
-/*
- * TODO: naive implementation doesn't strictly require waiting for RNG anymore.
- */
-void kfence_impl_init(void)
-{
 	schedule_delayed_work(&kfence_timer, 0);
+	pr_info("Starting KFENCE\n");
+	WRITE_ONCE(kfence_enabled, true);
 }

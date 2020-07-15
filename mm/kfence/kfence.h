@@ -64,7 +64,4 @@ void kfence_report_error(unsigned long address, int obj_index,
 
 void kfence_dump_object(struct seq_file *seq, int obj_index, struct kfence_alloc_metadata *obj);
 
-/* Should be provided by the sampling algorithm implementation. */
-void kfence_impl_init(void);
-
 #endif /* MM_KFENCE_H */
