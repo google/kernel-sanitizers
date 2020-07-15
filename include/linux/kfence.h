@@ -28,11 +28,11 @@ extern struct static_key_false kfence_allocation_key;
 void *__kfence_alloc(struct kmem_cache *s, size_t size, gfp_t flags);
 
 // TODO(elver): Add API doc.
-static __always_inline void *kfence_sampled_alloc_with_size(struct kmem_cache *s, size_t size, gfp_t flags)
+static __always_inline void *kfence_sampled_alloc_with_size(struct kmem_cache *s, size_t size,
+							    gfp_t flags)
 {
-	return static_branch_unlikely(&kfence_allocation_key) ?
-			     __kfence_alloc(s, size, flags) :
-			     NULL;
+	return static_branch_unlikely(&kfence_allocation_key) ? __kfence_alloc(s, size, flags) :
+								      NULL;
 }
 
 static inline char *__kfence_pool_end(void)

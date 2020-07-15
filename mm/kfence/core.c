@@ -463,8 +463,6 @@ void *__kfence_alloc(struct kmem_cache *s, size_t size, gfp_t flags)
 	return ret;
 }
 
-
-
 void kfence_guarded_free(void *addr)
 {
 	unsigned long flags;
