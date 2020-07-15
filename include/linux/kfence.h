@@ -22,14 +22,10 @@ struct kmem_cache;
 extern char __kfence_pool_start[];
 extern struct static_key_false kfence_allocation_key;
 
-// TODO(elver): Shorten function names, and make __kfence_alloc private.
-// Simply rename them to __kfence_alloc and kfence_alloc respectively.
-
 void *__kfence_alloc(struct kmem_cache *s, size_t size, gfp_t flags);
 
 // TODO(elver): Add API doc.
-static __always_inline void *kfence_sampled_alloc_with_size(struct kmem_cache *s, size_t size,
-							    gfp_t flags)
+static __always_inline void *kfence_alloc(struct kmem_cache *s, size_t size, gfp_t flags)
 {
 	return static_branch_unlikely(&kfence_allocation_key) ? __kfence_alloc(s, size, flags) :
 								      NULL;
@@ -71,7 +67,7 @@ static inline bool is_kfence_addr(void *addr) { return false; }
 static inline size_t kfence_ksize(void *addr) { return 0; }
 
 static inline void *__kfence_alloc(struct kmem_cache *s, size_t size, gfp_t flags) { return NULL; }
-static __always_inline void *kfence_sampled_alloc_with_size(struct kmem_cache *s, size_t size, gfp_t flags) { return NULL; }
+static __always_inline void *kfence_alloc(struct kmem_cache *s, size_t size, gfp_t flags) { return NULL; }
 
 // TODO: remove for v1
 // clang-format on
