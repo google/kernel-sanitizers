@@ -25,8 +25,7 @@ struct kfence_freelist {
 	void *obj;
 };
 
-char __kfence_pool_start[PAGE_SIZE << (KFENCE_NUM_OBJ_LOG + 1)]
-	__attribute__((section(".kfence"), aligned(1 << 21)));
+char __kfence_pool_start[PAGE_SIZE << (KFENCE_NUM_OBJ_LOG + 1)] __attribute__((aligned(2 << 21)));
 EXPORT_SYMBOL(__kfence_pool_start);
 
 /* Protects kfence_freelist, kfence_recycle, kfence_metadata */
