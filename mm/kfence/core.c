@@ -470,7 +470,7 @@ void *__kfence_alloc(struct kmem_cache *s, size_t size, gfp_t flags)
 	return ret;
 }
 
-void kfence_guarded_free(void *addr)
+bool __kfence_free(void *addr)
 {
 	unsigned long flags;
 	unsigned long aligned_addr = ALIGN_DOWN((unsigned long)addr, PAGE_SIZE);
@@ -490,17 +490,7 @@ void kfence_guarded_free(void *addr)
 	kfence_protect(aligned_addr);
 	spin_unlock_irqrestore(&kfence_alloc_lock, flags);
 	pr_debug("freed object #%d\n", index);
-}
-
-bool kfence_free(struct kmem_cache *s, struct page *page, void *head, void *tail, int cnt,
-		 unsigned long addr)
-{
-	if (!is_kfence_addr(head))
-		return false;
-	if (KFENCE_WARN_ON(head != tail))
-		return false;
-	pr_debug("kfence_free(%px)\n", head);
-	kfence_guarded_free(head);
+	/* TODO(glider): detect double-frees. */
 	return true;
 }
 

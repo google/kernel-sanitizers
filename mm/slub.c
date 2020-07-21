@@ -2925,7 +2925,7 @@ static void __slab_free(struct kmem_cache *s, struct page *page,
 
 	stat(s, FREE_SLOWPATH);
 
-	if (kfence_free(s, page, head, tail, cnt, addr))
+	if (kfence_free(head))
 		return;
 
 	if (kmem_cache_debug(s) &&

@@ -22,6 +22,22 @@ struct kmem_cache;
 extern char __kfence_pool_start[];
 extern struct static_key_false kfence_allocation_key;
 
+static inline char *__kfence_pool_end(void)
+{
+	return __kfence_pool_start + (KFENCE_NUM_OBJ + 1) * 2 * PAGE_SIZE;
+}
+
+void kfence_init(void);
+
+bool kfence_discard_slab(struct kmem_cache *s, struct page *page);
+
+bool kfence_handle_page_fault(unsigned long addr);
+
+static inline bool is_kfence_addr(void *addr)
+{
+	return unlikely((char *)addr >= __kfence_pool_start && (char *)addr < __kfence_pool_end());
+}
+
 void *__kfence_alloc(struct kmem_cache *s, size_t size, gfp_t flags);
 
 // TODO(elver): Add API doc.
@@ -31,23 +47,13 @@ static __always_inline void *kfence_alloc(struct kmem_cache *s, size_t size, gfp
 								      NULL;
 }
 
-static inline char *__kfence_pool_end(void)
+bool __kfence_free(void *addr);
+
+static __always_inline bool kfence_free(void *addr)
 {
-	return __kfence_pool_start + (KFENCE_NUM_OBJ + 1) * 2 * PAGE_SIZE;
-}
-
-void kfence_init(void);
-
-bool kfence_free(struct kmem_cache *s, struct page *page, void *head, void *tail, int cnt,
-		 unsigned long addr);
-
-bool kfence_discard_slab(struct kmem_cache *s, struct page *page);
-
-bool kfence_handle_page_fault(unsigned long addr);
-
-static inline bool is_kfence_addr(void *addr)
-{
-	return unlikely((char *)addr >= __kfence_pool_start && (char *)addr < __kfence_pool_end());
+	if (!is_kfence_addr(addr))
+		return false;
+	return __kfence_free(addr);
 }
 
 size_t kfence_ksize(const void *addr);
