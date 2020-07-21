@@ -2757,7 +2757,7 @@ static __always_inline void *slab_alloc_node(struct kmem_cache *s,
 	struct page *page;
 	unsigned long tid;
 
-	object = kfence_alloc(s, gfpflags, orig_size);
+	object = kfence_alloc(s, orig_size, gfpflags);
 	if (object)
 		return object;
 
