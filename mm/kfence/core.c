@@ -348,7 +348,11 @@ static void check_cache_freelist_ptr(int index)
 
 	if (!meta->cache)
 		return;
+#if defined(CONFIG_SLUB)
 	freeptr = meta->addr + meta->cache->offset;
+#elif defined(CONFIG_SLAB)
+	return;
+#endif
 	/*
 	 * kfree_bulk() might have set @freeptr to zero. If so, restore the
 	 * pattern. A different @freeptr value will be detected by
