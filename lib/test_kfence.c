@@ -129,23 +129,25 @@ static noinline int do_test_oob(size_t size, bool use_cache)
  * In the following situation:
  *   char *p = kmalloc(73, GFP_KERNEL);
  *   READ_ONCE(p[73]);
- * @p is aligned on 8 (alignment of kmalloc-96), therefore the allocated object
- * does not adhere to either of the page boundaries. Therefore an immediate
- * buffer overflow won't trigger a page fault.
+ * @p is aligned on 8 for SLUB and 128 for SLAB. Therefore the allocated object does not does not
+ * adhere to either of the page boundaries. As a result, an immediate buffer overflow will not
+ * trigger a page fault.
  *
- * This test checks that KFENCE is unable to detect such OOBs, but is able to
- * detect an OOB that touches the next 8 bytes past the object.
+ * This test checks that KFENCE is unable to detect such OOBs, but is able to detect an OOB that
+ * touches the bytes past the aligned object size.
  */
 static noinline int do_test_kmalloc_aligned_oob_read(void)
 {
 	void *buffer;
 	char *c;
 	const size_t size = 73;
+	size_t align;
 
 	PRINT_TEST_HEADER("expecting an OOB report");
 	buffer = alloc_from_kfence(size, GFP_KERNEL, SIDE_RIGHT, __func__);
 	if (!buffer)
 		return 1;
+
 	/*
 		 * The object is offset to the right, so there won't be OOBs to
 		 * the left of it.
@@ -153,15 +155,16 @@ static noinline int do_test_kmalloc_aligned_oob_read(void)
 	c = ((char *)buffer) - 1;
 	READ_ONCE(*c);
 
+	align = kmalloc_caches[kmalloc_type(GFP_KERNEL)][kmalloc_index(size)]->align;
 	/*
-		 * @buffer must be aligned on 8, therefore buffer + size + 1
+		 * @buffer must be aligned on @align, therefore buffer + size + 1
 		 * belongs to the same page - no immediate OOB.
 		 */
 	c = ((char *)buffer) + size + 1;
 	READ_ONCE(*c);
 
-	/* Overflowing the buffer by 8 bytes will result in an OOB. */
-	c = ((char *)buffer) + size + 8;
+	/* Overflowing the buffer by @align bytes will result in an OOB. */
+	c = ((char *)buffer) + size + align;
 	READ_ONCE(*c);
 
 	free_to_kfence(buffer);
