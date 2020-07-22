@@ -16,6 +16,14 @@
 #include "kfence.h"
 #include "../slab.h"
 
+unsigned long kfence_sample_rate = CONFIG_KFENCE_SAMPLE_RATE;
+
+#ifdef MODULE_PARAM_PREFIX
+#undef MODULE_PARAM_PREFIX
+#endif
+#define MODULE_PARAM_PREFIX "kfence."
+module_param_named(sample_rate, kfence_sample_rate, ulong, 0444);
+
 /* Usually on, unless explicitly disabled. */
 bool kfence_enabled;
 
@@ -47,8 +55,6 @@ static struct kfence_freelist kfence_freelist = { .list = LIST_HEAD_INIT(kfence_
 static struct kfence_freelist kfence_recycle = { .list = LIST_HEAD_INIT(kfence_recycle.list) };
 
 struct kfence_alloc_metadata *kfence_metadata;
-
-#define KFENCE_DEFAULT_SAMPLE_RATE 100
 
 /* Requres kfence_alloc_lock. */
 static void save_stack(int index, bool is_alloc)
@@ -628,8 +634,6 @@ void __init kfence_create_debugfs(void)
 
 device_initcall(kfence_create_debugfs);
 
-unsigned long kfence_sample_rate = KFENCE_DEFAULT_SAMPLE_RATE;
-
 /*
  * Set up delayed work, which will enable and disable the static key. We need to
  * use a work queue (rather than a simple timer), since enabling and disabling a
@@ -651,12 +655,6 @@ static void kfence_heartbeat(struct work_struct *work)
 	schedule_delayed_work(&kfence_timer, msecs_to_jiffies(kfence_sample_rate));
 }
 static DECLARE_DELAYED_WORK(kfence_timer, kfence_heartbeat);
-
-#ifdef MODULE_PARAM_PREFIX
-#undef MODULE_PARAM_PREFIX
-#endif
-#define MODULE_PARAM_PREFIX "kfence."
-module_param_named(sample_rate, kfence_sample_rate, ulong, 0444);
 
 void __init kfence_init(void)
 {

@@ -22,3 +22,15 @@ config KFENCE
 	  such as KASAN. KFENCE can detect a subset of bugs that KASAN can
 	  detect (therefore enabling KFENCE together with KASAN does not make
 	  sense), albeit at very different performance profiles.
+
+if KFENCE
+
+config KFENCE_SAMPLE_RATE
+	int "KFENCE default sample rate in milliseconds"
+	default 100
+	help
+	  The KFENCE sample rate determines the frequency with which heap
+	  allocations will be guarded by KFENCE. May be overridden via
+	  command-line argument kfence.sample_rate.
+
+endif # KFENCE

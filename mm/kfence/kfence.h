@@ -43,8 +43,8 @@ struct kfence_alloc_metadata {
 	unsigned long stack_free[KFENCE_STACK_DEPTH];
 };
 
-extern bool kfence_enabled;
 extern unsigned long kfence_sample_rate;
+extern bool kfence_enabled;
 extern struct kfence_alloc_metadata *kfence_metadata;
 
 static inline bool kfence_is_enabled(void)
