@@ -9,7 +9,7 @@ config TEST_KFENCE
 
 config KFENCE
 	bool "KFENCE: low-overhead use-after-free and buffer-overflow detector"
-	depends on HAVE_ARCH_KFENCE && !KASAN
+	depends on HAVE_ARCH_KFENCE && !KASAN && (SLAB || SLUB)
 	depends on JUMP_LABEL # To ensure performance, require jump labels
 	help
 	  KFENCE is low-overhead sampling-based detector for heap

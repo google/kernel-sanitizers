@@ -342,13 +342,16 @@ static void check_canary_byte(unsigned long addr)
  */
 static void check_cache_freelist_ptr(int index)
 {
+#if defined(CONFIG_SLUB)
 	struct kfence_alloc_metadata *meta = &kfence_metadata[index];
 	unsigned long freeptr;
 	int i;
 
 	if (!meta->cache)
 		return;
+
 	freeptr = meta->addr + meta->cache->offset;
+
 	/*
 	 * kfree_bulk() might have set @freeptr to zero. If so, restore the
 	 * pattern. A different @freeptr value will be detected by
@@ -358,6 +361,7 @@ static void check_cache_freelist_ptr(int index)
 		return;
 	for (i = 0; i < sizeof(void *); i++)
 		set_canary_byte(freeptr + i);
+#endif
 }
 
 static void for_each_canary(int index, void (*fn)(unsigned long))
@@ -380,12 +384,13 @@ static atomic_t allocation_gate = ATOMIC_INIT(1);
 /* Wait queue to wake up heartbeat timer task. */
 static DECLARE_WAIT_QUEUE_HEAD(allocation_wait);
 
-void *kfence_guarded_alloc(struct kmem_cache *cache, size_t override_size, gfp_t gfp)
+static void *kfence_guarded_alloc(struct kmem_cache *cache, size_t size, gfp_t gfp)
 {
 	unsigned long flags;
 	void *obj = NULL, *ret;
 	struct kfence_freelist *item;
 	int index = -1;
+	struct page *page;
 	/*
 	 * Note: for allocations made before RNG initialization prandom_u32_max() will always return
 	 * zero. We still benefit from enabling KFENCE as early as possible, even when the RNG is
@@ -394,10 +399,8 @@ void *kfence_guarded_alloc(struct kmem_cache *cache, size_t override_size, gfp_t
 	 * allocations.
 	 */
 	bool right = prandom_u32_max(2);
-	size_t size = override_size ? override_size : cache->size;
-	struct page *page;
 
-	if (KFENCE_WARN_ON(size > PAGE_SIZE))
+	if (KFENCE_WARN_ON(!size || (size > PAGE_SIZE)))
 		return NULL;
 	spin_lock_irqsave(&kfence_alloc_lock, flags);
 
@@ -466,7 +469,7 @@ void *__kfence_alloc(struct kmem_cache *s, size_t size, gfp_t flags)
 	return ret;
 }
 
-void kfence_guarded_free(void *addr)
+bool __kfence_free(void *addr)
 {
 	unsigned long flags;
 	unsigned long aligned_addr = ALIGN_DOWN((unsigned long)addr, PAGE_SIZE);
@@ -486,17 +489,7 @@ void kfence_guarded_free(void *addr)
 	kfence_protect(aligned_addr);
 	spin_unlock_irqrestore(&kfence_alloc_lock, flags);
 	pr_debug("freed object #%d\n", index);
-}
-
-bool kfence_free(struct kmem_cache *s, struct page *page, void *head, void *tail, int cnt,
-		 unsigned long addr)
-{
-	if (!is_kfence_addr(head))
-		return false;
-	if (KFENCE_WARN_ON(head != tail))
-		return false;
-	pr_debug("kfence_free(%px)\n", head);
-	kfence_guarded_free(head);
+	/* TODO(glider): detect double-frees. */
 	return true;
 }
 

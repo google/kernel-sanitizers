@@ -2757,7 +2757,7 @@ static __always_inline void *slab_alloc_node(struct kmem_cache *s,
 	struct page *page;
 	unsigned long tid;
 
-	object = kfence_alloc(s, gfpflags, orig_size);
+	object = kfence_alloc(s, orig_size, gfpflags);
 	if (object)
 		return object;
 
@@ -2854,7 +2854,7 @@ static __always_inline void *slab_alloc(struct kmem_cache *s,
 
 void *kmem_cache_alloc(struct kmem_cache *s, gfp_t gfpflags)
 {
-	void *ret = slab_alloc(s, gfpflags, _RET_IP_, 0);
+	void *ret = slab_alloc(s, gfpflags, _RET_IP_, s->size);
 
 	trace_kmem_cache_alloc(_RET_IP_, ret, s->object_size,
 				s->size, gfpflags);
@@ -2877,7 +2877,7 @@ EXPORT_SYMBOL(kmem_cache_alloc_trace);
 #ifdef CONFIG_NUMA
 void *kmem_cache_alloc_node(struct kmem_cache *s, gfp_t gfpflags, int node)
 {
-	void *ret = slab_alloc_node(s, gfpflags, node, _RET_IP_, 0);
+	void *ret = slab_alloc_node(s, gfpflags, node, _RET_IP_, s->size);
 
 	trace_kmem_cache_alloc_node(_RET_IP_, ret,
 				    s->object_size, s->size, gfpflags, node);
@@ -2925,7 +2925,7 @@ static void __slab_free(struct kmem_cache *s, struct page *page,
 
 	stat(s, FREE_SLOWPATH);
 
-	if (kfence_free(s, page, head, tail, cnt, addr))
+	if (kfence_free(head))
 		return;
 
 	if (kmem_cache_debug(s) &&

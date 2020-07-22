@@ -54,9 +54,6 @@ static inline bool kfence_is_enabled(void)
 
 void kfence_disable(void);
 
-void *kfence_guarded_alloc(struct kmem_cache *cache, size_t override_size, gfp_t gfp);
-void kfence_guarded_free(void *addr);
-
 enum kfence_error_type { KFENCE_ERROR_OOB, KFENCE_ERROR_UAF, KFENCE_ERROR_CORRUPTION };
 
 void kfence_report_error(unsigned long address, int obj_index,
