@@ -384,12 +384,13 @@ static atomic_t allocation_gate = ATOMIC_INIT(1);
 /* Wait queue to wake up heartbeat timer task. */
 static DECLARE_WAIT_QUEUE_HEAD(allocation_wait);
 
-void *kfence_guarded_alloc(struct kmem_cache *cache, size_t override_size, gfp_t gfp)
+static void *kfence_guarded_alloc(struct kmem_cache *cache, size_t size, gfp_t gfp)
 {
 	unsigned long flags;
 	void *obj = NULL, *ret;
 	struct kfence_freelist *item;
 	int index = -1;
+	struct page *page;
 	/*
 	 * Note: for allocations made before RNG initialization prandom_u32_max() will always return
 	 * zero. We still benefit from enabling KFENCE as early as possible, even when the RNG is
@@ -398,10 +399,8 @@ void *kfence_guarded_alloc(struct kmem_cache *cache, size_t override_size, gfp_t
 	 * allocations.
 	 */
 	bool right = prandom_u32_max(2);
-	size_t size = override_size ? override_size : cache->size;
-	struct page *page;
 
-	if (KFENCE_WARN_ON(size > PAGE_SIZE))
+	if (KFENCE_WARN_ON(!size || (size > PAGE_SIZE)))
 		return NULL;
 	spin_lock_irqsave(&kfence_alloc_lock, flags);
 
