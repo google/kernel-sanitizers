@@ -342,17 +342,16 @@ static void check_canary_byte(unsigned long addr)
  */
 static void check_cache_freelist_ptr(int index)
 {
+#if defined(CONFIG_SLUB)
 	struct kfence_alloc_metadata *meta = &kfence_metadata[index];
 	unsigned long freeptr;
 	int i;
 
 	if (!meta->cache)
 		return;
-#if defined(CONFIG_SLUB)
+
 	freeptr = meta->addr + meta->cache->offset;
-#elif defined(CONFIG_SLAB)
-	return;
-#endif
+
 	/*
 	 * kfree_bulk() might have set @freeptr to zero. If so, restore the
 	 * pattern. A different @freeptr value will be detected by
@@ -362,6 +361,7 @@ static void check_cache_freelist_ptr(int index)
 		return;
 	for (i = 0; i < sizeof(void *); i++)
 		set_canary_byte(freeptr + i);
+#endif
 }
 
 static void for_each_canary(int index, void (*fn)(unsigned long))
