@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0
 
+#define pr_fmt(fmt) "kfence: " fmt
+
 #include <linux/debugfs.h>
 #include <linux/kfence.h>
 #include <linux/list.h>
@@ -254,7 +256,7 @@ static bool __meminit kfence_allocate_pool(void)
 	pages = virt_to_page(addr);
 	if (!kfence_force_4k_pages(addr))
 		goto error;
-	pr_info("kfence allocated pages: %px--%px\n", (void *)__kfence_pool_start,
+	pr_info("allocated pages: 0x%px-0x%px\n", (void *)__kfence_pool_start,
 		(void *)__kfence_pool_end());
 
 	/*
@@ -441,8 +443,8 @@ static void *kfence_guarded_alloc(struct kmem_cache *cache, size_t size, gfp_t g
 	} else {
 		ret = NULL;
 	}
-	pr_debug("kfence_guarded_alloc(%ld) returns %px\n", size, ret);
-	pr_debug("allocated object #%d\n", index);
+
+	pr_debug("allocated object kfence-#%d\n", index);
 	return ret;
 }
 
@@ -492,7 +494,7 @@ bool __kfence_free(void *addr)
 	kfence_metadata[index].state = KFENCE_OBJECT_FREED;
 	kfence_protect(aligned_addr);
 	spin_unlock_irqrestore(&kfence_alloc_lock, flags);
-	pr_debug("freed object #%d\n", index);
+	pr_debug("freed object kfence-#%d\n", index);
 	/* TODO(glider): detect double-frees. */
 	return true;
 }
@@ -535,7 +537,7 @@ bool kfence_handle_page_fault(unsigned long addr)
 			spin_unlock_irqrestore(&kfence_alloc_lock, flags);
 		} else {
 			spin_unlock_irqrestore(&kfence_alloc_lock, flags);
-			pr_err("BUG: KFENCE: wild redzone access.\n");
+			pr_err("wild redzone access, possible out-of-bounds access!\n");
 			/* Let the kernel deal with it. */
 			return false;
 		}
@@ -658,10 +660,11 @@ void __init kfence_init(void)
 		return;
 
 	if (!kfence_allocate_pool()) {
-		pr_err("kfence_init failed\n");
+		pr_err("%s failed\n", __func__);
 		return;
 	}
+
 	schedule_delayed_work(&kfence_timer, 0);
-	pr_info("Starting KFENCE\n");
 	WRITE_ONCE(kfence_enabled, true);
+	pr_info("initialized\n");
 }
