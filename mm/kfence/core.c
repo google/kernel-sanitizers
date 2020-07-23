@@ -57,13 +57,13 @@ static struct kfence_freelist kfence_recycle = { .list = LIST_HEAD_INIT(kfence_r
 struct kfence_alloc_metadata *kfence_metadata;
 
 /* Requres kfence_alloc_lock. */
-static void save_stack(int index, bool is_alloc)
+static noinline void save_stack(int index, bool is_alloc)
 {
 	unsigned long nr_entries;
 	unsigned long *entries =
 		is_alloc ? kfence_metadata[index].stack_alloc : kfence_metadata[index].stack_free;
 
-	nr_entries = stack_trace_save(entries, KFENCE_STACK_DEPTH, 0);
+	nr_entries = stack_trace_save(entries, KFENCE_STACK_DEPTH, 1);
 	/* TODO(glider): filter_irq_stacks() requires stackdepot. */
 	/* nr_entries = filter_irq_stacks(entries, nr_entries); */
 	if (is_alloc)

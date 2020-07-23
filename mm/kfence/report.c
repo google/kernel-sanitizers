@@ -79,7 +79,7 @@ static void kfence_dump_stack(struct seq_file *seq, struct kfence_alloc_metadata
 		static char buf[PAGE_SIZE];
 
 		stack_trace_snprint(buf, sizeof(buf), entries, nr_entries, 0);
-		seq_con_printf(seq, "%s\n", buf);
+		seq_con_printf(seq, "%s", buf);
 	} else {
 		seq_con_printf(seq, "  no %s stack.\n", is_alloc ? "allocation" : "deallocation");
 	}
@@ -87,22 +87,24 @@ static void kfence_dump_stack(struct seq_file *seq, struct kfence_alloc_metadata
 
 void kfence_dump_object(struct seq_file *seq, int obj_index, struct kfence_alloc_metadata *obj)
 {
-	int size = abs(obj->size);
-	unsigned long start = obj->addr;
-	struct kmem_cache *cache;
+	const int size = abs(obj->size);
+	const unsigned long start = obj->addr;
+	const struct kmem_cache *const cache = kfence_metadata[obj_index].cache;
 
-	seq_con_printf(seq, "Object #%d: starts at %px, size=%d\n", obj_index, (void *)start, size);
-	seq_con_printf(seq, "allocated at:\n");
+	if (!size && !start) {
+		seq_con_printf(seq, "kfence-#%d unused.\n", obj_index);
+		return;
+	}
+
+	seq_con_printf(seq, "kfence-#%d [0x%px-0x%px, size=%d, cache=%s] allocated at:\n",
+		       obj_index, (void *)start, (void *)(start + size - 1), size,
+		       (cache && cache->name) ? cache->name : "");
 	kfence_dump_stack(seq, obj, true);
 
 	if (kfence_metadata[obj_index].state == KFENCE_OBJECT_FREED) {
 		seq_con_printf(seq, "freed at:\n");
 		kfence_dump_stack(seq, obj, false);
 	}
-
-	cache = kfence_metadata[obj_index].cache;
-	if (cache && cache->name)
-		seq_con_printf(seq, "Object #%d belongs to cache %s\n", obj_index, cache->name);
 }
 
 static void kfence_print_object(int obj_index, struct kfence_alloc_metadata *obj)
@@ -114,10 +116,11 @@ static void dump_bytes_at(unsigned long addr)
 {
 	unsigned char *c = (unsigned char *)addr;
 	unsigned char *max_addr = (unsigned char *)min(ALIGN(addr, PAGE_SIZE), addr + 16);
-	pr_err("Bytes at %px:", (void *)addr);
+
+	pr_cont("[");
 	for (; c < max_addr; c++)
 		pr_cont(" %02X", *c);
-	pr_cont("\n");
+	pr_cont(" ]");
 }
 
 void kfence_report_error(unsigned long address, int obj_index, struct kfence_alloc_metadata *object,
@@ -126,29 +129,34 @@ void kfence_report_error(unsigned long address, int obj_index, struct kfence_all
 	unsigned long stack_entries[NUM_STACK_ENTRIES] = { 0 };
 	int num_stack_entries = stack_trace_save(stack_entries, NUM_STACK_ENTRIES, 1);
 	int skipnr = get_stack_skipnr(stack_entries, num_stack_entries, type);
-	bool is_left;
 
 	pr_err("==================================================================\n");
+	/* Print report header. */
 	switch (type) {
 	case KFENCE_ERROR_OOB:
-		is_left = address < object->addr;
-		pr_err("BUG: KFENCE: slab-out-of-bounds in %pS\n", (void *)stack_entries[skipnr]);
-		pr_err("Memory access at address %px to the %s of object #%d\n", (void *)address,
-		       is_left ? "left" : "right", obj_index);
+		pr_err("BUG: KFENCE: out-of-bounds in %pS\n\n", (void *)stack_entries[skipnr]);
+		pr_err("Out-of-bounds access at 0x%px (%s of kfence-#%d):\n", (void *)address,
+		       address < object->addr ? "left" : "right", obj_index);
 		break;
 	case KFENCE_ERROR_UAF:
-		pr_err("BUG: KFENCE: use-after-free in %pS\n", (void *)stack_entries[skipnr]);
-		pr_err("Memory access at address %px\n", (void *)address);
+		pr_err("BUG: KFENCE: use-after-free in %pS\n\n", (void *)stack_entries[skipnr]);
+		pr_err("Use-after-free access at 0x%px:\n", (void *)address);
 		break;
 	case KFENCE_ERROR_CORRUPTION:
-		pr_err("BUG: KFENCE: memory corruption in %pS\n", (void *)stack_entries[skipnr]);
-		pr_err("Invalid write detected at address %px\n", (void *)address);
+		pr_err("BUG: KFENCE: memory corruption in %pS\n\n", (void *)stack_entries[skipnr]);
+		pr_err("Detected corrupted memory at 0x%px ", (void *)address);
 		dump_bytes_at(address);
+		pr_cont(":\n");
 		break;
 	}
 
+	/* Print stack trace and object info. */
 	stack_trace_print(stack_entries + skipnr, num_stack_entries - skipnr, 0);
 	pr_err("\n");
 	kfence_print_object(obj_index, object);
+
+	/* Print report footer. */
+	pr_err("\n");
+	dump_stack_print_info(KERN_DEFAULT);
 	pr_err("==================================================================\n");
 }
