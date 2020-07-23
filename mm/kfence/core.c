@@ -626,7 +626,7 @@ void __init kfence_create_debugfs(void)
 {
 	struct dentry *kfence_dir;
 	kfence_dir = debugfs_create_dir("kfence", NULL);
-	debugfs_create_file_unsafe("objects", 0600, kfence_dir, NULL, &obj_fops);
+	debugfs_create_file_unsafe("objects", 0400, kfence_dir, NULL, &obj_fops);
 }
 
 device_initcall(kfence_create_debugfs);
