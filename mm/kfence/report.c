@@ -63,18 +63,18 @@ static int get_stack_skipnr(const unsigned long stack_entries[], int num_entries
 	return 0;
 }
 
-static void kfence_dump_stack(struct seq_file *seq, struct kfence_alloc_metadata *obj,
+static void kfence_dump_stack(struct seq_file *seq, struct kfence_alloc_metadata *metadata,
 			      bool is_alloc)
 {
-	unsigned long *entries = is_alloc ? obj->stack_alloc : obj->stack_free;
-	unsigned long nr_entries = is_alloc ? obj->nr_alloc : obj->nr_free;
+	unsigned long *entries = is_alloc ? metadata->stack_alloc : metadata->stack_free;
+	unsigned long nr_entries = is_alloc ? metadata->nr_alloc : metadata->nr_free;
 
 	if (nr_entries) {
 		/*
 		 * Unfortunately stack_trace_seq_print() does not exist, and we
 		 * require a temporary buffer for printing the stack trace. We
-		 * expect that printing KFENCE object information is serialized
-		 * under the KFENCE lock.
+		 * expect that printing KFENCE metadata information is
+		 * serialized under kfence_alloc_lock.
 		 */
 		static char buf[PAGE_SIZE];
 
@@ -85,31 +85,31 @@ static void kfence_dump_stack(struct seq_file *seq, struct kfence_alloc_metadata
 	}
 }
 
-void kfence_dump_object(struct seq_file *seq, int obj_index, struct kfence_alloc_metadata *obj)
+void kfence_dump_object(struct seq_file *seq, struct kfence_alloc_metadata *metadata)
 {
-	const int size = abs(obj->size);
-	const unsigned long start = obj->addr;
-	const struct kmem_cache *const cache = kfence_metadata[obj_index].cache;
+	const int size = abs(metadata->size);
+	const unsigned long start = metadata->addr;
+	const struct kmem_cache *const cache = metadata->cache;
 
-	if (!size && !start) {
-		seq_con_printf(seq, "kfence-#%d unused.\n", obj_index);
+	if (metadata->state == KFENCE_OBJECT_UNUSED) {
+		seq_con_printf(seq, "kfence-#%ld unused.\n", metadata - kfence_metadata);
 		return;
 	}
 
-	seq_con_printf(seq, "kfence-#%d [0x%px-0x%px, size=%d, cache=%s] allocated at:\n",
-		       obj_index, (void *)start, (void *)(start + size - 1), size,
+	seq_con_printf(seq, "kfence-#%ld [0x%px-0x%px, size=%d, cache=%s] allocated at:\n",
+		       metadata - kfence_metadata, (void *)start, (void *)(start + size - 1), size,
 		       (cache && cache->name) ? cache->name : "");
-	kfence_dump_stack(seq, obj, true);
+	kfence_dump_stack(seq, metadata, true);
 
-	if (kfence_metadata[obj_index].state == KFENCE_OBJECT_FREED) {
+	if (metadata->state == KFENCE_OBJECT_FREED) {
 		seq_con_printf(seq, "freed at:\n");
-		kfence_dump_stack(seq, obj, false);
+		kfence_dump_stack(seq, metadata, false);
 	}
 }
 
-static void kfence_print_object(int obj_index, struct kfence_alloc_metadata *obj)
+static void kfence_print_object(struct kfence_alloc_metadata *metadata)
 {
-	kfence_dump_object(NULL, obj_index, obj);
+	kfence_dump_object(NULL, metadata);
 }
 
 static void dump_bytes_at(unsigned long addr)
@@ -123,7 +123,7 @@ static void dump_bytes_at(unsigned long addr)
 	pr_cont(" ]");
 }
 
-void kfence_report_error(unsigned long address, int obj_index, struct kfence_alloc_metadata *object,
+void kfence_report_error(unsigned long address, struct kfence_alloc_metadata *metadata,
 			 enum kfence_error_type type)
 {
 	unsigned long stack_entries[NUM_STACK_ENTRIES] = { 0 };
@@ -135,8 +135,8 @@ void kfence_report_error(unsigned long address, int obj_index, struct kfence_all
 	switch (type) {
 	case KFENCE_ERROR_OOB:
 		pr_err("BUG: KFENCE: out-of-bounds in %pS\n\n", (void *)stack_entries[skipnr]);
-		pr_err("Out-of-bounds access at 0x%px (%s of kfence-#%d):\n", (void *)address,
-		       address < object->addr ? "left" : "right", obj_index);
+		pr_err("Out-of-bounds access at 0x%px (%s of kfence-#%ld):\n", (void *)address,
+		       address < metadata->addr ? "left" : "right", metadata - kfence_metadata);
 		break;
 	case KFENCE_ERROR_UAF:
 		pr_err("BUG: KFENCE: use-after-free in %pS\n\n", (void *)stack_entries[skipnr]);
@@ -153,7 +153,7 @@ void kfence_report_error(unsigned long address, int obj_index, struct kfence_all
 	/* Print stack trace and object info. */
 	stack_trace_print(stack_entries + skipnr, num_stack_entries - skipnr, 0);
 	pr_err("\n");
-	kfence_print_object(obj_index, object);
+	kfence_print_object(metadata);
 
 	/* Print report footer. */
 	pr_err("\n");

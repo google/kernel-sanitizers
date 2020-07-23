@@ -14,7 +14,6 @@
 #include <asm/tlbflush.h>
 
 #include "kfence.h"
-#include "../slab.h"
 
 unsigned long kfence_sample_rate = CONFIG_KFENCE_SAMPLE_RATE;
 
@@ -336,8 +335,7 @@ static void check_canary_byte(unsigned long addr)
 
 	if (*(char *)addr != p) {
 		obj_index = kfence_addr_to_index(addr);
-		kfence_report_error(addr, obj_index, &kfence_metadata[obj_index],
-				    KFENCE_ERROR_CORRUPTION);
+		kfence_report_error(addr, &kfence_metadata[obj_index], KFENCE_ERROR_CORRUPTION);
 	}
 }
 
@@ -503,7 +501,6 @@ bool kfence_handle_page_fault(unsigned long addr)
 {
 	int page_index, obj_index, report_index = -1, dist = 0, ndist;
 	unsigned long flags;
-	struct kfence_alloc_metadata object = {};
 
 	if (!is_kfence_addr((void *)addr))
 		return false;
@@ -534,9 +531,8 @@ bool kfence_handle_page_fault(unsigned long addr)
 			}
 		}
 		if (report_index != -1) {
-			object = kfence_metadata[report_index];
+			kfence_report_error(addr, &kfence_metadata[report_index], KFENCE_ERROR_OOB);
 			spin_unlock_irqrestore(&kfence_alloc_lock, flags);
-			kfence_report_error(addr, report_index, &object, KFENCE_ERROR_OOB);
 		} else {
 			spin_unlock_irqrestore(&kfence_alloc_lock, flags);
 			pr_err("BUG: KFENCE: wild redzone access.\n");
@@ -545,9 +541,8 @@ bool kfence_handle_page_fault(unsigned long addr)
 		}
 	} else {
 		report_index = kfence_addr_to_index(addr);
-		object = kfence_metadata[report_index];
+		kfence_report_error(addr, &kfence_metadata[report_index], KFENCE_ERROR_UAF);
 		spin_unlock_irqrestore(&kfence_alloc_lock, flags);
-		kfence_report_error(addr, report_index, &object, KFENCE_ERROR_UAF);
 	}
 
 	/*
@@ -595,7 +590,7 @@ static int obj_show(struct seq_file *seq, void *v)
 	unsigned long flags;
 
 	spin_lock_irqsave(&kfence_alloc_lock, flags);
-	kfence_dump_object(seq, index, &kfence_metadata[index]);
+	kfence_dump_object(seq, &kfence_metadata[index]);
 	spin_unlock_irqrestore(&kfence_alloc_lock, flags);
 	seq_printf(seq, "---------------------------------\n");
 
