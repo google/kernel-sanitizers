@@ -159,4 +159,7 @@ void kfence_report_error(unsigned long address, struct kfence_alloc_metadata *me
 	pr_err("\n");
 	dump_stack_print_info(KERN_DEFAULT);
 	pr_err("==================================================================\n");
+
+	if (panic_on_warn)
+		panic("panic_on_warn set ...\n");
 }
