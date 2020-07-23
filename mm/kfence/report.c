@@ -96,13 +96,13 @@ void kfence_dump_object(struct seq_file *seq, struct kfence_alloc_metadata *meta
 		return;
 	}
 
-	seq_con_printf(seq, "kfence-#%ld [0x%px-0x%px, size=%d, cache=%s] allocated at:\n",
+	seq_con_printf(seq, "kfence-#%ld [0x%px-0x%px, size=%d, cache=%s] allocated in:\n",
 		       metadata - kfence_metadata, (void *)start, (void *)(start + size - 1), size,
 		       (cache && cache->name) ? cache->name : "");
 	kfence_dump_stack(seq, metadata, true);
 
 	if (metadata->state == KFENCE_OBJECT_FREED) {
-		seq_con_printf(seq, "freed at:\n");
+		seq_con_printf(seq, "freed in:\n");
 		kfence_dump_stack(seq, metadata, false);
 	}
 }
