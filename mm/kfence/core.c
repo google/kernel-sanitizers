@@ -586,7 +586,6 @@ leave:
 	spin_unlock_irqrestore(&kfence_alloc_lock, flags);
 	return ret;
 }
-EXPORT_SYMBOL(kfence_shutdown_cache);
 
 /*
  * debugfs seq_file operations for /sys/kernel/debug/kfence/objects.
