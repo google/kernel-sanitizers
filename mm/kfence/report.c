@@ -24,42 +24,35 @@ static void seq_con_printf(struct seq_file *seq, const char *fmt, ...)
 	va_end(args);
 }
 
-bool stack_entry_matches(unsigned long addr, const char *pattern)
-{
-	char buf[64];
-	int buf_len, len;
-
-	buf_len = scnprintf(buf, sizeof(buf), "%ps", (void *)addr);
-	len = strlen(pattern);
-	if (len > buf_len)
-		return false;
-	if (strnstr(buf, pattern, len))
-		return true;
-	return false;
-}
-
-static int scroll_stack_to(const unsigned long stack_entries[], int num_entries,
-			   const char *pattern)
-{
-	int i;
-
-	for (i = 0; i < num_entries; i++) {
-		if (stack_entry_matches(stack_entries[i], pattern))
-			return (i + 1 < num_entries) ? (i + 1) : 0;
-	}
-	return 0;
-}
-
+/* Get the number of stack entries to skip get out of MM internals. */
 static int get_stack_skipnr(const unsigned long stack_entries[], int num_entries,
 			    enum kfence_error_type type)
 {
+	char buf[64];
+	const char *substring;
+	int skipnr;
+	int offset = 1;
+
+	/* Depending on error type, find different stack entries. */
 	switch (type) {
 	case KFENCE_ERROR_UAF:
 	case KFENCE_ERROR_OOB:
-		return scroll_stack_to(stack_entries, num_entries, "asm_exc_page_fault");
+		substring = "asm_exc_page_fault";
+		break;
 	case KFENCE_ERROR_CORRUPTION:
-		return scroll_stack_to(stack_entries, num_entries, "__slab_free");
+		substring = "__slab_free";
+		offset = 2; /* Jump over kfree() etc. */
+		break;
 	}
+
+	for (skipnr = 0; skipnr < num_entries; skipnr++) {
+		const int len = scnprintf(buf, sizeof(buf), "%ps", (void *)stack_entries[skipnr]);
+
+		if (strnstr(buf, substring, len))
+			return (skipnr + offset < num_entries) ? (skipnr + offset) : 0;
+	}
+
+	/* Could not find a match. */
 	return 0;
 }
 
@@ -170,4 +163,6 @@ void kfence_report_error(unsigned long address, const struct kfence_alloc_metada
 
 	if (panic_on_warn)
 		panic("panic_on_warn set ...\n");
+
+	// TODO(elver): Do we want to taint kernel here?
 }
