@@ -21,7 +21,11 @@
 		__cond;                                                                            \
 	})
 
+/* Helper to get the canary byte pattern for @addr. */
 #define KFENCE_CANARY_PATTERN(addr) (((u8[]){ 0xaa, 0xab, 0xaa, 0xad })[(size_t)addr % 4])
+
+/* Maximum stack depth for reports. */
+#define KFENCE_STACK_DEPTH 64
 
 /* KFENCE object states. */
 enum kfence_object_state {
@@ -30,7 +34,7 @@ enum kfence_object_state {
 	KFENCE_OBJECT_FREED, /* KFENCE object was allocated, and then freed. */
 };
 
-#define KFENCE_STACK_DEPTH 64
+/* KFENCE metadata per guarded allocation. */
 struct kfence_alloc_metadata {
 	struct kmem_cache *cache;
 	/*

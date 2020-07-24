@@ -9,8 +9,6 @@
 
 #include "kfence.h"
 
-#define NUM_STACK_ENTRIES 64
-
 /* Helper function to either print to a seq_file or to console. */
 static void seq_con_printf(struct seq_file *seq, const char *fmt, ...)
 {
@@ -127,8 +125,8 @@ static void print_diff_canary(const u8 *addr, size_t max_bytes)
 void kfence_report_error(unsigned long address, const struct kfence_alloc_metadata *metadata,
 			 enum kfence_error_type type)
 {
-	unsigned long stack_entries[NUM_STACK_ENTRIES] = { 0 };
-	int num_stack_entries = stack_trace_save(stack_entries, NUM_STACK_ENTRIES, 1);
+	unsigned long stack_entries[KFENCE_STACK_DEPTH] = { 0 };
+	int num_stack_entries = stack_trace_save(stack_entries, KFENCE_STACK_DEPTH, 1);
 	int skipnr = get_stack_skipnr(stack_entries, num_stack_entries, type);
 
 	pr_err("==================================================================\n");
