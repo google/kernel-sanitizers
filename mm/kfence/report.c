@@ -29,7 +29,6 @@ static int get_stack_skipnr(const unsigned long stack_entries[], int num_entries
 	char buf[64];
 	const char *substring;
 	int skipnr;
-	int offset = 1;
 
 	/* Depending on error type, find different stack entries. */
 	switch (type) {
@@ -39,15 +38,31 @@ static int get_stack_skipnr(const unsigned long stack_entries[], int num_entries
 		break;
 	case KFENCE_ERROR_CORRUPTION:
 		substring = "__slab_free";
-		offset = 2; /* Jump over kfree() etc. */
 		break;
 	}
 
 	for (skipnr = 0; skipnr < num_entries; skipnr++) {
-		const int len = scnprintf(buf, sizeof(buf), "%ps", (void *)stack_entries[skipnr]);
+		int len = scnprintf(buf, sizeof(buf), "%ps", (void *)stack_entries[skipnr]);
 
-		if (strnstr(buf, substring, len))
-			return (skipnr + offset < num_entries) ? (skipnr + offset) : 0;
+		if (!strnstr(buf, substring, len))
+			continue;
+
+		if (++skipnr >= num_entries)
+			return 0;
+
+		if (type == KFENCE_ERROR_CORRUPTION) {
+			/*
+			 * __slab_free might be tail called from kfree(),
+			 * however, some compilers might not turn the call into
+			 * a jump, and thus kfree() might still appear in the
+			 * stack trace.
+			 */
+			len = scnprintf(buf, sizeof(buf), "%ps", (void *)stack_entries[skipnr]);
+			if (!strncmp(buf, "kfree", len) || !strncmp(buf, "kmem_cache_free", len))
+				++skipnr;
+		}
+
+		return skipnr;
 	}
 
 	/* Could not find a match. */
