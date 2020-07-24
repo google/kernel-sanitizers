@@ -112,14 +112,21 @@ static void kfence_print_object(const struct kfence_alloc_metadata *metadata)
 	kfence_dump_object(NULL, metadata);
 }
 
-static void dump_bytes_at(unsigned long addr)
+/*
+ * Show bytes at @addr that are different from the expected canary values, up to
+ * @max_bytes.
+ */
+static void print_diff_canary(const u8 *addr, size_t max_bytes)
 {
-	unsigned char *c = (unsigned char *)addr;
-	unsigned char *max_addr = (unsigned char *)min(ALIGN(addr, PAGE_SIZE), addr + 16);
+	const u8 *max_addr = min((const u8 *)ALIGN((unsigned long)addr, PAGE_SIZE), addr + max_bytes);
 
 	pr_cont("[");
-	for (; c < max_addr; c++)
-		pr_cont(" %02X", *c);
+	for (; addr < max_addr; addr++) {
+		if (*addr == KFENCE_CANARY_PATTERN(addr))
+			pr_cont(" .");
+		else
+			pr_cont(" 0x%02x", *addr);
+	}
 	pr_cont(" ]");
 }
 
@@ -145,7 +152,7 @@ void kfence_report_error(unsigned long address, const struct kfence_alloc_metada
 	case KFENCE_ERROR_CORRUPTION:
 		pr_err("BUG: KFENCE: memory corruption in %pS\n\n", (void *)stack_entries[skipnr]);
 		pr_err("Detected corrupted memory at 0x%px ", (void *)address);
-		dump_bytes_at(address);
+		print_diff_canary((u8 *)address, 16);
 		pr_cont(":\n");
 		break;
 	}
