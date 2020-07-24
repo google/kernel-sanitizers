@@ -375,9 +375,9 @@ static void for_each_canary(int index, void (*fn)(u8 *))
 	unsigned long addr;
 
 	for (addr = ALIGN_DOWN(start, PAGE_SIZE); addr < start; addr++)
-		fn((char *)addr);
+		fn((u8 *)addr);
 	for (addr = start + size; addr < ALIGN(start, PAGE_SIZE); addr++)
-		fn((char *)addr);
+		fn((u8 *)addr);
 }
 
 /* The static key to set up a KFENCE allocation. */
