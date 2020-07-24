@@ -322,22 +322,19 @@ size_t kfence_ksize(const void *addr)
 	return abs(READ_ONCE(kfence_metadata[index].size));
 }
 
-static const char canary_pattern[] = { 0xAA, 0xAB, 0xAA, 0xAD };
-
-static void set_canary_byte(unsigned long addr)
+/* Write canary byte to @addr. */
+static void set_canary_byte(u8 *addr)
 {
-	char p = canary_pattern[addr % ARRAY_SIZE(canary_pattern)];
-	*(char *)addr = p;
+	*addr = KFENCE_CANARY_PATTERN(addr);
 }
 
-static void check_canary_byte(unsigned long addr)
+/* Check canary byte at @addr. */
+static void check_canary_byte(u8 *addr)
 {
-	char p = canary_pattern[addr % ARRAY_SIZE(canary_pattern)];
-	int obj_index;
-
-	if (*(char *)addr != p) {
-		obj_index = kfence_addr_to_index(addr);
-		kfence_report_error(addr, &kfence_metadata[obj_index], KFENCE_ERROR_CORRUPTION);
+	if (*addr != KFENCE_CANARY_PATTERN(addr)) {
+		int obj_index = kfence_addr_to_index((unsigned long)addr);
+		kfence_report_error((unsigned long)addr, &kfence_metadata[obj_index],
+				    KFENCE_ERROR_CORRUPTION);
 	}
 }
 
@@ -365,21 +362,22 @@ static void check_cache_freelist_ptr(int index)
 	 */
 	if (*(void **)freeptr)
 		return;
+
 	for (i = 0; i < sizeof(void *); i++)
-		set_canary_byte(freeptr + i);
+		set_canary_byte((u8 *)freeptr + i);
 #endif
 }
 
-static void for_each_canary(int index, void (*fn)(unsigned long))
+static void for_each_canary(int index, void (*fn)(u8 *))
 {
 	unsigned long start = kfence_metadata[index].addr;
 	int size = abs(kfence_metadata[index].size);
 	unsigned long addr;
 
 	for (addr = ALIGN_DOWN(start, PAGE_SIZE); addr < start; addr++)
-		fn(addr);
+		fn((char *)addr);
 	for (addr = start + size; addr < ALIGN(start, PAGE_SIZE); addr++)
-		fn(addr);
+		fn((char *)addr);
 }
 
 /* The static key to set up a KFENCE allocation. */

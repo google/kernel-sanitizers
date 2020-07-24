@@ -21,6 +21,8 @@
 		__cond;                                                                            \
 	})
 
+#define KFENCE_CANARY_PATTERN(addr) (((u8[]){ 0xaa, 0xab, 0xaa, 0xad })[(size_t)addr % 4])
+
 /* KFENCE object states. */
 enum kfence_object_state {
 	KFENCE_OBJECT_UNUSED, /* KFENCE object is unused. */
