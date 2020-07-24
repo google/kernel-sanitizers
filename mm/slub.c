@@ -2757,13 +2757,14 @@ static __always_inline void *slab_alloc_node(struct kmem_cache *s,
 	struct page *page;
 	unsigned long tid;
 
-	object = kfence_alloc(s, orig_size, gfpflags);
-	if (object)
-		return object;
-
 	s = slab_pre_alloc_hook(s, gfpflags);
 	if (!s)
 		return NULL;
+
+	object = kfence_alloc(s, orig_size, gfpflags);
+	if (object)
+		goto leave;
+
 redo:
 	/*
 	 * Must read kmem_cache cpu data via this cpu ptr. Preemption is
@@ -2803,9 +2804,6 @@ redo:
 	if (unlikely(!object || !node_match(page, node))) {
 		object = __slab_alloc(s, gfpflags, node, addr, c, orig_size);
 		stat(s, ALLOC_SLOWPATH);
-		/* Skip initialization for KFENCE objects. */
-		if (is_kfence_addr(object))
-			goto leave;
 	} else {
 		void *next_object = get_freepointer_safe(s, object);
 
@@ -3432,7 +3430,7 @@ init_kmem_cache_node(struct kmem_cache_node *n)
 #endif
 }
 
-int alloc_kmem_cache_cpus(struct kmem_cache *s)
+static inline int alloc_kmem_cache_cpus(struct kmem_cache *s)
 {
 	BUILD_BUG_ON(PERCPU_DYNAMIC_EARLY_SIZE <
 			KMALLOC_SHIFT_HIGH * sizeof(struct kmem_cache_cpu));
@@ -3451,7 +3449,6 @@ int alloc_kmem_cache_cpus(struct kmem_cache *s)
 
 	return 1;
 }
-EXPORT_SYMBOL(alloc_kmem_cache_cpus);
 
 static struct kmem_cache *kmem_cache_node;
 

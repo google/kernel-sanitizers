@@ -170,4 +170,3 @@ config PTDUMP_DEBUGFS
 	  kernel.
 
 	  If in doubt, say N.
-
