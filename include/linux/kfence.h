@@ -30,6 +30,7 @@ static __always_inline char *__kfence_pool_end(void)
 void kfence_init(void);
 
 bool kfence_discard_slab(struct kmem_cache *s, struct page *page);
+bool kfence_shutdown_cache(struct kmem_cache *s);
 
 bool kfence_handle_page_fault(unsigned long addr);
 
@@ -65,6 +66,7 @@ size_t kfence_ksize(const void *addr);
 
 static inline void kfence_init(void) { }
 static inline bool kfence_discard_slab(struct kmem_cache *s, struct page *page) { return false; }
+static inline bool kfence_shutdown_cache(struct kmem_cache *s) { return true; }
 static inline bool kfence_handle_page_fault(unsigned long addr) { return false; }
 static inline bool is_kfence_addr(void *addr) { return false; }
 static inline void *kfence_alloc(struct kmem_cache *s, size_t size, gfp_t flags) { return NULL; }
