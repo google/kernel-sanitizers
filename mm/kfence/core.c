@@ -560,6 +560,33 @@ bool kfence_discard_slab(struct kmem_cache *s, struct page *page)
 	return true;
 }
 
+bool kfence_shutdown_cache(struct kmem_cache *s)
+{
+	unsigned long flags;
+	int i;
+	struct kfence_alloc_metadata *meta;
+	bool ret = false;
+
+	spin_lock_irqsave(&kfence_alloc_lock, flags);
+
+	for (i = 0; i < KFENCE_NUM_OBJ; i++) {
+		meta = &kfence_metadata[i];
+		if ((meta->cache == s) && (meta->state == KFENCE_OBJECT_ALLOCATED))
+			goto leave;
+	}
+
+	for (i = 0; i < KFENCE_NUM_OBJ; i++) {
+		meta = &kfence_metadata[i];
+		if ((meta->cache == s) && (meta->state == KFENCE_OBJECT_FREED))
+			meta->cache = NULL;
+	}
+	ret = true;
+
+leave:
+	spin_unlock_irqrestore(&kfence_alloc_lock, flags);
+	return ret;
+}
+
 /*
  * debugfs seq_file operations for /sys/kernel/debug/kfence/objects.
  * obj_start() and obj_next() return the object index + 1, because NULL is used

@@ -118,7 +118,8 @@ static void kfence_print_object(const struct kfence_alloc_metadata *metadata)
  */
 static void print_diff_canary(const u8 *addr, size_t max_bytes)
 {
-	const u8 *max_addr = min((const u8 *)ALIGN((unsigned long)addr, PAGE_SIZE), addr + max_bytes);
+	const u8 *max_addr =
+		min((const u8 *)ALIGN((unsigned long)addr, PAGE_SIZE), addr + max_bytes);
 
 	pr_cont("[");
 	for (; addr < max_addr; addr++) {
