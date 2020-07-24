@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0
 
+#define pr_fmt(fmt) "kfence: " fmt
+
 #include <linux/debugfs.h>
 #include <linux/kfence.h>
 #include <linux/list.h>
@@ -14,7 +16,14 @@
 #include <asm/tlbflush.h>
 
 #include "kfence.h"
-#include "../slab.h"
+
+unsigned long kfence_sample_rate = CONFIG_KFENCE_SAMPLE_RATE;
+
+#ifdef MODULE_PARAM_PREFIX
+#undef MODULE_PARAM_PREFIX
+#endif
+#define MODULE_PARAM_PREFIX "kfence."
+module_param_named(sample_rate, kfence_sample_rate, ulong, 0444);
 
 /* Usually on, unless explicitly disabled. */
 bool kfence_enabled;
@@ -48,16 +57,14 @@ static struct kfence_freelist kfence_recycle = { .list = LIST_HEAD_INIT(kfence_r
 
 struct kfence_alloc_metadata *kfence_metadata;
 
-#define KFENCE_DEFAULT_SAMPLE_RATE 100
-
 /* Requres kfence_alloc_lock. */
-static void save_stack(int index, bool is_alloc)
+static noinline void save_stack(int index, bool is_alloc)
 {
 	unsigned long nr_entries;
 	unsigned long *entries =
 		is_alloc ? kfence_metadata[index].stack_alloc : kfence_metadata[index].stack_free;
 
-	nr_entries = stack_trace_save(entries, KFENCE_STACK_DEPTH, 0);
+	nr_entries = stack_trace_save(entries, KFENCE_STACK_DEPTH, 1);
 	/* TODO(glider): filter_irq_stacks() requires stackdepot. */
 	/* nr_entries = filter_irq_stacks(entries, nr_entries); */
 	if (is_alloc)
@@ -249,7 +256,7 @@ static bool __meminit kfence_allocate_pool(void)
 	pages = virt_to_page(addr);
 	if (!kfence_force_4k_pages(addr))
 		goto error;
-	pr_info("kfence allocated pages: %px--%px\n", (void *)__kfence_pool_start,
+	pr_info("allocated pages: 0x%px-0x%px\n", (void *)__kfence_pool_start,
 		(void *)__kfence_pool_end());
 
 	/*
@@ -330,8 +337,7 @@ static void check_canary_byte(unsigned long addr)
 
 	if (*(char *)addr != p) {
 		obj_index = kfence_addr_to_index(addr);
-		kfence_report_error(addr, obj_index, &kfence_metadata[obj_index],
-				    KFENCE_ERROR_CORRUPTION);
+		kfence_report_error(addr, &kfence_metadata[obj_index], KFENCE_ERROR_CORRUPTION);
 	}
 }
 
@@ -437,8 +443,8 @@ static void *kfence_guarded_alloc(struct kmem_cache *cache, size_t size, gfp_t g
 	} else {
 		ret = NULL;
 	}
-	pr_debug("kfence_guarded_alloc(%ld) returns %px\n", size, ret);
-	pr_debug("allocated object #%d\n", index);
+
+	pr_debug("allocated object kfence-#%d\n", index);
 	return ret;
 }
 
@@ -488,7 +494,7 @@ bool __kfence_free(void *addr)
 	kfence_metadata[index].state = KFENCE_OBJECT_FREED;
 	kfence_protect(aligned_addr);
 	spin_unlock_irqrestore(&kfence_alloc_lock, flags);
-	pr_debug("freed object #%d\n", index);
+	pr_debug("freed object kfence-#%d\n", index);
 	/* TODO(glider): detect double-frees. */
 	return true;
 }
@@ -497,7 +503,6 @@ bool kfence_handle_page_fault(unsigned long addr)
 {
 	int page_index, obj_index, report_index = -1, dist = 0, ndist;
 	unsigned long flags;
-	struct kfence_alloc_metadata object = {};
 
 	if (!is_kfence_addr((void *)addr))
 		return false;
@@ -528,20 +533,18 @@ bool kfence_handle_page_fault(unsigned long addr)
 			}
 		}
 		if (report_index != -1) {
-			object = kfence_metadata[report_index];
+			kfence_report_error(addr, &kfence_metadata[report_index], KFENCE_ERROR_OOB);
 			spin_unlock_irqrestore(&kfence_alloc_lock, flags);
-			kfence_report_error(addr, report_index, &object, KFENCE_ERROR_OOB);
 		} else {
 			spin_unlock_irqrestore(&kfence_alloc_lock, flags);
-			pr_err("BUG: KFENCE: wild redzone access.\n");
+			pr_err("wild redzone access, possible out-of-bounds access!\n");
 			/* Let the kernel deal with it. */
 			return false;
 		}
 	} else {
 		report_index = kfence_addr_to_index(addr);
-		object = kfence_metadata[report_index];
+		kfence_report_error(addr, &kfence_metadata[report_index], KFENCE_ERROR_UAF);
 		spin_unlock_irqrestore(&kfence_alloc_lock, flags);
-		kfence_report_error(addr, report_index, &object, KFENCE_ERROR_UAF);
 	}
 
 	/*
@@ -589,7 +592,7 @@ static int obj_show(struct seq_file *seq, void *v)
 	unsigned long flags;
 
 	spin_lock_irqsave(&kfence_alloc_lock, flags);
-	kfence_dump_object(seq, index, &kfence_metadata[index]);
+	kfence_dump_object(seq, &kfence_metadata[index]);
 	spin_unlock_irqrestore(&kfence_alloc_lock, flags);
 	seq_printf(seq, "---------------------------------\n");
 
@@ -623,12 +626,10 @@ void __init kfence_create_debugfs(void)
 {
 	struct dentry *kfence_dir;
 	kfence_dir = debugfs_create_dir("kfence", NULL);
-	debugfs_create_file_unsafe("objects", 0600, kfence_dir, NULL, &obj_fops);
+	debugfs_create_file_unsafe("objects", 0400, kfence_dir, NULL, &obj_fops);
 }
 
 device_initcall(kfence_create_debugfs);
-
-unsigned long kfence_sample_rate = KFENCE_DEFAULT_SAMPLE_RATE;
 
 /*
  * Set up delayed work, which will enable and disable the static key. We need to
@@ -652,12 +653,6 @@ static void kfence_heartbeat(struct work_struct *work)
 }
 static DECLARE_DELAYED_WORK(kfence_timer, kfence_heartbeat);
 
-#ifdef MODULE_PARAM_PREFIX
-#undef MODULE_PARAM_PREFIX
-#endif
-#define MODULE_PARAM_PREFIX "kfence."
-module_param_named(sample_rate, kfence_sample_rate, ulong, 0444);
-
 void __init kfence_init(void)
 {
 	if (!kfence_sample_rate)
@@ -665,10 +660,11 @@ void __init kfence_init(void)
 		return;
 
 	if (!kfence_allocate_pool()) {
-		pr_err("kfence_init failed\n");
+		pr_err("%s failed\n", __func__);
 		return;
 	}
+
 	schedule_delayed_work(&kfence_timer, 0);
-	pr_info("Starting KFENCE\n");
 	WRITE_ONCE(kfence_enabled, true);
+	pr_info("initialized\n");
 }

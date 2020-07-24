@@ -68,9 +68,7 @@ static inline bool kfence_discard_slab(struct kmem_cache *s, struct page *page) 
 static inline bool kfence_handle_page_fault(unsigned long addr) { return false; }
 static inline bool is_kfence_addr(void *addr) { return false; }
 static __always_inline void *kfence_alloc(struct kmem_cache *s, size_t size, gfp_t flags) { return NULL; }
-static inline bool kfence_free(struct kmem_cache *s, struct page *page,
-			       void *head, void *tail, int cnt,
-			       unsigned long addr) { return false; }
+static inline bool kfence_free(void *addr) { return false; }
 static inline size_t kfence_ksize(void *addr) { return 0; }
 
 // TODO: remove for v1
