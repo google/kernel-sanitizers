@@ -66,9 +66,9 @@ enum kfence_error_type {
 	KFENCE_ERROR_CORRUPTION, /* KFENCE detected a memory corruption on free. */
 };
 
-void kfence_report_error(unsigned long address, struct kfence_alloc_metadata *metadata,
+void kfence_report_error(unsigned long address, const struct kfence_alloc_metadata *metadata,
 			 enum kfence_error_type type);
 
-void kfence_dump_object(struct seq_file *seq, struct kfence_alloc_metadata *metadata);
+void kfence_dump_object(struct seq_file *seq, const struct kfence_alloc_metadata *metadata);
 
 #endif /* MM_KFENCE_KFENCE_H */
