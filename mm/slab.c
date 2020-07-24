@@ -3231,7 +3231,7 @@ slab_alloc_node(struct kmem_cache *cachep, gfp_t flags, int nodeid, size_t orig_
 
 	ptr = kfence_alloc(cachep, orig_size, flags);
 	if (ptr)
-		return ptr;
+		goto leave;
 
 	cache_alloc_debugcheck_before(cachep, flags);
 	local_irq_save(save_flags);
@@ -3265,6 +3265,7 @@ slab_alloc_node(struct kmem_cache *cachep, gfp_t flags, int nodeid, size_t orig_
 	if (unlikely(slab_want_init_on_alloc(flags, cachep)) && ptr)
 		memset(ptr, 0, cachep->object_size);
 
+leave:
 	slab_post_alloc_hook(cachep, flags, 1, &ptr);
 	return ptr;
 }
@@ -3314,7 +3315,7 @@ slab_alloc(struct kmem_cache *cachep, gfp_t flags, size_t orig_size, unsigned lo
 
 	objp = kfence_alloc(cachep, orig_size, flags);
 	if (objp)
-		return objp;
+		goto leave;
 
 	cache_alloc_debugcheck_before(cachep, flags);
 	local_irq_save(save_flags);
@@ -3326,6 +3327,7 @@ slab_alloc(struct kmem_cache *cachep, gfp_t flags, size_t orig_size, unsigned lo
 	if (unlikely(slab_want_init_on_alloc(flags, cachep)) && objp)
 		memset(objp, 0, cachep->object_size);
 
+leave:
 	slab_post_alloc_hook(cachep, flags, 1, &objp);
 	return objp;
 }
