@@ -34,6 +34,7 @@ static int get_stack_skipnr(const unsigned long stack_entries[], int num_entries
 	switch (type) {
 	case KFENCE_ERROR_UAF:
 	case KFENCE_ERROR_OOB:
+	case KFENCE_ERROR_INVALID:
 		substring = "asm_exc_page_fault";
 		break;
 	case KFENCE_ERROR_CORRUPTION:
@@ -152,12 +153,19 @@ void kfence_report_error(unsigned long address, const struct kfence_metadata *me
 		print_diff_canary((u8 *)address, 16);
 		pr_cont(":\n");
 		break;
+	case KFENCE_ERROR_INVALID:
+		pr_err("BUG: KFENCE: invalid access in %pS\n\n", (void *)stack_entries[skipnr]);
+		pr_err("Invalid access at 0x%px:\n", (void *)address);
+		break;
 	}
 
 	/* Print stack trace and object info. */
 	stack_trace_print(stack_entries + skipnr, num_stack_entries - skipnr, 0);
-	pr_err("\n");
-	kfence_print_object(NULL, metadata);
+
+	if (metadata) {
+		pr_err("\n");
+		kfence_print_object(NULL, metadata);
+	}
 
 	/* Print report footer. */
 	pr_err("\n");

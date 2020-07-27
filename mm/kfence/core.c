@@ -240,15 +240,14 @@ static bool __meminit kfence_initialize_pool(void)
 		}
 	}
 
-	/* Skip the first page: it is reserved. */
+	/* Protect the first 2 pages -- first page is reserved. */
 	// TODO(elver): Why is it reserved?
-	addr += PAGE_SIZE;
+	for (i = 0; i < 2; ++i) {
+		if (!kfence_protect(addr))
+			return false;
 
-	/* Protect the leading (right) redzone. */
-	if (!kfence_protect(addr))
-		return false;
-
-	addr += PAGE_SIZE;
+		addr += PAGE_SIZE;
+	}
 
 	for (i = 0; i < CONFIG_KFENCE_NUM_OBJECTS; i++) {
 		struct kfence_metadata *meta = &kfence_metadata[i];
@@ -549,9 +548,7 @@ out:
 		kfence_report_error(addr, to_report, error_type);
 	else
 		/* This may be a UAF or OOB access, but we can't be sure. */
-		// TODO: think about using %p everywhere to not leak kernel
-		// address layout.
-		WARN(1, "KFENCE: invalid access at 0x%px\n", (void *)addr);
+		kfence_report_error(addr, NULL, KFENCE_ERROR_INVALID);
 
 	spin_unlock_irqrestore(&kfence_alloc_lock, flags);
 	lockdep_on();

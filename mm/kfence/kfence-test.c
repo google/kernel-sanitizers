@@ -100,6 +100,9 @@ static bool report_matches(const struct expect_report *r)
 	case KFENCE_ERROR_CORRUPTION:
 		cur += scnprintf(cur, end - cur, "BUG: KFENCE: memory corruption");
 		break;
+	case KFENCE_ERROR_INVALID:
+		cur += scnprintf(cur, end - cur, "BUG: KFENCE: invalid access");
+		break;
 	}
 
 	scnprintf(cur, end - cur, " in %pS", r->fn);
@@ -121,6 +124,9 @@ static bool report_matches(const struct expect_report *r)
 		break;
 	case KFENCE_ERROR_CORRUPTION:
 		cur += scnprintf(cur, end - cur, "Detected corrupted memory");
+		break;
+	case KFENCE_ERROR_INVALID:
+		cur += scnprintf(cur, end - cur, "Invalid access");
 		break;
 	}
 
@@ -416,6 +422,18 @@ static void test_memcache_ctor(struct kunit *test)
 	KUNIT_EXPECT_FALSE(test, report_available());
 }
 
+static void test_invalid_access(struct kunit *test)
+{
+	const struct expect_report expect = {
+		.type = KFENCE_ERROR_INVALID,
+		.fn = test_invalid_access,
+		.addr = &__kfence_pool[10],
+	};
+
+	READ_ONCE(__kfence_pool[10]);
+	KUNIT_EXPECT_TRUE(test, report_matches(&expect));
+}
+
 /*
  * KUnit does not provide a way to provide arguments to tests, and we encode
  * additional info in the name. Set up 2 tests per test case, one using the
@@ -436,6 +454,7 @@ static struct kunit_case kfence_test_cases[] = {
 	KUNIT_CASE(test_kmalloc_aligned_oob_write),
 	KUNIT_CASE(test_shrink_memcache),
 	KUNIT_CASE(test_memcache_ctor),
+	KUNIT_CASE(test_invalid_access),
 	{},
 };
 
