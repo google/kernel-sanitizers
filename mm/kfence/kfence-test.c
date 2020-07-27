@@ -155,7 +155,7 @@ static size_t setup_test_cache(struct kunit *test, size_t size, void (*ctor)(voi
 	if (test->priv != TEST_PRIV_WANT_MEMCACHE)
 		return size;
 
-	kunit_info(test, "%s: size=%zu, ctor=%ps", __func__, size, ctor);
+	kunit_info(test, "%s: size=%zu, ctor=%ps\n", __func__, size, ctor);
 
 	/*
 	 * Use SLAB_NOLEAKTRACE to prevent merging with existing caches. Any
@@ -223,7 +223,7 @@ static void *test_alloc(struct kunit *test, size_t size, gfp_t gfp, enum allocat
 		break;
 	}
 
-	kunit_info(test, "%s: size=%zu, gfp=%x, policy=%s, cache=%i", __func__, size, gfp,
+	kunit_info(test, "%s: size=%zu, gfp=%x, policy=%s, cache=%i\n", __func__, size, gfp,
 		   policy_name, !!test_cache);
 
 	/*
@@ -422,6 +422,45 @@ static void test_memcache_ctor(struct kunit *test)
 	KUNIT_EXPECT_FALSE(test, report_available());
 }
 
+/* Test that memory is zeroed if requested. */
+static void test_gfpzero(struct kunit *test)
+{
+	const int size = PAGE_SIZE; /* PAGE_SIZE so we can use ALLOCATE_ANY. */
+	char *buf1, *buf2;
+	int i;
+
+	if (CONFIG_KFENCE_SAMPLE_RATE > 100) {
+		kunit_warn(test, "skipping ... would take too long\n");
+		return;
+	}
+
+	setup_test_cache(test, size, NULL);
+	buf1 = test_alloc(test, size, GFP_KERNEL, ALLOCATE_ANY);
+	for (i = 0; i < size; i++)
+		buf1[i] = i + 1;
+	test_free(buf1);
+
+	/* Try to get same address again -- this can take a while. */
+	for (i = 0;; i++) {
+		buf2 = test_alloc(test, size, GFP_KERNEL | __GFP_ZERO, ALLOCATE_ANY);
+		if (buf1 == buf2)
+			break;
+		test_free(buf2);
+
+		if (i == CONFIG_KFENCE_NUM_OBJECTS) {
+			kunit_warn(test, "giving up ... cannot get same object back\n");
+			return;
+		}
+	}
+
+	for (i = 0; i < size; i++)
+		KUNIT_EXPECT_EQ(test, buf2[i], (char)0);
+
+	test_free(buf2);
+
+	KUNIT_EXPECT_FALSE(test, report_available());
+}
+
 static void test_invalid_access(struct kunit *test)
 {
 	const struct expect_report expect = {
@@ -455,6 +494,7 @@ static struct kunit_case kfence_test_cases[] = {
 	KUNIT_CASE(test_shrink_memcache),
 	KUNIT_CASE(test_memcache_ctor),
 	KUNIT_CASE(test_invalid_access),
+	KUNIT_CASE(test_gfpzero),
 	{},
 };
 
