@@ -144,12 +144,12 @@ out:
 /* Cache used by tests; if NULL, allocate from kmalloc instead. */
 static struct kmem_cache *test_cache;
 
-static void setup_test_cache(struct kunit *test, size_t size, void (*ctor)(void *))
+static size_t setup_test_cache(struct kunit *test, size_t size, void (*ctor)(void *))
 {
-	if (test->priv != TEST_PRIV_WANT_MEMCACHE) {
-		KUNIT_ASSERT_FALSE_MSG(test, ctor, "unexpected ctor?");
-		return;
-	}
+	if (test->priv != TEST_PRIV_WANT_MEMCACHE)
+		return size;
+
+	kunit_info(test, "%s: size=%zu, ctor=%ps", __func__, size, ctor);
 
 	/*
 	 * Use SLAB_NOLEAKTRACE to prevent merging with existing caches. Any
@@ -159,6 +159,17 @@ static void setup_test_cache(struct kunit *test, size_t size, void (*ctor)(void 
 	 */
 	test_cache = kmem_cache_create("test", size, 1, SLAB_NOLEAKTRACE | SLAB_ACCOUNT, ctor);
 	KUNIT_ASSERT_TRUE_MSG(test, test_cache, "could not create cache");
+
+	return size;
+}
+
+static void test_cache_destroy(void)
+{
+	if (!test_cache)
+		return;
+
+	kmem_cache_destroy(test_cache);
+	test_cache = NULL;
 }
 
 /* Must always inline to match stack trace against caller. */
@@ -170,25 +181,44 @@ static __always_inline void test_free(void *ptr)
 		kfree(ptr);
 }
 
-/* On which side the allocation and the closest guard page should be. */
-enum allocation_side {
-	ALLOCATE_ANY,
-	ALLOCATE_LEFT,
-	ALLOCATE_RIGHT,
+/*
+ * If this should be a KFENCE allocation, and on which side the allocation and
+ * the closest guard page should be.
+ */
+enum allocation_policy {
+	ALLOCATE_ANY, /* KFENCE, any side. */
+	ALLOCATE_LEFT, /* KFENCE, left side of page. */
+	ALLOCATE_RIGHT, /* KFENCE, right side of page. */
+	ALLOCATE_NONE, /* No KFENCE allocation. */
 };
 
 /*
  * Try to get a guarded allocation from KFENCE. Uses either kmalloc() or the
  * current test_cache if set up.
  */
-static void *test_alloc(struct kunit *test, size_t size, gfp_t gfp, enum allocation_side side)
+static void *test_alloc(struct kunit *test, size_t size, gfp_t gfp, enum allocation_policy policy)
 {
 	void *alloc;
 	unsigned long timeout;
+	const char *policy_name;
 
-	kunit_info(test, "%s: size=%zu, gfp=%x, side=%s, cache=%i", __func__, size, gfp,
-		   side == ALLOCATE_ANY ? "any" : (side == ALLOCATE_LEFT ? "left" : "right"),
-		   !!test_cache);
+	switch (policy) {
+	case ALLOCATE_ANY:
+		policy_name = "any";
+		break;
+	case ALLOCATE_LEFT:
+		policy_name = "left";
+		break;
+	case ALLOCATE_RIGHT:
+		policy_name = "right";
+		break;
+	case ALLOCATE_NONE:
+		policy_name = "none";
+		break;
+	}
+
+	kunit_info(test, "%s: size=%zu, gfp=%x, policy=%s, cache=%i", __func__, size, gfp,
+		   policy_name, !!test_cache);
 
 	/*
 	 * 10x the sample rate should be more than enough to ensure we get a
@@ -202,13 +232,15 @@ static void *test_alloc(struct kunit *test, size_t size, gfp_t gfp, enum allocat
 			alloc = kmalloc(size, gfp);
 
 		if (is_kfence_addr(alloc)) {
-			if (side == ALLOCATE_ANY)
+			if (policy == ALLOCATE_ANY)
 				return alloc;
-			if (side == ALLOCATE_LEFT && IS_ALIGNED((unsigned long)alloc, PAGE_SIZE))
+			if (policy == ALLOCATE_LEFT && IS_ALIGNED((unsigned long)alloc, PAGE_SIZE))
 				return alloc;
-			if (side == ALLOCATE_RIGHT && !IS_ALIGNED((unsigned long)alloc, PAGE_SIZE))
+			if (policy == ALLOCATE_RIGHT &&
+			    !IS_ALIGNED((unsigned long)alloc, PAGE_SIZE))
 				return alloc;
-		}
+		} else if (policy == ALLOCATE_NONE)
+			return alloc;
 
 		test_free(alloc);
 	} while (jiffies < timeout);
@@ -338,33 +370,32 @@ static void test_shrink_memcache(struct kunit *test)
 	KUNIT_EXPECT_FALSE(test, report_available());
 }
 
-/*
- * Test bulk free: build_detached_freelist() in mm/slub.c may modify the
- * freelist pointer located at (object + kmem_cache->offset). KFENCE should
- * ignore such changes.
- */
-static void test_free_bulk(struct kunit *test)
-{
-	int iter;
-
-	for (iter = 0; iter < 10; ++iter) {
-		const size_t size = 1 + prandom_u32_max(300);
-		void *objects[4];
-
-		objects[0] = test_alloc(test, size, GFP_KERNEL, ALLOCATE_RIGHT);
-		objects[1] = kmalloc(size, GFP_KERNEL);
-		objects[2] = test_alloc(test, size, GFP_KERNEL, ALLOCATE_LEFT);
-		objects[3] = kmalloc(size, GFP_KERNEL);
-		kfree_bulk(ARRAY_SIZE(objects), objects);
-
-		KUNIT_ASSERT_FALSE(test, report_available());
-	}
-}
-
 static void ctor_set_x(void *obj)
 {
 	/* Every object has at least 8 bytes. */
 	memset(obj, 'x', 8);
+}
+
+/* Ensure that SL*B does not modify KFENCE objects on bulk free. */
+static void test_free_bulk(struct kunit *test)
+{
+	int iter;
+
+	for (iter = 0; iter < 5; ++iter) {
+		const size_t size = setup_test_cache(test, 8 + prandom_u32_max(300),
+						     (iter & 1) ? ctor_set_x : NULL);
+		void *objects[] = {
+			test_alloc(test, size, GFP_KERNEL, ALLOCATE_RIGHT),
+			test_alloc(test, size, GFP_KERNEL, ALLOCATE_NONE),
+			test_alloc(test, size, GFP_KERNEL, ALLOCATE_LEFT),
+			test_alloc(test, size, GFP_KERNEL, ALLOCATE_NONE),
+			test_alloc(test, size, GFP_KERNEL, ALLOCATE_NONE),
+		};
+
+		kmem_cache_free_bulk(test_cache, ARRAY_SIZE(objects), objects);
+		KUNIT_ASSERT_FALSE(test, report_available());
+		test_cache_destroy();
+	}
 }
 
 /* Ensure that constructors work properly. */
@@ -400,10 +431,10 @@ static void test_memcache_ctor(struct kunit *test)
 static struct kunit_case kfence_test_cases[] = {
 	KFENCE_KUNIT_CASE(test_out_of_bounds_read),
 	KFENCE_KUNIT_CASE(test_use_after_free_read),
+	KFENCE_KUNIT_CASE(test_free_bulk),
 	KUNIT_CASE(test_kmalloc_aligned_oob_read),
 	KUNIT_CASE(test_kmalloc_aligned_oob_write),
 	KUNIT_CASE(test_shrink_memcache),
-	KUNIT_CASE(test_free_bulk),
 	KUNIT_CASE(test_memcache_ctor),
 	{},
 };
@@ -432,11 +463,7 @@ static int test_init(struct kunit *test)
 
 static void test_exit(struct kunit *test)
 {
-	if (!test_cache)
-		return;
-
-	kmem_cache_destroy(test_cache);
-	test_cache = NULL;
+	test_cache_destroy();
 }
 
 static struct kunit_suite kfence_test_suite = {
