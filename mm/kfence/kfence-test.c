@@ -227,10 +227,10 @@ static void *test_alloc(struct kunit *test, size_t size, gfp_t gfp, enum allocat
 		   policy_name, !!test_cache);
 
 	/*
-	 * 10x the sample rate should be more than enough to ensure we get a
-	 * KFENCE allocation.
+	 * 100x the sample rate should be more than enough to ensure we get a
+	 * KFENCE allocation eventually.
 	 */
-	timeout = jiffies + msecs_to_jiffies(10 * CONFIG_KFENCE_SAMPLE_RATE);
+	timeout = jiffies + msecs_to_jiffies(100 * CONFIG_KFENCE_SAMPLE_RATE);
 	do {
 		if (test_cache)
 			alloc = kmem_cache_alloc(test_cache, gfp);
