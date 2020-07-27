@@ -44,29 +44,29 @@ static int get_stack_skipnr(const unsigned long stack_entries[], int num_entries
 	for (skipnr = 0; skipnr < num_entries; skipnr++) {
 		int len = scnprintf(buf, sizeof(buf), "%ps", (void *)stack_entries[skipnr]);
 
-		if (!strnstr(buf, substring, len))
-			continue;
-
-		if (++skipnr >= num_entries)
-			return 0;
-
-		if (type == KFENCE_ERROR_CORRUPTION) {
-			/*
-			 * __slab_free might be tail called from kfree(),
-			 * however, some compilers might not turn the call into
-			 * a jump, and thus kfree() might still appear in the
-			 * stack trace.
-			 */
-			len = scnprintf(buf, sizeof(buf), "%ps", (void *)stack_entries[skipnr]);
-			if (!strncmp(buf, "kfree", len) || !strncmp(buf, "kmem_cache_free", len))
-				++skipnr;
-		}
-
-		return skipnr;
+		if (strnstr(buf, substring, len))
+			break;
 	}
 
-	/* Could not find a match. */
-	return 0;
+	skipnr++;
+
+	if (type == KFENCE_ERROR_CORRUPTION) {
+		/*
+		 * __slab_free might be tail called from kfree(), however, some
+		 * compilers might not turn the call into a jump, and thus
+		 * kfree() might still appear in the stack trace.
+		 */
+		for (; skipnr < num_entries; skipnr++) {
+			scnprintf(buf, sizeof(buf), "%ps", (void *)stack_entries[skipnr]);
+
+			/* Also the *_bulk() variants by checking prefixes. */
+			if (strncmp(buf, "kfree", sizeof("kfree") - 1) &&
+			    strncmp(buf, "kmem_cache_free", sizeof("kmem_cache_free") - 1))
+				break;
+		}
+	}
+
+	return skipnr < num_entries ? skipnr : 0;
 }
 
 static void kfence_dump_stack(struct seq_file *seq, const struct kfence_alloc_metadata *metadata,

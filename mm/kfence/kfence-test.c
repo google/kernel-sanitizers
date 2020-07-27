@@ -345,16 +345,20 @@ static void test_shrink_memcache(struct kunit *test)
  */
 static void test_free_bulk(struct kunit *test)
 {
-	const size_t size = 1 + prandom_u32_max(300);
-	void *objects[4];
+	int iter;
 
-	objects[0] = test_alloc(test, size, GFP_KERNEL, ALLOCATE_ANY);
-	objects[1] = kmalloc(size, GFP_KERNEL);
-	objects[2] = test_alloc(test, size, GFP_KERNEL, ALLOCATE_ANY);
-	objects[3] = kmalloc(size, GFP_KERNEL);
-	kfree_bulk(ARRAY_SIZE(objects), objects);
+	for (iter = 0; iter < 10; ++iter) {
+		const size_t size = 1 + prandom_u32_max(300);
+		void *objects[4];
 
-	KUNIT_EXPECT_FALSE(test, report_available());
+		objects[0] = test_alloc(test, size, GFP_KERNEL, ALLOCATE_RIGHT);
+		objects[1] = kmalloc(size, GFP_KERNEL);
+		objects[2] = test_alloc(test, size, GFP_KERNEL, ALLOCATE_LEFT);
+		objects[3] = kmalloc(size, GFP_KERNEL);
+		kfree_bulk(ARRAY_SIZE(objects), objects);
+
+		KUNIT_ASSERT_FALSE(test, report_available());
+	}
 }
 
 static void ctor_set_x(void *obj)
