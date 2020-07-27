@@ -81,7 +81,7 @@ static void kfence_print_stack(struct seq_file *seq, const struct kfence_metadat
 		int i;
 
 		/* stack_trace_seq_print() does not exist; open code our own. */
-		for (i = 0; i < nentries; ++i)
+		for (i = 0; i < nentries; i++)
 			seq_con_printf(seq, " %pS\n", entries[i]);
 	} else {
 		seq_con_printf(seq, " no %s stack\n", show_alloc ? "allocation" : "deallocation");

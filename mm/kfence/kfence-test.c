@@ -387,7 +387,7 @@ static void test_free_bulk(struct kunit *test)
 {
 	int iter;
 
-	for (iter = 0; iter < 5; ++iter) {
+	for (iter = 0; iter < 5; iter++) {
 		const size_t size = setup_test_cache(test, 8 + prandom_u32_max(300),
 						     (iter & 1) ? ctor_set_x : NULL);
 		void *objects[] = {
@@ -466,7 +466,7 @@ static int test_init(struct kunit *test)
 	int i;
 
 	spin_lock_irqsave(&observed.lock, flags);
-	for (i = 0; i < ARRAY_SIZE(observed.lines); ++i)
+	for (i = 0; i < ARRAY_SIZE(observed.lines); i++)
 		observed.lines[i][0] = '\0';
 	observed.nlines = 0;
 	spin_unlock_irqrestore(&observed.lock, flags);

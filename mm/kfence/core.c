@@ -301,7 +301,7 @@ static bool __init kfence_initialize_pool(void)
 
 	/* Protect the first 2 pages -- first page is reserved. */
 	// TODO(elver): Why is it reserved?
-	for (i = 0; i < 2; ++i) {
+	for (i = 0; i < 2; i++) {
 		if (!kfence_protect(addr))
 			return false;
 
