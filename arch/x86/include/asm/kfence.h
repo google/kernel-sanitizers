@@ -9,6 +9,9 @@
 #include <asm/pgtable.h>
 #include <asm/tlbflush.h>
 
+/* TODO: Decide if we want huge page or 4k page on x86. */
+#define KFENCE_POOL_ALIGNMENT PAGE_SIZE
+
 /*
  * TODO: Clean this up.
  */

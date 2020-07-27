@@ -39,7 +39,7 @@ module_param_named(sample_rate, kfence_sample_rate, ulong, 0400);
 static bool kfence_enabled __read_mostly;
 
 /* TODO: explain alignment. */
-char __kfence_pool[KFENCE_POOL_SIZE] __aligned(2 << 21);
+char __kfence_pool[KFENCE_POOL_SIZE] __aligned(KFENCE_POOL_ALIGNMENT);
 EXPORT_SYMBOL(__kfence_pool); /* Export for test modules. */
 
 /* Protects kfence_freelist, kfence_recycle, kfence_metadata */
