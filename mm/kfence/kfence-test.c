@@ -425,6 +425,32 @@ static void test_free_bulk(struct kunit *test)
 	}
 }
 
+/* Test init-on-free works. */
+static void test_init_on_free(struct kunit *test)
+{
+	const int size = 32;
+	struct expect_report expect = {
+		.type = KFENCE_ERROR_UAF,
+		.fn = test_init_on_free,
+	};
+	int i;
+
+	if (!IS_ENABLED(CONFIG_INIT_ON_FREE_DEFAULT_ON))
+		return;
+	/* Assume it hasn't been disabled on command line. */
+
+	setup_test_cache(test, size, NULL);
+	expect.addr = test_alloc(test, size, GFP_KERNEL, ALLOCATE_ANY);
+	for (i = 0; i < size; i++)
+		expect.addr[i] = i + 1;
+	test_free(expect.addr);
+
+	for (i = 0; i < size; i++)
+		KUNIT_EXPECT_EQ(test, expect.addr[i], (char)0);
+
+	KUNIT_EXPECT_TRUE(test, report_matches(&expect));
+}
+
 /* Ensure that constructors work properly. */
 static void test_memcache_ctor(struct kunit *test)
 {
@@ -511,6 +537,7 @@ static struct kunit_case kfence_test_cases[] = {
 	KFENCE_KUNIT_CASE(test_use_after_free_read),
 	KFENCE_KUNIT_CASE(test_double_free),
 	KFENCE_KUNIT_CASE(test_free_bulk),
+	KFENCE_KUNIT_CASE(test_init_on_free),
 	KUNIT_CASE(test_kmalloc_aligned_oob_read),
 	KUNIT_CASE(test_kmalloc_aligned_oob_write),
 	KUNIT_CASE(test_shrink_memcache),
