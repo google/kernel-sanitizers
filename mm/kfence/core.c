@@ -133,16 +133,16 @@ static inline unsigned long metadata_to_pageaddr(const struct kfence_metadata *m
 static noinline void metadata_update_state(struct kfence_metadata *meta,
 					   enum kfence_object_state next)
 {
-	unsigned long *entries = next == KFENCE_OBJECT_FREED ? meta->stack_free : meta->stack_alloc;
-	unsigned long nr_entries = stack_trace_save(entries, KFENCE_STACK_DEPTH, 1);
+	unsigned long *entries = next == KFENCE_OBJECT_FREED ? meta->free_stack : meta->alloc_stack;
+	const int nentries = stack_trace_save(entries, KFENCE_STACK_DEPTH, 1);
 
 	/* TODO(glider): filter_irq_stacks() requires stackdepot. Needed? */
 	/* nr_entries = filter_irq_stacks(entries, nr_entries); */
 
 	if (next == KFENCE_OBJECT_FREED)
-		meta->nr_free = nr_entries;
+		meta->num_free_stack = nentries;
 	else
-		meta->nr_alloc = nr_entries;
+		meta->num_alloc_stack = nentries;
 
 	meta->state = next;
 }

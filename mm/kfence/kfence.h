@@ -62,9 +62,10 @@ struct kfence_metadata {
 	unsigned long unprotected_page;
 
 	/* Allocation and free stack information. */
-	unsigned long nr_alloc, nr_free;
-	unsigned long stack_alloc[KFENCE_STACK_DEPTH];
-	unsigned long stack_free[KFENCE_STACK_DEPTH];
+	int num_alloc_stack;
+	int num_free_stack;
+	unsigned long alloc_stack[KFENCE_STACK_DEPTH];
+	unsigned long free_stack[KFENCE_STACK_DEPTH];
 };
 
 extern struct kfence_metadata kfence_metadata[CONFIG_KFENCE_NUM_OBJECTS];

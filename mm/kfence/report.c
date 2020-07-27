@@ -73,14 +73,14 @@ static int get_stack_skipnr(const unsigned long stack_entries[], int num_entries
 static void kfence_print_stack(struct seq_file *seq, const struct kfence_metadata *metadata,
 			       bool is_alloc)
 {
-	const unsigned long *entries = is_alloc ? metadata->stack_alloc : metadata->stack_free;
-	unsigned long nr_entries = is_alloc ? metadata->nr_alloc : metadata->nr_free;
+	const unsigned long *entries = is_alloc ? metadata->alloc_stack : metadata->free_stack;
+	const int nentries = is_alloc ? metadata->num_alloc_stack : metadata->num_free_stack;
 
-	if (nr_entries) {
+	if (nentries) {
 		int i;
 
 		/* stack_trace_seq_print() does not exist; open code our own. */
-		for (i = 0; i < nr_entries; ++i)
+		for (i = 0; i < nentries; ++i)
 			seq_con_printf(seq, " %pS\n", entries[i]);
 	} else {
 		seq_con_printf(seq, " no %s stack\n", is_alloc ? "allocation" : "deallocation");
