@@ -35,6 +35,14 @@ config KFENCE_NUM_OBJECTS
 	  pages are required; with one containing the object and two adjacent
 	  ones used as redzones.
 
+config KFENCE_FAULT_INJECTION
+	bool "Fault injection for stress testing"
+	depends on EXPERT
+	help
+	  Randomly fail to unprotect KFENCE object pages, resulting in spurious
+	  use-after-frees. The main purpose of this option is to stress-test
+	  KFENCE with concurrent error reports and allocations/frees.
+
 config KFENCE_TEST
 	tristate "KFENCE test module"
 	depends on TRACEPOINTS && KUNIT

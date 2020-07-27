@@ -425,6 +425,7 @@ static void *kfence_guarded_alloc(struct kmem_cache *cache, size_t size, gfp_t g
 			ret = obj;
 		ret = (void *)ALIGN_DOWN((unsigned long)ret, cache->align);
 		index = kfence_addr_to_index((unsigned long)obj);
+
 		if (kfence_metadata[index].state == KFENCE_OBJECT_FREED)
 			kfence_unprotect((unsigned long)obj);
 
@@ -440,6 +441,9 @@ static void *kfence_guarded_alloc(struct kmem_cache *cache, size_t size, gfp_t g
 		for_each_canary(index, set_canary_byte);
 		if (cache->ctor)
 			cache->ctor(ret);
+
+		if (IS_ENABLED(CONFIG_KFENCE_FAULT_INJECTION) && !prandom_u32_max(10))
+			kfence_protect((unsigned long)obj);
 	} else {
 		ret = NULL;
 	}
@@ -481,6 +485,9 @@ bool __kfence_free(void *addr)
 	unsigned long aligned_addr = ALIGN_DOWN((unsigned long)addr, PAGE_SIZE);
 	struct kfence_freelist *item;
 	int index;
+
+	if (IS_ENABLED(CONFIG_KFENCE_FAULT_INJECTION))
+		kfence_unprotect(aligned_addr); /* Might have been protected. */
 
 	spin_lock_irqsave(&kfence_alloc_lock, flags);
 	item = list_entry(kfence_recycle.list.next, struct kfence_freelist, list);
@@ -551,7 +558,8 @@ bool kfence_handle_page_fault(unsigned long addr)
 		kfence_metadata[report_index].unprotected_page = addr;
 	} else {
 		report_index = kfence_addr_to_index(addr);
-		KFENCE_WARN_ON(kfence_metadata[report_index].state != KFENCE_OBJECT_FREED);
+		KFENCE_WARN_ON(!IS_ENABLED(CONFIG_KFENCE_FAULT_INJECTION) &&
+			       kfence_metadata[report_index].state != KFENCE_OBJECT_FREED);
 		kfence_report_error(addr, &kfence_metadata[report_index], KFENCE_ERROR_UAF);
 	}
 
