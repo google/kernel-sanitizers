@@ -493,6 +493,12 @@ bool __kfence_free(void *addr)
 	save_stack(index, false);
 	kfence_metadata[index].state = KFENCE_OBJECT_FREED;
 	kfence_protect(aligned_addr);
+
+	if (kfence_metadata[index].unprotected_page) {
+		kfence_protect(kfence_metadata[index].unprotected_page);
+		kfence_metadata[index].unprotected_page = 0;
+	}
+
 	spin_unlock_irqrestore(&kfence_alloc_lock, flags);
 	pr_debug("freed object kfence-#%d\n", index);
 	/* TODO(glider): detect double-frees. */
@@ -524,6 +530,7 @@ bool kfence_handle_page_fault(unsigned long addr)
 					       abs(READ_ONCE(kfence_metadata[obj_index].size)));
 			}
 		}
+
 		if (page_index < (CONFIG_KFENCE_NUM_OBJECTS + 1) * 2) {
 			obj_index = kfence_addr_to_index(addr + PAGE_SIZE);
 			if (kfence_metadata[obj_index].state == KFENCE_OBJECT_ALLOCATED) {
@@ -532,25 +539,24 @@ bool kfence_handle_page_fault(unsigned long addr)
 					report_index = obj_index;
 			}
 		}
-		if (report_index != -1) {
-			kfence_report_error(addr, &kfence_metadata[report_index], KFENCE_ERROR_OOB);
-			spin_unlock_irqrestore(&kfence_alloc_lock, flags);
-		} else {
+
+		if (report_index == -1) {
 			spin_unlock_irqrestore(&kfence_alloc_lock, flags);
 			pr_err("wild redzone access, possible out-of-bounds access!\n");
 			/* Let the kernel deal with it. */
 			return false;
 		}
+
+		kfence_report_error(addr, &kfence_metadata[report_index], KFENCE_ERROR_OOB);
+		kfence_metadata[report_index].unprotected_page = addr;
 	} else {
 		report_index = kfence_addr_to_index(addr);
+		KFENCE_WARN_ON(kfence_metadata[report_index].state != KFENCE_OBJECT_FREED);
 		kfence_report_error(addr, &kfence_metadata[report_index], KFENCE_ERROR_UAF);
-		spin_unlock_irqrestore(&kfence_alloc_lock, flags);
 	}
 
-	/*
-	 * Let the kernel proceed.
-	 * TODO: either disable KFENCE here, or reinstate the protection later.
-	 */
+	spin_unlock_irqrestore(&kfence_alloc_lock, flags);
+	/* Let the kernel proceed. */
 	return kfence_unprotect(addr);
 }
 

@@ -49,6 +49,11 @@ struct kfence_alloc_metadata {
 	 */
 	unsigned long addr;
 	enum kfence_object_state state;
+
+	/* In case of an invalid access, the page that was unprotected. */
+	unsigned long unprotected_page;
+
+	/* Allocation and free stack information. */
 	unsigned long nr_alloc, nr_free;
 	unsigned long stack_alloc[KFENCE_STACK_DEPTH];
 	unsigned long stack_free[KFENCE_STACK_DEPTH];
