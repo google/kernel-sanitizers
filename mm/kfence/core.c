@@ -572,6 +572,14 @@ void __kfence_free(void *addr)
 	/* Check canary bytes for memory corruption. */
 	for_each_canary(meta, check_canary_byte);
 
+	/*
+	 * Clear memory if init-on-free is set. While we protect the page, the
+	 * data is still there, and after a use-after-free is detected, we
+	 * unprotect the page, so the data is still accessible.
+	 */
+	if (unlikely(slab_want_init_on_free(meta->cache)))
+		memset(addr, 0, abs(meta->size));
+
 	/* Mark the object as freed. */
 	metadata_update_state(meta, KFENCE_OBJECT_FREED);
 
