@@ -83,7 +83,7 @@ static void kfence_print_stack(struct seq_file *seq, const struct kfence_metadat
 		for (i = 0; i < nr_entries; ++i)
 			seq_con_printf(seq, " %pS\n", entries[i]);
 	} else {
-		seq_con_printf(seq, "  no %s stack.\n", is_alloc ? "allocation" : "deallocation");
+		seq_con_printf(seq, " no %s stack\n", is_alloc ? "allocation" : "deallocation");
 	}
 }
 
@@ -94,13 +94,15 @@ void kfence_print_object(struct seq_file *seq, const struct kfence_metadata *met
 	const struct kmem_cache *const cache = metadata->cache;
 
 	if (metadata->state == KFENCE_OBJECT_UNUSED) {
-		seq_con_printf(seq, "kfence-#%ld unused.\n", metadata - kfence_metadata);
+		seq_con_printf(seq, "kfence-#%ld unused\n", metadata - kfence_metadata);
 		return;
 	}
 
-	seq_con_printf(seq, "kfence-#%ld [0x%px-0x%px, size=%d, cache=%s] allocated in:\n",
+	seq_con_printf(seq,
+		       "kfence-#%ld [0x" PTR_FMT "-0x" PTR_FMT
+		       ", size=%d, cache=%s] allocated in:\n",
 		       metadata - kfence_metadata, (void *)start, (void *)(start + size - 1), size,
-		       (cache && cache->name) ? cache->name : "");
+		       (cache && cache->name) ? cache->name : "<destroyed>");
 	kfence_print_stack(seq, metadata, true);
 
 	if (metadata->state == KFENCE_OBJECT_FREED) {
@@ -122,8 +124,10 @@ static void print_diff_canary(const u8 *addr, size_t max_bytes)
 	for (; addr < max_addr; addr++) {
 		if (*addr == KFENCE_CANARY_PATTERN(addr))
 			pr_cont(" .");
-		else
+		else if (IS_ENABLED(CONFIG_DEBUG_KERNEL))
 			pr_cont(" 0x%02x", *addr);
+		else /* Do not leak kernel memory in non-debug builds. */
+			pr_cont(" !");
 	}
 	pr_cont(" ]");
 }
@@ -140,22 +144,23 @@ void kfence_report_error(unsigned long address, const struct kfence_metadata *me
 	switch (type) {
 	case KFENCE_ERROR_OOB:
 		pr_err("BUG: KFENCE: out-of-bounds in %pS\n\n", (void *)stack_entries[skipnr]);
-		pr_err("Out-of-bounds access at 0x%px (%s of kfence-#%ld):\n", (void *)address,
-		       address < metadata->addr ? "left" : "right", metadata - kfence_metadata);
+		pr_err("Out-of-bounds access at 0x" PTR_FMT " (%s of kfence-#%ld):\n",
+		       (void *)address, address < metadata->addr ? "left" : "right",
+		       metadata - kfence_metadata);
 		break;
 	case KFENCE_ERROR_UAF:
 		pr_err("BUG: KFENCE: use-after-free in %pS\n\n", (void *)stack_entries[skipnr]);
-		pr_err("Use-after-free access at 0x%px:\n", (void *)address);
+		pr_err("Use-after-free access at 0x" PTR_FMT ":\n", (void *)address);
 		break;
 	case KFENCE_ERROR_CORRUPTION:
 		pr_err("BUG: KFENCE: memory corruption in %pS\n\n", (void *)stack_entries[skipnr]);
-		pr_err("Detected corrupted memory at 0x%px ", (void *)address);
+		pr_err("Detected corrupted memory at 0x" PTR_FMT " ", (void *)address);
 		print_diff_canary((u8 *)address, 16);
 		pr_cont(":\n");
 		break;
 	case KFENCE_ERROR_INVALID:
 		pr_err("BUG: KFENCE: invalid access in %pS\n\n", (void *)stack_entries[skipnr]);
-		pr_err("Invalid access at 0x%px:\n", (void *)address);
+		pr_err("Invalid access at 0x" PTR_FMT ":\n", (void *)address);
 		break;
 	}
 

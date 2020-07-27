@@ -9,6 +9,13 @@
 
 #include "../slab.h" /* for struct kmem_cache */
 
+/* For non-debug builds, avoid leaking kernel pointers into dmesg. */
+#ifdef CONFIG_DEBUG_KERNEL
+#define PTR_FMT "%px"
+#else
+#define PTR_FMT "%p"
+#endif
+
 /* Helper to get the canary byte pattern for @addr. */
 #define KFENCE_CANARY_PATTERN(addr) (((u8[]){ 0xaa, 0xab, 0xaa, 0xad })[(size_t)addr % 4])
 

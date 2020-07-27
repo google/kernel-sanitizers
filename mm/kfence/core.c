@@ -221,9 +221,6 @@ static bool __init kfence_initialize_pool(void)
 	if (!arch_kfence_initialize_pool())
 		return false;
 
-	pr_info("memory range: 0x%px-0x%px\n", (void *)__kfence_pool,
-		(void *)(__kfence_pool + KFENCE_POOL_SIZE));
-
 	/*
 	 * Set up non-redzone pages: they must have PG_slab flag and point to
 	 * kfence slab cache.
@@ -373,7 +370,13 @@ void __init kfence_init(void)
 
 	schedule_delayed_work(&kfence_timer, 0);
 	WRITE_ONCE(kfence_enabled, true);
-	pr_info("initialized\n");
+	pr_info("initialized - using %zu bytes for %d objects", ARRAY_SIZE(__kfence_pool),
+		CONFIG_KFENCE_NUM_OBJECTS);
+	if (IS_ENABLED(CONFIG_DEBUG_KERNEL))
+		pr_cont(" at 0x%px-0x%px\n", (void *)__kfence_pool,
+			(void *)(__kfence_pool + KFENCE_POOL_SIZE));
+	else
+		pr_cont("\n");
 }
 
 bool kfence_discard_slab(struct kmem_cache *s, struct page *page)
