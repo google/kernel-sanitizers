@@ -86,13 +86,18 @@ static inline bool kfence_unprotect(unsigned long addr)
 	return !KFENCE_WARN_ON(!kfence_change_page_prot(ALIGN_DOWN(addr, PAGE_SIZE), false));
 }
 
-/* Does not require kfence_alloc_lock. */
-static inline int kfence_addr_to_index(unsigned long addr)
+static inline struct kfence_metadata *kfence_addr_to_metadata(unsigned long addr)
 {
-	if (!is_kfence_addr((void *)addr))
-		return -1;
+	long index;
 
-	return ((addr - (unsigned long)__kfence_pool) / PAGE_SIZE / 2) - 1;
+	if (!is_kfence_addr((void *)addr))
+		return NULL;
+
+	index = ((addr - (unsigned long)__kfence_pool) / PAGE_SIZE / 2) - 1;
+	if (index < 0 || index >= CONFIG_KFENCE_NUM_OBJECTS)
+		return NULL;
+
+	return &kfence_metadata[index];
 }
 
 /* Requres kfence_alloc_lock. */
@@ -123,13 +128,10 @@ static inline bool set_canary_byte(u8 *addr)
 /* Check canary byte at @addr. */
 static inline bool check_canary_byte(u8 *addr)
 {
-	int obj_index;
-
 	if (*addr == KFENCE_CANARY_PATTERN(addr))
 		return true;
 
-	obj_index = kfence_addr_to_index((unsigned long)addr);
-	kfence_report_error((unsigned long)addr, &kfence_metadata[obj_index],
+	kfence_report_error((unsigned long)addr, kfence_addr_to_metadata((unsigned long)addr),
 			    KFENCE_ERROR_CORRUPTION);
 	return false;
 }
@@ -202,7 +204,7 @@ static void *kfence_guarded_alloc(struct kmem_cache *cache, size_t size, gfp_t g
 	if (cache->ctor)
 		cache->ctor(ret);
 
-	pr_debug("allocated object kfence-#%d\n", kfence_addr_to_index(meta->addr));
+	pr_debug("allocated object kfence-#%ld\n", meta - kfence_metadata);
 
 	if (IS_ENABLED(CONFIG_KFENCE_FAULT_INJECTION) && !prandom_u32_max(10))
 		kfence_protect(meta->addr);
@@ -447,9 +449,9 @@ void *__kfence_alloc(struct kmem_cache *s, size_t size, gfp_t flags)
 
 size_t kfence_ksize(const void *addr)
 {
-	const int index = kfence_addr_to_index((unsigned long)addr);
+	const struct kfence_metadata *meta = kfence_addr_to_metadata((unsigned long)addr);
 
-	return index == -1 ? 0 : abs(READ_ONCE(kfence_metadata[index].size));
+	return meta ? abs(READ_ONCE(meta->size)) : 0;
 }
 
 bool __kfence_free(void *addr)
@@ -463,7 +465,7 @@ bool __kfence_free(void *addr)
 	spin_lock_irqsave(&kfence_alloc_lock, flags);
 
 	/* Find the matching metadata. */
-	meta = &kfence_metadata[kfence_addr_to_index((unsigned long)addr)];
+	meta = kfence_addr_to_metadata((unsigned long)addr);
 	KFENCE_WARN_ON(!list_empty(&meta->list)); /* API misuse? */
 
 	/* Restore page protection if there was an OOB access. */
@@ -484,14 +486,16 @@ bool __kfence_free(void *addr)
 
 	spin_unlock_irqrestore(&kfence_alloc_lock, flags);
 
-	pr_debug("freed object kfence-#%d\n", kfence_addr_to_index((unsigned long)addr));
+	pr_debug("freed object kfence-#%ld\n", meta - kfence_metadata);
 	/* TODO(glider): detect double-frees. */
 	return true;
 }
 
 bool kfence_handle_page_fault(unsigned long addr)
 {
-	int page_index, obj_index, report_index = -1, dist = 0, ndist;
+	const int page_index = (addr - (unsigned long)__kfence_pool) / PAGE_SIZE;
+	struct kfence_metadata *to_report = NULL;
+	enum kfence_error_type error_type;
 	unsigned long flags;
 
 	if (!is_kfence_addr((void *)addr))
@@ -508,42 +512,46 @@ bool kfence_handle_page_fault(unsigned long addr)
 	lockdep_off();
 	spin_lock_irqsave(&kfence_alloc_lock, flags);
 
-	page_index = (addr - (unsigned long)__kfence_pool) / PAGE_SIZE;
 	if (page_index % 2) {
 		/* This is a redzone, report a buffer overflow. */
-		if (page_index > 1) {
-			obj_index = kfence_addr_to_index(addr - PAGE_SIZE);
-			if (kfence_metadata[obj_index].state == KFENCE_OBJECT_ALLOCATED) {
-				report_index = obj_index;
-				dist = addr - (kfence_metadata[obj_index].addr +
-					       abs(READ_ONCE(kfence_metadata[obj_index].size)));
-			}
+		struct kfence_metadata *meta = NULL;
+		int distance = 0;
+
+		meta = kfence_addr_to_metadata(addr - PAGE_SIZE);
+		if (meta && meta->state == KFENCE_OBJECT_ALLOCATED) {
+			to_report = meta;
+			distance = addr - (meta->addr + abs(READ_ONCE(meta->size)));
 		}
 
-		if (page_index < (CONFIG_KFENCE_NUM_OBJECTS + 1) * 2) {
-			obj_index = kfence_addr_to_index(addr + PAGE_SIZE);
-			if (kfence_metadata[obj_index].state == KFENCE_OBJECT_ALLOCATED) {
-				ndist = kfence_metadata[obj_index].addr - addr;
-				if ((report_index == -1) || (dist > ndist))
-					report_index = obj_index;
-			}
+		meta = kfence_addr_to_metadata(addr + PAGE_SIZE);
+		if (meta && meta->state == KFENCE_OBJECT_ALLOCATED) {
+			if (!to_report || distance > meta->addr - addr)
+				to_report = meta;
 		}
 
-		if (report_index == -1) {
-			spin_unlock_irqrestore(&kfence_alloc_lock, flags);
-			pr_err("wild redzone access, possible out-of-bounds access!\n");
-			/* Let the kernel deal with it. */
-			return false;
-		}
+		if (!to_report)
+			goto out;
 
-		kfence_report_error(addr, &kfence_metadata[report_index], KFENCE_ERROR_OOB);
-		kfence_metadata[report_index].unprotected_page = addr;
+		to_report->unprotected_page = addr;
+		error_type = KFENCE_ERROR_OOB;
 	} else {
-		report_index = kfence_addr_to_index(addr);
+		to_report = kfence_addr_to_metadata(addr);
+		if (!to_report)
+			goto out;
+
 		KFENCE_WARN_ON(!IS_ENABLED(CONFIG_KFENCE_FAULT_INJECTION) &&
-			       kfence_metadata[report_index].state != KFENCE_OBJECT_FREED);
-		kfence_report_error(addr, &kfence_metadata[report_index], KFENCE_ERROR_UAF);
+			       to_report->state != KFENCE_OBJECT_FREED);
+		error_type = KFENCE_ERROR_UAF;
 	}
+
+out:
+	if (to_report)
+		kfence_report_error(addr, to_report, error_type);
+	else
+		/* This may be a UAF or OOB access, but we can't be sure. */
+		// TODO: think about using %p everywhere to not leak kernel
+		// address layout.
+		WARN(1, "KFENCE: invalid access at 0x%px\n", (void *)addr);
 
 	spin_unlock_irqrestore(&kfence_alloc_lock, flags);
 	lockdep_on();
