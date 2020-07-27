@@ -144,10 +144,6 @@ static noinline void metadata_update_state(struct kfence_metadata *meta,
 	 */
 	const int nentries = stack_trace_save(entries, KFENCE_STACK_DEPTH, 1);
 
-	/* TODO(glider): filter_irq_stacks() requires stackdepot. Needed?
-	 * I think we want the full stack, including IRQs. */
-	/* nr_entries = filter_irq_stacks(entries, nr_entries); */
-
 	lockdep_assert_held(&meta->lock);
 
 	if (next == KFENCE_OBJECT_FREED)
@@ -208,10 +204,6 @@ static void *kfence_guarded_alloc(struct kmem_cache *cache, size_t size, gfp_t g
 	unsigned long flags;
 	struct kfence_metadata *meta;
 	void *addr = NULL;
-
-	// TODO(elver): Why do we need this WARN?
-	if (KFENCE_WARN_ON(!size || (size > PAGE_SIZE)))
-		return NULL;
 
 	if (list_empty(&kfence_freelist)) /* Lockless access safe. */
 		return NULL; /* All objects in use. */
@@ -280,29 +272,39 @@ static bool __init kfence_initialize_pool(void)
 	struct page *pages = virt_to_page(addr);
 	int i;
 
-	if (!arch_kfence_initialize_pool())
+	if (!unlikely(arch_kfence_initialize_pool()))
 		return false;
 
 	/*
-	 * Set up non-redzone pages: they must have PG_slab flag and point to
-	 * kfence slab cache.
+	 * Set up non-redzone pages: they must have PG_slab set, to avoid
+	 * freeing these as real pages.
+	 *
+	 * We also want to avoid inserting kfence_free() in the kfree()
+	 * fast-path in SLUB, and therefore need to ensure kfree() correctly
+	 * enters __slab_free() slow-path.
 	 */
-	// TODO(elver): Why?
 	for (i = 0; i < sizeof(__kfence_pool) / PAGE_SIZE; i++) {
-		if (i && !(i % 2)) {
-			__SetPageSlab(&pages[i]);
-			/*
-			 * Do not add KFENCE pages to slab cache partial lists,
-			 * they will just mess up the accounting.
-			 */
-			pages[i].frozen = 1;
-		}
+		if (!i || (i % 2))
+			continue;
+
+		__SetPageSlab(&pages[i]);
+		/*
+		 * Do not add KFENCE pages to slab cache partial lists, they
+		 * will just mess up the accounting.
+		 *
+		 * TODO: do we still need this? If so, improve the comment.
+		 */
+		pages[i].frozen = 1;
 	}
 
-	/* Protect the first 2 pages -- first page is reserved. */
-	// TODO(elver): Why is it reserved?
+	/*
+	 * Protect the first 2 pages. The first page is mostly unnecessary, and
+	 * merely serves as an extended guard page. However, adding one
+	 * additional page in the beginning gives us an even number of pages,
+	 * which simplifies the mapping of address to metadata index.
+	 */
 	for (i = 0; i < 2; i++) {
-		if (!kfence_protect(addr))
+		if (unlikely(!kfence_protect(addr)))
 			return false;
 
 		addr += PAGE_SIZE;
@@ -319,7 +321,7 @@ static bool __init kfence_initialize_pool(void)
 		list_add_tail(&meta->list, &kfence_freelist);
 
 		/* Protect the right redzone. */
-		if (!kfence_protect(addr + PAGE_SIZE))
+		if (unlikely(!kfence_protect(addr + PAGE_SIZE)))
 			return false;
 
 		addr += 2 * PAGE_SIZE;
@@ -513,8 +515,7 @@ void *__kfence_alloc(struct kmem_cache *s, size_t size, gfp_t flags)
 	if (!READ_ONCE(kfence_enabled))
 		return NULL;
 
-	// TODO(elver): Remove one of the comparisons, which is redundant.
-	if ((size > PAGE_SIZE) || (s->size > PAGE_SIZE))
+	if (size > PAGE_SIZE)
 		return NULL;
 
 	/*
