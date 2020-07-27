@@ -9,18 +9,6 @@
 
 #include "../slab.h" /* for struct kmem_cache */
 
-/*
- * KFENCE_WARN_ON() disables KFENCE on the first warning, to avoid potential
- * further errors if KFENCE is enabled in a non-test environment.
- */
-#define KFENCE_WARN_ON(cond)                                                                       \
-	({                                                                                         \
-		bool __cond = WARN_ON(cond);                                                       \
-		if (unlikely(__cond))                                                              \
-			kfence_disable();                                                          \
-		__cond;                                                                            \
-	})
-
 /* Helper to get the canary byte pattern for @addr. */
 #define KFENCE_CANARY_PATTERN(addr) (((u8[]){ 0xaa, 0xab, 0xaa, 0xad })[(size_t)addr % 4])
 
@@ -72,15 +60,7 @@ struct kfence_metadata {
 	unsigned long stack_free[KFENCE_STACK_DEPTH];
 };
 
-extern bool kfence_enabled;
 extern struct kfence_metadata kfence_metadata[CONFIG_KFENCE_NUM_OBJECTS];
-
-static inline bool kfence_is_enabled(void)
-{
-	return READ_ONCE(kfence_enabled);
-}
-
-void kfence_disable(void);
 
 /* KFENCE error types for report generation. */
 enum kfence_error_type {

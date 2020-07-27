@@ -17,7 +17,18 @@
 
 #include "kfence.h"
 
-static unsigned long kfence_sample_rate = CONFIG_KFENCE_SAMPLE_RATE;
+/* Disables KFENCE on the first warning assuming an irrecoverable error. */
+// clang-format off
+#define KFENCE_WARN_ON(cond)                                                   \
+	({                                                                     \
+		const bool __cond = WARN_ON(cond);                             \
+		if (unlikely(__cond))                                          \
+			WRITE_ONCE(kfence_enabled, false);                     \
+		__cond;                                                        \
+	})
+// clang-format on
+
+static unsigned long kfence_sample_rate __read_mostly = CONFIG_KFENCE_SAMPLE_RATE;
 
 #ifdef MODULE_PARAM_PREFIX
 #undef MODULE_PARAM_PREFIX
@@ -25,8 +36,7 @@ static unsigned long kfence_sample_rate = CONFIG_KFENCE_SAMPLE_RATE;
 #define MODULE_PARAM_PREFIX "kfence."
 module_param_named(sample_rate, kfence_sample_rate, ulong, 0400);
 
-/* Usually on, unless explicitly disabled. */
-bool kfence_enabled;
+static bool kfence_enabled __read_mostly;
 
 /* TODO: explain alignment. */
 char __kfence_pool[KFENCE_POOL_SIZE] __aligned(2 << 21);
@@ -54,12 +64,6 @@ DEFINE_STATIC_KEY_FALSE(kfence_allocation_key);
 static atomic_t allocation_gate = ATOMIC_INIT(1);
 /* Wait queue to wake up heartbeat timer task. */
 static DECLARE_WAIT_QUEUE_HEAD(allocation_wait);
-
-noinline void kfence_disable(void)
-{
-	WRITE_ONCE(kfence_enabled, false);
-	pr_err("disabled\n");
-}
 
 static pgprot_t pgprot_clear_protnone_bits(pgprot_t prot)
 {
@@ -179,7 +183,7 @@ static bool split_large_page(pte_t *kpte, unsigned long address, unsigned int le
 	return true;
 }
 
-bool kfence_force_4k_pages(unsigned long addr)
+static bool kfence_force_4k_pages(unsigned long addr)
 {
 	unsigned int level;
 	pte_t *pte;
@@ -428,7 +432,7 @@ void *__kfence_alloc(struct kmem_cache *s, size_t size, gfp_t flags)
 		return NULL;
 	wake_up(&allocation_wait);
 
-	if (!kfence_is_enabled())
+	if (!READ_ONCE(kfence_enabled))
 		return NULL;
 
 	// TODO(elver): Remove one of the comparisons, which is redundant.
@@ -487,7 +491,7 @@ bool kfence_handle_page_fault(unsigned long addr)
 	if (!is_kfence_addr((void *)addr))
 		return false;
 
-	if (!kfence_is_enabled()) {
+	if (!READ_ONCE(kfence_enabled)) {
 		/* KFENCE has been disabled, unprotect the page and go on. */
 		return kfence_unprotect(addr);
 	}
@@ -650,7 +654,7 @@ device_initcall(kfence_create_debugfs);
 static struct delayed_work kfence_timer;
 static void kfence_heartbeat(struct work_struct *work)
 {
-	if (!kfence_is_enabled())
+	if (!READ_ONCE(kfence_enabled))
 		return;
 
 	/* Enable static key, and await allocation to happen. */
@@ -666,8 +670,8 @@ static DECLARE_DELAYED_WORK(kfence_timer, kfence_heartbeat);
 
 void __init kfence_init(void)
 {
+	/* Setting kfence_sample_rate to 0 on boot disables KFENCE. */
 	if (!kfence_sample_rate)
-		/* The tool is disabled. */
 		return;
 
 	if (!kfence_initialize_pool()) {
