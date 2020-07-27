@@ -86,18 +86,47 @@ static inline bool kfence_unprotect(unsigned long addr)
 	return !KFENCE_WARN_ON(!kfence_change_page_prot(ALIGN_DOWN(addr, PAGE_SIZE), false));
 }
 
-static inline struct kfence_metadata *kfence_addr_to_metadata(unsigned long addr)
+static inline struct kfence_metadata *addr_to_metadata(unsigned long addr)
 {
 	long index;
+
+	/* The checks do not affect performance; only called from slow-paths. */
 
 	if (!is_kfence_addr((void *)addr))
 		return NULL;
 
-	index = ((addr - (unsigned long)__kfence_pool) / PAGE_SIZE / 2) - 1;
+	/*
+	 * May be an invalid index if called with an address at the edge of
+	 * __kfence_pool, in which case we would report an "invalid access"
+	 * error.
+	 */
+	index = ((addr - (unsigned long)__kfence_pool) / (PAGE_SIZE * 2)) - 1;
 	if (index < 0 || index >= CONFIG_KFENCE_NUM_OBJECTS)
 		return NULL;
 
 	return &kfence_metadata[index];
+}
+
+static inline unsigned long metadata_to_pageaddr(const struct kfence_metadata *meta)
+{
+	unsigned long offset = ((meta - kfence_metadata) + 1) * PAGE_SIZE * 2;
+	unsigned long pageaddr = (unsigned long)&__kfence_pool[offset];
+
+	/* The checks do not affect performance; only called from slow-paths. */
+
+	/* Only call with a pointer into kfence_metadata. */
+	if (KFENCE_WARN_ON(meta < kfence_metadata ||
+			   meta >= kfence_metadata + ARRAY_SIZE(kfence_metadata)))
+		return 0;
+
+	/*
+	 * This metadata object only ever maps to 1 page; verify the calculation
+	 * happens and that the stored address was not corrupted.
+	 */
+	if (KFENCE_WARN_ON(ALIGN_DOWN(meta->addr, PAGE_SIZE) != pageaddr))
+		return 0;
+
+	return pageaddr;
 }
 
 /* Requres kfence_alloc_lock. */
@@ -131,7 +160,7 @@ static inline bool check_canary_byte(u8 *addr)
 	if (*addr == KFENCE_CANARY_PATTERN(addr))
 		return true;
 
-	kfence_report_error((unsigned long)addr, kfence_addr_to_metadata((unsigned long)addr),
+	kfence_report_error((unsigned long)addr, addr_to_metadata((unsigned long)addr),
 			    KFENCE_ERROR_CORRUPTION);
 	return false;
 }
@@ -165,7 +194,7 @@ static void *kfence_guarded_alloc(struct kmem_cache *cache, size_t size, gfp_t g
 	const bool right = prandom_u32_max(2);
 	unsigned long flags;
 	struct kfence_metadata *meta;
-	void *ret = NULL;
+	void *addr = NULL;
 
 	// TODO(elver): Why do we need this WARN?
 	if (KFENCE_WARN_ON(!size || (size > PAGE_SIZE)))
@@ -180,7 +209,7 @@ static void *kfence_guarded_alloc(struct kmem_cache *cache, size_t size, gfp_t g
 	list_del_init(&meta->list);
 	spin_unlock_irqrestore(&kfence_alloc_lock, flags);
 
-	meta->addr = ALIGN_DOWN(meta->addr, PAGE_SIZE);
+	meta->addr = metadata_to_pageaddr(meta);
 	/* Unprotect if we're reusing this page. */
 	if (meta->state == KFENCE_OBJECT_FREED)
 		kfence_unprotect(meta->addr);
@@ -198,18 +227,18 @@ static void *kfence_guarded_alloc(struct kmem_cache *cache, size_t size, gfp_t g
 	virt_to_page(meta->addr)->slab_cache = cache;
 
 	/* Initialization. */
-	ret = (void *)meta->addr;
+	addr = (void *)meta->addr;
 	if (gfp & __GFP_ZERO)
-		memset(ret, 0, size);
+		memset(addr, 0, size);
 	if (cache->ctor)
-		cache->ctor(ret);
+		cache->ctor(addr);
 
 	pr_debug("allocated object kfence-#%ld\n", meta - kfence_metadata);
 
 	if (IS_ENABLED(CONFIG_KFENCE_FAULT_INJECTION) && !prandom_u32_max(10))
 		kfence_protect(meta->addr);
 
-	return ret;
+	return addr;
 }
 
 static bool __init kfence_initialize_pool(void)
@@ -249,10 +278,8 @@ static bool __init kfence_initialize_pool(void)
 	for (i = 0; i < CONFIG_KFENCE_NUM_OBJECTS; i++) {
 		struct kfence_metadata *meta = &kfence_metadata[i];
 
-		meta->addr = addr; /* ALIGN_DOWN(meta->addr, PAGE_SIZE) must be constant. */
-		if (KFENCE_WARN_ON(ALIGN_DOWN(addr, PAGE_SIZE) != addr))
-			return false; /* Something went terribly wrong. */
-
+		/* Initialize for continuous validation in metadata_to_pageaddr(). */
+		meta->addr = addr;
 		list_add_tail(&meta->list, &kfence_freelist);
 
 		/* Protect the right redzone. */
@@ -451,7 +478,7 @@ void *__kfence_alloc(struct kmem_cache *s, size_t size, gfp_t flags)
 
 size_t kfence_ksize(const void *addr)
 {
-	const struct kfence_metadata *meta = kfence_addr_to_metadata((unsigned long)addr);
+	const struct kfence_metadata *meta = addr_to_metadata((unsigned long)addr);
 
 	return meta ? abs(READ_ONCE(meta->size)) : 0;
 }
@@ -467,7 +494,7 @@ bool __kfence_free(void *addr)
 	spin_lock_irqsave(&kfence_alloc_lock, flags);
 
 	/* Find the matching metadata. */
-	meta = kfence_addr_to_metadata((unsigned long)addr);
+	meta = addr_to_metadata((unsigned long)addr);
 	KFENCE_WARN_ON(!list_empty(&meta->list)); /* API misuse? */
 
 	/* Restore page protection if there was an OOB access. */
@@ -519,13 +546,13 @@ bool kfence_handle_page_fault(unsigned long addr)
 		struct kfence_metadata *meta = NULL;
 		int distance = 0;
 
-		meta = kfence_addr_to_metadata(addr - PAGE_SIZE);
+		meta = addr_to_metadata(addr - PAGE_SIZE);
 		if (meta && meta->state == KFENCE_OBJECT_ALLOCATED) {
 			to_report = meta;
 			distance = addr - (meta->addr + abs(READ_ONCE(meta->size)));
 		}
 
-		meta = kfence_addr_to_metadata(addr + PAGE_SIZE);
+		meta = addr_to_metadata(addr + PAGE_SIZE);
 		if (meta && meta->state == KFENCE_OBJECT_ALLOCATED) {
 			if (!to_report || distance > meta->addr - addr)
 				to_report = meta;
@@ -537,7 +564,7 @@ bool kfence_handle_page_fault(unsigned long addr)
 		to_report->unprotected_page = addr;
 		error_type = KFENCE_ERROR_OOB;
 	} else {
-		to_report = kfence_addr_to_metadata(addr);
+		to_report = addr_to_metadata(addr);
 		if (!to_report)
 			goto out;
 
