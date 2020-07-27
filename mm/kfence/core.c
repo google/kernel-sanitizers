@@ -212,7 +212,7 @@ static void *kfence_guarded_alloc(struct kmem_cache *cache, size_t size, gfp_t g
 	return ret;
 }
 
-static bool __meminit kfence_initialize_pool(void)
+static bool __init kfence_initialize_pool(void)
 {
 	unsigned long addr = (unsigned long)__kfence_pool;
 	struct page *pages = virt_to_page(addr);
