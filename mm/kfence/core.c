@@ -446,8 +446,6 @@ leave:
 
 void *__kfence_alloc(struct kmem_cache *s, size_t size, gfp_t flags)
 {
-	void *ret;
-
 	/*
 	 * allocation_gate only needs to become non-zero, so it doesn't make
 	 * sense to continue writing to it and pay the associated contention
@@ -471,9 +469,7 @@ void *__kfence_alloc(struct kmem_cache *s, size_t size, gfp_t flags)
 	if (s->flags & SLAB_TYPESAFE_BY_RCU)
 		return NULL;
 
-	ret = kfence_guarded_alloc(s, size, flags);
-
-	return ret;
+	return kfence_guarded_alloc(s, size, flags);
 }
 
 size_t kfence_ksize(const void *addr)
