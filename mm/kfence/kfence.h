@@ -5,6 +5,7 @@
 
 #include <linux/mm.h>
 #include <linux/seq_file.h>
+#include <linux/spinlock.h>
 #include <linux/types.h>
 
 #include "../slab.h" /* for struct kmem_cache */
@@ -34,6 +35,18 @@ struct kfence_metadata {
 	struct list_head list; /* Freelist node. */
 
 	/*
+	 * Lock protecting below data; to ensure consistency of the below data,
+	 * since the following may execute concurrently: __kfence_alloc(),
+	 * __kfence_free(), kfence_handle_page_fault(). However, note that we
+	 * cannot grab the same metadata off the freelist twice, and multiple
+	 * __kfence_alloc() cannot run concurrently on the same metadata.
+	 */
+	raw_spinlock_t lock;
+
+	/* The current state of the object; see above. */
+	enum kfence_object_state state;
+
+	/*
 	 * Allocated object address; cannot be calculated from size, because of
 	 * alignment requirements.
 	 *
@@ -41,8 +54,12 @@ struct kfence_metadata {
 	 */
 	unsigned long addr;
 
-	/* The current state of the object; see above. */
-	enum kfence_object_state state;
+	/*
+	 * The size of the original allocation:
+	 *	size > 0: left page alignment
+	 *	size < 0: right page alignment
+	 */
+	int size;
 
 	/*
 	 * The kmem_cache cache of the last allocation; NULL if never allocated
@@ -51,14 +68,9 @@ struct kfence_metadata {
 	struct kmem_cache *cache;
 
 	/*
-	 * The size of the original allocation.
-	 *
-	 * size > 0: left page alignment.
-	 * size < 0: right page alignment.
+	 * In case of an invalid access, the page that was unprotected; we
+	 * optimistically only store address.
 	 */
-	int size;
-
-	/* In case of an invalid access, the page that was unprotected. */
 	unsigned long unprotected_page;
 
 	/* Allocation and free stack information. */

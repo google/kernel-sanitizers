@@ -5,6 +5,7 @@
 #include <linux/debugfs.h>
 #include <linux/kfence.h>
 #include <linux/list.h>
+#include <linux/lockdep.h>
 #include <linux/moduleparam.h>
 #include <linux/random.h>
 #include <linux/seq_file.h>
@@ -38,14 +39,9 @@ module_param_named(sample_rate, kfence_sample_rate, ulong, 0400);
 
 static bool kfence_enabled __read_mostly;
 
-/* TODO: explain alignment. */
+/* The pool of pages used for guard pages and objects. */
 char __kfence_pool[KFENCE_POOL_SIZE] __aligned(KFENCE_POOL_ALIGNMENT);
 EXPORT_SYMBOL(__kfence_pool); /* Export for test modules. */
-
-/* Protects kfence_freelist, kfence_recycle, kfence_metadata */
-// TODO(elver): We need to find a way to make KFENCE lockless, as it seems to be
-// unhappy with lockdep.
-static DEFINE_SPINLOCK(kfence_alloc_lock);
 
 /*
  * Per-object metadata, with one-to-one mapping of object metadata to
@@ -56,6 +52,7 @@ struct kfence_metadata kfence_metadata[CONFIG_KFENCE_NUM_OBJECTS];
 
 /* Freelist with available objects. */
 static struct list_head kfence_freelist = LIST_HEAD_INIT(kfence_freelist);
+static DEFINE_RAW_SPINLOCK(kfence_freelist_lock); /* Lock protecting freelist. */
 
 /* The static key to set up a KFENCE allocation. */
 DEFINE_STATIC_KEY_FALSE(kfence_allocation_key);
@@ -129,22 +126,32 @@ static inline unsigned long metadata_to_pageaddr(const struct kfence_metadata *m
 	return pageaddr;
 }
 
-/* Requres kfence_alloc_lock. */
+/*
+ * Update the object's metadata state, including updating the alloc/free stacks
+ * depending on the state transition.
+ */
 static noinline void metadata_update_state(struct kfence_metadata *meta,
 					   enum kfence_object_state next)
 {
 	unsigned long *entries = next == KFENCE_OBJECT_FREED ? meta->free_stack : meta->alloc_stack;
+	/*
+	 * Skip over 1 (this) function; noinline ensures we do not accidentally
+	 * skip over the caller by never inlining.
+	 */
 	const int nentries = stack_trace_save(entries, KFENCE_STACK_DEPTH, 1);
 
-	/* TODO(glider): filter_irq_stacks() requires stackdepot. Needed? */
+	/* TODO(glider): filter_irq_stacks() requires stackdepot. Needed?
+	 * I think we want the full stack, including IRQs. */
 	/* nr_entries = filter_irq_stacks(entries, nr_entries); */
+
+	lockdep_assert_held(&meta->lock);
 
 	if (next == KFENCE_OBJECT_FREED)
 		meta->num_free_stack = nentries;
 	else
 		meta->num_alloc_stack = nentries;
 
-	meta->state = next;
+	WRITE_ONCE(meta->state, next);
 }
 
 /* Write canary byte to @addr. */
@@ -169,6 +176,8 @@ static inline void for_each_canary(const struct kfence_metadata *meta, bool (*fn
 {
 	const int size = abs(meta->size);
 	unsigned long addr;
+
+	lockdep_assert_held(&meta->lock);
 
 	for (addr = ALIGN_DOWN(meta->addr, PAGE_SIZE); addr < meta->addr; addr++) {
 		if (!fn((u8 *)addr))
@@ -200,14 +209,32 @@ static void *kfence_guarded_alloc(struct kmem_cache *cache, size_t size, gfp_t g
 	if (KFENCE_WARN_ON(!size || (size > PAGE_SIZE)))
 		return NULL;
 
-	if (list_empty(&kfence_freelist))
+	if (list_empty(&kfence_freelist)) /* Lockless access safe. */
 		return NULL; /* All objects in use. */
 
 	/* Obtain a free object. */
-	spin_lock_irqsave(&kfence_alloc_lock, flags);
+	raw_spin_lock_irqsave(&kfence_freelist_lock, flags);
 	meta = list_entry(kfence_freelist.next, struct kfence_metadata, list);
 	list_del_init(&meta->list);
-	spin_unlock_irqrestore(&kfence_alloc_lock, flags);
+	raw_spin_unlock_irqrestore(&kfence_freelist_lock, flags);
+
+	if (unlikely(!raw_spin_trylock_irqsave(&meta->lock, flags))) {
+		/*
+		 * This is extremely unlikely -- we are reporting on a
+		 * use-after-free, which locked meta->lock, and the reporting
+		 * code via printk calls kmalloc() which ends up in
+		 * kfence_alloc() and tries to grab the same object that we're
+		 * reporting on. While it has never been observed, lockdep does
+		 * report that there is a possibility of deadlock. Fix it by
+		 * using trylock and bailing out gracefully.
+		 */
+		raw_spin_lock_irqsave(&kfence_freelist_lock, flags);
+		/* Put the object back on the freelist. */
+		list_add_tail(&meta->list, &kfence_freelist);
+		raw_spin_unlock_irqrestore(&kfence_freelist_lock, flags);
+
+		return NULL;
+	}
 
 	meta->addr = metadata_to_pageaddr(meta);
 	/* Unprotect if we're reusing this page. */
@@ -221,10 +248,12 @@ static void *kfence_guarded_alloc(struct kmem_cache *cache, size_t size, gfp_t g
 
 	/* Update remaining metadata. */
 	metadata_update_state(meta, KFENCE_OBJECT_ALLOCATED);
-	meta->cache = cache;
+	WRITE_ONCE(meta->cache, cache);
 	meta->size = right ? -size : size;
 	for_each_canary(meta, set_canary_byte);
 	virt_to_page(meta->addr)->slab_cache = cache;
+
+	raw_spin_unlock_irqrestore(&meta->lock, flags);
 
 	/* Initialization. */
 	addr = (void *)meta->addr;
@@ -233,10 +262,10 @@ static void *kfence_guarded_alloc(struct kmem_cache *cache, size_t size, gfp_t g
 	if (cache->ctor)
 		cache->ctor(addr);
 
-	pr_debug("allocated object kfence-#%ld\n", meta - kfence_metadata);
-
-	if (IS_ENABLED(CONFIG_KFENCE_FAULT_INJECTION) && !prandom_u32_max(10))
+	if (IS_ENABLED(CONFIG_KFENCE_FAULT_INJECTION) && !prandom_u32_max(10)) {
+		/* Randomly inject "faults" by protecting the allocated object. */
 		kfence_protect(meta->addr);
+	}
 
 	return addr;
 }
@@ -278,8 +307,11 @@ static bool __init kfence_initialize_pool(void)
 	for (i = 0; i < CONFIG_KFENCE_NUM_OBJECTS; i++) {
 		struct kfence_metadata *meta = &kfence_metadata[i];
 
-		/* Initialize for continuous validation in metadata_to_pageaddr(). */
-		meta->addr = addr;
+		/* Initialize metadata. */
+		INIT_LIST_HEAD(&meta->list);
+		raw_spin_lock_init(&meta->lock);
+		meta->state = KFENCE_OBJECT_UNUSED;
+		meta->addr = addr; /* Initialize for validation in metadata_to_pageaddr(). */
 		list_add_tail(&meta->list, &kfence_freelist);
 
 		/* Protect the right redzone. */
@@ -320,12 +352,12 @@ static void *next_object(struct seq_file *seq, void *v, loff_t *pos)
 
 static int show_object(struct seq_file *seq, void *v)
 {
-	long index = (long)v - 1;
+	struct kfence_metadata *meta = &kfence_metadata[(long)v - 1];
 	unsigned long flags;
 
-	spin_lock_irqsave(&kfence_alloc_lock, flags);
-	kfence_print_object(seq, &kfence_metadata[index]);
-	spin_unlock_irqrestore(&kfence_alloc_lock, flags);
+	raw_spin_lock_irqsave(&meta->lock, flags);
+	kfence_print_object(seq, meta);
+	raw_spin_unlock_irqrestore(&meta->lock, flags);
 	seq_printf(seq, "---------------------------------\n");
 
 	return 0;
@@ -420,28 +452,47 @@ bool kfence_discard_slab(struct kmem_cache *s, struct page *page)
 bool kfence_shutdown_cache(struct kmem_cache *s)
 {
 	unsigned long flags;
-	int i;
 	struct kfence_metadata *meta;
-	bool ret = false;
-
-	spin_lock_irqsave(&kfence_alloc_lock, flags);
+	int i;
 
 	for (i = 0; i < CONFIG_KFENCE_NUM_OBJECTS; i++) {
+		bool in_use;
+
 		meta = &kfence_metadata[i];
-		if ((meta->cache == s) && (meta->state == KFENCE_OBJECT_ALLOCATED))
-			goto leave;
+
+		/*
+		 * If we observe some inconsistent cache and state pair where we
+		 * should have returned false here, cache destruction is racing
+		 * with either kmem_cache_alloc() or kmem_cache_free(). Taking
+		 * the lock will not help, as different critical section
+		 * serialization will have the same outcome.
+		 */
+		if (READ_ONCE(meta->cache) != s ||
+		    READ_ONCE(meta->state) != KFENCE_OBJECT_ALLOCATED)
+			continue;
+
+		raw_spin_lock_irqsave(&meta->lock, flags);
+		in_use = meta->cache == s && meta->state == KFENCE_OBJECT_ALLOCATED;
+		raw_spin_unlock_irqrestore(&meta->lock, flags);
+
+		if (in_use)
+			return false;
 	}
 
 	for (i = 0; i < CONFIG_KFENCE_NUM_OBJECTS; i++) {
 		meta = &kfence_metadata[i];
-		if ((meta->cache == s) && (meta->state == KFENCE_OBJECT_FREED))
+
+		/* See above. */
+		if (READ_ONCE(meta->cache) != s || READ_ONCE(meta->state) != KFENCE_OBJECT_FREED)
+			continue;
+
+		raw_spin_lock_irqsave(&meta->lock, flags);
+		if (meta->cache == s && meta->state == KFENCE_OBJECT_FREED)
 			meta->cache = NULL;
+		raw_spin_unlock_irqrestore(&meta->lock, flags);
 	}
-	ret = true;
 
-leave:
-	spin_unlock_irqrestore(&kfence_alloc_lock, flags);
-	return ret;
+	return true;
 }
 
 void *__kfence_alloc(struct kmem_cache *s, size_t size, gfp_t flags)
@@ -476,22 +527,24 @@ size_t kfence_ksize(const void *addr)
 {
 	const struct kfence_metadata *meta = addr_to_metadata((unsigned long)addr);
 
-	return meta ? abs(READ_ONCE(meta->size)) : 0;
+	/*
+	 * Read locklessly -- if there is a race with __kfence_alloc(), this
+	 * most certainly is either a use-after-free, or invalid access.
+	 */
+	return meta ? abs(meta->size) : 0;
 }
 
 bool __kfence_free(void *addr)
 {
+	struct kfence_metadata *meta = addr_to_metadata((unsigned long)addr);
 	unsigned long flags;
-	struct kfence_metadata *meta;
+
+	KFENCE_WARN_ON(!list_empty(&meta->list)); /* API misuse? */
 
 	if (IS_ENABLED(CONFIG_KFENCE_FAULT_INJECTION))
 		kfence_unprotect((unsigned long)addr); /* To check canary bytes. */
 
-	spin_lock_irqsave(&kfence_alloc_lock, flags);
-
-	/* Find the matching metadata. */
-	meta = addr_to_metadata((unsigned long)addr);
-	KFENCE_WARN_ON(!list_empty(&meta->list)); /* API misuse? */
+	raw_spin_lock_irqsave(&meta->lock, flags);
 
 	/* Restore page protection if there was an OOB access. */
 	if (meta->unprotected_page) {
@@ -504,14 +557,17 @@ bool __kfence_free(void *addr)
 
 	/* Mark the object as freed. */
 	metadata_update_state(meta, KFENCE_OBJECT_FREED);
+
+	raw_spin_unlock_irqrestore(&meta->lock, flags);
+
+	/* Protect to detect use-after-frees. */
 	kfence_protect((unsigned long)addr);
 
-	/* Add it to the tail of the freelist. */
+	/* Add it to the tail of the freelist for reuse. */
+	raw_spin_lock_irqsave(&kfence_freelist_lock, flags);
 	list_add_tail(&meta->list, &kfence_freelist);
+	raw_spin_unlock_irqrestore(&kfence_freelist_lock, flags);
 
-	spin_unlock_irqrestore(&kfence_alloc_lock, flags);
-
-	pr_debug("freed object kfence-#%ld\n", meta - kfence_metadata);
 	/* TODO(glider): detect double-frees. */
 	return true;
 }
@@ -529,55 +585,56 @@ bool kfence_handle_page_fault(unsigned long addr)
 	if (!READ_ONCE(kfence_enabled)) /* If disabled at runtime ... */
 		return kfence_unprotect(addr); /* ... unprotect and proceed. */
 
-	/*
-	 * If there is a KFENCE report somewhere inside lockdep, or one of the
-	 * libraries used by it, we need to avoid recursing back into lockdep.
-	 */
-	// TODO(elver): This is probably also a problem for allocations/frees.
-	lockdep_off();
-	spin_lock_irqsave(&kfence_alloc_lock, flags);
-
 	if (page_index % 2) {
 		/* This is a redzone, report a buffer overflow. */
 		struct kfence_metadata *meta = NULL;
 		int distance = 0;
 
 		meta = addr_to_metadata(addr - PAGE_SIZE);
-		if (meta && meta->state == KFENCE_OBJECT_ALLOCATED) {
+		if (meta && READ_ONCE(meta->state) == KFENCE_OBJECT_ALLOCATED) {
 			to_report = meta;
-			distance = addr - (meta->addr + abs(READ_ONCE(meta->size)));
+			/* Data race ok; distance calculation approximate. */
+			distance = addr - data_race(meta->addr + abs(meta->size));
 		}
 
 		meta = addr_to_metadata(addr + PAGE_SIZE);
-		if (meta && meta->state == KFENCE_OBJECT_ALLOCATED) {
-			if (!to_report || distance > meta->addr - addr)
+		if (meta && READ_ONCE(meta->state) == KFENCE_OBJECT_ALLOCATED) {
+			/* Data race ok; distance calculation approximate. */
+			if (!to_report || distance > data_race(meta->addr) - addr)
 				to_report = meta;
 		}
 
 		if (!to_report)
 			goto out;
 
+		raw_spin_lock_irqsave(&to_report->lock, flags);
 		to_report->unprotected_page = addr;
 		error_type = KFENCE_ERROR_OOB;
+
+		/*
+		 * If the object was freed before we took the look we can still
+		 * report this as an OOB -- the report will simply show the
+		 * stacktrace of the free as well.
+		 */
 	} else {
 		to_report = addr_to_metadata(addr);
 		if (!to_report)
 			goto out;
 
+		raw_spin_lock_irqsave(&to_report->lock, flags);
 		KFENCE_WARN_ON(!IS_ENABLED(CONFIG_KFENCE_FAULT_INJECTION) &&
 			       to_report->state != KFENCE_OBJECT_FREED);
 		error_type = KFENCE_ERROR_UAF;
 	}
 
 out:
-	if (to_report)
+	if (to_report) {
 		kfence_report_error(addr, to_report, error_type);
-	else
+		raw_spin_unlock_irqrestore(&to_report->lock, flags);
+	} else {
 		/* This may be a UAF or OOB access, but we can't be sure. */
 		kfence_report_error(addr, NULL, KFENCE_ERROR_INVALID);
-
-	spin_unlock_irqrestore(&kfence_alloc_lock, flags);
-	lockdep_on();
+	}
 
 	return kfence_unprotect(addr); /* Unprotect and let access proceed. */
 }

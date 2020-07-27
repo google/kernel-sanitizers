@@ -3,6 +3,7 @@
 #include <stdarg.h>
 
 #include <linux/kernel.h>
+#include <linux/lockdep.h>
 #include <linux/printk.h>
 #include <linux/stacktrace.h>
 #include <linux/string.h>
@@ -92,6 +93,8 @@ void kfence_print_object(struct seq_file *seq, const struct kfence_metadata *met
 	const int size = abs(meta->size);
 	const unsigned long start = meta->addr;
 	const struct kmem_cache *const cache = meta->cache;
+
+	lockdep_assert_held(&meta->lock);
 
 	if (meta->state == KFENCE_OBJECT_UNUSED) {
 		seq_con_printf(seq, "kfence-#%ld unused\n", meta - kfence_metadata);
