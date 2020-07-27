@@ -23,7 +23,7 @@ unsigned long kfence_sample_rate = CONFIG_KFENCE_SAMPLE_RATE;
 #undef MODULE_PARAM_PREFIX
 #endif
 #define MODULE_PARAM_PREFIX "kfence."
-module_param_named(sample_rate, kfence_sample_rate, ulong, 0444);
+module_param_named(sample_rate, kfence_sample_rate, ulong, 0400);
 
 /* Usually on, unless explicitly disabled. */
 bool kfence_enabled;
