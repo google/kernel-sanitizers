@@ -251,9 +251,15 @@ static void *kfence_guarded_alloc(struct kmem_cache *cache, size_t size, gfp_t g
 
 	raw_spin_unlock_irqrestore(&meta->lock, flags);
 
-	/* Initialization. */
+	/* Memory initialization. */
+
+	/*
+	 * We check slab_want_init_on_alloc() outselves, rather than letting
+	 * SL*B to the initialization, as otherwise we might overwrite KFENCE's
+	 * redzone.
+	 */
 	addr = (void *)meta->addr;
-	if (gfp & __GFP_ZERO)
+	if (unlikely(slab_want_init_on_alloc(gfp, cache)))
 		memset(addr, 0, size);
 	if (cache->ctor)
 		cache->ctor(addr);
