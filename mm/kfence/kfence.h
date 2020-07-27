@@ -35,20 +35,33 @@ enum kfence_object_state {
 };
 
 /* KFENCE metadata per guarded allocation. */
-struct kfence_alloc_metadata {
-	struct kmem_cache *cache;
+struct kfence_metadata {
+	struct list_head list; /* Freelist node. */
+
 	/*
-	 * Size may be read without a lock in ksize(). We assume that ksize() is
-	 * only called for valid (allocated) pointers.
-	 * size>0 means left alignment, size<0 - right alignment.
-	 */
-	int size;
-	/*
-	 * Actual object address. Cannot be calculated from size, because of
+	 * Allocated object address; cannot be calculated from size, because of
 	 * alignment requirements.
+	 *
+	 * Invariant: ALIGN_DOWN(addr, PAGE_SIZE) is constant.
 	 */
 	unsigned long addr;
+
+	/* The current state of the object; see above. */
 	enum kfence_object_state state;
+
+	/*
+	 * The kmem_cache cache of the last allocation; NULL if never allocated
+	 * or the cache has already been destroyed.
+	 */
+	struct kmem_cache *cache;
+
+	/*
+	 * The size of the original allocation.
+	 *
+	 * size > 0: left page alignment.
+	 * size < 0: right page alignment.
+	 */
+	int size;
 
 	/* In case of an invalid access, the page that was unprotected. */
 	unsigned long unprotected_page;
@@ -60,7 +73,7 @@ struct kfence_alloc_metadata {
 };
 
 extern bool kfence_enabled;
-extern struct kfence_alloc_metadata *kfence_metadata;
+extern struct kfence_metadata kfence_metadata[CONFIG_KFENCE_NUM_OBJECTS];
 
 static inline bool kfence_is_enabled(void)
 {
@@ -76,9 +89,9 @@ enum kfence_error_type {
 	KFENCE_ERROR_CORRUPTION, /* KFENCE detected a memory corruption on free. */
 };
 
-void kfence_report_error(unsigned long address, const struct kfence_alloc_metadata *metadata,
+void kfence_report_error(unsigned long address, const struct kfence_metadata *metadata,
 			 enum kfence_error_type type);
 
-void kfence_dump_object(struct seq_file *seq, const struct kfence_alloc_metadata *metadata);
+void kfence_dump_object(struct seq_file *seq, const struct kfence_metadata *metadata);
 
 #endif /* MM_KFENCE_KFENCE_H */

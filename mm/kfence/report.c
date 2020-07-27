@@ -69,7 +69,7 @@ static int get_stack_skipnr(const unsigned long stack_entries[], int num_entries
 	return skipnr < num_entries ? skipnr : 0;
 }
 
-static void kfence_dump_stack(struct seq_file *seq, const struct kfence_alloc_metadata *metadata,
+static void kfence_dump_stack(struct seq_file *seq, const struct kfence_metadata *metadata,
 			      bool is_alloc)
 {
 	const unsigned long *entries = is_alloc ? metadata->stack_alloc : metadata->stack_free;
@@ -91,7 +91,7 @@ static void kfence_dump_stack(struct seq_file *seq, const struct kfence_alloc_me
 	}
 }
 
-void kfence_dump_object(struct seq_file *seq, const struct kfence_alloc_metadata *metadata)
+void kfence_dump_object(struct seq_file *seq, const struct kfence_metadata *metadata)
 {
 	const int size = abs(metadata->size);
 	const unsigned long start = metadata->addr;
@@ -113,7 +113,7 @@ void kfence_dump_object(struct seq_file *seq, const struct kfence_alloc_metadata
 	}
 }
 
-static void kfence_print_object(const struct kfence_alloc_metadata *metadata)
+static void kfence_print_object(const struct kfence_metadata *metadata)
 {
 	kfence_dump_object(NULL, metadata);
 }
@@ -137,7 +137,7 @@ static void print_diff_canary(const u8 *addr, size_t max_bytes)
 	pr_cont(" ]");
 }
 
-void kfence_report_error(unsigned long address, const struct kfence_alloc_metadata *metadata,
+void kfence_report_error(unsigned long address, const struct kfence_metadata *metadata,
 			 enum kfence_error_type type)
 {
 	unsigned long stack_entries[KFENCE_STACK_DEPTH] = { 0 };
