@@ -1,7 +1,7 @@
 config HAVE_ARCH_KFENCE
 	bool
 
-config KFENCE
+menuconfig KFENCE
 	bool "KFENCE: low-overhead use-after-free and buffer-overflow detector"
 	depends on HAVE_ARCH_KFENCE && !KASAN && (SLAB || SLUB)
 	depends on JUMP_LABEL # To ensure performance, require jump labels
@@ -20,12 +20,20 @@ config KFENCE
 if KFENCE
 
 config KFENCE_SAMPLE_RATE
-	int "KFENCE default sample rate in milliseconds"
+	int "Default sample rate in milliseconds"
 	default 100
 	help
 	  The KFENCE sample rate determines the frequency with which heap
 	  allocations will be guarded by KFENCE. May be overridden via
 	  command-line argument kfence.sample_rate.
+
+config KFENCE_NUM_OBJECTS
+	int "Number of guarded KFENCE objects available"
+	default 255
+	help
+	  The number of guarded objects available. For each KFENCE object, 2
+	  pages are required; with one containing the object and two adjacent
+	  ones used as redzones.
 
 config KFENCE_TEST
 	tristate "KFENCE test module"

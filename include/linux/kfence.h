@@ -12,19 +12,12 @@ struct kmem_cache;
 #ifdef CONFIG_KFENCE
 /* TODO: API documentation */
 
-/*
- * It's handy (but not strictly required) that 255 objects with redzones occupy
- * exactly 2Mb.
- */
-#define KFENCE_NUM_OBJ_LOG 8
-#define KFENCE_NUM_OBJ ((1 << KFENCE_NUM_OBJ_LOG) - 1)
-
 extern char __kfence_pool_start[];
 extern struct static_key_false kfence_allocation_key;
 
 static __always_inline char *__kfence_pool_end(void)
 {
-	return __kfence_pool_start + (KFENCE_NUM_OBJ + 1) * 2 * PAGE_SIZE;
+	return __kfence_pool_start + (CONFIG_KFENCE_NUM_OBJECTS + 1) * 2 * PAGE_SIZE;
 }
 
 void kfence_init(void);

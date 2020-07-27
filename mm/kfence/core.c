@@ -33,7 +33,9 @@ struct kfence_freelist {
 	void *obj;
 };
 
-char __kfence_pool_start[PAGE_SIZE << (KFENCE_NUM_OBJ_LOG + 1)] __aligned(2 << 21);
+/* TODO: explain alignment. */
+static_assert(CONFIG_KFENCE_NUM_OBJECTS > 0);
+char __kfence_pool_start[PAGE_SIZE * (CONFIG_KFENCE_NUM_OBJECTS + 1) * 2] __aligned(2 << 21);
 EXPORT_SYMBOL(__kfence_pool_start);
 
 /* Protects kfence_freelist, kfence_recycle, kfence_metadata */
@@ -271,7 +273,7 @@ static bool __meminit kfence_allocate_pool(void)
 	 * Set up non-redzone pages: they must have PG_slab flag and point to
 	 * kfence slab cache.
 	 */
-	for (i = 0; i < (2 << KFENCE_NUM_OBJ_LOG); i++) {
+	for (i = 0; i < sizeof(__kfence_pool_start) / PAGE_SIZE; i++) {
 		if (i && !(i % 2)) {
 			__SetPageSlab(&pages[i]);
 			/*
@@ -288,10 +290,10 @@ static bool __meminit kfence_allocate_pool(void)
 		goto error;
 	addr += PAGE_SIZE;
 	objects = (struct kfence_freelist *)kmalloc_array(
-		KFENCE_NUM_OBJ, sizeof(struct kfence_freelist), gfp_flags);
+		CONFIG_KFENCE_NUM_OBJECTS, sizeof(struct kfence_freelist), gfp_flags);
 	if (!objects)
 		goto error;
-	for (i = 0; i < KFENCE_NUM_OBJ; i++) {
+	for (i = 0; i < CONFIG_KFENCE_NUM_OBJECTS; i++) {
 		objects[i].obj = (void *)addr;
 		list_add_tail(&(objects[i].list), &kfence_freelist.list);
 		/* Protect the right redzone. */
@@ -302,7 +304,7 @@ static bool __meminit kfence_allocate_pool(void)
 
 	/* Set up metadata nodes. */
 	kfence_metadata = (struct kfence_alloc_metadata *)kmalloc_array(
-		KFENCE_NUM_OBJ, sizeof(struct kfence_alloc_metadata), gfp_flags);
+		CONFIG_KFENCE_NUM_OBJECTS, sizeof(struct kfence_alloc_metadata), gfp_flags);
 	if (!kfence_metadata)
 		goto error;
 	return true;
@@ -522,7 +524,7 @@ bool kfence_handle_page_fault(unsigned long addr)
 					       abs(READ_ONCE(kfence_metadata[obj_index].size)));
 			}
 		}
-		if (page_index < (KFENCE_NUM_OBJ + 1) * 2) {
+		if (page_index < (CONFIG_KFENCE_NUM_OBJECTS + 1) * 2) {
 			obj_index = kfence_addr_to_index(addr + PAGE_SIZE);
 			if (kfence_metadata[obj_index].state == KFENCE_OBJECT_ALLOCATED) {
 				ndist = kfence_metadata[obj_index].addr - addr;
@@ -569,13 +571,13 @@ bool kfence_shutdown_cache(struct kmem_cache *s)
 
 	spin_lock_irqsave(&kfence_alloc_lock, flags);
 
-	for (i = 0; i < KFENCE_NUM_OBJ; i++) {
+	for (i = 0; i < CONFIG_KFENCE_NUM_OBJECTS; i++) {
 		meta = &kfence_metadata[i];
 		if ((meta->cache == s) && (meta->state == KFENCE_OBJECT_ALLOCATED))
 			goto leave;
 	}
 
-	for (i = 0; i < KFENCE_NUM_OBJ; i++) {
+	for (i = 0; i < CONFIG_KFENCE_NUM_OBJECTS; i++) {
 		meta = &kfence_metadata[i];
 		if ((meta->cache == s) && (meta->state == KFENCE_OBJECT_FREED))
 			meta->cache = NULL;
@@ -594,7 +596,7 @@ leave:
  */
 static void *obj_start(struct seq_file *seq, loff_t *pos)
 {
-	if (*pos < KFENCE_NUM_OBJ)
+	if (*pos < CONFIG_KFENCE_NUM_OBJECTS)
 		return (void *)(*pos + 1);
 	return NULL;
 }
@@ -606,7 +608,7 @@ static void obj_stop(struct seq_file *seq, void *v)
 static void *obj_next(struct seq_file *seq, void *v, loff_t *pos)
 {
 	++*pos;
-	if (*pos < KFENCE_NUM_OBJ)
+	if (*pos < CONFIG_KFENCE_NUM_OBJECTS)
 		return (void *)(*pos + 1);
 	return NULL;
 }
