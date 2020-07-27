@@ -64,7 +64,7 @@ DEFINE_STATIC_KEY_FALSE(kfence_allocation_key);
 /* Gates the allocation, ensuring only one succeeds in a given period. */
 static atomic_t allocation_gate = ATOMIC_INIT(1);
 
-/* Wait queue to wake up heartbeat timer task. */
+/* Wait queue to wake up allocation-gate timer task. */
 static DECLARE_WAIT_QUEUE_HEAD(allocation_wait);
 
 /* === Internals ============================================================ */
@@ -139,10 +139,10 @@ static noinline void metadata_update_state(struct kfence_metadata *meta,
 {
 	unsigned long *entries = next == KFENCE_OBJECT_FREED ? meta->free_stack : meta->alloc_stack;
 	/*
-	 * Skip over 1 (this) function; noinline ensures we do not accidentally
-	 * skip over the caller by never inlining.
+	 * Skip over 2 (this, caller) functions; noinline ensures we do not
+	 * accidentally skip over the caller by never inlining.
 	 */
-	const int nentries = stack_trace_save(entries, KFENCE_STACK_DEPTH, 1);
+	const int nentries = stack_trace_save(entries, KFENCE_STACK_DEPTH, 2);
 
 	lockdep_assert_held(&meta->lock);
 
@@ -270,6 +270,54 @@ static void *kfence_guarded_alloc(struct kmem_cache *cache, size_t size, gfp_t g
 	}
 
 	return addr;
+}
+
+static void kfence_guarded_free(void *addr, struct kfence_metadata *meta)
+{
+	unsigned long flags;
+
+	raw_spin_lock_irqsave(&meta->lock, flags);
+
+	if (meta->state != KFENCE_OBJECT_ALLOCATED) {
+		/* Invalid or double-free, bail out. */
+		kfence_report_error((unsigned long)addr, meta, KFENCE_ERROR_INVALID_FREE);
+		raw_spin_unlock_irqrestore(&meta->lock, flags);
+		return;
+	}
+
+	KFENCE_WARN_ON(!list_empty(&meta->list)); /* API misuse? */
+	if (CONFIG_KFENCE_FAULT_INJECTION)
+		kfence_unprotect((unsigned long)addr); /* To check canary bytes. */
+
+	/* Restore page protection if there was an OOB access. */
+	if (meta->unprotected_page) {
+		kfence_protect(meta->unprotected_page);
+		meta->unprotected_page = 0;
+	}
+
+	/* Check canary bytes for memory corruption. */
+	for_each_canary(meta, check_canary_byte);
+
+	/*
+	 * Clear memory if init-on-free is set. While we protect the page, the
+	 * data is still there, and after a use-after-free is detected, we
+	 * unprotect the page, so the data is still accessible.
+	 */
+	if (unlikely(slab_want_init_on_free(meta->cache)))
+		memset(addr, 0, abs(meta->size));
+
+	/* Mark the object as freed. */
+	metadata_update_state(meta, KFENCE_OBJECT_FREED);
+
+	raw_spin_unlock_irqrestore(&meta->lock, flags);
+
+	/* Protect to detect use-after-frees. */
+	kfence_protect((unsigned long)addr);
+
+	/* Add it to the tail of the freelist for reuse. */
+	raw_spin_lock_irqsave(&kfence_freelist_lock, flags);
+	list_add_tail(&meta->list, &kfence_freelist);
+	raw_spin_unlock_irqrestore(&kfence_freelist_lock, flags);
 }
 
 static bool __init kfence_initialize_pool(void)
@@ -548,50 +596,8 @@ size_t kfence_ksize(const void *addr)
 void __kfence_free(void *addr)
 {
 	struct kfence_metadata *meta = addr_to_metadata((unsigned long)addr);
-	unsigned long flags;
 
-	raw_spin_lock_irqsave(&meta->lock, flags);
-
-	if (meta->state != KFENCE_OBJECT_ALLOCATED) {
-		/* Invalid or double-free, bail out. */
-		kfence_report_error((unsigned long)addr, meta, KFENCE_ERROR_INVALID_FREE);
-		raw_spin_unlock_irqrestore(&meta->lock, flags);
-		return;
-	}
-
-	KFENCE_WARN_ON(!list_empty(&meta->list)); /* API misuse? */
-	if (CONFIG_KFENCE_FAULT_INJECTION)
-		kfence_unprotect((unsigned long)addr); /* To check canary bytes. */
-
-	/* Restore page protection if there was an OOB access. */
-	if (meta->unprotected_page) {
-		kfence_protect(meta->unprotected_page);
-		meta->unprotected_page = 0;
-	}
-
-	/* Check canary bytes for memory corruption. */
-	for_each_canary(meta, check_canary_byte);
-
-	/*
-	 * Clear memory if init-on-free is set. While we protect the page, the
-	 * data is still there, and after a use-after-free is detected, we
-	 * unprotect the page, so the data is still accessible.
-	 */
-	if (unlikely(slab_want_init_on_free(meta->cache)))
-		memset(addr, 0, abs(meta->size));
-
-	/* Mark the object as freed. */
-	metadata_update_state(meta, KFENCE_OBJECT_FREED);
-
-	raw_spin_unlock_irqrestore(&meta->lock, flags);
-
-	/* Protect to detect use-after-frees. */
-	kfence_protect((unsigned long)addr);
-
-	/* Add it to the tail of the freelist for reuse. */
-	raw_spin_lock_irqsave(&kfence_freelist_lock, flags);
-	list_add_tail(&meta->list, &kfence_freelist);
-	raw_spin_unlock_irqrestore(&kfence_freelist_lock, flags);
+	kfence_guarded_free(addr, meta);
 }
 
 bool kfence_handle_page_fault(unsigned long addr)
