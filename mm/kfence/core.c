@@ -608,7 +608,7 @@ static int obj_show(struct seq_file *seq, void *v)
 	unsigned long flags;
 
 	spin_lock_irqsave(&kfence_alloc_lock, flags);
-	kfence_dump_object(seq, &kfence_metadata[index]);
+	kfence_print_object(seq, &kfence_metadata[index]);
 	spin_unlock_irqrestore(&kfence_alloc_lock, flags);
 	seq_printf(seq, "---------------------------------\n");
 

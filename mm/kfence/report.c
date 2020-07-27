@@ -69,8 +69,8 @@ static int get_stack_skipnr(const unsigned long stack_entries[], int num_entries
 	return skipnr < num_entries ? skipnr : 0;
 }
 
-static void kfence_dump_stack(struct seq_file *seq, const struct kfence_metadata *metadata,
-			      bool is_alloc)
+static void kfence_print_stack(struct seq_file *seq, const struct kfence_metadata *metadata,
+			       bool is_alloc)
 {
 	const unsigned long *entries = is_alloc ? metadata->stack_alloc : metadata->stack_free;
 	unsigned long nr_entries = is_alloc ? metadata->nr_alloc : metadata->nr_free;
@@ -86,7 +86,7 @@ static void kfence_dump_stack(struct seq_file *seq, const struct kfence_metadata
 	}
 }
 
-void kfence_dump_object(struct seq_file *seq, const struct kfence_metadata *metadata)
+void kfence_print_object(struct seq_file *seq, const struct kfence_metadata *metadata)
 {
 	const int size = abs(metadata->size);
 	const unsigned long start = metadata->addr;
@@ -100,17 +100,12 @@ void kfence_dump_object(struct seq_file *seq, const struct kfence_metadata *meta
 	seq_con_printf(seq, "kfence-#%ld [0x%px-0x%px, size=%d, cache=%s] allocated in:\n",
 		       metadata - kfence_metadata, (void *)start, (void *)(start + size - 1), size,
 		       (cache && cache->name) ? cache->name : "");
-	kfence_dump_stack(seq, metadata, true);
+	kfence_print_stack(seq, metadata, true);
 
 	if (metadata->state == KFENCE_OBJECT_FREED) {
 		seq_con_printf(seq, "freed in:\n");
-		kfence_dump_stack(seq, metadata, false);
+		kfence_print_stack(seq, metadata, false);
 	}
-}
-
-static void kfence_print_object(const struct kfence_metadata *metadata)
-{
-	kfence_dump_object(NULL, metadata);
 }
 
 /*
@@ -162,7 +157,7 @@ void kfence_report_error(unsigned long address, const struct kfence_metadata *me
 	/* Print stack trace and object info. */
 	stack_trace_print(stack_entries + skipnr, num_stack_entries - skipnr, 0);
 	pr_err("\n");
-	kfence_print_object(metadata);
+	kfence_print_object(NULL, metadata);
 
 	/* Print report footer. */
 	pr_err("\n");

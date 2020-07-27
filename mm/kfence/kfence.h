@@ -92,6 +92,6 @@ enum kfence_error_type {
 void kfence_report_error(unsigned long address, const struct kfence_metadata *metadata,
 			 enum kfence_error_type type);
 
-void kfence_dump_object(struct seq_file *seq, const struct kfence_metadata *metadata);
+void kfence_print_object(struct seq_file *seq, const struct kfence_metadata *metadata);
 
 #endif /* MM_KFENCE_KFENCE_H */
