@@ -28,46 +28,30 @@ static int get_stack_skipnr(const unsigned long stack_entries[], int num_entries
 			    enum kfence_error_type type)
 {
 	char buf[64];
-	const char *substring;
 	int skipnr;
-
-	/* Depending on error type, find different stack entries. */
-	switch (type) {
-	case KFENCE_ERROR_UAF:
-	case KFENCE_ERROR_OOB:
-	case KFENCE_ERROR_INVALID:
-		substring = "asm_exc_page_fault";
-		break;
-	case KFENCE_ERROR_CORRUPTION:
-		substring = "__slab_free";
-		break;
-	}
 
 	for (skipnr = 0; skipnr < num_entries; skipnr++) {
 		int len = scnprintf(buf, sizeof(buf), "%ps", (void *)stack_entries[skipnr]);
 
-		if (strnstr(buf, substring, len))
+		/* Depending on error type, find different stack entries. */
+		switch (type) {
+		case KFENCE_ERROR_UAF:
+		case KFENCE_ERROR_OOB:
+		case KFENCE_ERROR_INVALID:
+			if (strnstr(buf, "asm_exc_page_fault", len))
+				goto found;
 			break;
-	}
-
-	skipnr++;
-
-	if (type == KFENCE_ERROR_CORRUPTION) {
-		/*
-		 * __slab_free might be tail called from kfree(), however, some
-		 * compilers might not turn the call into a jump, and thus
-		 * kfree() might still appear in the stack trace.
-		 */
-		for (; skipnr < num_entries; skipnr++) {
-			scnprintf(buf, sizeof(buf), "%ps", (void *)stack_entries[skipnr]);
-
-			/* Also the *_bulk() variants by checking prefixes. */
-			if (strncmp(buf, "kfree", sizeof("kfree") - 1) &&
-			    strncmp(buf, "kmem_cache_free", sizeof("kmem_cache_free") - 1))
-				break;
+		case KFENCE_ERROR_CORRUPTION:
+		case KFENCE_ERROR_INVALID_FREE:
+			/* Also the *_bulk() variants by only checking prefixes. */
+			if (!strncmp(buf, "kfree", sizeof("kfree") - 1) ||
+			    !strncmp(buf, "kmem_cache_free", sizeof("kmem_cache_free") - 1))
+				goto found;
+			break;
 		}
 	}
-
+found:
+	skipnr++;
 	return skipnr < num_entries ? skipnr : 0;
 }
 
@@ -164,6 +148,10 @@ void kfence_report_error(unsigned long address, const struct kfence_metadata *me
 	case KFENCE_ERROR_INVALID:
 		pr_err("BUG: KFENCE: invalid access in %pS\n\n", (void *)stack_entries[skipnr]);
 		pr_err("Invalid access at 0x" PTR_FMT ":\n", (void *)address);
+		break;
+	case KFENCE_ERROR_INVALID_FREE:
+		pr_err("BUG: KFENCE: invalid free in %pS\n\n", (void *)stack_entries[skipnr]);
+		pr_err("Invalid free of 0x" PTR_FMT ":\n", (void *)address);
 		break;
 	}
 

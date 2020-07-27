@@ -550,12 +550,18 @@ bool __kfence_free(void *addr)
 	struct kfence_metadata *meta = addr_to_metadata((unsigned long)addr);
 	unsigned long flags;
 
-	KFENCE_WARN_ON(!list_empty(&meta->list)); /* API misuse? */
+	raw_spin_lock_irqsave(&meta->lock, flags);
 
+	if (meta->state != KFENCE_OBJECT_ALLOCATED) {
+		/* Invalid or double-free, bail out. */
+		kfence_report_error((unsigned long)addr, meta, KFENCE_ERROR_INVALID_FREE);
+		raw_spin_unlock_irqrestore(&meta->lock, flags);
+		return true;
+	}
+
+	KFENCE_WARN_ON(!list_empty(&meta->list)); /* API misuse? */
 	if (CONFIG_KFENCE_FAULT_INJECTION)
 		kfence_unprotect((unsigned long)addr); /* To check canary bytes. */
-
-	raw_spin_lock_irqsave(&meta->lock, flags);
 
 	/* Restore page protection if there was an OOB access. */
 	if (meta->unprotected_page) {
@@ -579,7 +585,6 @@ bool __kfence_free(void *addr)
 	list_add_tail(&meta->list, &kfence_freelist);
 	raw_spin_unlock_irqrestore(&kfence_freelist_lock, flags);
 
-	/* TODO(glider): detect double-frees. */
 	return true;
 }
 

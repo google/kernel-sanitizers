@@ -88,6 +88,7 @@ enum kfence_error_type {
 	KFENCE_ERROR_UAF, /* Detected a use-after-free access. */
 	KFENCE_ERROR_CORRUPTION, /* Detected a memory corruption on free. */
 	KFENCE_ERROR_INVALID, /* Invalid access of unknown type. */
+	KFENCE_ERROR_INVALID_FREE, /* Invalid free. */
 };
 
 void kfence_report_error(unsigned long address, const struct kfence_metadata *meta,

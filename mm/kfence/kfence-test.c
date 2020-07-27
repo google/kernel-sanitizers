@@ -51,7 +51,7 @@ static void probe_console(void *ignore, const char *buf, size_t len)
 		 */
 		strscpy(observed.lines[0], buf, min(len + 1, sizeof(observed.lines[0])));
 		nlines = 1;
-	} else if (nlines == 1 && strnstr(buf, "at 0x", len)) {
+	} else if (nlines == 1 && (strnstr(buf, "at 0x", len) || strnstr(buf, "of 0x", len))) {
 		strscpy(observed.lines[nlines++], buf, min(len + 1, sizeof(observed.lines[0])));
 	}
 
@@ -103,6 +103,9 @@ static bool report_matches(const struct expect_report *r)
 	case KFENCE_ERROR_INVALID:
 		cur += scnprintf(cur, end - cur, "BUG: KFENCE: invalid access");
 		break;
+	case KFENCE_ERROR_INVALID_FREE:
+		cur += scnprintf(cur, end - cur, "BUG: KFENCE: invalid free");
+		break;
 	}
 
 	scnprintf(cur, end - cur, " in %pS", r->fn);
@@ -117,20 +120,23 @@ static bool report_matches(const struct expect_report *r)
 
 	switch (r->type) {
 	case KFENCE_ERROR_OOB:
-		cur += scnprintf(cur, end - cur, "Out-of-bounds access");
+		cur += scnprintf(cur, end - cur, "Out-of-bounds access at");
 		break;
 	case KFENCE_ERROR_UAF:
-		cur += scnprintf(cur, end - cur, "Use-after-free access");
+		cur += scnprintf(cur, end - cur, "Use-after-free access at");
 		break;
 	case KFENCE_ERROR_CORRUPTION:
-		cur += scnprintf(cur, end - cur, "Detected corrupted memory");
+		cur += scnprintf(cur, end - cur, "Detected corrupted memory at");
 		break;
 	case KFENCE_ERROR_INVALID:
-		cur += scnprintf(cur, end - cur, "Invalid access");
+		cur += scnprintf(cur, end - cur, "Invalid access at");
+		break;
+	case KFENCE_ERROR_INVALID_FREE:
+		cur += scnprintf(cur, end - cur, "Invalid free of");
 		break;
 	}
 
-	cur += scnprintf(cur, end - cur, " at 0x" PTR_FMT, (void *)r->addr);
+	cur += scnprintf(cur, end - cur, " 0x" PTR_FMT, (void *)r->addr);
 
 	spin_lock_irqsave(&observed.lock, flags);
 	if (!report_available())
@@ -293,6 +299,21 @@ static void test_use_after_free_read(struct kunit *test)
 	expect.addr = test_alloc(test, size, GFP_KERNEL, ALLOCATE_ANY);
 	test_free(expect.addr);
 	READ_ONCE(*expect.addr);
+	KUNIT_EXPECT_TRUE(test, report_matches(&expect));
+}
+
+static void test_double_free(struct kunit *test)
+{
+	const size_t size = 32;
+	struct expect_report expect = {
+		.type = KFENCE_ERROR_INVALID_FREE,
+		.fn = test_double_free,
+	};
+
+	setup_test_cache(test, size, NULL);
+	expect.addr = test_alloc(test, size, GFP_KERNEL, ALLOCATE_ANY);
+	test_free(expect.addr);
+	test_free(expect.addr); /* Double-free. */
 	KUNIT_EXPECT_TRUE(test, report_matches(&expect));
 }
 
@@ -488,6 +509,7 @@ static void test_invalid_access(struct kunit *test)
 static struct kunit_case kfence_test_cases[] = {
 	KFENCE_KUNIT_CASE(test_out_of_bounds_read),
 	KFENCE_KUNIT_CASE(test_use_after_free_read),
+	KFENCE_KUNIT_CASE(test_double_free),
 	KFENCE_KUNIT_CASE(test_free_bulk),
 	KUNIT_CASE(test_kmalloc_aligned_oob_read),
 	KUNIT_CASE(test_kmalloc_aligned_oob_write),
