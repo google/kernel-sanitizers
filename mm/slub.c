@@ -2763,7 +2763,7 @@ static __always_inline void *slab_alloc_node(struct kmem_cache *s,
 
 	object = kfence_alloc(s, orig_size, gfpflags);
 	if (object)
-		goto leave;
+		goto out;
 
 redo:
 	/*
@@ -2838,7 +2838,7 @@ redo:
 	if (unlikely(slab_want_init_on_alloc(gfpflags, s)) && object)
 		memset(object, 0, s->object_size);
 
-leave:
+out:
 	slab_post_alloc_hook(s, gfpflags, 1, &object);
 
 	return object;
