@@ -75,8 +75,8 @@ static noinline void save_stack(int index, bool is_alloc)
 
 noinline void kfence_disable(void)
 {
-	pr_err("Disabling KFENCE\n");
 	WRITE_ONCE(kfence_enabled, false);
+	pr_err("disabled\n");
 }
 
 static pgprot_t pgprot_clear_protnone_bits(pgprot_t prot)
