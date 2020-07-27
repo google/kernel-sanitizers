@@ -163,9 +163,9 @@ void kfence_report_error(unsigned long address, const struct kfence_metadata *me
 	pr_err("\n");
 	dump_stack_print_info(KERN_DEFAULT);
 	pr_err("==================================================================\n");
-
 	if (panic_on_warn)
 		panic("panic_on_warn set ...\n");
 
-	// TODO(elver): Do we want to taint kernel here?
+	/* We encountered a memory unsafety error, taint the kernel! */
+	add_taint(TAINT_WARN, LOCKDEP_STILL_OK);
 }
