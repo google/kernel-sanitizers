@@ -57,6 +57,14 @@ static struct kfence_freelist kfence_recycle = { .list = LIST_HEAD_INIT(kfence_r
 
 struct kfence_alloc_metadata *kfence_metadata;
 
+/* The static key to set up a KFENCE allocation. */
+DEFINE_STATIC_KEY_FALSE(kfence_allocation_key);
+
+/* Gates the allocation, ensuring only one succeeds in a given period. */
+static atomic_t allocation_gate = ATOMIC_INIT(1);
+/* Wait queue to wake up heartbeat timer task. */
+static DECLARE_WAIT_QUEUE_HEAD(allocation_wait);
+
 /* Requres kfence_alloc_lock. */
 static noinline void save_stack(int index, bool is_alloc)
 {
@@ -380,14 +388,6 @@ static void for_each_canary(int index, void (*fn)(u8 *))
 		fn((u8 *)addr);
 }
 
-/* The static key to set up a KFENCE allocation. */
-DEFINE_STATIC_KEY_FALSE(kfence_allocation_key);
-
-/* Gates the allocation, ensuring only one succeeds in a given period. */
-static atomic_t allocation_gate = ATOMIC_INIT(1);
-/* Wait queue to wake up heartbeat timer task. */
-static DECLARE_WAIT_QUEUE_HEAD(allocation_wait);
-
 static void *kfence_guarded_alloc(struct kmem_cache *cache, size_t size, gfp_t gfp)
 {
 	unsigned long flags;
@@ -642,11 +642,6 @@ static const struct file_operations obj_fops = {
 	.llseek = seq_lseek,
 };
 
-/*
- * Current debugfs structure:
- *  /sys/kernel/debug/kfence/ - KFENCE directory;
- *    objects - file listing all objects.
- */
 void __init kfence_create_debugfs(void)
 {
 	struct dentry *kfence_dir;
