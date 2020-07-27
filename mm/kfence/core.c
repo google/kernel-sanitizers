@@ -39,6 +39,8 @@ char __kfence_pool_start[PAGE_SIZE * (CONFIG_KFENCE_NUM_OBJECTS + 1) * 2] __alig
 EXPORT_SYMBOL(__kfence_pool_start);
 
 /* Protects kfence_freelist, kfence_recycle, kfence_metadata */
+// TODO(elver): We need to find a way to make KFENCE lockless, as it seems to be
+// unhappy with lockdep.
 static DEFINE_SPINLOCK(kfence_alloc_lock);
 
 /*
@@ -525,7 +527,14 @@ bool kfence_handle_page_fault(unsigned long addr)
 		return kfence_unprotect(addr);
 	}
 
+	/*
+	 * If there is a KFENCE report somewhere inside lockdep, or one of the
+	 * libraries used by it, we need to avoid recursing back into lockdep.
+	 */
+	// TODO(elver): This is probably also a problem for allocations/frees.
+	lockdep_off();
 	spin_lock_irqsave(&kfence_alloc_lock, flags);
+
 	page_index = (addr - (unsigned long)__kfence_pool_start) / PAGE_SIZE;
 	if (page_index % 2) {
 		/* This is a redzone, report a buffer overflow. */
@@ -564,7 +573,8 @@ bool kfence_handle_page_fault(unsigned long addr)
 	}
 
 	spin_unlock_irqrestore(&kfence_alloc_lock, flags);
-	/* Let the kernel proceed. */
+	lockdep_on();
+	/* Unprotect and let access proceed. */
 	return kfence_unprotect(addr);
 }
 
