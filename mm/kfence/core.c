@@ -8,6 +8,7 @@
 #include <linux/lockdep.h>
 #include <linux/moduleparam.h>
 #include <linux/random.h>
+#include <linux/rcupdate.h>
 #include <linux/seq_file.h>
 #include <linux/slab.h>
 #include <linux/spinlock.h>
@@ -320,6 +321,13 @@ static void kfence_guarded_free(void *addr, struct kfence_metadata *meta)
 	raw_spin_unlock_irqrestore(&kfence_freelist_lock, flags);
 }
 
+static void rcu_guarded_free(struct rcu_head *h)
+{
+	struct kfence_metadata *meta = container_of(h, struct kfence_metadata, rcu_head);
+
+	kfence_guarded_free((void *)meta->addr, meta);
+}
+
 static bool __init kfence_initialize_pool(void)
 {
 	unsigned long addr = (unsigned long)__kfence_pool;
@@ -572,13 +580,6 @@ void *__kfence_alloc(struct kmem_cache *s, size_t size, gfp_t flags)
 	if (size > PAGE_SIZE)
 		return NULL;
 
-	/*
-	 * TODO(elver): Handle this. We can easily handle it if we defer free
-	 * with call_rcu in __kfence_free.
-	 */
-	if (s->flags & SLAB_TYPESAFE_BY_RCU)
-		return NULL;
-
 	return kfence_guarded_alloc(s, size, flags);
 }
 
@@ -597,7 +598,10 @@ void __kfence_free(void *addr)
 {
 	struct kfence_metadata *meta = addr_to_metadata((unsigned long)addr);
 
-	kfence_guarded_free(addr, meta);
+	if (unlikely(meta->cache->flags & SLAB_TYPESAFE_BY_RCU))
+		call_rcu(&meta->rcu_head, rcu_guarded_free);
+	else
+		kfence_guarded_free(addr, meta);
 }
 
 bool kfence_handle_page_fault(unsigned long addr)

@@ -33,6 +33,7 @@ enum kfence_object_state {
 /* KFENCE metadata per guarded allocation. */
 struct kfence_metadata {
 	struct list_head list; /* Freelist node. */
+	struct rcu_head rcu_head; /* For delayed freeing. */
 
 	/*
 	 * Lock protecting below data; to ensure consistency of the below data,

@@ -156,7 +156,8 @@ out:
 /* Cache used by tests; if NULL, allocate from kmalloc instead. */
 static struct kmem_cache *test_cache;
 
-static size_t setup_test_cache(struct kunit *test, size_t size, void (*ctor)(void *))
+static size_t setup_test_cache(struct kunit *test, size_t size, slab_flags_t flags,
+			       void (*ctor)(void *))
 {
 	if (test->priv != TEST_PRIV_WANT_MEMCACHE)
 		return size;
@@ -165,11 +166,11 @@ static size_t setup_test_cache(struct kunit *test, size_t size, void (*ctor)(voi
 
 	/*
 	 * Use SLAB_NOLEAKTRACE to prevent merging with existing caches. Any
-	 * other flag in SLAB_NEVER_MERGE (except SLAB_TYPESAFE_BY_RCU, which
-	 * disables KFENCE) also works. Use SLAB_ACCOUNT to allocate via memcg,
-	 * if enabled.
+	 * other flag in SLAB_NEVER_MERGE also works. Use SLAB_ACCOUNT to
+	 * allocate via memcg, if enabled.
 	 */
-	test_cache = kmem_cache_create("test", size, 1, SLAB_NOLEAKTRACE | SLAB_ACCOUNT, ctor);
+	flags |= SLAB_NOLEAKTRACE | SLAB_ACCOUNT;
+	test_cache = kmem_cache_create("test", size, 1, flags, ctor);
 	KUNIT_ASSERT_TRUE_MSG(test, test_cache, "could not create cache");
 
 	return size;
@@ -270,7 +271,7 @@ static void test_out_of_bounds_read(struct kunit *test)
 	};
 	char *buf;
 
-	setup_test_cache(test, size, NULL);
+	setup_test_cache(test, size, 0, NULL);
 
 	/* Test both sides. */
 
@@ -295,7 +296,7 @@ static void test_use_after_free_read(struct kunit *test)
 		.fn = test_use_after_free_read,
 	};
 
-	setup_test_cache(test, size, NULL);
+	setup_test_cache(test, size, 0, NULL);
 	expect.addr = test_alloc(test, size, GFP_KERNEL, ALLOCATE_ANY);
 	test_free(expect.addr);
 	READ_ONCE(*expect.addr);
@@ -310,7 +311,7 @@ static void test_double_free(struct kunit *test)
 		.fn = test_double_free,
 	};
 
-	setup_test_cache(test, size, NULL);
+	setup_test_cache(test, size, 0, NULL);
 	expect.addr = test_alloc(test, size, GFP_KERNEL, ALLOCATE_ANY);
 	test_free(expect.addr);
 	test_free(expect.addr); /* Double-free. */
@@ -388,7 +389,7 @@ static void test_shrink_memcache(struct kunit *test)
 	const size_t size = 32;
 	void *buf;
 
-	setup_test_cache(test, size, NULL);
+	setup_test_cache(test, size, 0, NULL);
 	KUNIT_EXPECT_TRUE(test, test_cache);
 	buf = test_alloc(test, size, GFP_KERNEL, ALLOCATE_ANY);
 	kmem_cache_shrink(test_cache);
@@ -409,7 +410,7 @@ static void test_free_bulk(struct kunit *test)
 	int iter;
 
 	for (iter = 0; iter < 5; iter++) {
-		const size_t size = setup_test_cache(test, 8 + prandom_u32_max(300),
+		const size_t size = setup_test_cache(test, 8 + prandom_u32_max(300), 0,
 						     (iter & 1) ? ctor_set_x : NULL);
 		void *objects[] = {
 			test_alloc(test, size, GFP_KERNEL, ALLOCATE_RIGHT),
@@ -439,7 +440,7 @@ static void test_init_on_free(struct kunit *test)
 		return;
 	/* Assume it hasn't been disabled on command line. */
 
-	setup_test_cache(test, size, NULL);
+	setup_test_cache(test, size, 0, NULL);
 	expect.addr = test_alloc(test, size, GFP_KERNEL, ALLOCATE_ANY);
 	for (i = 0; i < size; i++)
 		expect.addr[i] = i + 1;
@@ -458,7 +459,7 @@ static void test_memcache_ctor(struct kunit *test)
 	char *buf;
 	int i;
 
-	setup_test_cache(test, size, ctor_set_x);
+	setup_test_cache(test, size, 0, ctor_set_x);
 	buf = test_alloc(test, size, GFP_KERNEL, ALLOCATE_ANY);
 
 	for (i = 0; i < 8; i++)
@@ -481,7 +482,7 @@ static void test_gfpzero(struct kunit *test)
 		return;
 	}
 
-	setup_test_cache(test, size, NULL);
+	setup_test_cache(test, size, 0, NULL);
 	buf1 = test_alloc(test, size, GFP_KERNEL, ALLOCATE_ANY);
 	for (i = 0; i < size; i++)
 		buf1[i] = i + 1;
@@ -520,6 +521,35 @@ static void test_invalid_access(struct kunit *test)
 	KUNIT_EXPECT_TRUE(test, report_matches(&expect));
 }
 
+/* Test SLAB_TYPESAFE_BY_RCU works. */
+static void test_memcache_typesafe_by_rcu(struct kunit *test)
+{
+	const int size = 32;
+	struct expect_report expect = {
+		.type = KFENCE_ERROR_UAF,
+		.fn = test_memcache_typesafe_by_rcu,
+	};
+
+	setup_test_cache(test, size, SLAB_TYPESAFE_BY_RCU, NULL);
+	KUNIT_EXPECT_TRUE(test, test_cache); /* Want memcache. */
+
+	expect.addr = test_alloc(test, size, GFP_KERNEL, ALLOCATE_ANY);
+	*expect.addr = 42;
+
+	rcu_read_lock();
+	test_free(expect.addr);
+	KUNIT_EXPECT_EQ(test, *expect.addr, (char)42);
+	rcu_read_unlock();
+
+	/* No reports yet, memory should not have been freed on access. */
+	KUNIT_EXPECT_FALSE(test, report_available());
+	rcu_barrier(); /* Wait for free to happen. */
+
+	/* Expect use-after-free. */
+	KUNIT_EXPECT_EQ(test, *expect.addr, (char)42);
+	KUNIT_EXPECT_TRUE(test, report_matches(&expect));
+}
+
 /*
  * KUnit does not provide a way to provide arguments to tests, and we encode
  * additional info in the name. Set up 2 tests per test case, one using the
@@ -544,6 +574,7 @@ static struct kunit_case kfence_test_cases[] = {
 	KUNIT_CASE(test_memcache_ctor),
 	KUNIT_CASE(test_invalid_access),
 	KUNIT_CASE(test_gfpzero),
+	KUNIT_CASE(test_memcache_typesafe_by_rcu),
 	{},
 };
 
