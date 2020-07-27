@@ -28,8 +28,9 @@ config KFENCE_SAMPLE_RATE
 	  command-line argument kfence.sample_rate.
 
 config KFENCE_NUM_OBJECTS
-	int "Number of guarded KFENCE objects available"
+	int "Number of guarded objects available"
 	default 255
+	range 1 65535
 	help
 	  The number of guarded objects available. For each KFENCE object, 2
 	  pages are required; with one containing the object and two adjacent
