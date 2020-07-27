@@ -41,13 +41,14 @@ static __always_inline void *kfence_alloc(struct kmem_cache *s, size_t size, gfp
 
 size_t kfence_ksize(const void *addr);
 
-bool __kfence_free(void *addr);
+void __kfence_free(void *addr);
 
 static __always_inline bool kfence_free(void *addr)
 {
 	if (!is_kfence_addr(addr))
 		return false;
-	return __kfence_free(addr);
+	__kfence_free(addr);
+	return true;
 }
 
 bool kfence_handle_page_fault(unsigned long addr);

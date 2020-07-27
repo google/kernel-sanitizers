@@ -545,7 +545,7 @@ size_t kfence_ksize(const void *addr)
 	return meta ? abs(meta->size) : 0;
 }
 
-bool __kfence_free(void *addr)
+void __kfence_free(void *addr)
 {
 	struct kfence_metadata *meta = addr_to_metadata((unsigned long)addr);
 	unsigned long flags;
@@ -556,7 +556,7 @@ bool __kfence_free(void *addr)
 		/* Invalid or double-free, bail out. */
 		kfence_report_error((unsigned long)addr, meta, KFENCE_ERROR_INVALID_FREE);
 		raw_spin_unlock_irqrestore(&meta->lock, flags);
-		return true;
+		return;
 	}
 
 	KFENCE_WARN_ON(!list_empty(&meta->list)); /* API misuse? */
@@ -584,8 +584,6 @@ bool __kfence_free(void *addr)
 	raw_spin_lock_irqsave(&kfence_freelist_lock, flags);
 	list_add_tail(&meta->list, &kfence_freelist);
 	raw_spin_unlock_irqrestore(&kfence_freelist_lock, flags);
-
-	return true;
 }
 
 bool kfence_handle_page_fault(unsigned long addr)
