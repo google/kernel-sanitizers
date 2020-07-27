@@ -37,12 +37,14 @@ config KFENCE_NUM_OBJECTS
 	  ones used as redzones.
 
 config KFENCE_FAULT_INJECTION
-	bool "Fault injection for stress testing"
+	int "Fault injection for stress testing"
+	default 0
 	depends on EXPERT
 	help
-	  Randomly fail to unprotect KFENCE object pages, resulting in spurious
-	  use-after-frees. The main purpose of this option is to stress-test
-	  KFENCE with concurrent error reports and allocations/frees.
+	  The inverse probability with which to randomly protect KFENCE object
+	  pages, resulting in spurious use-after-frees. The main purpose of
+	  this option is to stress-test KFENCE with concurrent error reports
+	  and allocations/frees. A value of 0 disables fault injection.
 
 config KFENCE_TEST
 	tristate "KFENCE test module"

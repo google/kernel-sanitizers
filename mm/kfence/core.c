@@ -27,6 +27,10 @@
 	})
 // clang-format on
 
+#ifndef CONFIG_KFENCE_FAULT_INJECTION /* Only defined with CONFIG_EXPERT. */
+#define CONFIG_KFENCE_FAULT_INJECTION 0
+#endif
+
 /* === Data ================================================================= */
 
 static unsigned long kfence_sample_rate __read_mostly = CONFIG_KFENCE_SAMPLE_RATE;
@@ -262,7 +266,7 @@ static void *kfence_guarded_alloc(struct kmem_cache *cache, size_t size, gfp_t g
 	if (cache->ctor)
 		cache->ctor(addr);
 
-	if (IS_ENABLED(CONFIG_KFENCE_FAULT_INJECTION) && !prandom_u32_max(10)) {
+	if (CONFIG_KFENCE_FAULT_INJECTION && !prandom_u32_max(CONFIG_KFENCE_FAULT_INJECTION)) {
 		/* Randomly inject "faults" by protecting the allocated object. */
 		kfence_protect(meta->addr);
 	}
@@ -541,7 +545,7 @@ bool __kfence_free(void *addr)
 
 	KFENCE_WARN_ON(!list_empty(&meta->list)); /* API misuse? */
 
-	if (IS_ENABLED(CONFIG_KFENCE_FAULT_INJECTION))
+	if (CONFIG_KFENCE_FAULT_INJECTION)
 		kfence_unprotect((unsigned long)addr); /* To check canary bytes. */
 
 	raw_spin_lock_irqsave(&meta->lock, flags);
@@ -622,9 +626,13 @@ bool kfence_handle_page_fault(unsigned long addr)
 			goto out;
 
 		raw_spin_lock_irqsave(&to_report->lock, flags);
-		KFENCE_WARN_ON(!IS_ENABLED(CONFIG_KFENCE_FAULT_INJECTION) &&
-			       to_report->state != KFENCE_OBJECT_FREED);
 		error_type = KFENCE_ERROR_UAF;
+		/*
+		 * We may race with __kfence_alloc(), and it is possible that a
+		 * freed object may be reallocated. We simply report this as a
+		 * use-after-free, with the stack trace showing the place where
+		 * the object was re-allocated.
+		 */
 	}
 
 out:
