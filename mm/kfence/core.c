@@ -355,36 +355,6 @@ static bool check_canary_byte(u8 *addr)
 	return false;
 }
 
-/*
- * When performing bulk deallocations the freelist pointer in our object may be
- * overwritten with a NULL. If this happened, reinstate the pattern bytes so
- * that we don't report a false memory corruption.
- */
-static void check_cache_freelist_ptr(int index)
-{
-#if defined(CONFIG_SLUB)
-	struct kfence_alloc_metadata *meta = &kfence_metadata[index];
-	unsigned long freeptr;
-	int i;
-
-	if (!meta->cache)
-		return;
-
-	freeptr = meta->addr + meta->cache->offset;
-
-	/*
-	 * kfree_bulk() might have set @freeptr to zero. If so, restore the
-	 * pattern. A different @freeptr value will be detected by
-	 * check_canary_byte() later on.
-	 */
-	if (*(void **)freeptr)
-		return;
-
-	for (i = 0; i < sizeof(void *); i++)
-		set_canary_byte((u8 *)freeptr + i);
-#endif
-}
-
 static void for_each_canary(int index, bool (*fn)(u8 *))
 {
 	unsigned long start = kfence_metadata[index].addr;
@@ -506,7 +476,6 @@ bool __kfence_free(void *addr)
 	list_del(&(item->list));
 	list_add_tail(&(item->list), &kfence_freelist.list);
 	index = kfence_addr_to_index((unsigned long)addr);
-	check_cache_freelist_ptr(index);
 	for_each_canary(index, check_canary_byte);
 	save_stack(index, false);
 	kfence_metadata[index].state = KFENCE_OBJECT_FREED;

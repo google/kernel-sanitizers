@@ -3151,6 +3151,11 @@ int build_detached_freelist(struct kmem_cache *s, size_t size,
 	if (!object)
 		return 0;
 
+	if (kfence_free(object)) {
+		p[size] = NULL; /* mark object processed */
+		return size;
+	}
+
 	page = virt_to_head_page(object);
 	if (!s) {
 		/* Handle kalloc'ed objects */
