@@ -12,13 +12,10 @@ struct kmem_cache;
 #ifdef CONFIG_KFENCE
 /* TODO: API documentation */
 
-extern char __kfence_pool_start[];
-extern struct static_key_false kfence_allocation_key;
+#define KFENCE_POOL_SIZE ((CONFIG_KFENCE_NUM_OBJECTS + 1) * 2 * PAGE_SIZE)
+extern char __kfence_pool[KFENCE_POOL_SIZE];
 
-static __always_inline char *__kfence_pool_end(void)
-{
-	return __kfence_pool_start + (CONFIG_KFENCE_NUM_OBJECTS + 1) * 2 * PAGE_SIZE;
-}
+extern struct static_key_false kfence_allocation_key;
 
 void kfence_init(void);
 
@@ -29,7 +26,8 @@ bool kfence_handle_page_fault(unsigned long addr);
 
 static __always_inline bool is_kfence_addr(void *addr)
 {
-	return unlikely((char *)addr >= __kfence_pool_start && (char *)addr < __kfence_pool_end());
+	return unlikely((char *)addr >= __kfence_pool &&
+			(char *)addr < __kfence_pool + KFENCE_POOL_SIZE);
 }
 
 void *__kfence_alloc(struct kmem_cache *s, size_t size, gfp_t flags);

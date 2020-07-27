@@ -35,8 +35,8 @@ struct kfence_freelist {
 
 /* TODO: explain alignment. */
 static_assert(CONFIG_KFENCE_NUM_OBJECTS > 0);
-char __kfence_pool_start[PAGE_SIZE * (CONFIG_KFENCE_NUM_OBJECTS + 1) * 2] __aligned(2 << 21);
-EXPORT_SYMBOL(__kfence_pool_start);
+char __kfence_pool[KFENCE_POOL_SIZE] __aligned(2 << 21);
+EXPORT_SYMBOL(__kfence_pool);
 
 /* Protects kfence_freelist, kfence_recycle, kfence_metadata */
 // TODO(elver): We need to find a way to make KFENCE lockless, as it seems to be
@@ -214,7 +214,7 @@ bool kfence_force_4k_pages(unsigned long addr)
 	unsigned int level;
 	pte_t *pte;
 
-	while (addr < (unsigned long)__kfence_pool_end()) {
+	while (is_kfence_addr((void *)addr)) {
 		pte = lookup_address(addr, &level);
 		if (!pte)
 			return false;
@@ -261,21 +261,21 @@ static bool __meminit kfence_allocate_pool(void)
 {
 	struct page *pages = NULL;
 	struct kfence_freelist *objects = NULL;
-	unsigned long addr = (unsigned long)__kfence_pool_start;
+	unsigned long addr = (unsigned long)__kfence_pool;
 	int i;
 	gfp_t gfp_flags = GFP_KERNEL | __GFP_ZERO;
 
 	pages = virt_to_page(addr);
 	if (!kfence_force_4k_pages(addr))
 		goto error;
-	pr_info("allocated pages: 0x%px-0x%px\n", (void *)__kfence_pool_start,
-		(void *)__kfence_pool_end());
+	pr_info("allocated pages: 0x%px-0x%px\n", (void *)__kfence_pool,
+		(void *)(__kfence_pool + KFENCE_POOL_SIZE));
 
 	/*
 	 * Set up non-redzone pages: they must have PG_slab flag and point to
 	 * kfence slab cache.
 	 */
-	for (i = 0; i < sizeof(__kfence_pool_start) / PAGE_SIZE; i++) {
+	for (i = 0; i < sizeof(__kfence_pool) / PAGE_SIZE; i++) {
 		if (i && !(i % 2)) {
 			__SetPageSlab(&pages[i]);
 			/*
@@ -322,7 +322,7 @@ static inline int kfence_addr_to_index(unsigned long addr)
 	if (!is_kfence_addr((void *)addr))
 		return -1;
 
-	return ((addr - (unsigned long)__kfence_pool_start) / PAGE_SIZE / 2) - 1;
+	return ((addr - (unsigned long)__kfence_pool) / PAGE_SIZE / 2) - 1;
 }
 
 size_t kfence_ksize(const void *addr)
@@ -513,7 +513,7 @@ bool kfence_handle_page_fault(unsigned long addr)
 	lockdep_off();
 	spin_lock_irqsave(&kfence_alloc_lock, flags);
 
-	page_index = (addr - (unsigned long)__kfence_pool_start) / PAGE_SIZE;
+	page_index = (addr - (unsigned long)__kfence_pool) / PAGE_SIZE;
 	if (page_index % 2) {
 		/* This is a redzone, report a buffer overflow. */
 		if (page_index > 1) {
