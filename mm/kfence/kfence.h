@@ -78,9 +78,9 @@ enum kfence_error_type {
 	KFENCE_ERROR_INVALID, /* Invalid access of unknown type. */
 };
 
-void kfence_report_error(unsigned long address, const struct kfence_metadata *metadata,
+void kfence_report_error(unsigned long address, const struct kfence_metadata *meta,
 			 enum kfence_error_type type);
 
-void kfence_print_object(struct seq_file *seq, const struct kfence_metadata *metadata);
+void kfence_print_object(struct seq_file *seq, const struct kfence_metadata *meta);
 
 #endif /* MM_KFENCE_KFENCE_H */
