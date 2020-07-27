@@ -231,6 +231,11 @@ void *__kfence_alloc(struct kmem_cache *s, size_t size, gfp_t flags)
 	// TODO(elver): Remove one of the comparisons, which is redundant.
 	if ((size > PAGE_SIZE) || (s->size > PAGE_SIZE))
 		return NULL;
+
+	/*
+	 * TODO(elver): Handle this. We can easily handle it if we defer free
+	 * with call_rcu in __kfence_free.
+	 */
 	if (s->flags & SLAB_TYPESAFE_BY_RCU)
 		return NULL;
 
