@@ -17,7 +17,7 @@
 
 #include "kfence.h"
 
-unsigned long kfence_sample_rate = CONFIG_KFENCE_SAMPLE_RATE;
+static unsigned long kfence_sample_rate = CONFIG_KFENCE_SAMPLE_RATE;
 
 #ifdef MODULE_PARAM_PREFIX
 #undef MODULE_PARAM_PREFIX
