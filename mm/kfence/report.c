@@ -76,16 +76,11 @@ static void kfence_dump_stack(struct seq_file *seq, const struct kfence_metadata
 	unsigned long nr_entries = is_alloc ? metadata->nr_alloc : metadata->nr_free;
 
 	if (nr_entries) {
-		/*
-		 * Unfortunately stack_trace_seq_print() does not exist, and we
-		 * require a temporary buffer for printing the stack trace. We
-		 * expect that printing KFENCE metadata information is
-		 * serialized under kfence_alloc_lock.
-		 */
-		static char buf[PAGE_SIZE];
+		int i;
 
-		stack_trace_snprint(buf, sizeof(buf), entries, nr_entries, 0);
-		seq_con_printf(seq, "%s", buf);
+		/* stack_trace_seq_print() does not exist; open code our own. */
+		for (i = 0; i < nr_entries; ++i)
+			seq_con_printf(seq, " %pS\n", entries[i]);
 	} else {
 		seq_con_printf(seq, "  no %s stack.\n", is_alloc ? "allocation" : "deallocation");
 	}
