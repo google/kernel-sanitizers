@@ -1,0 +1,100 @@
+/* SPDX-License-Identifier: GPL-2.0 */
+
+#ifndef MM_KFENCE_KFENCE_H
+#define MM_KFENCE_KFENCE_H
+
+#include <linux/mm.h>
+#include <linux/seq_file.h>
+#include <linux/spinlock.h>
+#include <linux/types.h>
+
+#include "../slab.h" /* for struct kmem_cache */
+
+/* For non-debug builds, avoid leaking kernel pointers into dmesg. */
+#ifdef CONFIG_DEBUG_KERNEL
+#define PTR_FMT "%px"
+#else
+#define PTR_FMT "%p"
+#endif
+
+/* Helper to get the canary byte pattern for @addr. */
+#define KFENCE_CANARY_PATTERN(addr) (((u8[]){ 0xaa, 0xab, 0xaa, 0xad })[(size_t)addr % 4])
+
+/* Maximum stack depth for reports. */
+#define KFENCE_STACK_DEPTH 64
+
+/* KFENCE object states. */
+enum kfence_object_state {
+	KFENCE_OBJECT_UNUSED, /* Object is unused. */
+	KFENCE_OBJECT_ALLOCATED, /* Object is currently allocated. */
+	KFENCE_OBJECT_FREED, /* Object was allocated, and then freed. */
+};
+
+/* KFENCE metadata per guarded allocation. */
+struct kfence_metadata {
+	struct list_head list; /* Freelist node. */
+	struct rcu_head rcu_head; /* For delayed freeing. */
+
+	/*
+	 * Lock protecting below data; to ensure consistency of the below data,
+	 * since the following may execute concurrently: __kfence_alloc(),
+	 * __kfence_free(), kfence_handle_page_fault(). However, note that we
+	 * cannot grab the same metadata off the freelist twice, and multiple
+	 * __kfence_alloc() cannot run concurrently on the same metadata.
+	 */
+	raw_spinlock_t lock;
+
+	/* The current state of the object; see above. */
+	enum kfence_object_state state;
+
+	/*
+	 * Allocated object address; cannot be calculated from size, because of
+	 * alignment requirements.
+	 *
+	 * Invariant: ALIGN_DOWN(addr, PAGE_SIZE) is constant.
+	 */
+	unsigned long addr;
+
+	/*
+	 * The size of the original allocation:
+	 *	size > 0: left page alignment
+	 *	size < 0: right page alignment
+	 */
+	int size;
+
+	/*
+	 * The kmem_cache cache of the last allocation; NULL if never allocated
+	 * or the cache has already been destroyed.
+	 */
+	struct kmem_cache *cache;
+
+	/*
+	 * In case of an invalid access, the page that was unprotected; we
+	 * optimistically only store address.
+	 */
+	unsigned long unprotected_page;
+
+	/* Allocation and free stack information. */
+	int num_alloc_stack;
+	int num_free_stack;
+	unsigned long alloc_stack[KFENCE_STACK_DEPTH];
+	unsigned long free_stack[KFENCE_STACK_DEPTH];
+};
+
+extern struct kfence_metadata kfence_metadata[CONFIG_KFENCE_NUM_OBJECTS];
+
+/* KFENCE error types for report generation. */
+enum kfence_error_type {
+	KFENCE_ERROR_OOB, /* Detected a out-of-bounds access. */
+	KFENCE_ERROR_UAF, /* Detected a use-after-free access. */
+	KFENCE_ERROR_CORRUPTION, /* Detected a memory corruption on free. */
+	KFENCE_ERROR_INVALID, /* Invalid access of unknown type. */
+	KFENCE_ERROR_INVALID_FREE, /* Invalid free. */
+};
+
+void kfence_report_error(unsigned long address, const struct kfence_metadata *meta,
+			 enum kfence_error_type type);
+
+void kfence_print_object(struct seq_file *seq, const struct kfence_metadata *meta);
+
+#endif /* MM_KFENCE_KFENCE_H */
