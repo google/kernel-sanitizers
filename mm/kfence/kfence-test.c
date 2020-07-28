@@ -446,10 +446,17 @@ static void test_init_on_free(struct kunit *test)
 		expect.addr[i] = i + 1;
 	test_free(expect.addr);
 
-	for (i = 0; i < size; i++)
+	for (i = 0; i < size; i++) {
+		/*
+		 * This may fail if the page was recycled by KFENCE and then
+		 * written to again -- this however, is near impossible with
+		 * default sample rates.
+		 */
 		KUNIT_EXPECT_EQ(test, expect.addr[i], (char)0);
 
-	KUNIT_EXPECT_TRUE(test, report_matches(&expect));
+		if (!i) /* Only check first access, to not fail test if page is ever re-protected. */
+			KUNIT_EXPECT_TRUE(test, report_matches(&expect));
+	}
 }
 
 /* Ensure that constructors work properly. */

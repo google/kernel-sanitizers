@@ -44,7 +44,12 @@ module_param_named(sample_rate, kfence_sample_rate, ulong, 0400);
 
 static bool kfence_enabled __read_mostly;
 
-/* The pool of pages used for guard pages and objects. */
+/*
+ * The pool of pages used for guard pages and objects. Allocated statically, so
+ * that is_kfence_addr() avoids a pointer load, and simply compares against a
+ * constant address. Assume that if KFENCE is compiled into the kernel, it is
+ * usually enabled, and the space is to be allocated one way or another.
+ */
 char __kfence_pool[KFENCE_POOL_SIZE] __aligned(KFENCE_POOL_ALIGNMENT);
 EXPORT_SYMBOL(__kfence_pool); /* Export for test modules. */
 
@@ -74,8 +79,9 @@ static DECLARE_WAIT_QUEUE_HEAD(allocation_wait);
  * TODO(elver): With the move of arch-specific code to asm, kfence core.c got a
  * lot simpler. Maybe we can move report.c code back here and remove the kfence/
  * dir? Although, currently the test wants something from kfence.h (but it can
- * be made standalone), and I'd hate to have more than 2 new files in mm/. If we
- * do this, we'd need to end up only with mm/{kfence.c,kfence-test.c}.
+ * be made standalone), and I'd hate to have more than 2 new files in mm/.
+ * Looking at other files in mm/, I think we need to merge them if the final LOC
+ * is ~1000 or less. :-/
  */
 
 static inline bool kfence_protect(unsigned long addr)
@@ -255,8 +261,8 @@ static void *kfence_guarded_alloc(struct kmem_cache *cache, size_t size, gfp_t g
 	/* Memory initialization. */
 
 	/*
-	 * We check slab_want_init_on_alloc() outselves, rather than letting
-	 * SL*B to the initialization, as otherwise we might overwrite KFENCE's
+	 * We check slab_want_init_on_alloc() ourselves, rather than letting
+	 * SL*B do the initialization, as otherwise we might overwrite KFENCE's
 	 * redzone.
 	 */
 	addr = (void *)meta->addr;
