@@ -147,10 +147,10 @@ static noinline void metadata_update_state(struct kfence_metadata *meta,
 {
 	unsigned long *entries = next == KFENCE_OBJECT_FREED ? meta->free_stack : meta->alloc_stack;
 	/*
-	 * Skip over 2 (this, caller) functions; noinline ensures we do not
-	 * accidentally skip over the caller by never inlining.
+	 * Skip over 1 (this) functions; noinline ensures we do not accidentally
+	 * skip over the caller by never inlining.
 	 */
-	const int nentries = stack_trace_save(entries, KFENCE_STACK_DEPTH, 2);
+	const int nentries = stack_trace_save(entries, KFENCE_STACK_DEPTH, 1);
 
 	lockdep_assert_held(&meta->lock);
 

@@ -28,7 +28,7 @@ static int get_stack_skipnr(const unsigned long stack_entries[], int num_entries
 			    enum kfence_error_type type)
 {
 	char buf[64];
-	int skipnr;
+	int skipnr, fallback = 0;
 
 	for (skipnr = 0; skipnr < num_entries; skipnr++) {
 		int len = scnprintf(buf, sizeof(buf), "%ps", (void *)stack_entries[skipnr]);
@@ -43,6 +43,10 @@ static int get_stack_skipnr(const unsigned long stack_entries[], int num_entries
 			break;
 		case KFENCE_ERROR_CORRUPTION:
 		case KFENCE_ERROR_INVALID_FREE:
+			if (!strncmp(buf, "kfence_", sizeof("kfence_") - 1) ||
+			    !strncmp(buf, "__kfence_", sizeof("__kfence_") - 1))
+				fallback = skipnr + 1; /* In case kfree tail calls into kfence. */
+
 			/* Also the *_bulk() variants by only checking prefixes. */
 			if (!strncmp(buf, "kfree", sizeof("kfree") - 1) ||
 			    !strncmp(buf, "kmem_cache_free", sizeof("kmem_cache_free") - 1))
@@ -50,6 +54,8 @@ static int get_stack_skipnr(const unsigned long stack_entries[], int num_entries
 			break;
 		}
 	}
+	if (fallback < num_entries)
+		return fallback;
 found:
 	skipnr++;
 	return skipnr < num_entries ? skipnr : 0;
