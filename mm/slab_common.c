@@ -12,6 +12,7 @@
 #include <linux/memory.h>
 #include <linux/cache.h>
 #include <linux/compiler.h>
+#include <linux/kfence.h>
 #include <linux/module.h>
 #include <linux/cpu.h>
 #include <linux/uaccess.h>
@@ -602,6 +603,9 @@ static int shutdown_cache(struct kmem_cache *s)
 {
 	/* free asan quarantined objects */
 	kasan_cache_shutdown(s);
+
+	if (!kfence_shutdown_cache(s))
+		return -EBUSY;
 
 	if (__kmem_cache_shutdown(s) != 0)
 		return -EBUSY;
@@ -1767,7 +1771,10 @@ size_t ksize(const void *objp)
 	if (unlikely(objp == ZERO_SIZE_PTR) || !__kasan_check_read(objp, 1))
 		return 0;
 
-	size = __ksize(objp);
+	size = kfence_ksize(objp);
+
+	if (!size)
+		size = __ksize(objp);
 	/*
 	 * We assume that ksize callers could use whole allocated area,
 	 * so we need to unpoison this area.
