@@ -9,6 +9,7 @@
 #include <linux/kdebug.h>		/* oops_begin/end, ...		*/
 #include <linux/extable.h>		/* search_exception_tables	*/
 #include <linux/memblock.h>		/* max_low_pfn			*/
+#include <linux/kfence.h>		/* kfence_handle_page_fault	*/
 #include <linux/kprobes.h>		/* NOKPROBE_SYMBOL, ...		*/
 #include <linux/mmiotrace.h>		/* kmmio_handler, ...		*/
 #include <linux/perf_event.h>		/* perf_sw_event		*/
@@ -724,6 +725,9 @@ no_context(struct pt_regs *regs, unsigned long error_code,
 	 */
 	if (IS_ENABLED(CONFIG_EFI))
 		efi_recover_from_page_fault(address);
+
+	if (kfence_handle_page_fault(address))
+		return;
 
 oops:
 	/*
