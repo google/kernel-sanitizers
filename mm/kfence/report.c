@@ -28,7 +28,7 @@ static int get_stack_skipnr(const unsigned long stack_entries[], int num_entries
 			    enum kfence_error_type type)
 {
 	char buf[64];
-	int skipnr;
+	int skipnr, fallback = 0;
 
 	for (skipnr = 0; skipnr < num_entries; skipnr++) {
 		int len = scnprintf(buf, sizeof(buf), "%ps", (void *)stack_entries[skipnr]);
@@ -38,18 +38,24 @@ static int get_stack_skipnr(const unsigned long stack_entries[], int num_entries
 		case KFENCE_ERROR_UAF:
 		case KFENCE_ERROR_OOB:
 		case KFENCE_ERROR_INVALID:
+			/* TODO: this name is x86-specific. Do we have to move
+			 * this name to <asm/kfence.h>? */
 			if (strnstr(buf, "asm_exc_page_fault", len))
 				goto found;
 			break;
 		case KFENCE_ERROR_CORRUPTION:
 		case KFENCE_ERROR_INVALID_FREE:
+			if (str_has_prefix(buf, "kfence_") || str_has_prefix(buf, "__kfence_"))
+				fallback = skipnr + 1; /* In case kfree tail calls into kfence. */
+
 			/* Also the *_bulk() variants by only checking prefixes. */
-			if (!strncmp(buf, "kfree", sizeof("kfree") - 1) ||
-			    !strncmp(buf, "kmem_cache_free", sizeof("kmem_cache_free") - 1))
+			if (str_has_prefix(buf, "kfree") || str_has_prefix(buf, "kmem_cache_free"))
 				goto found;
 			break;
 		}
 	}
+	if (fallback < num_entries)
+		return fallback;
 found:
 	skipnr++;
 	return skipnr < num_entries ? skipnr : 0;
