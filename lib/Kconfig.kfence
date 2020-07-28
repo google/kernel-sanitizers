@@ -46,4 +46,16 @@ config KFENCE_FAULT_INJECTION
 	  this option is to stress-test KFENCE with concurrent error reports
 	  and allocations/frees. A value of 0 disables fault injection.
 
+config KFENCE_TEST
+	tristate "KFENCE test suite"
+	depends on TRACEPOINTS && KUNIT
+	help
+	  Test suite for KFENCE, testing various error detection scenarios with
+	  various allocation types, and checking that reports are correctly
+	  output to console.
+
+	  Say Y here if you want the test to be built into the kernel and run
+	  during boot; say M if you want the test to build as a module; say N
+	  if you are unsure.
+
 endif # KFENCE
