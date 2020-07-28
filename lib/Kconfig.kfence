@@ -1,13 +1,7 @@
 config HAVE_ARCH_KFENCE
 	bool
 
-config TEST_KFENCE
-	tristate "Test KFENCE"
-	depends on KFENCE
-	help
-	  Test that KFENCE works.
-
-config KFENCE
+menuconfig KFENCE
 	bool "KFENCE: low-overhead use-after-free and buffer-overflow detector"
 	depends on HAVE_ARCH_KFENCE && !KASAN && (SLAB || SLUB)
 	depends on JUMP_LABEL # To ensure performance, require jump labels
@@ -26,11 +20,34 @@ config KFENCE
 if KFENCE
 
 config KFENCE_SAMPLE_RATE
-	int "KFENCE default sample rate in milliseconds"
+	int "Default sample rate in milliseconds"
 	default 100
 	help
 	  The KFENCE sample rate determines the frequency with which heap
 	  allocations will be guarded by KFENCE. May be overridden via
 	  command-line argument kfence.sample_rate.
+
+config KFENCE_NUM_OBJECTS
+	int "Number of guarded objects available"
+	default 255
+	range 1 65535
+	help
+	  The number of guarded objects available. For each KFENCE object, 2
+	  pages are required; with one containing the object and two adjacent
+	  ones used as redzones.
+
+config KFENCE_FAULT_INJECTION
+	int "Fault injection for stress testing"
+	default 0
+	depends on EXPERT
+	help
+	  The inverse probability with which to randomly protect KFENCE object
+	  pages, resulting in spurious use-after-frees. The main purpose of
+	  this option is to stress-test KFENCE with concurrent error reports
+	  and allocations/frees. A value of 0 disables fault injection.
+
+config KFENCE_TEST
+	tristate "KFENCE test module"
+	depends on TRACEPOINTS && KUNIT
 
 endif # KFENCE
