@@ -276,7 +276,6 @@ static void *kfence_guarded_alloc(struct kmem_cache *cache, size_t size, gfp_t g
 		/* Randomly inject "faults" by protecting the allocated object. */
 		kfence_protect(meta->addr);
 	}
-
 	return addr;
 }
 
@@ -599,6 +598,17 @@ size_t kfence_ksize(const void *addr)
 	 * most certainly is either a use-after-free, or invalid access.
 	 */
 	return meta ? abs(meta->size) : 0;
+}
+
+void *kfence_obj_start(const void *addr)
+{
+	const struct kfence_metadata *meta = addr_to_metadata((unsigned long)addr);
+
+	/*
+	 * Read locklessly -- if there is a race with __kfence_alloc(), this
+	 * most certainly is either a use-after-free, or invalid access.
+	 */
+	return meta ? (void *)meta->addr : NULL;
 }
 
 void __kfence_free(void *addr)
