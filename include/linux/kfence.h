@@ -23,7 +23,7 @@ extern char __kfence_pool[KFENCE_POOL_SIZE];
 
 extern struct static_key_false kfence_allocation_key;
 
-static __always_inline bool is_kfence_addr(void *addr)
+static __always_inline bool is_kfence_addr(const void *addr)
 {
 	return unlikely((char *)addr >= __kfence_pool &&
 			(char *)addr < __kfence_pool + KFENCE_POOL_SIZE);
@@ -65,7 +65,7 @@ bool kfence_handle_page_fault(unsigned long addr);
 // TODO: remove for v1
 // clang-format off
 
-static inline bool is_kfence_addr(void *addr) { return false; }
+static inline bool is_kfence_addr(const void *addr) { return false; }
 static inline void kfence_init(void) { }
 static inline bool kfence_discard_slab(struct kmem_cache *s, struct page *page) { return false; }
 static inline bool kfence_shutdown_cache(struct kmem_cache *s) { return true; }
