@@ -286,7 +286,7 @@ static void kfence_guarded_free(void *addr, struct kfence_metadata *meta)
 
 	raw_spin_lock_irqsave(&meta->lock, flags);
 
-	if (meta->state != KFENCE_OBJECT_ALLOCATED) {
+	if (meta->state != KFENCE_OBJECT_ALLOCATED || meta->addr != (unsigned long)addr) {
 		/* Invalid or double-free, bail out. */
 		kfence_report_error((unsigned long)addr, meta, KFENCE_ERROR_INVALID_FREE);
 		raw_spin_unlock_irqrestore(&meta->lock, flags);
