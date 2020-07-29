@@ -96,8 +96,8 @@
 #include <asm/processor.h>
 #include <linux/atomic.h>
 
-#include <linux/kfence.h>
 #include <linux/kasan.h>
+#include <linux/kfence.h>
 #include <linux/kmemleak.h>
 #include <linux/memory_hotplug.h>
 
