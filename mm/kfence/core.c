@@ -2,6 +2,7 @@
 
 #define pr_fmt(fmt) "kfence: " fmt
 
+#include <linux/atomic.h>
 #include <linux/debugfs.h>
 #include <linux/kfence.h>
 #include <linux/list.h>
@@ -73,6 +74,25 @@ static atomic_t allocation_gate = ATOMIC_INIT(1);
 
 /* Wait queue to wake up allocation-gate timer task. */
 static DECLARE_WAIT_QUEUE_HEAD(allocation_wait);
+
+/* Statistics counters for debugfs. */
+enum kfence_counter_id {
+	KFENCE_COUNTER_ALLOCATED,
+	KFENCE_COUNTER_ALLOCS,
+	KFENCE_COUNTER_FREES,
+	KFENCE_COUNTER_BUGS,
+	KFENCE_COUNTER_COUNT,
+};
+static atomic_long_t counters[KFENCE_COUNTER_COUNT];
+// clang-format off
+static const char *const counter_names[] = {
+	[KFENCE_COUNTER_ALLOCATED]	= "currently allocated",
+	[KFENCE_COUNTER_ALLOCS]		= "total allocations",
+	[KFENCE_COUNTER_FREES]		= "total frees",
+	[KFENCE_COUNTER_BUGS]		= "total bugs",
+};
+// clang-format off
+static_assert(ARRAY_SIZE(counter_names) == KFENCE_COUNTER_COUNT);
 
 /* === Internals ============================================================ */
 
@@ -175,6 +195,7 @@ static inline bool check_canary_byte(u8 *addr)
 	if (*addr == KFENCE_CANARY_PATTERN(addr))
 		return true;
 
+	atomic_long_inc(&counters[KFENCE_COUNTER_BUGS]);
 	kfence_report_error((unsigned long)addr, addr_to_metadata((unsigned long)addr),
 			    KFENCE_ERROR_CORRUPTION);
 	return false;
@@ -275,6 +296,9 @@ static void *kfence_guarded_alloc(struct kmem_cache *cache, size_t size, gfp_t g
 	if (CONFIG_KFENCE_FAULT_INJECTION && !prandom_u32_max(CONFIG_KFENCE_FAULT_INJECTION))
 		kfence_protect(meta->addr); /* Random "faults" by protecting the object. */
 
+	atomic_long_inc(&counters[KFENCE_COUNTER_ALLOCATED]);
+	atomic_long_inc(&counters[KFENCE_COUNTER_ALLOCS]);
+
 	return addr;
 }
 
@@ -286,6 +310,7 @@ static void kfence_guarded_free(void *addr, struct kfence_metadata *meta)
 
 	if (meta->state != KFENCE_OBJECT_ALLOCATED || meta->addr != (unsigned long)addr) {
 		/* Invalid or double-free, bail out. */
+		atomic_long_inc(&counters[KFENCE_COUNTER_BUGS]);
 		kfence_report_error((unsigned long)addr, meta, KFENCE_ERROR_INVALID_FREE);
 		raw_spin_unlock_irqrestore(&meta->lock, flags);
 		return;
@@ -324,6 +349,9 @@ static void kfence_guarded_free(void *addr, struct kfence_metadata *meta)
 	raw_spin_lock_irqsave(&kfence_freelist_lock, flags);
 	list_add_tail(&meta->list, &kfence_freelist);
 	raw_spin_unlock_irqrestore(&kfence_freelist_lock, flags);
+
+	atomic_long_dec(&counters[KFENCE_COUNTER_ALLOCATED]);
+	atomic_long_inc(&counters[KFENCE_COUNTER_FREES]);
 }
 
 static void rcu_guarded_free(struct rcu_head *h)
@@ -399,6 +427,18 @@ static bool __init kfence_initialize_pool(void)
 
 /* === DebugFS Interface ==================================================== */
 
+static int stats_show(struct seq_file *seq, void *v)
+{
+	int i;
+
+	seq_printf(seq, "enabled: %i\n", READ_ONCE(kfence_enabled));
+	for (i = 0; i < KFENCE_COUNTER_COUNT; i++)
+		seq_printf(seq, "%s: %ld\n", counter_names[i], atomic_long_read(&counters[i]));
+
+	return 0;
+}
+DEFINE_SHOW_ATTRIBUTE(stats);
+
 /*
  * debugfs seq_file operations for /sys/kernel/debug/kfence/objects.
  * start_object() and next_object() return the object index + 1, because NULL is used
@@ -458,6 +498,7 @@ static void __init kfence_debugfs_init(void)
 {
 	struct dentry *kfence_dir = debugfs_create_dir("kfence", NULL);
 
+	debugfs_create_file("stats", 0400, kfence_dir, NULL, &stats_fops);
 	debugfs_create_file("objects", 0400, kfence_dir, NULL, &objects_fops);
 }
 
@@ -632,6 +673,8 @@ bool kfence_handle_page_fault(unsigned long addr)
 
 	if (!READ_ONCE(kfence_enabled)) /* If disabled at runtime ... */
 		return kfence_unprotect(addr); /* ... unprotect and proceed. */
+
+	atomic_long_inc(&counters[KFENCE_COUNTER_BUGS]);
 
 	if (page_index % 2) {
 		/* This is a redzone, report a buffer overflow. */
