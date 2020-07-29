@@ -4005,7 +4005,7 @@ void __check_heap_object(const void *ptr, unsigned long n, struct page *page,
 
 	/* Find offset within object. */
 	if (is_kfence)
-		offset = ptr - kfence_obj_start(ptr);
+		offset = ptr - kfence_object_start(ptr);
 	else
 		offset = (ptr - page_address(page)) % s->size;
 
