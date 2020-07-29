@@ -272,9 +272,8 @@ static void *kfence_guarded_alloc(struct kmem_cache *cache, size_t size, gfp_t g
 	if (cache->ctor)
 		cache->ctor(addr);
 
-	/* Randomly inject "faults" by protecting the allocated object. */
 	if (CONFIG_KFENCE_FAULT_INJECTION && !prandom_u32_max(CONFIG_KFENCE_FAULT_INJECTION))
-		kfence_protect(meta->addr);
+		kfence_protect(meta->addr); /* Random "faults" by protecting the object. */
 
 	return addr;
 }
