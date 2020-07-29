@@ -318,6 +318,23 @@ static void test_double_free(struct kunit *test)
 	KUNIT_EXPECT_TRUE(test, report_matches(&expect));
 }
 
+static void test_invalid_addr_free(struct kunit *test)
+{
+	const size_t size = 32;
+	struct expect_report expect = {
+		.type = KFENCE_ERROR_INVALID_FREE,
+		.fn = test_invalid_addr_free,
+	};
+	char *buf;
+
+	setup_test_cache(test, size, 0, NULL);
+	buf = test_alloc(test, size, GFP_KERNEL, ALLOCATE_ANY);
+	expect.addr = buf + 1; /* Free on invalid address. */
+	test_free(expect.addr); /* Invalid address free. */
+	test_free(buf); /* No error. */
+	KUNIT_EXPECT_TRUE(test, report_matches(&expect));
+}
+
 /*
  * KFENCE is unable to detect an OOB if the allocation's alignment requirements
  * leave a gap between the object and the guard page. Specifically, an
@@ -429,7 +446,7 @@ static void test_free_bulk(struct kunit *test)
 /* Test init-on-free works. */
 static void test_init_on_free(struct kunit *test)
 {
-	const int size = 32;
+	const size_t size = 32;
 	struct expect_report expect = {
 		.type = KFENCE_ERROR_UAF,
 		.fn = test_init_on_free,
@@ -462,7 +479,7 @@ static void test_init_on_free(struct kunit *test)
 /* Ensure that constructors work properly. */
 static void test_memcache_ctor(struct kunit *test)
 {
-	const int size = 32;
+	const size_t size = 32;
 	char *buf;
 	int i;
 
@@ -480,7 +497,7 @@ static void test_memcache_ctor(struct kunit *test)
 /* Test that memory is zeroed if requested. */
 static void test_gfpzero(struct kunit *test)
 {
-	const int size = PAGE_SIZE; /* PAGE_SIZE so we can use ALLOCATE_ANY. */
+	const size_t size = PAGE_SIZE; /* PAGE_SIZE so we can use ALLOCATE_ANY. */
 	char *buf1, *buf2;
 	int i;
 
@@ -531,7 +548,7 @@ static void test_invalid_access(struct kunit *test)
 /* Test SLAB_TYPESAFE_BY_RCU works. */
 static void test_memcache_typesafe_by_rcu(struct kunit *test)
 {
-	const int size = 32;
+	const size_t size = 32;
 	struct expect_report expect = {
 		.type = KFENCE_ERROR_UAF,
 		.fn = test_memcache_typesafe_by_rcu,
@@ -557,6 +574,45 @@ static void test_memcache_typesafe_by_rcu(struct kunit *test)
 	KUNIT_EXPECT_TRUE(test, report_matches(&expect));
 }
 
+/* Test krealloc(). */
+static void test_krealloc(struct kunit *test)
+{
+	const size_t size = 32;
+	const struct expect_report expect = {
+		.type = KFENCE_ERROR_UAF,
+		.fn = test_krealloc,
+		.addr = test_alloc(test, size, GFP_KERNEL, ALLOCATE_ANY),
+	};
+	char *buf = expect.addr;
+	int i;
+
+	KUNIT_EXPECT_FALSE(test, test_cache);
+	KUNIT_EXPECT_EQ(test, ksize(buf), size); /* Precise size match after KFENCE alloc. */
+	for (i = 0; i < size; i++)
+		buf[i] = i + 1;
+
+	/* Check that we successfully change the size. */
+	buf = krealloc(buf, size * 3, GFP_KERNEL); /* Grow. */
+	/* Note: Might no longer be a KFENCE alloc. */
+	KUNIT_EXPECT_GE(test, ksize(buf), size * 3);
+	for (i = 0; i < size; i++)
+		KUNIT_EXPECT_EQ(test, buf[i], (char)(i + 1));
+	for (; i < size * 3; i++) /* Fill to extra bytes. */
+		buf[i] = i + 1;
+
+	buf = krealloc(buf, size * 2, GFP_KERNEL * 2); /* Shrink. */
+	KUNIT_EXPECT_GE(test, ksize(buf), size * 2);
+	for (i = 0; i < size * 2; i++)
+		KUNIT_EXPECT_EQ(test, buf[i], (char)(i + 1));
+
+	buf = krealloc(buf, 0, GFP_KERNEL); /* Free. */
+	KUNIT_EXPECT_EQ(test, (unsigned long)buf, (unsigned long)ZERO_SIZE_PTR);
+	KUNIT_ASSERT_FALSE(test, report_available()); /* No reports yet! */
+
+	READ_ONCE(*expect.addr); /* Ensure krealloc() actually freed earlier KFENCE object. */
+	KUNIT_ASSERT_TRUE(test, report_matches(&expect));
+}
+
 /*
  * KUnit does not provide a way to provide arguments to tests, and we encode
  * additional info in the name. Set up 2 tests per test case, one using the
@@ -573,6 +629,7 @@ static struct kunit_case kfence_test_cases[] = {
 	KFENCE_KUNIT_CASE(test_out_of_bounds_read),
 	KFENCE_KUNIT_CASE(test_use_after_free_read),
 	KFENCE_KUNIT_CASE(test_double_free),
+	KFENCE_KUNIT_CASE(test_invalid_addr_free),
 	KFENCE_KUNIT_CASE(test_free_bulk),
 	KFENCE_KUNIT_CASE(test_init_on_free),
 	KUNIT_CASE(test_kmalloc_aligned_oob_read),
@@ -582,6 +639,7 @@ static struct kunit_case kfence_test_cases[] = {
 	KUNIT_CASE(test_invalid_access),
 	KUNIT_CASE(test_gfpzero),
 	KUNIT_CASE(test_memcache_typesafe_by_rcu),
+	KUNIT_CASE(test_krealloc),
 	{},
 };
 
