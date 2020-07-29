@@ -600,7 +600,7 @@ size_t kfence_ksize(const void *addr)
 	return meta ? abs(meta->size) : 0;
 }
 
-void *kfence_obj_start(const void *addr)
+void *kfence_object_start(const void *addr)
 {
 	const struct kfence_metadata *meta = addr_to_metadata((unsigned long)addr);
 
