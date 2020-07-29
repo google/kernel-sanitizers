@@ -316,8 +316,31 @@ EXPORT_SYMBOL_GPL(leave_mm);
 
 int enable_l1d_flush_for_task(struct task_struct *tsk)
 {
+	int cpu, ret = 0, i;
+
+	/*
+	 * Do not enable L1D_FLUSH_OUT if
+	 * b. The CPU is not affected by the L1TF bug
+	 * c. The CPU does not have L1D FLUSH feature support
+	 * c. The task's affinity is on cores with SMT on.
+	 */
+
+	if (!boot_cpu_has_bug(X86_BUG_L1TF) ||
+			!static_cpu_has(X86_FEATURE_FLUSH_L1D))
+		return -EINVAL;
+
+	cpu = get_cpu();
+
+	for_each_cpu(i, &tsk->cpus_mask) {
+		if (cpu_data(i).smt_active == true) {
+			put_cpu();
+			return -EINVAL;
+		}
+	}
+
 	set_ti_thread_flag(&tsk->thread_info, TIF_SPEC_L1D_FLUSH);
-	return 0;
+	put_cpu();
+	return ret;
 }
 
 int disable_l1d_flush_for_task(struct task_struct *tsk)
