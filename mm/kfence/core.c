@@ -48,7 +48,7 @@ static bool kfence_enabled __read_mostly;
 
 /*
  * The pool of pages used for guard pages and objects. Allocated statically, so
- * that is_kfence_addr() avoids a pointer load, and simply compares against a
+ * that is_kfence_address() avoids a pointer load, and simply compares against a
  * constant address. Assume that if KFENCE is compiled into the kernel, it is
  * usually enabled, and the space is to be allocated one way or another.
  */
@@ -121,7 +121,7 @@ static inline struct kfence_metadata *addr_to_metadata(unsigned long addr)
 
 	/* The checks do not affect performance; only called from slow-paths. */
 
-	if (!is_kfence_addr((void *)addr))
+	if (!is_kfence_address((void *)addr))
 		return NULL;
 
 	/*
@@ -658,7 +658,7 @@ bool kfence_handle_page_fault(unsigned long addr)
 	enum kfence_error_type error_type;
 	unsigned long flags;
 
-	if (!is_kfence_addr((void *)addr))
+	if (!is_kfence_address((void *)addr))
 		return false;
 
 	if (!READ_ONCE(kfence_enabled)) /* If disabled at runtime ... */
