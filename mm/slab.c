@@ -4185,7 +4185,7 @@ void __check_heap_object(const void *ptr, unsigned long n, struct page *page,
 	struct kmem_cache *cachep;
 	unsigned int objnr = 0;
 	unsigned long offset;
-	bool is_kfence = is_kfence_addr(ptr);
+	bool is_kfence = is_kfence_address(ptr);
 
 	ptr = kasan_reset_tag(ptr);
 
@@ -4197,7 +4197,7 @@ void __check_heap_object(const void *ptr, unsigned long n, struct page *page,
 	}
 
 	/* Find offset within object. */
-	if (is_kfence_addr(ptr))
+	if (is_kfence_address(ptr))
 		offset = ptr - kfence_object_start(ptr);
 	else
 		offset = ptr - index_to_obj(cachep, page, objnr) - obj_offset(cachep);

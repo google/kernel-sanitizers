@@ -137,7 +137,7 @@ static bool arch_kfence_initialize_pool(void)
 {
 	unsigned long addr = (unsigned long)__kfence_pool;
 
-	while (is_kfence_addr((void *)addr)) {
+	while (is_kfence_address((void *)addr)) {
 		unsigned int level;
 		pte_t *pte = lookup_address(addr, &level);
 

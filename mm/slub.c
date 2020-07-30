@@ -1488,7 +1488,7 @@ static inline bool slab_free_freelist_hook(struct kmem_cache *s,
 	 * TODO: slab_free_freelist_hook() doesn't work with KFENCE-allocated
 	 * addresses. Need to handle them separately.
 	 */
-	if (is_kfence_addr(*head))
+	if (is_kfence_address(*head))
 		return true;
 
 	/* Head and tail of the reconstructed freelist */
@@ -3989,7 +3989,7 @@ void __check_heap_object(const void *ptr, unsigned long n, struct page *page,
 	struct kmem_cache *s;
 	unsigned int offset;
 	size_t object_size;
-	bool is_kfence = is_kfence_addr(ptr);
+	bool is_kfence = is_kfence_address(ptr);
 
 	ptr = kasan_reset_tag(ptr);
 
