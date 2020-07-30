@@ -231,17 +231,18 @@ static void *kfence_guarded_alloc(struct kmem_cache *cache, size_t size, gfp_t g
 	 */
 	const bool right = prandom_u32_max(2);
 	unsigned long flags;
-	struct kfence_metadata *meta;
+	struct kfence_metadata *meta = NULL;
 	void *addr = NULL;
 
-	if (list_empty(&kfence_freelist)) /* Lockless access safe. */
-		return NULL; /* All objects in use. */
-
-	/* Obtain a free object. */
+	/* Try to obtain a free object. */
 	raw_spin_lock_irqsave(&kfence_freelist_lock, flags);
-	meta = list_entry(kfence_freelist.next, struct kfence_metadata, list);
-	list_del_init(&meta->list);
+	if (!list_empty(&kfence_freelist)) {
+		meta = list_entry(kfence_freelist.next, struct kfence_metadata, list);
+		list_del_init(&meta->list);
+	}
 	raw_spin_unlock_irqrestore(&kfence_freelist_lock, flags);
+	if (!meta)
+		return NULL;
 
 	if (unlikely(!raw_spin_trylock_irqsave(&meta->lock, flags))) {
 		/*
@@ -316,7 +317,6 @@ static void kfence_guarded_free(void *addr, struct kfence_metadata *meta)
 		return;
 	}
 
-	KFENCE_WARN_ON(!list_empty(&meta->list)); /* API misuse? */
 	if (CONFIG_KFENCE_FAULT_INJECTION)
 		kfence_unprotect((unsigned long)addr); /* To check canary bytes. */
 
@@ -347,6 +347,7 @@ static void kfence_guarded_free(void *addr, struct kfence_metadata *meta)
 
 	/* Add it to the tail of the freelist for reuse. */
 	raw_spin_lock_irqsave(&kfence_freelist_lock, flags);
+	KFENCE_WARN_ON(!list_empty(&meta->list));
 	list_add_tail(&meta->list, &kfence_freelist);
 	raw_spin_unlock_irqrestore(&kfence_freelist_lock, flags);
 
