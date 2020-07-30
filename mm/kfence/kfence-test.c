@@ -244,7 +244,7 @@ static void *test_alloc(struct kunit *test, size_t size, gfp_t gfp, enum allocat
 		else
 			alloc = kmalloc(size, gfp);
 
-		if (is_kfence_addr(alloc)) {
+		if (is_kfence_address(alloc)) {
 			if (policy == ALLOCATE_ANY)
 				return alloc;
 			if (policy == ALLOCATE_LEFT && IS_ALIGNED((unsigned long)alloc, PAGE_SIZE))
