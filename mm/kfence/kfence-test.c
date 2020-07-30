@@ -234,10 +234,10 @@ static void *test_alloc(struct kunit *test, size_t size, gfp_t gfp, enum allocat
 		   policy_name, !!test_cache);
 
 	/*
-	 * 100x the sample rate should be more than enough to ensure we get a
-	 * KFENCE allocation eventually.
+	 * 100x the sample interval should be more than enough to ensure we get
+	 * a KFENCE allocation eventually.
 	 */
-	timeout = jiffies + msecs_to_jiffies(100 * CONFIG_KFENCE_SAMPLE_RATE);
+	timeout = jiffies + msecs_to_jiffies(100 * CONFIG_KFENCE_SAMPLE_INTERVAL);
 	do {
 		if (test_cache)
 			alloc = kmem_cache_alloc(test_cache, gfp);
@@ -466,8 +466,8 @@ static void test_init_on_free(struct kunit *test)
 	for (i = 0; i < size; i++) {
 		/*
 		 * This may fail if the page was recycled by KFENCE and then
-		 * written to again -- this however, is near impossible with
-		 * default sample rates.
+		 * written to again -- this however, is near impossible with a
+		 * default config.
 		 */
 		KUNIT_EXPECT_EQ(test, expect.addr[i], (char)0);
 
@@ -501,7 +501,7 @@ static void test_gfpzero(struct kunit *test)
 	char *buf1, *buf2;
 	int i;
 
-	if (CONFIG_KFENCE_SAMPLE_RATE > 100) {
+	if (CONFIG_KFENCE_SAMPLE_INTERVAL > 100) {
 		kunit_warn(test, "skipping ... would take too long\n");
 		return;
 	}
