@@ -31,7 +31,7 @@ static __always_inline bool is_kfence_addr(const void *addr)
 
 void kfence_init(void);
 
-bool kfence_shutdown_cache(struct kmem_cache *s);
+bool __must_check kfence_shutdown_cache(struct kmem_cache *s);
 
 void *__kfence_alloc(struct kmem_cache *s, size_t size, gfp_t flags);
 
@@ -48,7 +48,7 @@ void *kfence_object_start(const void *addr);
 
 void __kfence_free(void *addr);
 
-static __always_inline bool kfence_free(void *addr)
+static __always_inline __must_check bool kfence_free(void *addr)
 {
 	if (!is_kfence_addr(addr))
 		return false;
@@ -56,7 +56,7 @@ static __always_inline bool kfence_free(void *addr)
 	return true;
 }
 
-bool kfence_handle_page_fault(unsigned long addr);
+bool __must_check kfence_handle_page_fault(unsigned long addr);
 
 #else /* CONFIG_KFENCE */
 
@@ -65,12 +65,12 @@ bool kfence_handle_page_fault(unsigned long addr);
 
 static inline bool is_kfence_addr(const void *addr) { return false; }
 static inline void kfence_init(void) { }
-static inline bool kfence_shutdown_cache(struct kmem_cache *s) { return true; }
+static inline bool __must_check kfence_shutdown_cache(struct kmem_cache *s) { return true; }
 static inline void *kfence_alloc(struct kmem_cache *s, size_t size, gfp_t flags) { return NULL; }
 static inline size_t kfence_ksize(const void *addr) { return 0; }
 static inline void *kfence_object_start(const void *addr) { return NULL; }
-static inline bool kfence_free(void *addr) { return false; }
-static inline bool kfence_handle_page_fault(unsigned long addr) { return false; }
+static inline bool __must_check kfence_free(void *addr) { return false; }
+static inline bool __must_check kfence_handle_page_fault(unsigned long addr) { return false; }
 
 // TODO: remove for v1
 // clang-format on
