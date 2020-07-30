@@ -17,8 +17,8 @@
 #define PTR_FMT "%p"
 #endif
 
-/* Helper to get the canary byte pattern for @addr. */
-#define KFENCE_CANARY_PATTERN(addr) (((u8[]){ 0xaa, 0xab, 0xaa, 0xad })[(size_t)addr % 4])
+/* Get the canary byte pattern for @addr. */
+#define KFENCE_CANARY_PATTERN(addr) ((u8)0xaa ^ (u8)((unsigned long)addr & 0x7))
 
 /* Maximum stack depth for reports. */
 #define KFENCE_STACK_DEPTH 64
