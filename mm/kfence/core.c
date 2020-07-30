@@ -180,6 +180,11 @@ static noinline void metadata_update_state(struct kfence_metadata *meta,
 	else
 		meta->num_alloc_stack = nentries;
 
+	/*
+	 * Pairs with READ_ONCE() in
+	 *	kfence_shutdown_cache(),
+	 *	kfence_handle_page_fault().
+	 */
 	WRITE_ONCE(meta->state, next);
 }
 
@@ -275,6 +280,7 @@ static void *kfence_guarded_alloc(struct kmem_cache *cache, size_t size, gfp_t g
 
 	/* Update remaining metadata. */
 	metadata_update_state(meta, KFENCE_OBJECT_ALLOCATED);
+	/* Pairs with READ_ONCE() in kfence_shutdown_cache(). */
 	WRITE_ONCE(meta->cache, cache);
 	meta->size = right ? -size : size;
 	for_each_canary(meta, set_canary_byte);
