@@ -553,17 +553,6 @@ void __init kfence_init(void)
 		pr_cont("\n");
 }
 
-bool kfence_discard_slab(struct kmem_cache *s, struct page *page)
-{
-	/*
-	 * TODO: Nothing here for now, but maybe we need to free the objects.
-	 *
-	 * TODO: do we still need this? Under what circumstances is this
-	 * reachable?
-	 */
-	return is_kfence_addr(page_address(page));
-}
-
 bool kfence_shutdown_cache(struct kmem_cache *s)
 {
 	unsigned long flags;

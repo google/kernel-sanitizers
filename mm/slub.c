@@ -1873,8 +1873,6 @@ static void free_slab(struct kmem_cache *s, struct page *page)
 
 static void discard_slab(struct kmem_cache *s, struct page *page)
 {
-	if (kfence_discard_slab(s, page))
-		return;
 	dec_slabs_node(s, page_to_nid(page), page->objects);
 	free_slab(s, page);
 }
