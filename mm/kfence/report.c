@@ -132,6 +132,15 @@ void kfence_report_error(unsigned long address, const struct kfence_metadata *me
 	int num_stack_entries = stack_trace_save(stack_entries, KFENCE_STACK_DEPTH, 1);
 	int skipnr = get_stack_skipnr(stack_entries, num_stack_entries, type);
 
+	lockdep_assert_held(&meta->lock);
+	/*
+	 * Disable lockdep, as it might report on potential deadlock depending
+	 * on where printk() is called; this is unfortunately expected and
+	 * unavoidable, but we would rather get the report out, given the system
+	 * might already behave unpredictably due to the memory error.
+	 */
+	lockdep_off();
+
 	pr_err("==================================================================\n");
 	/* Print report header. */
 	switch (type) {
@@ -173,6 +182,9 @@ void kfence_report_error(unsigned long address, const struct kfence_metadata *me
 	pr_err("\n");
 	dump_stack_print_info(KERN_DEFAULT);
 	pr_err("==================================================================\n");
+
+	lockdep_on();
+
 	if (panic_on_warn)
 		panic("panic_on_warn set ...\n");
 
