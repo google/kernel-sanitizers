@@ -4,6 +4,7 @@
 
 #include <linux/atomic.h>
 #include <linux/debugfs.h>
+#include <linux/kcsan-checks.h>
 #include <linux/kfence.h>
 #include <linux/list.h>
 #include <linux/lockdep.h>
@@ -91,7 +92,7 @@ static const char *const counter_names[] = {
 	[KFENCE_COUNTER_FREES]		= "total frees",
 	[KFENCE_COUNTER_BUGS]		= "total bugs",
 };
-// clang-format off
+// clang-format on
 static_assert(ARRAY_SIZE(counter_names) == KFENCE_COUNTER_COUNT);
 
 /* === Internals ============================================================ */
@@ -305,6 +306,7 @@ static void *kfence_guarded_alloc(struct kmem_cache *cache, size_t size, gfp_t g
 
 static void kfence_guarded_free(void *addr, struct kfence_metadata *meta)
 {
+	struct kcsan_scoped_access assert_page_exclusive;
 	unsigned long flags;
 
 	raw_spin_lock_irqsave(&meta->lock, flags);
@@ -316,6 +318,11 @@ static void kfence_guarded_free(void *addr, struct kfence_metadata *meta)
 		raw_spin_unlock_irqrestore(&meta->lock, flags);
 		return;
 	}
+
+	/* Detect racy use-after-free, or incorrect reallocation of this page by KFENCE. */
+	kcsan_begin_scoped_access((void *)ALIGN_DOWN((unsigned long)addr, PAGE_SIZE), PAGE_SIZE,
+				  KCSAN_ACCESS_SCOPED | KCSAN_ACCESS_WRITE | KCSAN_ACCESS_ASSERT,
+				  &assert_page_exclusive);
 
 	if (CONFIG_KFENCE_FAULT_INJECTION)
 		kfence_unprotect((unsigned long)addr); /* To check canary bytes. */
@@ -349,6 +356,7 @@ static void kfence_guarded_free(void *addr, struct kfence_metadata *meta)
 	raw_spin_lock_irqsave(&kfence_freelist_lock, flags);
 	KFENCE_WARN_ON(!list_empty(&meta->list));
 	list_add_tail(&meta->list, &kfence_freelist);
+	kcsan_end_scoped_access(&assert_page_exclusive);
 	raw_spin_unlock_irqrestore(&kfence_freelist_lock, flags);
 
 	atomic_long_dec(&counters[KFENCE_COUNTER_ALLOCATED]);
