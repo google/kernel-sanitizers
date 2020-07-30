@@ -36,13 +36,13 @@
 
 /* === Data ================================================================= */
 
-static unsigned long kfence_sample_rate __read_mostly = CONFIG_KFENCE_SAMPLE_RATE;
+static unsigned long kfence_sample_interval __read_mostly = CONFIG_KFENCE_SAMPLE_INTERVAL;
 
 #ifdef MODULE_PARAM_PREFIX
 #undef MODULE_PARAM_PREFIX
 #endif
 #define MODULE_PARAM_PREFIX "kfence."
-module_param_named(sample_rate, kfence_sample_rate, ulong, 0400);
+module_param_named(sample_interval, kfence_sample_interval, ulong, 0400);
 
 static bool kfence_enabled __read_mostly;
 
@@ -525,7 +525,7 @@ static void toggle_allocation_gate(struct work_struct *work)
 
 	/* Disable static key and reset timer. */
 	static_branch_disable(&kfence_allocation_key);
-	schedule_delayed_work(&kfence_timer, msecs_to_jiffies(kfence_sample_rate));
+	schedule_delayed_work(&kfence_timer, msecs_to_jiffies(kfence_sample_interval));
 }
 static DECLARE_DELAYED_WORK(kfence_timer, toggle_allocation_gate);
 
@@ -533,8 +533,8 @@ static DECLARE_DELAYED_WORK(kfence_timer, toggle_allocation_gate);
 
 void __init kfence_init(void)
 {
-	/* Setting kfence_sample_rate to 0 on boot disables KFENCE. */
-	if (!kfence_sample_rate)
+	/* Setting kfence_sample_interval to 0 on boot disables KFENCE. */
+	if (!kfence_sample_interval)
 		return;
 
 	if (!kfence_initialize_pool()) {
