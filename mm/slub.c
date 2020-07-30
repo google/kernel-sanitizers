@@ -1484,12 +1484,10 @@ static inline bool slab_free_freelist_hook(struct kmem_cache *s,
 	void *old_tail = *tail ? *tail : *head;
 	int rsize;
 
-	/*
-	 * TODO: slab_free_freelist_hook() doesn't work with KFENCE-allocated
-	 * addresses. Need to handle them separately.
-	 */
-	if (is_kfence_address(*head))
+	if (is_kfence_address(next)) {
+		slab_free_hook(s, next);
 		return true;
+	}
 
 	/* Head and tail of the reconstructed freelist */
 	*head = NULL;
@@ -3149,11 +3147,6 @@ int build_detached_freelist(struct kmem_cache *s, size_t size,
 	if (!object)
 		return 0;
 
-	if (kfence_free(object)) {
-		p[size] = NULL; /* mark object processed */
-		return size;
-	}
-
 	page = virt_to_head_page(object);
 	if (!s) {
 		/* Handle kalloc'ed objects */
@@ -3168,6 +3161,13 @@ int build_detached_freelist(struct kmem_cache *s, size_t size,
 		df->s = page->slab_cache;
 	} else {
 		df->s = cache_from_obj(s, object); /* Support for memcg */
+	}
+
+	if (is_kfence_address(object)) {
+		slab_free_hook(df->s, object);
+		WARN_ON(!kfence_free(object));
+		p[size] = NULL; /* mark object processed */
+		return size;
 	}
 
 	/* Start new detached freelist */
