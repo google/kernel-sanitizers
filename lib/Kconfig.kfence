@@ -19,13 +19,13 @@ menuconfig KFENCE
 
 if KFENCE
 
-config KFENCE_SAMPLE_RATE
-	int "Default sample rate in milliseconds"
+config KFENCE_SAMPLE_INTERVAL
+	int "Default sample interval in milliseconds"
 	default 100
 	help
-	  The KFENCE sample rate determines the frequency with which heap
+	  The KFENCE sample interval determines the frequency with which heap
 	  allocations will be guarded by KFENCE. May be overridden via
-	  command-line argument kfence.sample_rate.
+	  command-line argument kfence.sample_interval.
 
 config KFENCE_NUM_OBJECTS
 	int "Number of guarded objects available"
