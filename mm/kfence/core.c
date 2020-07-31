@@ -3,6 +3,7 @@
 #define pr_fmt(fmt) "kfence: " fmt
 
 #include <linux/atomic.h>
+#include <linux/bug.h>
 #include <linux/debugfs.h>
 #include <linux/kcsan-checks.h>
 #include <linux/kfence.h>
@@ -107,14 +108,14 @@ static_assert(ARRAY_SIZE(counter_names) == KFENCE_COUNTER_COUNT);
  * is ~1000 or less. :-/
  */
 
-static inline bool kfence_protect(unsigned long addr)
+static bool kfence_protect(unsigned long addr)
 {
-	return !KFENCE_WARN_ON(!kfence_change_page_prot(ALIGN_DOWN(addr, PAGE_SIZE), true));
+	return !KFENCE_WARN_ON(!kfence_protect_page(ALIGN_DOWN(addr, PAGE_SIZE), true));
 }
 
-static inline bool kfence_unprotect(unsigned long addr)
+static bool kfence_unprotect(unsigned long addr)
 {
-	return !KFENCE_WARN_ON(!kfence_change_page_prot(ALIGN_DOWN(addr, PAGE_SIZE), false));
+	return !KFENCE_WARN_ON(!kfence_protect_page(ALIGN_DOWN(addr, PAGE_SIZE), false));
 }
 
 static inline struct kfence_metadata *addr_to_metadata(unsigned long addr)
