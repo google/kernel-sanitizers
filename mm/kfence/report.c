@@ -134,10 +134,13 @@ void kfence_report_error(unsigned long address, const struct kfence_metadata *me
 
 	lockdep_assert_held(&meta->lock);
 	/*
-	 * Disable lockdep, as it might report on potential deadlock depending
-	 * on where printk() is called; this is unfortunately expected and
-	 * unavoidable, but we would rather get the report out, given the system
-	 * might already behave unpredictably due to the memory error.
+	 * Because we may generate reports in printk-unfriendly parts of the
+	 * kernel, such as scheduler code, the use of printk() could deadlock.
+	 * Until such time that all printing code here is safe in all parts of
+	 * the kernel, accept the risk, and just get our message out (given the
+	 * system might already behave unpredictably due to the memory error).
+	 * As such, also disable lockdep to hide warnings, and avoid disabling
+	 * lockdep for the rest of the kernel.
 	 */
 	lockdep_off();
 
