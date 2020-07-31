@@ -8,6 +8,8 @@
 #include <linux/stacktrace.h>
 #include <linux/string.h>
 
+#include <asm/kfence.h>
+
 #include "kfence.h"
 
 /* Helper function to either print to a seq_file or to console. */
@@ -38,9 +40,7 @@ static int get_stack_skipnr(const unsigned long stack_entries[], int num_entries
 		case KFENCE_ERROR_UAF:
 		case KFENCE_ERROR_OOB:
 		case KFENCE_ERROR_INVALID:
-			/* TODO: this name is x86-specific. Do we have to move
-			 * this name to <asm/kfence.h>? */
-			if (strnstr(buf, "asm_exc_page_fault", len))
+			if (strnstr(buf, KFENCE_SKIP_ARCH_FAULT_HANDLER, len))
 				goto found;
 			break;
 		case KFENCE_ERROR_CORRUPTION:
