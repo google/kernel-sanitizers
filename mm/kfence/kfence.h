@@ -17,8 +17,12 @@
 #define PTR_FMT "%p"
 #endif
 
-/* Helper to get the canary byte pattern for @addr. */
-#define KFENCE_CANARY_PATTERN(addr) (((u8[]){ 0xaa, 0xab, 0xaa, 0xad })[(size_t)addr % 4])
+/*
+ * Get the canary byte pattern for @addr. Use a pattern that varies based on the
+ * lower 3 bits of the address, to detect memory corruptions with higher
+ * probability, where similar constants are used.
+ */
+#define KFENCE_CANARY_PATTERN(addr) ((u8)0xaa ^ (u8)((unsigned long)addr & 0x7))
 
 /* Maximum stack depth for reports. */
 #define KFENCE_STACK_DEPTH 64
@@ -32,7 +36,7 @@ enum kfence_object_state {
 
 /* KFENCE metadata per guarded allocation. */
 struct kfence_metadata {
-	struct list_head list; /* Freelist node. */
+	struct list_head list; /* Freelist node; access under kfence_freelist_lock. */
 	struct rcu_head rcu_head; /* For delayed freeing. */
 
 	/*

@@ -8,6 +8,8 @@
 #include <linux/stacktrace.h>
 #include <linux/string.h>
 
+#include <asm/kfence.h>
+
 #include "kfence.h"
 
 /* Helper function to either print to a seq_file or to console. */
@@ -38,9 +40,7 @@ static int get_stack_skipnr(const unsigned long stack_entries[], int num_entries
 		case KFENCE_ERROR_UAF:
 		case KFENCE_ERROR_OOB:
 		case KFENCE_ERROR_INVALID:
-			/* TODO: this name is x86-specific. Do we have to move
-			 * this name to <asm/kfence.h>? */
-			if (strnstr(buf, "asm_exc_page_fault", len))
+			if (strnstr(buf, KFENCE_SKIP_ARCH_FAULT_HANDLER, len))
 				goto found;
 			break;
 		case KFENCE_ERROR_CORRUPTION:
@@ -132,6 +132,18 @@ void kfence_report_error(unsigned long address, const struct kfence_metadata *me
 	int num_stack_entries = stack_trace_save(stack_entries, KFENCE_STACK_DEPTH, 1);
 	int skipnr = get_stack_skipnr(stack_entries, num_stack_entries, type);
 
+	lockdep_assert_held(&meta->lock);
+	/*
+	 * Because we may generate reports in printk-unfriendly parts of the
+	 * kernel, such as scheduler code, the use of printk() could deadlock.
+	 * Until such time that all printing code here is safe in all parts of
+	 * the kernel, accept the risk, and just get our message out (given the
+	 * system might already behave unpredictably due to the memory error).
+	 * As such, also disable lockdep to hide warnings, and avoid disabling
+	 * lockdep for the rest of the kernel.
+	 */
+	lockdep_off();
+
 	pr_err("==================================================================\n");
 	/* Print report header. */
 	switch (type) {
@@ -173,6 +185,9 @@ void kfence_report_error(unsigned long address, const struct kfence_metadata *me
 	pr_err("\n");
 	dump_stack_print_info(KERN_DEFAULT);
 	pr_err("==================================================================\n");
+
+	lockdep_on();
+
 	if (panic_on_warn)
 		panic("panic_on_warn set ...\n");
 

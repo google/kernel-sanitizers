@@ -4,6 +4,7 @@
 
 #include <linux/atomic.h>
 #include <linux/debugfs.h>
+#include <linux/kcsan-checks.h>
 #include <linux/kfence.h>
 #include <linux/list.h>
 #include <linux/lockdep.h>
@@ -36,19 +37,20 @@
 
 /* === Data ================================================================= */
 
-static unsigned long kfence_sample_rate __read_mostly = CONFIG_KFENCE_SAMPLE_RATE;
+static unsigned long kfence_sample_interval __read_mostly = CONFIG_KFENCE_SAMPLE_INTERVAL;
 
 #ifdef MODULE_PARAM_PREFIX
 #undef MODULE_PARAM_PREFIX
 #endif
 #define MODULE_PARAM_PREFIX "kfence."
-module_param_named(sample_rate, kfence_sample_rate, ulong, 0400);
+module_param_named(sample_interval, kfence_sample_interval, ulong,
+		   IS_ENABLED(CONFIG_DEBUG_KERNEL) ? 0600 : 0400);
 
 static bool kfence_enabled __read_mostly;
 
 /*
  * The pool of pages used for guard pages and objects. Allocated statically, so
- * that is_kfence_addr() avoids a pointer load, and simply compares against a
+ * that is_kfence_address() avoids a pointer load, and simply compares against a
  * constant address. Assume that if KFENCE is compiled into the kernel, it is
  * usually enabled, and the space is to be allocated one way or another.
  */
@@ -91,7 +93,7 @@ static const char *const counter_names[] = {
 	[KFENCE_COUNTER_FREES]		= "total frees",
 	[KFENCE_COUNTER_BUGS]		= "total bugs",
 };
-// clang-format off
+// clang-format on
 static_assert(ARRAY_SIZE(counter_names) == KFENCE_COUNTER_COUNT);
 
 /* === Internals ============================================================ */
@@ -121,7 +123,7 @@ static inline struct kfence_metadata *addr_to_metadata(unsigned long addr)
 
 	/* The checks do not affect performance; only called from slow-paths. */
 
-	if (!is_kfence_addr((void *)addr))
+	if (!is_kfence_address((void *)addr))
 		return NULL;
 
 	/*
@@ -179,6 +181,11 @@ static noinline void metadata_update_state(struct kfence_metadata *meta,
 	else
 		meta->num_alloc_stack = nentries;
 
+	/*
+	 * Pairs with READ_ONCE() in
+	 *	kfence_shutdown_cache(),
+	 *	kfence_handle_page_fault().
+	 */
 	WRITE_ONCE(meta->state, next);
 }
 
@@ -231,17 +238,18 @@ static void *kfence_guarded_alloc(struct kmem_cache *cache, size_t size, gfp_t g
 	 */
 	const bool right = prandom_u32_max(2);
 	unsigned long flags;
-	struct kfence_metadata *meta;
+	struct kfence_metadata *meta = NULL;
 	void *addr = NULL;
 
-	if (list_empty(&kfence_freelist)) /* Lockless access safe. */
-		return NULL; /* All objects in use. */
-
-	/* Obtain a free object. */
+	/* Try to obtain a free object. */
 	raw_spin_lock_irqsave(&kfence_freelist_lock, flags);
-	meta = list_entry(kfence_freelist.next, struct kfence_metadata, list);
-	list_del_init(&meta->list);
+	if (!list_empty(&kfence_freelist)) {
+		meta = list_entry(kfence_freelist.next, struct kfence_metadata, list);
+		list_del_init(&meta->list);
+	}
 	raw_spin_unlock_irqrestore(&kfence_freelist_lock, flags);
+	if (!meta)
+		return NULL;
 
 	if (unlikely(!raw_spin_trylock_irqsave(&meta->lock, flags))) {
 		/*
@@ -273,6 +281,7 @@ static void *kfence_guarded_alloc(struct kmem_cache *cache, size_t size, gfp_t g
 
 	/* Update remaining metadata. */
 	metadata_update_state(meta, KFENCE_OBJECT_ALLOCATED);
+	/* Pairs with READ_ONCE() in kfence_shutdown_cache(). */
 	WRITE_ONCE(meta->cache, cache);
 	meta->size = right ? -size : size;
 	for_each_canary(meta, set_canary_byte);
@@ -304,6 +313,7 @@ static void *kfence_guarded_alloc(struct kmem_cache *cache, size_t size, gfp_t g
 
 static void kfence_guarded_free(void *addr, struct kfence_metadata *meta)
 {
+	struct kcsan_scoped_access assert_page_exclusive;
 	unsigned long flags;
 
 	raw_spin_lock_irqsave(&meta->lock, flags);
@@ -316,7 +326,11 @@ static void kfence_guarded_free(void *addr, struct kfence_metadata *meta)
 		return;
 	}
 
-	KFENCE_WARN_ON(!list_empty(&meta->list)); /* API misuse? */
+	/* Detect racy use-after-free, or incorrect reallocation of this page by KFENCE. */
+	kcsan_begin_scoped_access((void *)ALIGN_DOWN((unsigned long)addr, PAGE_SIZE), PAGE_SIZE,
+				  KCSAN_ACCESS_SCOPED | KCSAN_ACCESS_WRITE | KCSAN_ACCESS_ASSERT,
+				  &assert_page_exclusive);
+
 	if (CONFIG_KFENCE_FAULT_INJECTION)
 		kfence_unprotect((unsigned long)addr); /* To check canary bytes. */
 
@@ -347,7 +361,9 @@ static void kfence_guarded_free(void *addr, struct kfence_metadata *meta)
 
 	/* Add it to the tail of the freelist for reuse. */
 	raw_spin_lock_irqsave(&kfence_freelist_lock, flags);
+	KFENCE_WARN_ON(!list_empty(&meta->list));
 	list_add_tail(&meta->list, &kfence_freelist);
+	kcsan_end_scoped_access(&assert_page_exclusive);
 	raw_spin_unlock_irqrestore(&kfence_freelist_lock, flags);
 
 	atomic_long_dec(&counters[KFENCE_COUNTER_ALLOCATED]);
@@ -524,7 +540,7 @@ static void toggle_allocation_gate(struct work_struct *work)
 
 	/* Disable static key and reset timer. */
 	static_branch_disable(&kfence_allocation_key);
-	schedule_delayed_work(&kfence_timer, msecs_to_jiffies(kfence_sample_rate));
+	schedule_delayed_work(&kfence_timer, msecs_to_jiffies(kfence_sample_interval));
 }
 static DECLARE_DELAYED_WORK(kfence_timer, toggle_allocation_gate);
 
@@ -532,8 +548,8 @@ static DECLARE_DELAYED_WORK(kfence_timer, toggle_allocation_gate);
 
 void __init kfence_init(void)
 {
-	/* Setting kfence_sample_rate to 0 on boot disables KFENCE. */
-	if (!kfence_sample_rate)
+	/* Setting kfence_sample_interval to 0 on boot disables KFENCE. */
+	if (!kfence_sample_interval)
 		return;
 
 	if (!kfence_initialize_pool()) {
@@ -550,17 +566,6 @@ void __init kfence_init(void)
 			(void *)(__kfence_pool + KFENCE_POOL_SIZE));
 	else
 		pr_cont("\n");
-}
-
-bool kfence_discard_slab(struct kmem_cache *s, struct page *page)
-{
-	/*
-	 * TODO: Nothing here for now, but maybe we need to free the objects.
-	 *
-	 * TODO: do we still need this? Under what circumstances is this
-	 * reachable?
-	 */
-	return is_kfence_addr(page_address(page));
 }
 
 bool kfence_shutdown_cache(struct kmem_cache *s)
@@ -668,7 +673,7 @@ bool kfence_handle_page_fault(unsigned long addr)
 	enum kfence_error_type error_type;
 	unsigned long flags;
 
-	if (!is_kfence_addr((void *)addr))
+	if (!is_kfence_address((void *)addr))
 		return false;
 
 	if (!READ_ONCE(kfence_enabled)) /* If disabled at runtime ... */
