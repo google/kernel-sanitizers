@@ -482,7 +482,7 @@ static void *__kasan_kmalloc(struct kmem_cache *cache, const void *object,
 		return NULL;
 
 	if (is_kfence_address(object))
-		goto out;
+		return object;
 
 	redzone_start = round_up((unsigned long)(object + size),
 				KASAN_SHADOW_SCALE_SIZE);
@@ -500,7 +500,6 @@ static void *__kasan_kmalloc(struct kmem_cache *cache, const void *object,
 	if (cache->flags & SLAB_KASAN)
 		set_track(&get_alloc_info(cache, object)->alloc_track, flags);
 
-out:
 	return set_tag(object, tag);
 }
 
