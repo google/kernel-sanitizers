@@ -43,7 +43,8 @@ static unsigned long kfence_sample_interval __read_mostly = CONFIG_KFENCE_SAMPLE
 #undef MODULE_PARAM_PREFIX
 #endif
 #define MODULE_PARAM_PREFIX "kfence."
-module_param_named(sample_interval, kfence_sample_interval, ulong, 0400);
+module_param_named(sample_interval, kfence_sample_interval, ulong,
+		   IS_ENABLED(CONFIG_DEBUG_KERNEL) ? 0600 : 0400);
 
 static bool kfence_enabled __read_mostly;
 
