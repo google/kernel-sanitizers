@@ -110,8 +110,7 @@ void kfence_print_object(struct seq_file *seq, const struct kfence_metadata *met
  */
 static void print_diff_canary(const u8 *addr, size_t max_bytes)
 {
-	const u8 *max_addr =
-		min((const u8 *)ALIGN((unsigned long)addr, PAGE_SIZE), addr + max_bytes);
+	const u8 *max_addr = min((const u8 *)PAGE_ALIGN((unsigned long)addr), addr + max_bytes);
 
 	pr_cont("[");
 	for (; addr < max_addr; addr++) {
