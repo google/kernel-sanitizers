@@ -17,7 +17,11 @@
 #define PTR_FMT "%p"
 #endif
 
-/* Get the canary byte pattern for @addr. */
+/*
+ * Get the canary byte pattern for @addr. Use a pattern that varies based on the
+ * lower 3 bits of the address, to detect memory corruptions with higher
+ * probability, where similar constants are used.
+ */
 #define KFENCE_CANARY_PATTERN(addr) ((u8)0xaa ^ (u8)((unsigned long)addr & 0x7))
 
 /* Maximum stack depth for reports. */
