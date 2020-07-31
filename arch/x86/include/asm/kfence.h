@@ -13,6 +13,12 @@
 #define KFENCE_POOL_ALIGNMENT PAGE_SIZE
 
 /*
+ * The page fault handler entry function, up to which the stack trace is
+ * truncated in reports.
+ */
+#define KFENCE_SKIP_ARCH_FAULT_HANDLER "asm_exc_page_fault"
+
+/*
  * TODO: Clean this up.
  */
 
@@ -133,7 +139,7 @@ static bool split_large_page(pte_t *kpte, unsigned long address, unsigned int le
 	return true;
 }
 
-static bool arch_kfence_initialize_pool(void)
+static inline bool arch_kfence_initialize_pool(void)
 {
 	unsigned long addr = (unsigned long)__kfence_pool;
 
@@ -154,7 +160,7 @@ static bool arch_kfence_initialize_pool(void)
 	return true;
 }
 
-static bool kfence_change_page_prot(unsigned long addr, bool protect)
+static inline bool kfence_change_page_prot(unsigned long addr, bool protect)
 {
 	unsigned int level;
 	pte_t *pte = lookup_address(addr, &level);
