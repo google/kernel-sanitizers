@@ -131,6 +131,7 @@ config ARM64
 	select HAVE_ARCH_JUMP_LABEL_RELATIVE
 	select HAVE_ARCH_KASAN if !(ARM64_16K_PAGES && ARM64_VA_BITS_48)
 	select HAVE_ARCH_KASAN_SW_TAGS if HAVE_ARCH_KASAN
+	select HAVE_ARCH_KFENCE if (!ARM64_16K_PAGES && !ARM64_64K_PAGES)
 	select HAVE_ARCH_KGDB
 	select HAVE_ARCH_MMAP_RND_BITS
 	select HAVE_ARCH_MMAP_RND_COMPAT_BITS if COMPAT
@@ -332,6 +333,10 @@ config KASAN_SHADOW_OFFSET
 	default 0xefffffc800000000 if ARM64_VA_BITS_39 && KASAN_SW_TAGS
 	default 0xeffffff900000000 if ARM64_VA_BITS_36 && KASAN_SW_TAGS
 	default 0xffffffffffffffff
+
+config KFENCE_STATIC_POOL
+	def_bool n
+	depends on KFENCE
 
 source "arch/arm64/Kconfig.platforms"
 
