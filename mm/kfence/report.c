@@ -88,12 +88,12 @@ void kfence_print_object(struct seq_file *seq, const struct kfence_metadata *met
 	lockdep_assert_held(&meta->lock);
 
 	if (meta->state == KFENCE_OBJECT_UNUSED) {
-		seq_con_printf(seq, "kfence-#%ld unused\n", meta - kfence_metadata);
+		seq_con_printf(seq, "kfence-#%zd unused\n", meta - kfence_metadata);
 		return;
 	}
 
 	seq_con_printf(seq,
-		       "kfence-#%ld [0x" PTR_FMT "-0x" PTR_FMT
+		       "kfence-#%zd [0x" PTR_FMT "-0x" PTR_FMT
 		       ", size=%d, cache=%s] allocated in:\n",
 		       meta - kfence_metadata, (void *)start, (void *)(start + size - 1), size,
 		       (cache && cache->name) ? cache->name : "<destroyed>");
@@ -150,7 +150,7 @@ void kfence_report_error(unsigned long address, const struct kfence_metadata *me
 	switch (type) {
 	case KFENCE_ERROR_OOB:
 		pr_err("BUG: KFENCE: out-of-bounds in %pS\n\n", (void *)stack_entries[skipnr]);
-		pr_err("Out-of-bounds access at 0x" PTR_FMT " (%s of kfence-#%ld):\n",
+		pr_err("Out-of-bounds access at 0x" PTR_FMT " (%s of kfence-#%zd):\n",
 		       (void *)address, address < meta->addr ? "left" : "right",
 		       meta - kfence_metadata);
 		break;
