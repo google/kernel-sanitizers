@@ -4,7 +4,7 @@
 #define MM_KFENCE_KFENCE_H
 
 #include <linux/mm.h>
-#include <linux/seq_file.h>
+#include <linux/slab.h>
 #include <linux/spinlock.h>
 #include <linux/types.h>
 

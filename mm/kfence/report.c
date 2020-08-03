@@ -5,6 +5,7 @@
 #include <linux/kernel.h>
 #include <linux/lockdep.h>
 #include <linux/printk.h>
+#include <linux/seq_file.h>
 #include <linux/stacktrace.h>
 #include <linux/string.h>
 
@@ -87,12 +88,12 @@ void kfence_print_object(struct seq_file *seq, const struct kfence_metadata *met
 	lockdep_assert_held(&meta->lock);
 
 	if (meta->state == KFENCE_OBJECT_UNUSED) {
-		seq_con_printf(seq, "kfence-#%ld unused\n", meta - kfence_metadata);
+		seq_con_printf(seq, "kfence-#%zd unused\n", meta - kfence_metadata);
 		return;
 	}
 
 	seq_con_printf(seq,
-		       "kfence-#%ld [0x" PTR_FMT "-0x" PTR_FMT
+		       "kfence-#%zd [0x" PTR_FMT "-0x" PTR_FMT
 		       ", size=%d, cache=%s] allocated in:\n",
 		       meta - kfence_metadata, (void *)start, (void *)(start + size - 1), size,
 		       (cache && cache->name) ? cache->name : "<destroyed>");
@@ -131,7 +132,8 @@ void kfence_report_error(unsigned long address, const struct kfence_metadata *me
 	int num_stack_entries = stack_trace_save(stack_entries, KFENCE_STACK_DEPTH, 1);
 	int skipnr = get_stack_skipnr(stack_entries, num_stack_entries, type);
 
-	lockdep_assert_held(&meta->lock);
+	if (meta)
+		lockdep_assert_held(&meta->lock);
 	/*
 	 * Because we may generate reports in printk-unfriendly parts of the
 	 * kernel, such as scheduler code, the use of printk() could deadlock.
@@ -148,7 +150,7 @@ void kfence_report_error(unsigned long address, const struct kfence_metadata *me
 	switch (type) {
 	case KFENCE_ERROR_OOB:
 		pr_err("BUG: KFENCE: out-of-bounds in %pS\n\n", (void *)stack_entries[skipnr]);
-		pr_err("Out-of-bounds access at 0x" PTR_FMT " (%s of kfence-#%ld):\n",
+		pr_err("Out-of-bounds access at 0x" PTR_FMT " (%s of kfence-#%zd):\n",
 		       (void *)address, address < meta->addr ? "left" : "right",
 		       meta - kfence_metadata);
 		break;

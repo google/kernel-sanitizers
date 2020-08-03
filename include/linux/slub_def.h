@@ -7,7 +7,6 @@
  *
  * (C) 2007 SGI, Christoph Lameter
  */
-#include <linux/kasan.h>
 #include <linux/kobject.h>
 
 enum stat_item {
