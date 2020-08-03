@@ -8,8 +8,6 @@
 #include <linux/static_key.h>
 #include <linux/types.h>
 
-struct kmem_cache;
-
 #ifdef CONFIG_KFENCE
 
 /*
