@@ -464,7 +464,7 @@ DEFINE_SHOW_ATTRIBUTE(stats);
 static void *start_object(struct seq_file *seq, loff_t *pos)
 {
 	if (*pos < CONFIG_KFENCE_NUM_OBJECTS)
-		return (void *)(*pos + 1);
+		return (void *)((long)*pos + 1);
 	return NULL;
 }
 
@@ -476,7 +476,7 @@ static void *next_object(struct seq_file *seq, void *v, loff_t *pos)
 {
 	++*pos;
 	if (*pos < CONFIG_KFENCE_NUM_OBJECTS)
-		return (void *)(*pos + 1);
+		return (void *)((long)*pos + 1);
 	return NULL;
 }
 
