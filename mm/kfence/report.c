@@ -131,7 +131,8 @@ void kfence_report_error(unsigned long address, const struct kfence_metadata *me
 	int num_stack_entries = stack_trace_save(stack_entries, KFENCE_STACK_DEPTH, 1);
 	int skipnr = get_stack_skipnr(stack_entries, num_stack_entries, type);
 
-	lockdep_assert_held(&meta->lock);
+	if (meta)
+		lockdep_assert_held(&meta->lock);
 	/*
 	 * Because we may generate reports in printk-unfriendly parts of the
 	 * kernel, such as scheduler code, the use of printk() could deadlock.
