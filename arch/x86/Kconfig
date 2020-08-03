@@ -333,6 +333,10 @@ config KASAN_SHADOW_OFFSET
 	depends on KASAN
 	default 0xdffffc0000000000
 
+config KFENCE_STATIC_POOL
+	def_bool y
+	depends on KFENCE
+
 config HAVE_INTEL_TXT
 	def_bool y
 	depends on INTEL_IOMMU && ACPI
