@@ -5,6 +5,7 @@
 #include <linux/kernel.h>
 #include <linux/lockdep.h>
 #include <linux/printk.h>
+#include <linux/seq_file.h>
 #include <linux/stacktrace.h>
 #include <linux/string.h>
 
