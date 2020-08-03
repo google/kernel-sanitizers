@@ -41,7 +41,7 @@ static int get_stack_skipnr(const unsigned long stack_entries[], int num_entries
 		case KFENCE_ERROR_UAF:
 		case KFENCE_ERROR_OOB:
 		case KFENCE_ERROR_INVALID:
-			if (strnstr(buf, KFENCE_SKIP_ARCH_FAULT_HANDLER, len))
+			if (!strncmp(buf, KFENCE_SKIP_ARCH_FAULT_HANDLER, len))
 				goto found;
 			break;
 		case KFENCE_ERROR_CORRUPTION:
