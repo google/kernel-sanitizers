@@ -132,6 +132,10 @@ void kfence_report_error(unsigned long address, const struct kfence_metadata *me
 	int num_stack_entries = stack_trace_save(stack_entries, KFENCE_STACK_DEPTH, 1);
 	int skipnr = get_stack_skipnr(stack_entries, num_stack_entries, type);
 
+	/* KFENCE_ERROR_OOB requires non-NULL meta; for the rest it's optional. */
+	if (WARN_ON(type == KFENCE_ERROR_OOB && !meta))
+		return;
+
 	if (meta)
 		lockdep_assert_held(&meta->lock);
 	/*
