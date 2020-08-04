@@ -1945,15 +1945,15 @@ void __init kmemleak_init(void)
 	/* register the data/bss sections */
 	create_object((unsigned long)_sdata, _edata - _sdata,
 		      KMEMLEAK_GREY, GFP_ATOMIC);
-#ifndef CONFIG_KFENCE
-	create_object((unsigned long)__bss_start, __bss_stop - __bss_start,
-		      KMEMLEAK_GREY, GFP_ATOMIC);
-#else
+#if defined(CONFIG_KFENCE) && defined(CONFIG_HAVE_ARCH_KFENCE_STATIC_POOL)
 	/* KFENCE objects are located in .bss, which may confuse kmemleak. Skip them. */
 	create_object((unsigned long)__bss_start, __kfence_pool - __bss_start,
 		      KMEMLEAK_GREY, GFP_ATOMIC);
 	create_object((unsigned long)__kfence_pool + KFENCE_POOL_SIZE,
 		      __bss_stop - (__kfence_pool + KFENCE_POOL_SIZE),
+		      KMEMLEAK_GREY, GFP_ATOMIC);
+#else
+	create_object((unsigned long)__bss_start, __bss_stop - __bss_start,
 		      KMEMLEAK_GREY, GFP_ATOMIC);
 #endif
 
