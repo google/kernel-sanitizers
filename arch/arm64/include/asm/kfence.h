@@ -9,7 +9,6 @@
 
 #include <asm/cacheflush.h>
 
-#define KFENCE_POOL_ALIGNMENT PAGE_SIZE
 #define KFENCE_SKIP_ARCH_FAULT_HANDLER "el1_sync"
 
 /*
