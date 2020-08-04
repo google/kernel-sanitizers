@@ -95,8 +95,9 @@ static __always_inline void *kfence_alloc(struct kmem_cache *s, size_t size, gfp
  * * 0     - not a KFENCE object, must call __ksize() instead,
  * * non-0 - this many bytes can be accessed without causing a memory error.
  *
- * kfence_ksize() returns the number of bytes past the end of a heap object
- * that can be safely used (e.g. because of a generous alignment).
+ * kfence_ksize() returns the number of bytes requested for a KFENCE object at
+ * allocation time. This number may be less than the object size of the
+ * corresponding struct kmem_cache.
  */
 size_t kfence_ksize(const void *addr);
 
