@@ -56,7 +56,7 @@ static bool kfence_enabled __read_mostly;
  * the kernel, it is usually enabled, and the space is to be allocated one way
  * or another.
  */
-#ifdef CONFIG_KFENCE_STATIC_POOL
+#ifdef CONFIG_HAVE_ARCH_KFENCE_STATIC_POOL
 char __kfence_pool[KFENCE_POOL_SIZE] __aligned(KFENCE_POOL_ALIGNMENT);
 #else
 char *__kfence_pool __read_mostly;
