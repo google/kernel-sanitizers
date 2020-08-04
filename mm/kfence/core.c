@@ -399,13 +399,6 @@ static bool __init kfence_initialize_pool(void)
 			continue;
 
 		__SetPageSlab(&pages[i]);
-		/*
-		 * Do not add KFENCE pages to slab cache partial lists, they
-		 * will just mess up the accounting.
-		 *
-		 * TODO: do we still need this? If so, improve the comment.
-		 */
-		pages[i].frozen = 1;
 	}
 
 	/*
