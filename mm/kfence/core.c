@@ -104,15 +104,6 @@ static_assert(ARRAY_SIZE(counter_names) == KFENCE_COUNTER_COUNT);
 
 /* === Internals ============================================================ */
 
-/*
- * TODO(elver): With the move of arch-specific code to asm, kfence core.c got a
- * lot simpler. Maybe we can move report.c code back here and remove the kfence/
- * dir? Although, currently the test wants something from kfence.h (but it can
- * be made standalone), and I'd hate to have more than 2 new files in mm/.
- * Looking at other files in mm/, I think we need to merge them if the final LOC
- * is ~1000 or less. :-/
- */
-
 static bool kfence_protect(unsigned long addr)
 {
 	return !KFENCE_WARN_ON(!kfence_protect_page(ALIGN_DOWN(addr, PAGE_SIZE), true));
