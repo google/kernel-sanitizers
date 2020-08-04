@@ -12,6 +12,12 @@
 #define KFENCE_POOL_ALIGNMENT PAGE_SIZE
 #define KFENCE_SKIP_ARCH_FAULT_HANDLER "el1_sync"
 
+/*
+ * TODO: Figure out how to use the static pool on ARM64! If we do not manage to
+ * do this before the RFC, turn it into a FIXME here instead, to indicate this
+ * may require improvement, and solicit feedback on it.
+ */
+
 static inline bool arch_kfence_initialize_pool(void)
 {
 	const unsigned int num_pages = ilog2(roundup_pow_of_two(KFENCE_POOL_SIZE / PAGE_SIZE));
