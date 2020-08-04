@@ -12,9 +12,10 @@ menuconfig KFENCE
 	depends on JUMP_LABEL # To ensure performance, require jump labels
 	select STACKTRACE
 	help
-	  KFENCE is low-overhead sampling-based detector for heap
-	  use-after-free and buffer-overflow errors. KFENCE is designed to have
-	  negligible cost to permit enabling it in production environments.
+	  KFENCE is low-overhead sampling-based detector for heap out-of-bounds
+	  access, use-after-free, and invalid-free errors. KFENCE is designed
+	  to have negligible cost to permit enabling it in production
+	  environments.
 
 	  See <file:Documentation/dev-tools/kfence.rst> for more details.
 
