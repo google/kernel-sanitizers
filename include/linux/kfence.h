@@ -60,7 +60,6 @@ void kfence_init(void);
  */
 bool __must_check kfence_shutdown_cache(struct kmem_cache *s);
 
-
 /*
  * Allocate a KFENCE object. Allocators must not call this function directly,
  * use kfence_alloc() instead.
