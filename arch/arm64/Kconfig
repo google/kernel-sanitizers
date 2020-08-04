@@ -334,6 +334,7 @@ config KASAN_SHADOW_OFFSET
 	default 0xeffffff900000000 if ARM64_VA_BITS_36 && KASAN_SW_TAGS
 	default 0xffffffffffffffff
 
+# TODO: Figure out how to use a static pool on ARM64!
 config KFENCE_STATIC_POOL
 	def_bool n
 	depends on KFENCE
