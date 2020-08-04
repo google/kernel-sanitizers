@@ -12,9 +12,9 @@
 #define KFENCE_SKIP_ARCH_FAULT_HANDLER "el1_sync"
 
 /*
- * TODO: Figure out how to use the static pool on ARM64! If we do not manage to
- * do this before the RFC, turn it into a FIXME here instead, to indicate this
- * may require improvement, and solicit feedback on it.
+ * FIXME: Support HAVE_ARCH_KFENCE_STATIC_POOL: Use the statically allocated
+ * __kfence_pool, to avoid the extra pointer load for is_kfence_address(). By
+ * default, however, we do not have struct pages for static allocations.
  */
 
 static inline bool arch_kfence_initialize_pool(void)
