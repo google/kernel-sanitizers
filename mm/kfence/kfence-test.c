@@ -185,6 +185,11 @@ static void test_cache_destroy(void)
 	test_cache = NULL;
 }
 
+static inline size_t kmalloc_cache_alignment(size_t size)
+{
+	return kmalloc_caches[kmalloc_type(GFP_KERNEL)][kmalloc_index(size)]->align;
+}
+
 /* Must always inline to match stack trace against caller. */
 static __always_inline void test_free(void *ptr)
 {
@@ -264,7 +269,7 @@ static void *test_alloc(struct kunit *test, size_t size, gfp_t gfp, enum allocat
 
 static void test_out_of_bounds_read(struct kunit *test)
 {
-	const size_t size = 32;
+	size_t size = 32;
 	struct expect_report expect = {
 		.type = KFENCE_ERROR_OOB,
 		.fn = test_out_of_bounds_read,
@@ -272,6 +277,13 @@ static void test_out_of_bounds_read(struct kunit *test)
 	char *buf;
 
 	setup_test_cache(test, size, 0, NULL);
+
+	/*
+	 * If we don't have our own cache, adjust based on alignment, so that we
+	 * actually access guard pages on either side.
+	 */
+	if (!test_cache)
+		size = kmalloc_cache_alignment(size);
 
 	/* Test both sides. */
 
@@ -348,7 +360,7 @@ static void test_invalid_addr_free(struct kunit *test)
 static void test_kmalloc_aligned_oob_read(struct kunit *test)
 {
 	const size_t size = 73;
-	const size_t align = kmalloc_caches[kmalloc_type(GFP_KERNEL)][kmalloc_index(size)]->align;
+	const size_t align = kmalloc_cache_alignment(size);
 	struct expect_report expect = {
 		.type = KFENCE_ERROR_OOB,
 		.fn = test_kmalloc_aligned_oob_read,

@@ -50,12 +50,17 @@ module_param_named(sample_interval, kfence_sample_interval, ulong,
 static bool kfence_enabled __read_mostly;
 
 /*
- * The pool of pages used for guard pages and objects. Allocated statically, so
- * that is_kfence_address() avoids a pointer load, and simply compares against a
- * constant address. Assume that if KFENCE is compiled into the kernel, it is
- * usually enabled, and the space is to be allocated one way or another.
+ * The pool of pages used for guard pages and objects. If supported, allocated
+ * statically, so that is_kfence_address() avoids a pointer load, and simply
+ * compares against a constant address. Assume that if KFENCE is compiled into
+ * the kernel, it is usually enabled, and the space is to be allocated one way
+ * or another.
  */
+#ifdef CONFIG_HAVE_ARCH_KFENCE_STATIC_POOL
 char __kfence_pool[KFENCE_POOL_SIZE] __aligned(KFENCE_POOL_ALIGNMENT);
+#else
+char *__kfence_pool __read_mostly;
+#endif
 EXPORT_SYMBOL(__kfence_pool); /* Export for test modules. */
 
 /*
@@ -380,12 +385,15 @@ static void rcu_guarded_free(struct rcu_head *h)
 
 static bool __init kfence_initialize_pool(void)
 {
-	unsigned long addr = (unsigned long)__kfence_pool;
-	struct page *pages = virt_to_page(addr);
+	unsigned long addr;
+	struct page *pages;
 	int i;
 
-	if (!unlikely(arch_kfence_initialize_pool()))
+	if (!arch_kfence_initialize_pool())
 		return false;
+
+	addr = (unsigned long)__kfence_pool;
+	pages = virt_to_page(addr);
 
 	/*
 	 * Set up non-redzone pages: they must have PG_slab set, to avoid
@@ -395,7 +403,7 @@ static bool __init kfence_initialize_pool(void)
 	 * fast-path in SLUB, and therefore need to ensure kfree() correctly
 	 * enters __slab_free() slow-path.
 	 */
-	for (i = 0; i < sizeof(__kfence_pool) / PAGE_SIZE; i++) {
+	for (i = 0; i < KFENCE_POOL_SIZE / PAGE_SIZE; i++) {
 		if (!i || (i % 2))
 			continue;
 
@@ -560,7 +568,7 @@ void __init kfence_init(void)
 
 	schedule_delayed_work(&kfence_timer, 0);
 	WRITE_ONCE(kfence_enabled, true);
-	pr_info("initialized - using %zu bytes for %d objects", ARRAY_SIZE(__kfence_pool),
+	pr_info("initialized - using %zu bytes for %d objects", KFENCE_POOL_SIZE,
 		CONFIG_KFENCE_NUM_OBJECTS);
 	if (IS_ENABLED(CONFIG_DEBUG_KERNEL))
 		pr_cont(" at 0x%px-0x%px\n", (void *)__kfence_pool,

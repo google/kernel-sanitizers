@@ -8,8 +8,6 @@
 #include <linux/static_key.h>
 #include <linux/types.h>
 
-struct kmem_cache;
-
 #ifdef CONFIG_KFENCE
 
 /*
@@ -18,7 +16,11 @@ struct kmem_cache;
  * extended guard page, but otherwise has no special purpose.
  */
 #define KFENCE_POOL_SIZE ((CONFIG_KFENCE_NUM_OBJECTS + 1) * 2 * PAGE_SIZE)
+#ifdef CONFIG_HAVE_ARCH_KFENCE_STATIC_POOL
 extern char __kfence_pool[KFENCE_POOL_SIZE];
+#else
+extern char *__kfence_pool;
+#endif
 
 extern struct static_key_false kfence_allocation_key;
 
