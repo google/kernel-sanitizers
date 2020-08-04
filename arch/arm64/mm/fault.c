@@ -10,6 +10,7 @@
 #include <linux/acpi.h>
 #include <linux/bitfield.h>
 #include <linux/extable.h>
+#include <linux/kfence.h>
 #include <linux/signal.h>
 #include <linux/mm.h>
 #include <linux/hardirq.h>
@@ -308,6 +309,9 @@ static void __do_kernel_fault(unsigned long addr, unsigned int esr,
 
 	if (WARN_RATELIMIT(is_spurious_el1_translation_fault(addr, esr, regs),
 	    "Ignoring spurious kernel translation fault at virtual address %016lx\n", addr))
+		return;
+
+	if (kfence_handle_page_fault(addr))
 		return;
 
 	if (is_el1_permission_fault(addr, esr, regs)) {
