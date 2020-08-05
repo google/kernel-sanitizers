@@ -629,9 +629,7 @@ static void test_krealloc(struct kunit *test)
 static void test_memcache_alloc_bulk(struct kunit *test)
 {
 	const size_t size = 32;
-	void *objects[100];
 	bool pass = false;
-	int i, num;
 	unsigned long timeout;
 
 	setup_test_cache(test, size, 0, NULL);
@@ -642,6 +640,9 @@ static void test_memcache_alloc_bulk(struct kunit *test)
 	 */
 	timeout = jiffies + msecs_to_jiffies(100 * CONFIG_KFENCE_SAMPLE_INTERVAL);
 	do {
+		int i, num;
+		void *objects[100];
+
 		/*
 		 * kmem_cache_alloc_bulk() disables interrupts, and calling it
 		 * in a tight loop may not give KFENCE a chance to switch the
