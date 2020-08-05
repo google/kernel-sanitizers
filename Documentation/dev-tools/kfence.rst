@@ -4,14 +4,15 @@ Kernel Electric-Fence
 =====================
 
 Kernel Electric-Fence (KFENCE) is a low-overhead sampling-based memory
-debugger. KFENCE detects heap use-after-free and buffer-overflow errors.
+debugger. KFENCE detects heap out-of-bounds access, use-after-free, and
+invalid-free errors.
 
 KFENCE is designed to be enabled in production kernels, and has near zero
 performance overhead. Compared to KASAN, KFENCE trades performance for
-precision. The key motivation is that, with enough total uptime, KFENCE will
-detect bugs in code paths not typically exercised by non-production test
-workloads. One way to quickly achieve a large enough total uptime is when the
-tool is deployed across a large fleet of machines.
+precision. The main motivation behind KFENCE's design, is that with enough
+total uptime KFENCE will detect bugs in code paths not typically exercised by
+non-production test workloads. One way to quickly achieve a large enough total
+uptime is when the tool is deployed across a large fleet of machines.
 
 Usage
 -----
