@@ -626,7 +626,7 @@ static void test_krealloc(struct kunit *test)
 }
 
 /* Test that some objects from a bulk allocation belong to KFENCE pool. */
-static void test_alloc_bulk(struct kunit *test)
+static void test_memcache_alloc_bulk(struct kunit *test)
 {
 	const size_t size = 32;
 	void *objects[100];
@@ -642,6 +642,12 @@ static void test_alloc_bulk(struct kunit *test)
 	 */
 	timeout = jiffies + msecs_to_jiffies(100 * CONFIG_KFENCE_SAMPLE_INTERVAL);
 	do {
+		/*
+		 * kmem_cache_alloc_bulk() disables interrupts, and calling it
+		 * in a tight loop may not give KFENCE a chance to switch the
+		 * static branch. Call cond_resched() to let KFENCE chime in.
+		 */
+		cond_resched();
 		num = kmem_cache_alloc_bulk(test_cache, GFP_ATOMIC, ARRAY_SIZE(objects), objects);
 		if (!num)
 			continue;
@@ -668,9 +674,6 @@ static void test_alloc_bulk(struct kunit *test)
 #define KFENCE_KUNIT_CASE(test_name)						\
 	{ .run_case = test_name, .name = #test_name },				\
 	{ .run_case = test_name, .name = #test_name "-memcache" }
-
-#define KFENCE_MEMCACHE_KUNIT_CASE(test_name)					\
-	{ .run_case = test_name, .name = #test_name "-memcache" }
 // clang-format on
 
 static struct kunit_case kfence_test_cases[] = {
@@ -688,7 +691,7 @@ static struct kunit_case kfence_test_cases[] = {
 	KUNIT_CASE(test_gfpzero),
 	KUNIT_CASE(test_memcache_typesafe_by_rcu),
 	KUNIT_CASE(test_krealloc),
-	KFENCE_MEMCACHE_KUNIT_CASE(test_alloc_bulk),
+	KUNIT_CASE(test_memcache_alloc_bulk),
 	{},
 };
 
