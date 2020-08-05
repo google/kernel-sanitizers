@@ -3230,7 +3230,7 @@ slab_alloc_node(struct kmem_cache *cachep, gfp_t flags, int nodeid, size_t orig_
 		return NULL;
 
 	ptr = kfence_alloc(cachep, orig_size, flags);
-	if (ptr)
+	if (unlikely(ptr))
 		goto out_hooks;
 
 	cache_alloc_debugcheck_before(cachep, flags);
@@ -3314,7 +3314,7 @@ slab_alloc(struct kmem_cache *cachep, gfp_t flags, size_t orig_size, unsigned lo
 		return NULL;
 
 	objp = kfence_alloc(cachep, orig_size, flags);
-	if (objp)
+	if (unlikely(objp))
 		goto leave;
 
 	cache_alloc_debugcheck_before(cachep, flags);
