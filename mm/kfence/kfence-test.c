@@ -261,6 +261,12 @@ static void *test_alloc(struct kunit *test, size_t size, gfp_t gfp, enum allocat
 			return alloc;
 
 		test_free(alloc);
+
+		/*
+		 * On non-preemption kernels, give the allocation-gate timer
+		 * time to catch up.
+		 */
+		cond_resched();
 	} while (time_before(jiffies, timeout));
 
 	KUNIT_ASSERT_TRUE_MSG(test, false, "failed to allocate from KFENCE");
