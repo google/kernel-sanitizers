@@ -625,6 +625,39 @@ static void test_krealloc(struct kunit *test)
 	KUNIT_ASSERT_TRUE(test, report_matches(&expect));
 }
 
+/* Test that some objects from a bulk allocation belong to KFENCE pool. */
+static void test_alloc_bulk(struct kunit *test)
+{
+	const size_t size = 32;
+	void *objects[100];
+	bool pass = false;
+	int i, num;
+	unsigned long timeout;
+
+	setup_test_cache(test, size, 0, NULL);
+	KUNIT_EXPECT_TRUE(test, test_cache); /* Want memcache. */
+	/*
+	 * 100x the sample interval should be more than enough to ensure we get
+	 * a KFENCE allocation eventually.
+	 */
+	timeout = jiffies + msecs_to_jiffies(100 * CONFIG_KFENCE_SAMPLE_INTERVAL);
+	do {
+		num = kmem_cache_alloc_bulk(test_cache, GFP_ATOMIC, ARRAY_SIZE(objects), objects);
+		if (!num)
+			continue;
+		for (i = 0; i < ARRAY_SIZE(objects); i++) {
+			if (is_kfence_address(objects[i])) {
+				pass = true;
+				break;
+			}
+		}
+		kmem_cache_free_bulk(test_cache, num, objects);
+	} while (!pass && time_before(jiffies, timeout));
+
+	KUNIT_EXPECT_TRUE(test, pass);
+	KUNIT_EXPECT_FALSE(test, report_available());
+}
+
 /*
  * KUnit does not provide a way to provide arguments to tests, and we encode
  * additional info in the name. Set up 2 tests per test case, one using the
@@ -632,8 +665,11 @@ static void test_krealloc(struct kunit *test)
  */
 // clang-format off
 // TODO: fix formatting for v1
-#define KFENCE_KUNIT_CASE(test_name)                                           \
-	{ .run_case = test_name, .name = #test_name },                         \
+#define KFENCE_KUNIT_CASE(test_name)						\
+	{ .run_case = test_name, .name = #test_name },				\
+	{ .run_case = test_name, .name = #test_name "-memcache" }
+
+#define KFENCE_MEMCACHE_KUNIT_CASE(test_name)					\
 	{ .run_case = test_name, .name = #test_name "-memcache" }
 // clang-format on
 
@@ -652,6 +688,7 @@ static struct kunit_case kfence_test_cases[] = {
 	KUNIT_CASE(test_gfpzero),
 	KUNIT_CASE(test_memcache_typesafe_by_rcu),
 	KUNIT_CASE(test_krealloc),
+	KFENCE_MEMCACHE_KUNIT_CASE(test_alloc_bulk),
 	{},
 };
 
