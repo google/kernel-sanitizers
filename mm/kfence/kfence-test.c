@@ -217,7 +217,7 @@ enum allocation_policy {
 static void *test_alloc(struct kunit *test, size_t size, gfp_t gfp, enum allocation_policy policy)
 {
 	void *alloc;
-	unsigned long timeout;
+	unsigned long timeout, resched_after;
 	const char *policy_name;
 
 	switch (policy) {
@@ -243,6 +243,11 @@ static void *test_alloc(struct kunit *test, size_t size, gfp_t gfp, enum allocat
 	 * a KFENCE allocation eventually.
 	 */
 	timeout = jiffies + msecs_to_jiffies(100 * CONFIG_KFENCE_SAMPLE_INTERVAL);
+	/*
+	 * Especially for non-preemption kernels, ensure the allocation-gate
+	 * timer has time to catch up.
+	 */
+	resched_after = jiffies + msecs_to_jiffies(CONFIG_KFENCE_SAMPLE_INTERVAL);
 	do {
 		if (test_cache)
 			alloc = kmem_cache_alloc(test_cache, gfp);
@@ -262,11 +267,8 @@ static void *test_alloc(struct kunit *test, size_t size, gfp_t gfp, enum allocat
 
 		test_free(alloc);
 
-		/*
-		 * On non-preemption kernels, give the allocation-gate timer
-		 * time to catch up.
-		 */
-		cond_resched();
+		if (time_after(jiffies, resched_after))
+			cond_resched();
 	} while (time_before(jiffies, timeout));
 
 	KUNIT_ASSERT_TRUE_MSG(test, false, "failed to allocate from KFENCE");
