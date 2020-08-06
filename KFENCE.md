@@ -1,4 +1,4 @@
-# KFENCE, a sampling-based memory safety error detector for Linux kernel
+# KFENCE: A sampling-based memory safety error detector for the Linux kernel
 
 Contacts: @ramosian-glider, @melver, @dvyukov
 
@@ -7,35 +7,31 @@ Source: [development branch](http://github.com/google/kasan/tree/kfence), [patch
 KFENCE is a low-overhead sampling-based detector for heap out-of-bounds accessess, use-after-free, and invalid-free errors.
 It is designed to have negligible cost to permit enabling it in production environments.
 
-The tool gets inspiration from [GWP-ASan](http://llvm.org/docs/GwpAsan.html), a userspace tool with similar properties.
+Unlike KASAN, KFENCE has a low chance to detect even a reproducible bug, so it cannot be used for debugging.
+However, with enough total uptime KFENCE will detect bugs in code paths not typically exercised by
+non-production test workloads. One way to quickly achieve a large enough total uptime is to deploy the tool
+across a large fleet of machines.
 
-The name "KFENCE" is a homage to [Electric Fence Malloc Debugger](https://linux.die.net/man/3/efence).
+The tool gets inspiration from [GWP-ASan](http://llvm.org/docs/GwpAsan.html), a userspace tool with similar properties. The name "KFENCE" is a homage to [Electric Fence Malloc Debugger](https://linux.die.net/man/3/efence).
 
 ## Status
 
-The tool is under development, with plans to upstream it by the end of 2020.
+The tool is under development (with plans to upstream it in 2020).
 
 ## Usage
 
 To start using KFENCE, build your kernel with `CONFIG_KFENCE=y`.
 
 The tool's behavior can be tweaked via config flags:
-  * `CONFIG_KFENCE_SAMPLE_INTERVAL` (in ms, 100 by default)
-  * `CONFIG_KFENCE_NUM_OBJECTS` (255 by default)
-  
-, or the boot-time `kfence.sample_interval` parameter.
 
-Unlike KASAN, KFENCE has a low chance to detect even a reproducible bug, so it cannot be used for debugging.
-However, with enough total uptime KFENCE will detect bugs in code paths not typically exercised by
-non-production test workloads. One way to quickly achieve a large enough total uptime is to deploy the tool
-across a large fleet of machines.
-
+  * Sample interval: `CONFIG_KFENCE_SAMPLE_INTERVAL` (in milliseconds, 100 by default); or the boot-time `kfence.sample_interval` parameter.
+  * Number of available objects: `CONFIG_KFENCE_NUM_OBJECTS` (255 by default).
 
 ## How does it work?
 
 ### KFENCE memory pool
 
-KFENCE allocates a small (256 by default) pool of 4K object pages separated by guard (inaccessible) pages,
+KFENCE allocates a small (255 by default) pool of 4K object pages separated by guard (inaccessible) pages,
 and provides an API to allocate and deallocate objects from that pool.
 Each page contains at most one object, which is placed randomly at either end of that page.
 As a result, there is always a guard page next to a KFENCE-allocated object,
@@ -49,7 +45,7 @@ so further accesses to that object will also result in a page fault, until the p
 Allocating an object from the KFENCE pool has a big performance cost, which is amortized by making such allocations
 less frequent.
 
-KFENCE introduces a static branch into the fast path of SLAB and SLUB.
+KFENCE introduces a static branch (using static keys) into the fast path of SLAB and SLUB.
 This branch is disabled by default and thus has zero cost.
 When enabled, it routes the allocation to KFENCE allocator:
 
