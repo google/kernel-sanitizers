@@ -640,16 +640,9 @@ static void test_memcache_alloc_bulk(struct kunit *test)
 	 */
 	timeout = jiffies + msecs_to_jiffies(100 * CONFIG_KFENCE_SAMPLE_INTERVAL);
 	do {
-		int i, num;
 		void *objects[100];
-
-		/*
-		 * kmem_cache_alloc_bulk() disables interrupts, and calling it
-		 * in a tight loop may not give KFENCE a chance to switch the
-		 * static branch. Call cond_resched() to let KFENCE chime in.
-		 */
-		cond_resched();
-		num = kmem_cache_alloc_bulk(test_cache, GFP_ATOMIC, ARRAY_SIZE(objects), objects);
+		int i, num = kmem_cache_alloc_bulk(test_cache, GFP_ATOMIC, ARRAY_SIZE(objects),
+						   objects);
 		if (!num)
 			continue;
 		for (i = 0; i < ARRAY_SIZE(objects); i++) {
@@ -659,6 +652,12 @@ static void test_memcache_alloc_bulk(struct kunit *test)
 			}
 		}
 		kmem_cache_free_bulk(test_cache, num, objects);
+		/*
+		 * kmem_cache_alloc_bulk() disables interrupts, and calling it
+		 * in a tight loop may not give KFENCE a chance to switch the
+		 * static branch. Call cond_resched() to let KFENCE chime in.
+		 */
+		cond_resched();
 	} while (!pass && time_before(jiffies, timeout));
 
 	KUNIT_EXPECT_TRUE(test, pass);
