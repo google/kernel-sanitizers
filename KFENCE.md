@@ -1,6 +1,6 @@
 # KFENCE: A sampling-based memory safety error detector for the Linux kernel
 
-Contacts: @ramosian-glider, @melver, @dvyukov
+Contacts: Alexander Potapenko <@ramosian-glider>, Marco Elver <@melver>, Dmitry Vyukov <@dvyukov>
 
 Source: [development branch](http://github.com/google/kasan/tree/kfence), [patches for mainline](https://github.com/google/kasan/commits/kfence-rebase-wip).
 
@@ -12,7 +12,7 @@ However, with enough total uptime KFENCE will detect bugs in code paths not typi
 non-production test workloads. One way to quickly achieve a large enough total uptime is to deploy the tool
 across a large fleet of machines.
 
-The tool gets inspiration from [GWP-ASan](http://llvm.org/docs/GwpAsan.html), a userspace tool with similar properties. The name "KFENCE" is a homage to [Electric Fence Malloc Debugger](https://linux.die.net/man/3/efence).
+KFENCE is inspired by [GWP-ASan](http://llvm.org/docs/GwpAsan.html), a userspace tool with similar properties. The name "KFENCE" is a homage to the [Electric Fence Malloc Debugger](https://linux.die.net/man/3/efence).
 
 ## Status
 
