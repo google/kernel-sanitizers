@@ -2758,7 +2758,7 @@ static __always_inline void *slab_alloc_node(struct kmem_cache *s,
 		return NULL;
 
 	object = kfence_alloc(s, orig_size, gfpflags);
-	if (object)
+	if (unlikely(object))
 		goto out;
 
 redo:
@@ -3243,8 +3243,14 @@ int kmem_cache_alloc_bulk(struct kmem_cache *s, gfp_t flags, size_t size,
 	c = this_cpu_ptr(s->cpu_slab);
 
 	for (i = 0; i < size; i++) {
-		void *object = c->freelist;
+		void *object = kfence_alloc(s, s->object_size, flags);
 
+		if (unlikely(object)) {
+			p[i] = object;
+			continue;
+		}
+
+		object = c->freelist;
 		if (unlikely(!object)) {
 			/*
 			 * We may have removed an object from c->freelist using
