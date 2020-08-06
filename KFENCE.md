@@ -40,10 +40,10 @@ The tool's behavior can be tweaked via config flags:
 
 ### KFENCE memory pool
 
-KFENCE allocates a small (255 by default) pool of 4K object pages separated by
+KFENCE allocates a small (255 by default) pool of 4 KiB object pages separated by
 guard (inaccessible) pages, and provides an API to allocate and deallocate
 objects from that pool.  Each page contains at most one object, which is placed
-randomly at either end of that page.  As a result, there is always a guard page
+randomly at either end of that page. As a result, there is always a guard page
 next to a KFENCE-allocated object, so either a buffer-overflow or
 buffer-underflow on that object will result in a page fault.
 
