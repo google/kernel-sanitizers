@@ -7,10 +7,11 @@ Source: [development branch](http://github.com/google/kasan/tree/kfence), [patch
 *Kernel Electric-Fence (KFENCE)* is a low-overhead sampling-based detector for heap out-of-bounds accessess, use-after-free, and invalid-free errors.
 It is designed to have negligible cost to permit enabling it in production environments.
 
-Unlike KASAN, KFENCE has a low chance to detect even a reproducible bug, so it cannot be used for debugging.
+Compared to KASAN, KFENCE trades performance for precision.
 However, with enough total uptime KFENCE will detect bugs in code paths not typically exercised by
 non-production test workloads. One way to quickly achieve a large enough total uptime is to deploy the tool
 across a large fleet of machines.
+Indeed, KASAN and KFENCE are complementary, with different target environments. For instance, KASAN is the better debugging-aid, where a simple reproducer exists: due to the lower change to detect the error, it would require more effort using KFENCE to debug.
 
 KFENCE is inspired by [GWP-ASan](http://llvm.org/docs/GwpAsan.html), a userspace tool with similar properties. The name "KFENCE" is a homage to the [Electric Fence Malloc Debugger](https://linux.die.net/man/3/efence).
 
