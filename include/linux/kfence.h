@@ -70,7 +70,7 @@ void *__kfence_alloc(struct kmem_cache *s, size_t size, gfp_t flags);
  * kfence_alloc() - allocate a KFENCE object with a low probability
  * @s:     struct kmem_cache with object requirements
  * @size:  exact size of the object to allocate (can be less than @s->size
- * 	   e.g. for kmalloc caches)
+ *         e.g. for kmalloc caches)
  * @flags: GFP flags
  *
  * Return:
