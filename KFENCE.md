@@ -35,7 +35,7 @@ across a large fleet of machines.
 
 ### KFENCE memory pool
 
-KFENCE allocates a small (256 by default) pool of 4K payload pages separated by guard (inaccessible) pages,
+KFENCE allocates a small (256 by default) pool of 4K object pages separated by guard (inaccessible) pages,
 and provides an API to allocate and deallocate objects from that pool.
 Each page contains at most one object, which is placed randomly at either end of that page.
 As a result, there is always a guard page next to a KFENCE-allocated object,
@@ -97,7 +97,7 @@ kfence-#162 [0xffffffff93e07000-0xffffffff93e0701f, size=32, cache=kmalloc-32] a
  ret_from_fork+0x22/0x30 arch/x86/entry/entry_64.S:293
 ```
 
-A fault on a protected payload page indicates a use-after-free error, reported as follows:
+A fault on a protected object page indicates a use-after-free error, reported as follows:
 ```
 BUG: KFENCE: use-after-free in test_use_after_free_read+0x109/0x1b7 [kfence_test]
 
