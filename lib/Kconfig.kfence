@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-2.0-only
+
 config HAVE_ARCH_KFENCE
 	bool
 
@@ -31,8 +33,8 @@ config KFENCE_SAMPLE_INTERVAL
 	default 100
 	help
 	  The KFENCE sample interval determines the frequency with which heap
-	  allocations will be guarded by KFENCE. May be overridden via
-	  command-line argument kfence.sample_interval.
+	  allocations will be guarded by KFENCE. May be overridden via boot
+	  parameter "kfence.sample_interval".
 
 config KFENCE_NUM_OBJECTS
 	int "Number of guarded objects available"
@@ -41,7 +43,7 @@ config KFENCE_NUM_OBJECTS
 	help
 	  The number of guarded objects available. For each KFENCE object, 2
 	  pages are required; with one containing the object and two adjacent
-	  ones used as redzones.
+	  ones used as guard pages.
 
 config KFENCE_FAULT_INJECTION
 	int "Fault injection for stress testing"
