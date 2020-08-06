@@ -480,7 +480,7 @@ static int show_object(struct seq_file *seq, void *v)
 	raw_spin_lock_irqsave(&meta->lock, flags);
 	kfence_print_object(seq, meta);
 	raw_spin_unlock_irqrestore(&meta->lock, flags);
-	seq_printf(seq, "---------------------------------\n");
+	seq_puts(seq, "---------------------------------\n");
 
 	return 0;
 }
