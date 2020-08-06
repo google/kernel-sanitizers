@@ -4,7 +4,7 @@ Contacts: Alexander Potapenko <@ramosian-glider>, Marco Elver <@melver>, Dmitry 
 
 Source: [development branch](http://github.com/google/kasan/tree/kfence), [patches for mainline](https://github.com/google/kasan/commits/kfence-rebase-wip).
 
-KFENCE is a low-overhead sampling-based detector for heap out-of-bounds accessess, use-after-free, and invalid-free errors.
+*Kernel Electric-Fence (KFENCE)* is a low-overhead sampling-based detector for heap out-of-bounds accessess, use-after-free, and invalid-free errors.
 It is designed to have negligible cost to permit enabling it in production environments.
 
 Unlike KASAN, KFENCE has a low chance to detect even a reproducible bug, so it cannot be used for debugging.
