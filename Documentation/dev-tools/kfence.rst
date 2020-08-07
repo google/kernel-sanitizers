@@ -35,7 +35,10 @@ by KFENCE. The default is configurable via the Kconfig option
 
 With the Kconfig option ``CONFIG_KFENCE_NUM_OBJECTS`` (default 255), the number
 of available guarded objects can be controlled. Each object requires 2 pages,
-with one being the object page, and the 2 adjacent pages used as guard pages.
+one for the object itself and the other one used as a guard page; object pages
+are interleaved with guard pages, and every object page is therefore surrounded
+by two guard pages.
+
 The total memory dedicated to the KFENCE memory pool can be computed as::
 
     ( #objects + 1 ) * 2 * PAGE_SIZE
@@ -219,7 +222,14 @@ page boundaries selected at random. The pages to the left and right of the
 object page are "guard pages", whose attributes are changed to a protected
 state, and cause page faults on any attempted access. Such page faults are then
 intercepted by KFENCE, which handles the fault gracefully by reporting an
-out-of-bounds access.
+out-of-bounds access. The side opposite of an object's guard page is used as a
+pattern-based redzone, to detect out-of-bounds writes on the unprotected sed of
+the object on frees (for special alignment and size combinations, both sides of
+the object are redzoned).
+
+KFENCE also uses pattern-based redzones on the other side of an object's guard
+page, to detect out-of-bounds writes on the unprotected side of the object.
+These are reported on frees::
 
 The following figure illustrates the page layout::
 
