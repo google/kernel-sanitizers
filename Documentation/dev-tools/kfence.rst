@@ -3,8 +3,8 @@
 Kernel Electric-Fence (KFENCE)
 ==============================
 
-Kernel Electric-Fence (KFENCE) is a low-overhead sampling-based memory
-debugger. KFENCE detects heap out-of-bounds access, use-after-free, and
+Kernel Electric-Fence (KFENCE) is a low-overhead sampling-based memory safety
+error detector. KFENCE detects heap out-of-bounds access, use-after-free, and
 invalid-free errors.
 
 KFENCE is designed to be enabled in production kernels, and has near zero
