@@ -229,8 +229,8 @@ the object on frees (for special alignment and size combinations, both sides of
 the object are redzoned).
 
 KFENCE also uses pattern-based redzones on the other side of an object's guard
-page, to detect out-of-bounds writes on the unprotected side of the object.
-These are reported on frees::
+page, to detect out-of-bounds writes on the unprotected side of the object;
+these are reported on frees.
 
 The following figure illustrates the page layout::
 
