@@ -503,12 +503,13 @@ static const struct file_operations objects_fops = {
 	.llseek = seq_lseek,
 };
 
-static void __init kfence_debugfs_init(void)
+static int __init kfence_debugfs_init(void)
 {
 	struct dentry *kfence_dir = debugfs_create_dir("kfence", NULL);
 
 	debugfs_create_file("stats", 0400, kfence_dir, NULL, &stats_fops);
 	debugfs_create_file("objects", 0400, kfence_dir, NULL, &objects_fops);
+	return 0;
 }
 
 late_initcall(kfence_debugfs_init);
