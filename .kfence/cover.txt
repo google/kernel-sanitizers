@@ -1,0 +1,53 @@
+vim: set ft=mail :
+COMMIT_RANGE: gh-kasan/kfence-rebase-wip|mm: Add Kernel Electric..gh-kasan/kfence-rebase-wip|kfence: Add test
+NO_GET_MAINTAINER
+
+--------------------------------------------------------------------------------
+
+<subject-prefix> KFENCE: A low-overhead sampling-based memory safety error detector
+
+This adds the Kernel Electric-Fence (KFENCE) infrastructure, a
+low-overhead sampling-based memory safety error detector. KFENCE detects
+heap use-after-free, invalid-free, and out-of-bounds access errors.
+This series enables KFENCE for the x86 and arm64 architectures, and adds
+KFENCE hooks to the SLAB and SLUB allocators.
+
+KFENCE is designed to be enabled in production kernels, and has near
+zero performance overhead. Compared to KASAN, KFENCE trades performance
+for precision. The main motivation behind KFENCE's design, is that with
+enough total uptime KFENCE will detect bugs in code paths not typically
+exercised by non-production test workloads. One way to quickly achieve a
+large enough total uptime is when the tool is deployed across a large
+fleet of machines.
+
+KFENCE objects each reside on a dedicated page, at either the left or
+right page boundaries. The pages to the left and right of the object
+page are "guard pages", whose attributes are changed to a protected
+state, and cause page faults on any attempted access to them. Such page
+faults are then intercepted by KFENCE, which handles the fault
+gracefully by reporting a memory access error.
+
+Guarded allocations are set up based on a sample interval (can be set
+via kfence.sample_interval). After expiration of the sample interval, a
+guarded allocation from the KFENCE object pool is returned to the main
+allocator (SLAB or SLUB). At this point, the timer is reset, and the
+next allocation is set up after the expiration of the interval.
+
+To enable/disable a KFENCE allocation through the main allocator's
+fast-path without overhead, KFENCE relies on static branches via the
+static keys infrastructure. The static branch is toggled to redirect the
+allocation to KFENCE. To date, we have verified by running synthetic
+benchmarks (sysbench I/O workloads) that a kernel compiled with KFENCE
+is performance-neutral compared to the non-KFENCE baseline.
+
+KFENCE is inspired by GWP-ASan [1], a userspace tool with similar
+properties. The name "KFENCE" is a homage to the Electric Fence Malloc
+Debugger [2].
+
+For more details, see Documentation/dev-tools/kfence.rst added in the
+series -- also viewable here:
+
+	https://raw.githubusercontent.com/google/kasan/kfence/Documentation/dev-tools/kfence.rst
+
+[1] http://llvm.org/docs/GwpAsan.html
+[2] https://linux.die.net/man/3/efence
