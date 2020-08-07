@@ -6,10 +6,10 @@ NO_GET_MAINTAINER
 
 <subject-prefix> KFENCE: A low-overhead sampling-based memory safety error detector
 
-This adds the Kernel Electric-Fence (KFENCE) infrastructure, a
-low-overhead sampling-based memory safety error detector. KFENCE detects
-heap use-after-free, invalid-free, and out-of-bounds access errors.
-This series enables KFENCE for the x86 and arm64 architectures, and adds
+This adds the Kernel Electric-Fence (KFENCE) infrastructure. KFENCE is a
+low-overhead sampling-based memory safety error detector of heap
+use-after-free, invalid-free, and out-of-bounds access errors.  This
+series enables KFENCE for the x86 and arm64 architectures, and adds
 KFENCE hooks to the SLAB and SLUB allocators.
 
 KFENCE is designed to be enabled in production kernels, and has near
