@@ -1,4 +1,4 @@
-# KFENCE: A sampling-based memory safety error detector for the Linux kernel
+# KFENCE: A low-overhead sampling-based memory safety error detector for the Linux kernel
 
 **Contacts:** Alexander Potapenko <@ramosian-glider>, Marco Elver <@melver>, Dmitry Vyukov <@dvyukov>  
 **Source:** [development branch](http://github.com/google/kasan/tree/kfence), [patches for mainline](https://github.com/google/kasan/commits/kfence-rebase-wip).  
