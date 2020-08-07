@@ -9,6 +9,9 @@ heap out-of-bounds accessess, use-after-free, and invalid-free errors.  It is
 designed to have negligible cost to permit enabling it in production
 environments.
 
+KFENCE is inspired by [GWP-ASan](http://llvm.org/docs/GwpAsan.html), a
+userspace tool with similar properties, and can be seen as its kernel sibling.
+
 Compared to KASAN, KFENCE trades performance for precision.  However, with
 enough total uptime KFENCE will detect bugs in code paths not typically
 exercised by non-production test workloads. One way to quickly achieve a large
@@ -16,11 +19,11 @@ enough total uptime is to deploy the tool across a large fleet of machines.
 Indeed, KASAN and KFENCE are complementary, with different target environments.
 For instance, KASAN is the better debugging-aid, where a simple reproducer
 exists: due to the lower change to detect the error, it would require more
-effort using KFENCE to debug.
+effort using KFENCE to debug. Deployments at scale, however, would benefit
+from using KFENCE to discover bugs due to code paths not exercised by test cases
+or fuzzers.
 
-KFENCE is inspired by [GWP-ASan](http://llvm.org/docs/GwpAsan.html), a
-userspace tool with similar properties. The name "KFENCE" is a homage to the
-[Electric Fence Malloc Debugger](https://linux.die.net/man/3/efence).
+The name "KFENCE" is a homage to the [Electric Fence Malloc Debugger](https://linux.die.net/man/3/efence).
 
 ## Status
 
@@ -38,25 +41,25 @@ The tool's behavior can be tweaked via config flags:
 
 ## How does it work?
 
-### KFENCE memory pool
-
-KFENCE allocates a small (255 by default) pool of 4 KiB object pages separated by
+KFENCE allocates a small (255 by default) pool of object pages (typically 4 KiB) separated by
 guard (inaccessible) pages, and provides an API to allocate and deallocate
 objects from that pool.  Each page contains at most one object, which is placed
 randomly at either end of that page. As a result, there is always a guard page
 next to a KFENCE-allocated object, so either a buffer-overflow or
 buffer-underflow on that object will result in a page fault.
+Such faults are then reported as out-of-bounds errors and printed to the kernel log.
 
 When an object is deallocated, KFENCE marks the corresponding page
-inaccessible, so further accesses to that object will also result in a page
-fault, until the page is reused by the allocator.
+inaccessible, so that further accesses to that object will also result in a page
+fault, which will be reported as a use-after-free error.
+KFENCE also reports on invalid frees, as it can afford to accurately track the object's state.
+The least recently freed objects will be reused for new allocations.
 
-### Allocation sampling
+Allocating an object from the KFENCE pool is costly, which is
+amortized by making such allocations less frequent, while ensuring that skipped allocations
+have zero cost through the main allocator's fast-path.
 
-Allocating an object from the KFENCE pool has a big performance cost, which is
-amortized by making such allocations less frequent.
-
-KFENCE introduces a static branch (using static keys) into the fast path of
+To achieve this, KFENCE introduces a static branch (using static keys) into the fast path of
 SLAB and SLUB. This branch is disabled by default and thus has zero cost.
 When enabled, it routes the allocation to KFENCE allocator:
 
@@ -68,77 +71,7 @@ static __always_inline void *kfence_alloc(struct kmem_cache *s, size_t size, gfp
 }
 ```
 
-The branch is enabled periodically (at the rate controlled by the
-`kfence.sample_interval` boot parameter) by a kernel delayed work.
+The branch is enabled periodically by a kernel delayed work, and after a successful guarded allocation disabled again.
+The frequency with which guarded allocations occur is controlled by the sample interval, which can be set by the boot parameter `kfence.sample_interval`.
 
-### Error reporting
-
-When a page fault occurs on a page belonging to the KFENCE pool, the tool
-reports an error.
-
-A fault on a guard page indicates an out-of-bounds error, which is reported as
-follows:
-
-```
-BUG: KFENCE: out-of-bounds in test_out_of_bounds_read+0x119/0x2a4 [kfence_test]
-
-Out-of-bounds access at 0xffffffff93e06fff (left of kfence-#162):
- test_out_of_bounds_read+0x119/0x2a4 [kfence_test]
- kunit_run_case_internal lib/kunit/test.c:256
- kunit_try_run_case+0x6b/0xa0 lib/kunit/test.c:295
- kunit_generic_run_threadfn_adapter+0x24/0x40 lib/kunit/try-catch.c:28
- kthread+0x199/0x1f0 kernel/kthread.c:291
- ret_from_fork+0x22/0x30 arch/x86/entry/entry_64.S:293
-
-kfence-#162 [0xffffffff93e07000-0xffffffff93e0701f, size=32, cache=kmalloc-32] allocated in:
- kfence_guarded_alloc mm/kfence/core.c:280
- __kfence_alloc+0x4e7/0x550 mm/kfence/core.c:627
- kfence_alloc ./include/linux/kfence.h:87
- slab_alloc_node mm/slub.c:2760
- slab_alloc mm/slub.c:2846
- __kmalloc+0x16e/0x260 mm/slub.c:3924
- test_alloc+0x1b0/0x2cb [kfence_test]
- test_out_of_bounds_read+0x106/0x2a4 [kfence_test]
- kunit_run_case_internal lib/kunit/test.c:256
- kunit_try_run_case+0x6b/0xa0 lib/kunit/test.c:295
- kunit_generic_run_threadfn_adapter+0x24/0x40 lib/kunit/try-catch.c:28
- kthread+0x199/0x1f0 kernel/kthread.c:291
- ret_from_fork+0x22/0x30 arch/x86/entry/entry_64.S:293
-```
-
-A fault on a protected object page indicates a use-after-free error, reported as follows:
-```
-BUG: KFENCE: use-after-free in test_use_after_free_read+0x109/0x1b7 [kfence_test]
-
-Use-after-free access at 0xffffffff93e13fe0:
- test_use_after_free_read+0x109/0x1b7 [kfence_test]
- kunit_run_case_internal lib/kunit/test.c:256
- kunit_try_run_case+0x6b/0xa0 lib/kunit/test.c:295
- kunit_generic_run_threadfn_adapter+0x24/0x40 lib/kunit/try-catch.c:28
- kthread+0x199/0x1f0 kernel/kthread.c:291
- ret_from_fork+0x22/0x30 arch/x86/entry/entry_64.S:293
-
-kfence-#168 [0xffffffff93e13fe0-0xffffffff93e13fff, size=32, cache=kmalloc-32] allocated in:
- kfence_guarded_alloc mm/kfence/core.c:280
- __kfence_alloc+0x286/0x550 mm/kfence/core.c:627
- kfence_alloc ./include/linux/kfence.h:87
- slab_alloc_node mm/slub.c:2760
- slab_alloc mm/slub.c:2846
- __kmalloc+0x16e/0x260 mm/slub.c:3924
- test_alloc+0x1b0/0x2cb [kfence_test]
- test_use_after_free_read+0xd5/0x1b7 [kfence_test]
- kunit_run_case_internal lib/kunit/test.c:256
- kunit_try_run_case+0x6b/0xa0 lib/kunit/test.c:295
- kunit_generic_run_threadfn_adapter+0x24/0x40 lib/kunit/try-catch.c:28
- kthread+0x199/0x1f0 kernel/kthread.c:291
- ret_from_fork+0x22/0x30 arch/x86/entry/entry_64.S:293
-freed in:
- kfence_guarded_free+0x17f/0x3a0 mm/kfence/core.c:352
- test_use_after_free_read+0xfa/0x1b7 [kfence_test]
- kunit_run_case_internal lib/kunit/test.c:256
- kunit_try_run_case+0x6b/0xa0 lib/kunit/test.c:295
- kunit_generic_run_threadfn_adapter+0x24/0x40 lib/kunit/try-catch.c:28
- kthread+0x199/0x1f0 kernel/kthread.c:291
- ret_from_fork+0x22/0x30 arch/x86/entry/entry_64.S:293
-```
-
+For more details, please see the included [documentation](https://github.com/google/kasan/blob/kfence/Documentation/dev-tools/kfence.rst).
