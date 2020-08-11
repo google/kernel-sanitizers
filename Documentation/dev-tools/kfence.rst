@@ -28,11 +28,11 @@ Tuning performance
 ~~~~~~~~~~~~~~~~~~
 
 The most important parameter is KFENCE's sample interval, which can be set via
-the kernel boot parameter `kfence.sample_interval` in milliseconds. The sample
-interval determines the frequency with which heap allocations will be guarded
-by KFENCE. The default is configurable via the Kconfig option
-``CONFIG_KFENCE_SAMPLE_INTERVAL``. Setting `kfence.sample_interval=0` disables
-KFENCE.
+the kernel boot parameter ``kfence.sample_interval`` in milliseconds. The
+sample interval determines the frequency with which heap allocations will be
+guarded by KFENCE. The default is configurable via the Kconfig option
+``CONFIG_KFENCE_SAMPLE_INTERVAL``. Setting ``kfence.sample_interval=0``
+disables KFENCE.
 
 With the Kconfig option ``CONFIG_KFENCE_NUM_OBJECTS`` (default 255), the number
 of available guarded objects can be controlled. Each object requires 2 pages,
