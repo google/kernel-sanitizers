@@ -279,7 +279,7 @@ particular KASAN can detect all bug classes that KFENCE can detect. While KASAN
 is more precise, relying on compiler instrumentation, this comes at a
 performance cost. We want to highlight that KASAN and KFENCE are complementary,
 with different target environments. For instance, KASAN is the better
-debugging-aid, where a simple reproducer exists: due to the lower change to
+debugging-aid, where a simple reproducer exists: due to the lower chance to
 detect the error, it would require more effort using KFENCE to debug.
 Deployments at scale, however, would benefit from using KFENCE to discover bugs
 due to code paths not exercised by test cases or fuzzers.
