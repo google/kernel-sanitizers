@@ -38,6 +38,7 @@
 #include <linux/seq_file.h>
 #include <linux/spinlock.h>
 #include <linux/kallsyms.h>
+#include <linux/kfence.h>
 #include <linux/interrupt.h>
 #include <linux/stacktrace.h>
 #include <linux/debug_locks.h>
@@ -753,6 +754,13 @@ static int static_obj(const void *obj)
 		      addr  = (unsigned long) obj;
 
 	if (arch_is_kernel_initmem_freed(addr))
+		return 0;
+
+	/*
+	 * KFENCE objects may be allocated from a static memory pool, but are
+	 * not actually static objects.
+	 */
+	if (is_kfence_address(obj))
 		return 0;
 
 	/*
