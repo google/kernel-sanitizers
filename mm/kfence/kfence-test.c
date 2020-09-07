@@ -677,12 +677,9 @@ static void test_memcache_alloc_bulk(struct kunit *test)
  * additional info in the name. Set up 2 tests per test case, one using the
  * default allocator, and another using a custom memcache (suffix '-memcache').
  */
-// clang-format off
-// TODO: fix formatting for v1
 #define KFENCE_KUNIT_CASE(test_name)						\
 	{ .run_case = test_name, .name = #test_name },				\
 	{ .run_case = test_name, .name = #test_name "-memcache" }
-// clang-format on
 
 static struct kunit_case kfence_test_cases[] = {
 	KFENCE_KUNIT_CASE(test_out_of_bounds_read),
