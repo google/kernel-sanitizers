@@ -230,9 +230,9 @@ static void *kfence_guarded_alloc(struct kmem_cache *cache, size_t size, gfp_t g
 	 * such allocations.
 	 */
 	const bool right = prandom_u32_max(2);
-	unsigned long flags;
 	struct kfence_metadata *meta = NULL;
-	void *addr = NULL;
+	unsigned long flags;
+	void *addr;
 
 	/* Try to obtain a free object. */
 	raw_spin_lock_irqsave(&kfence_freelist_lock, flags);
@@ -629,8 +629,8 @@ size_t kfence_ksize(const void *addr)
 	const struct kfence_metadata *meta = addr_to_metadata((unsigned long)addr);
 
 	/*
-	 * Read locklessly -- if there is a race with __kfence_alloc(), this
-	 * most certainly is either a use-after-free, or invalid access.
+	 * Read locklessly -- if there is a race with __kfence_alloc(), this is
+	 * either a use-after-free or invalid access.
 	 */
 	return meta ? abs(meta->size) : 0;
 }
@@ -640,8 +640,8 @@ void *kfence_object_start(const void *addr)
 	const struct kfence_metadata *meta = addr_to_metadata((unsigned long)addr);
 
 	/*
-	 * Read locklessly -- if there is a race with __kfence_alloc(), this
-	 * most certainly is either a use-after-free, or invalid access.
+	 * Read locklessly -- if there is a race with __kfence_alloc(), this is
+	 * either a use-after-free or invalid access.
 	 */
 	return meta ? (void *)meta->addr : NULL;
 }
@@ -673,7 +673,7 @@ bool kfence_handle_page_fault(unsigned long addr)
 
 	if (page_index % 2) {
 		/* This is a redzone, report a buffer overflow. */
-		struct kfence_metadata *meta = NULL;
+		struct kfence_metadata *meta;
 		int distance = 0;
 
 		meta = addr_to_metadata(addr - PAGE_SIZE);
