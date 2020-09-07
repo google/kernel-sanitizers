@@ -36,9 +36,11 @@ next allocation is set up after the expiration of the interval.
 To enable/disable a KFENCE allocation through the main allocator's
 fast-path without overhead, KFENCE relies on static branches via the
 static keys infrastructure. The static branch is toggled to redirect the
-allocation to KFENCE. To date, we have verified by running synthetic
-benchmarks (sysbench I/O workloads) that a kernel compiled with KFENCE
-is performance-neutral compared to the non-KFENCE baseline.
+allocation to KFENCE.
+
+We have verified by running synthetic benchmarks (sysbench I/O,
+hackbench) that a kernel with KFENCE is performance-neutral compared to
+a non-KFENCE baseline kernel.
 
 KFENCE is inspired by GWP-ASan [1], a userspace tool with similar
 properties. The name "KFENCE" is a homage to the Electric Fence Malloc
