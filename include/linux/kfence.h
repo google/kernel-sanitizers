@@ -160,9 +160,6 @@ bool __must_check kfence_handle_page_fault(unsigned long addr);
 
 #else /* CONFIG_KFENCE */
 
-// TODO: remove for v1
-// clang-format off
-
 static inline bool is_kfence_address(const void *addr) { return false; }
 static inline void kfence_init(void) { }
 static inline bool __must_check kfence_shutdown_cache(struct kmem_cache *s) { return true; }
@@ -171,9 +168,6 @@ static inline size_t kfence_ksize(const void *addr) { return 0; }
 static inline void *kfence_object_start(const void *addr) { return NULL; }
 static inline bool __must_check kfence_free(void *addr) { return false; }
 static inline bool __must_check kfence_handle_page_fault(unsigned long addr) { return false; }
-
-// TODO: remove for v1
-// clang-format on
 
 #endif
 

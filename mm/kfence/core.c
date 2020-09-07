@@ -22,7 +22,6 @@
 #include "kfence.h"
 
 /* Disables KFENCE on the first warning assuming an irrecoverable error. */
-// clang-format off
 #define KFENCE_WARN_ON(cond)                                                   \
 	({                                                                     \
 		const bool __cond = WARN_ON(cond);                             \
@@ -30,7 +29,6 @@
 			WRITE_ONCE(kfence_enabled, false);                     \
 		__cond;                                                        \
 	})
-// clang-format on
 
 #ifndef CONFIG_KFENCE_FAULT_INJECTION /* Only defined with CONFIG_EXPERT. */
 #define CONFIG_KFENCE_FAULT_INJECTION 0
@@ -92,14 +90,12 @@ enum kfence_counter_id {
 	KFENCE_COUNTER_COUNT,
 };
 static atomic_long_t counters[KFENCE_COUNTER_COUNT];
-// clang-format off
 static const char *const counter_names[] = {
 	[KFENCE_COUNTER_ALLOCATED]	= "currently allocated",
 	[KFENCE_COUNTER_ALLOCS]		= "total allocations",
 	[KFENCE_COUNTER_FREES]		= "total frees",
 	[KFENCE_COUNTER_BUGS]		= "total bugs",
 };
-// clang-format on
 static_assert(ARRAY_SIZE(counter_names) == KFENCE_COUNTER_COUNT);
 
 /* === Internals ============================================================ */
