@@ -28,15 +28,21 @@ faults are then intercepted by KFENCE, which handles the fault
 gracefully by reporting a memory access error.
 
 Guarded allocations are set up based on a sample interval (can be set
-via kfence.sample_interval). After expiration of the sample interval, a
-guarded allocation from the KFENCE object pool is returned to the main
-allocator (SLAB or SLUB). At this point, the timer is reset, and the
-next allocation is set up after the expiration of the interval.
+via kfence.sample_interval). After expiration of the sample interval,
+the next allocation through the main allocator (SLAB or SLUB) returns a
+guarded allocation from the KFENCE object pool. At this point, the timer
+is reset, and the next allocation is set up after the expiration of the
+interval.
 
 To enable/disable a KFENCE allocation through the main allocator's
 fast-path without overhead, KFENCE relies on static branches via the
 static keys infrastructure. The static branch is toggled to redirect the
 allocation to KFENCE.
+
+The KFENCE memory pool is of fixed size, and if the pool is exhausted no
+further KFENCE allocations occur. The default config is conservative
+with only 255 objects, resulting in a pool size of 2 MiB (with 4 KiB
+pages).
 
 We have verified by running synthetic benchmarks (sysbench I/O,
 hackbench) that a kernel with KFENCE is performance-neutral compared to
