@@ -549,7 +549,7 @@ void __init kfence_init(void)
 
 	schedule_delayed_work(&kfence_timer, 0);
 	WRITE_ONCE(kfence_enabled, true);
-	pr_info("initialized - using %zu bytes for %d objects", KFENCE_POOL_SIZE,
+	pr_info("initialized - using %lu bytes for %d objects", KFENCE_POOL_SIZE,
 		CONFIG_KFENCE_NUM_OBJECTS);
 	if (IS_ENABLED(CONFIG_DEBUG_KERNEL))
 		pr_cont(" at 0x%px-0x%px\n", (void *)__kfence_pool,
