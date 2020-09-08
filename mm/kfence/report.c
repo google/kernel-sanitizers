@@ -14,6 +14,7 @@
 #include "kfence.h"
 
 /* Helper function to either print to a seq_file or to console. */
+__printf(2, 3)
 static void seq_con_printf(struct seq_file *seq, const char *fmt, ...)
 {
 	va_list args;
@@ -73,7 +74,7 @@ static void kfence_print_stack(struct seq_file *seq, const struct kfence_metadat
 
 		/* stack_trace_seq_print() does not exist; open code our own. */
 		for (i = 0; i < nentries; i++)
-			seq_con_printf(seq, " %pS\n", entries[i]);
+			seq_con_printf(seq, " %pS\n", (void *)entries[i]);
 	} else {
 		seq_con_printf(seq, " no %s stack\n", show_alloc ? "allocation" : "deallocation");
 	}
