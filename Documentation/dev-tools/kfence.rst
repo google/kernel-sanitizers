@@ -40,11 +40,12 @@ guarded by KFENCE. The default is configurable via the Kconfig option
 ``CONFIG_KFENCE_SAMPLE_INTERVAL``. Setting ``kfence.sample_interval=0``
 disables KFENCE.
 
-With the Kconfig option ``CONFIG_KFENCE_NUM_OBJECTS`` (default 255), the number
-of available guarded objects can be controlled. Each object requires 2 pages,
-one for the object itself and the other one used as a guard page; object pages
-are interleaved with guard pages, and every object page is therefore surrounded
-by two guard pages.
+The KFENCE memory pool is of fixed size, and if the pool is exhausted, no
+further KFENCE allocations occur. With ``CONFIG_KFENCE_NUM_OBJECTS`` (default
+255), the number of available guarded objects can be controlled. Each object
+requires 2 pages, one for the object itself and the other one used as a guard
+page; object pages are interleaved with guard pages, and every object page is
+therefore surrounded by two guard pages.
 
 The total memory dedicated to the KFENCE memory pool can be computed as::
 
