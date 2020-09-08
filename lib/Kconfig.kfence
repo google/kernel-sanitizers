@@ -38,6 +38,9 @@ config KFENCE_SAMPLE_INTERVAL
 	  allocations will be guarded by KFENCE. May be overridden via boot
 	  parameter "kfence.sample_interval".
 
+	  Set this to 0 to disable KFENCE by default, in which case only
+	  setting "kfence.sample_interval" to a non-zero value enables KFENCE.
+
 config KFENCE_NUM_OBJECTS
 	int "Number of guarded objects available"
 	default 255
