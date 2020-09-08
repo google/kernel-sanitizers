@@ -21,6 +21,12 @@ To enable KFENCE, configure the kernel with::
 
     CONFIG_KFENCE=y
 
+To build a kernel with KFENCE support, but disabled by default (to enable, set
+``kfence.sample_interval`` to non-zero value), configure the kernel with::
+
+    CONFIG_KFENCE=y
+    CONFIG_KFENCE_SAMPLE_INTERVAL=0
+
 KFENCE provides several other configuration options to customize behaviour (see
 the respective help text in ``lib/Kconfig.kfence`` for more info).
 
@@ -281,9 +287,11 @@ found in the userspace `Electric Fence Malloc Debugger
 In the kernel, several tools exist to debug memory access errors, and in
 particular KASAN can detect all bug classes that KFENCE can detect. While KASAN
 is more precise, relying on compiler instrumentation, this comes at a
-performance cost. We want to highlight that KASAN and KFENCE are complementary,
-with different target environments. For instance, KASAN is the better
-debugging-aid, where a simple reproducer exists: due to the lower chance to
-detect the error, it would require more effort using KFENCE to debug.
-Deployments at scale, however, would benefit from using KFENCE to discover bugs
-due to code paths not exercised by test cases or fuzzers.
+performance cost.
+
+It is worth highlighting that KASAN and KFENCE are complementary, with
+different target environments. For instance, KASAN is the better debugging-aid,
+where test cases or reproducers exists: due to the lower chance to detect the
+error, it would require more effort using KFENCE to debug. Deployments at scale
+that cannot afford to enable KASAN, however, would benefit from using KFENCE to
+discover bugs due to code paths not exercised by test cases or fuzzers.
