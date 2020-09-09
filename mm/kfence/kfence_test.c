@@ -728,7 +728,7 @@ static void test_exit(struct kunit *test)
 }
 
 static struct kunit_suite kfence_test_suite = {
-	.name = "kfence-test",
+	.name = "kfence",
 	.test_cases = kfence_test_cases,
 	.init = test_init,
 	.exit = test_exit,
