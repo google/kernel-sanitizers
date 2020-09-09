@@ -383,8 +383,8 @@ static bool __init kfence_initialize_pool(void)
 	pages = virt_to_page(addr);
 
 	/*
-	 * Set up non-redzone pages: they must have PG_slab set, to avoid
-	 * freeing these as real pages.
+	 * Set up object pages: they must have PG_slab set, to avoid freeing
+	 * these as real pages.
 	 *
 	 * We also want to avoid inserting kfence_free() in the kfree()
 	 * fast-path in SLUB, and therefore need to ensure kfree() correctly
