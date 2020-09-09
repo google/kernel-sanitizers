@@ -21,6 +21,12 @@ To enable KFENCE, configure the kernel with::
 
     CONFIG_KFENCE=y
 
+To build a kernel with KFENCE support, but disabled by default (to enable, set
+``kfence.sample_interval`` to non-zero value), configure the kernel with::
+
+    CONFIG_KFENCE=y
+    CONFIG_KFENCE_SAMPLE_INTERVAL=0
+
 KFENCE provides several other configuration options to customize behaviour (see
 the respective help text in ``lib/Kconfig.kfence`` for more info).
 
@@ -34,11 +40,12 @@ guarded by KFENCE. The default is configurable via the Kconfig option
 ``CONFIG_KFENCE_SAMPLE_INTERVAL``. Setting ``kfence.sample_interval=0``
 disables KFENCE.
 
-With the Kconfig option ``CONFIG_KFENCE_NUM_OBJECTS`` (default 255), the number
-of available guarded objects can be controlled. Each object requires 2 pages,
-one for the object itself and the other one used as a guard page; object pages
-are interleaved with guard pages, and every object page is therefore surrounded
-by two guard pages.
+The KFENCE memory pool is of fixed size, and if the pool is exhausted, no
+further KFENCE allocations occur. With ``CONFIG_KFENCE_NUM_OBJECTS`` (default
+255), the number of available guarded objects can be controlled. Each object
+requires 2 pages, one for the object itself and the other one used as a guard
+page; object pages are interleaved with guard pages, and every object page is
+therefore surrounded by two guard pages.
 
 The total memory dedicated to the KFENCE memory pool can be computed as::
 
@@ -78,14 +85,15 @@ A typical out-of-bounds access looks like this::
 
 The header of the report provides a short summary of the function involved in
 the access. It is followed by more detailed information about the access and
-its origin.
+its origin. Note that, real kernel addresses are only shown for
+``CONFIG_DEBUG_KERNEL=y`` builds.
 
 Use-after-free accesses are reported as::
 
     ==================================================================
     BUG: KFENCE: use-after-free in test_use_after_free_read+0xb3/0x143
 
-    Use-after-free access at 0xffffffffb673dfe0:
+    Use-after-free access at 0xffffffffb673dfe0 (in kfence-#24):
      test_use_after_free_read+0xb3/0x143
      kunit_try_run_case+0x51/0x85
      kunit_generic_run_threadfn_adapter+0x16/0x30
@@ -155,7 +163,7 @@ These are reported on frees::
     ==================================================================
     BUG: KFENCE: memory corruption in test_kmalloc_aligned_oob_write+0xef/0x184
 
-    Detected corrupted memory at 0xffffffffb6797ff9 [ 0xac . . . . . . ]:
+    Corrupted memory at 0xffffffffb6797ff9 [ 0xac . . . . . . ] (in kfence-#69):
      test_kmalloc_aligned_oob_write+0xef/0x184
      kunit_try_run_case+0x51/0x85
      kunit_generic_run_threadfn_adapter+0x16/0x30
@@ -176,8 +184,13 @@ These are reported on frees::
     Hardware name: QEMU Standard PC (i440FX + PIIX, 1996), BIOS 1.13.0-1 04/01/2014
     ==================================================================
 
-For such errors, the address where the corruption as well as the corrupt bytes
-are shown.
+For such errors, the address where the corruption as well as the invalidly
+written bytes (offset from the address) are shown; in this representation, '.'
+denote untouched bytes. In the example above ``0xac`` is the value written to
+the invalid address at offset 0, and the remaining '.' denote that no following
+bytes have been touched. Note that, real values are only shown for
+``CONFIG_DEBUG_KERNEL=y`` builds; to avoid information disclosure for non-debug
+builds, '!' is used instead to denote invalidly written bytes.
 
 And finally, KFENCE may also report on invalid accesses to any protected page
 where it was not possible to determine an associated object, e.g. if adjacent
@@ -211,26 +224,27 @@ Implementation Details
 ----------------------
 
 Guarded allocations are set up based on the sample interval. After expiration
-of the sample interval, a guarded allocation from the KFENCE object pool is
-returned to the main allocator (SLAB or SLUB). At this point, the timer is
-reset, and the next allocation is set up after the expiration of the interval.
-To "gate" a KFENCE allocation through the main allocator's fast-path without
-overhead, KFENCE relies on static branches via the static keys infrastructure.
-The static branch is toggled to redirect the allocation to KFENCE.
+of the sample interval, the next allocation through the main allocator (SLAB or
+SLUB) returns a guarded allocation from the KFENCE object pool. At this point,
+the timer is reset, and the next allocation is set up after the expiration of
+the interval. To "gate" a KFENCE allocation through the main allocator's
+fast-path without overhead, KFENCE relies on static branches via the static
+keys infrastructure. The static branch is toggled to redirect the allocation
+to KFENCE.
 
 KFENCE objects each reside on a dedicated page, at either the left or right
 page boundaries selected at random. The pages to the left and right of the
 object page are "guard pages", whose attributes are changed to a protected
 state, and cause page faults on any attempted access. Such page faults are then
 intercepted by KFENCE, which handles the fault gracefully by reporting an
-out-of-bounds access. The side opposite of an object's guard page is used as a
-pattern-based redzone, to detect out-of-bounds writes on the unprotected sed of
-the object on frees (for special alignment and size combinations, both sides of
-the object are redzoned).
+out-of-bounds access.
 
-KFENCE also uses pattern-based redzones on the other side of an object's guard
-page, to detect out-of-bounds writes on the unprotected side of the object;
-these are reported on frees.
+To detect out-of-bounds writes to memory within the object's page itself,
+KFENCE also uses pattern-based redzones. For each object page, a redzone is set
+up for all non-object memory. For typical alignments, the redzone is only
+required on the unguarded side of an object. Because KFENCE must honor the
+cache's requested alignment, special alignments may result in unprotected gaps
+on either side of an object, all of which are redzoned.
 
 The following figure illustrates the page layout::
 
@@ -277,9 +291,11 @@ found in the userspace `Electric Fence Malloc Debugger
 In the kernel, several tools exist to debug memory access errors, and in
 particular KASAN can detect all bug classes that KFENCE can detect. While KASAN
 is more precise, relying on compiler instrumentation, this comes at a
-performance cost. We want to highlight that KASAN and KFENCE are complementary,
-with different target environments. For instance, KASAN is the better
-debugging-aid, where a simple reproducer exists: due to the lower chance to
-detect the error, it would require more effort using KFENCE to debug.
-Deployments at scale, however, would benefit from using KFENCE to discover bugs
-due to code paths not exercised by test cases or fuzzers.
+performance cost.
+
+It is worth highlighting that KASAN and KFENCE are complementary, with
+different target environments. For instance, KASAN is the better debugging-aid,
+where test cases or reproducers exists: due to the lower chance to detect the
+error, it would require more effort using KFENCE to debug. Deployments at scale
+that cannot afford to enable KASAN, however, would benefit from using KFENCE to
+discover bugs due to code paths not exercised by test cases or fuzzers.

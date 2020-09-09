@@ -126,7 +126,7 @@ static bool report_matches(const struct expect_report *r)
 		cur += scnprintf(cur, end - cur, "Use-after-free access at");
 		break;
 	case KFENCE_ERROR_CORRUPTION:
-		cur += scnprintf(cur, end - cur, "Detected corrupted memory at");
+		cur += scnprintf(cur, end - cur, "Corrupted memory at");
 		break;
 	case KFENCE_ERROR_INVALID:
 		cur += scnprintf(cur, end - cur, "Invalid access at");

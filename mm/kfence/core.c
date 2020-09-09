@@ -383,8 +383,8 @@ static bool __init kfence_initialize_pool(void)
 	pages = virt_to_page(addr);
 
 	/*
-	 * Set up non-redzone pages: they must have PG_slab set, to avoid
-	 * freeing these as real pages.
+	 * Set up object pages: they must have PG_slab set, to avoid freeing
+	 * these as real pages.
 	 *
 	 * We also want to avoid inserting kfence_free() in the kfree()
 	 * fast-path in SLUB, and therefore need to ensure kfree() correctly
@@ -503,7 +503,7 @@ static int __init kfence_debugfs_init(void)
 {
 	struct dentry *kfence_dir = debugfs_create_dir("kfence", NULL);
 
-	debugfs_create_file("stats", 0400, kfence_dir, NULL, &stats_fops);
+	debugfs_create_file("stats", 0444, kfence_dir, NULL, &stats_fops);
 	debugfs_create_file("objects", 0400, kfence_dir, NULL, &objects_fops);
 	return 0;
 }
@@ -549,7 +549,7 @@ void __init kfence_init(void)
 
 	schedule_delayed_work(&kfence_timer, 0);
 	WRITE_ONCE(kfence_enabled, true);
-	pr_info("initialized - using %zu bytes for %d objects", KFENCE_POOL_SIZE,
+	pr_info("initialized - using %lu bytes for %d objects", KFENCE_POOL_SIZE,
 		CONFIG_KFENCE_NUM_OBJECTS);
 	if (IS_ENABLED(CONFIG_DEBUG_KERNEL))
 		pr_cont(" at 0x%px-0x%px\n", (void *)__kfence_pool,

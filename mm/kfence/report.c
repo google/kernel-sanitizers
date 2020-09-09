@@ -132,9 +132,10 @@ void kfence_report_error(unsigned long address, const struct kfence_metadata *me
 	unsigned long stack_entries[KFENCE_STACK_DEPTH] = { 0 };
 	int num_stack_entries = stack_trace_save(stack_entries, KFENCE_STACK_DEPTH, 1);
 	int skipnr = get_stack_skipnr(stack_entries, num_stack_entries, type);
+	const ptrdiff_t object_index = meta ? meta - kfence_metadata : -1;
 
-	/* KFENCE_ERROR_OOB requires non-NULL meta; for the rest it's optional. */
-	if (WARN_ON(type == KFENCE_ERROR_OOB && !meta))
+	/* Require non-NULL meta, except if KFENCE_ERROR_INVALID. */
+	if (WARN_ON(type != KFENCE_ERROR_INVALID && !meta))
 		return;
 
 	if (meta)
@@ -156,18 +157,18 @@ void kfence_report_error(unsigned long address, const struct kfence_metadata *me
 	case KFENCE_ERROR_OOB:
 		pr_err("BUG: KFENCE: out-of-bounds in %pS\n\n", (void *)stack_entries[skipnr]);
 		pr_err("Out-of-bounds access at 0x" PTR_FMT " (%s of kfence-#%zd):\n",
-		       (void *)address, address < meta->addr ? "left" : "right",
-		       meta - kfence_metadata);
+		       (void *)address, address < meta->addr ? "left" : "right", object_index);
 		break;
 	case KFENCE_ERROR_UAF:
 		pr_err("BUG: KFENCE: use-after-free in %pS\n\n", (void *)stack_entries[skipnr]);
-		pr_err("Use-after-free access at 0x" PTR_FMT ":\n", (void *)address);
+		pr_err("Use-after-free access at 0x" PTR_FMT " (in kfence-#%zd):\n",
+		       (void *)address, object_index);
 		break;
 	case KFENCE_ERROR_CORRUPTION:
 		pr_err("BUG: KFENCE: memory corruption in %pS\n\n", (void *)stack_entries[skipnr]);
-		pr_err("Detected corrupted memory at 0x" PTR_FMT " ", (void *)address);
+		pr_err("Corrupted memory at 0x" PTR_FMT " ", (void *)address);
 		print_diff_canary((u8 *)address, 16);
-		pr_cont(":\n");
+		pr_cont(" (in kfence-#%zd):\n", object_index);
 		break;
 	case KFENCE_ERROR_INVALID:
 		pr_err("BUG: KFENCE: invalid access in %pS\n\n", (void *)stack_entries[skipnr]);
@@ -175,7 +176,8 @@ void kfence_report_error(unsigned long address, const struct kfence_metadata *me
 		break;
 	case KFENCE_ERROR_INVALID_FREE:
 		pr_err("BUG: KFENCE: invalid free in %pS\n\n", (void *)stack_entries[skipnr]);
-		pr_err("Invalid free of 0x" PTR_FMT ":\n", (void *)address);
+		pr_err("Invalid free of 0x" PTR_FMT " (in kfence-#%zd):\n", (void *)address,
+		       object_index);
 		break;
 	}
 

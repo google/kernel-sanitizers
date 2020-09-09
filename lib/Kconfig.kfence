@@ -23,8 +23,10 @@ menuconfig KFENCE
 
 	  Note that, KFENCE is not a substitute for explicit testing with tools
 	  such as KASAN. KFENCE can detect a subset of bugs that KASAN can
-	  detect (therefore enabling KFENCE together with KASAN does not make
-	  sense), albeit at very different performance profiles.
+	  detect, albeit at very different performance profiles. If you can
+	  afford to use KASAN, continue using KASAN, for example in test
+	  environments. If your kernel targets production use, and cannot
+	  enable KASAN due to its cost, consider using KFENCE.
 
 if KFENCE
 
@@ -35,6 +37,9 @@ config KFENCE_SAMPLE_INTERVAL
 	  The KFENCE sample interval determines the frequency with which heap
 	  allocations will be guarded by KFENCE. May be overridden via boot
 	  parameter "kfence.sample_interval".
+
+	  Set this to 0 to disable KFENCE by default, in which case only
+	  setting "kfence.sample_interval" to a non-zero value enables KFENCE.
 
 config KFENCE_NUM_OBJECTS
 	int "Number of guarded objects available"
