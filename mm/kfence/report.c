@@ -166,7 +166,7 @@ void kfence_report_error(unsigned long address, const struct kfence_metadata *me
 		break;
 	case KFENCE_ERROR_CORRUPTION:
 		pr_err("BUG: KFENCE: memory corruption in %pS\n\n", (void *)stack_entries[skipnr]);
-		pr_err("Detected corrupted memory at 0x" PTR_FMT " ", (void *)address);
+		pr_err("Corrupted memory at 0x" PTR_FMT " ", (void *)address);
 		print_diff_canary((u8 *)address, 16);
 		pr_cont(" (in kfence-#%zd):\n", object_index);
 		break;
