@@ -59,3 +59,11 @@ series -- also viewable here:
 
 [1] http://llvm.org/docs/GwpAsan.html
 [2] https://linux.die.net/man/3/efence
+
+v2:
+* Rework KMEMLEAK compatibility patch.
+* Change all reports to reference the kfence object, "kfence-#nn".
+* Various comment/documentation changes (see details in patches).
+* Various minor tweaks (see details in patches).
+
+RFC/v1: https://lkml.kernel.org/r/20200907134055.2878499-1-elver@google.com
