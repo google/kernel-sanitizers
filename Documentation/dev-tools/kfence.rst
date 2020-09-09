@@ -189,8 +189,8 @@ written bytes (offset from the address) are shown; in this representation, '.'
 denote untouched bytes. In the example above ``0xac`` is the value written to
 the invalid address at offset 0, and the remaining '.' denote that no following
 bytes have been touched. Note that, real values are only shown for
-``CONFIG_DEBUG_KERNEL=y`` builds; for non-debug builds, '!' is used instead to
-denote invalidly written bytes.
+``CONFIG_DEBUG_KERNEL=y`` builds; to avoid information disclosure for non-debug
+builds, '!' is used instead to denote invalidly written bytes.
 
 And finally, KFENCE may also report on invalid accesses to any protected page
 where it was not possible to determine an associated object, e.g. if adjacent
@@ -227,9 +227,9 @@ Guarded allocations are set up based on the sample interval. After expiration
 of the sample interval, the next allocation through the main allocator (SLAB or
 SLUB) returns a guarded allocation from the KFENCE object pool. At this point,
 the timer is reset, and the next allocation is set up after the expiration of
-the interval.  To "gate" a KFENCE allocation through the main allocator's
+the interval. To "gate" a KFENCE allocation through the main allocator's
 fast-path without overhead, KFENCE relies on static branches via the static
-keys infrastructure.  The static branch is toggled to redirect the allocation
+keys infrastructure. The static branch is toggled to redirect the allocation
 to KFENCE.
 
 KFENCE objects each reside on a dedicated page, at either the left or right
@@ -239,9 +239,12 @@ state, and cause page faults on any attempted access. Such page faults are then
 intercepted by KFENCE, which handles the fault gracefully by reporting an
 out-of-bounds access.
 
-KFENCE also uses pattern-based redzones on the opposite side of an object's
-guard page, to detect out-of-bounds writes on the unprotected side of the
-object. Corruptions of the redzone pattern are reported on frees.
+To detect out-of-bounds writes to memory within the object's page itself,
+KFENCE also uses pattern-based redzones. For each object page, a redzone is set
+up for all non-object memory. For typical alignments, the redzone is only
+required on the unguarded side of an object. Because KFENCE must honor the
+cache's requested alignment, special alignments may result in unprotected gaps
+on either side of an object, all of which are redzoned.
 
 The following figure illustrates the page layout::
 
