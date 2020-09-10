@@ -650,6 +650,11 @@ void __kfence_free(void *addr)
 {
 	struct kfence_metadata *meta = addr_to_metadata((unsigned long)addr);
 
+	/*
+	 * If the objects of the cache are SLAB_TYPESAFE_BY_RCU, defer freeing
+	 * the object, as the object page may be recycled for other-typed
+	 * objects once it has been freed.
+	 */
 	if (unlikely(meta->cache->flags & SLAB_TYPESAFE_BY_RCU))
 		call_rcu(&meta->rcu_head, rcu_guarded_free);
 	else
