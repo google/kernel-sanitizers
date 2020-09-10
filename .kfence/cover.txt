@@ -62,8 +62,9 @@ series -- also viewable here:
 
 v2:
 * Various comment/documentation changes (see details in patches).
-* Various minor tweaks (see details in patches).
+* Various smaller fixes (see details in patches).
 * Change all reports to reference the kfence object, "kfence-#nn".
+* Skip allocation/free internals stack trace.
 * Rework KMEMLEAK compatibility patch.
 
 RFC/v1: https://lkml.kernel.org/r/20200907134055.2878499-1-elver@google.com
