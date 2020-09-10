@@ -27,33 +27,46 @@ static void seq_con_printf(struct seq_file *seq, const char *fmt, ...)
 	va_end(args);
 }
 
-/* Get the number of stack entries to skip get out of MM internals. */
+/*
+ * Get the number of stack entries to skip get out of MM internals. @type is
+ * optional, and if set to NULL, assumes an allocation or free stack.
+ */
 static int get_stack_skipnr(const unsigned long stack_entries[], int num_entries,
-			    enum kfence_error_type type)
+			    const enum kfence_error_type *type)
 {
 	char buf[64];
 	int skipnr, fallback = 0;
+	bool is_access_fault = false;
+
+	if (type) {
+		/* Depending on error type, find different stack entries. */
+		switch (*type) {
+		case KFENCE_ERROR_UAF:
+		case KFENCE_ERROR_OOB:
+		case KFENCE_ERROR_INVALID:
+			is_access_fault = true;
+			break;
+		case KFENCE_ERROR_CORRUPTION:
+		case KFENCE_ERROR_INVALID_FREE:
+			break;
+		}
+	}
 
 	for (skipnr = 0; skipnr < num_entries; skipnr++) {
 		int len = scnprintf(buf, sizeof(buf), "%ps", (void *)stack_entries[skipnr]);
 
-		/* Depending on error type, find different stack entries. */
-		switch (type) {
-		case KFENCE_ERROR_UAF:
-		case KFENCE_ERROR_OOB:
-		case KFENCE_ERROR_INVALID:
+		if (is_access_fault) {
 			if (!strncmp(buf, KFENCE_SKIP_ARCH_FAULT_HANDLER, len))
 				goto found;
-			break;
-		case KFENCE_ERROR_CORRUPTION:
-		case KFENCE_ERROR_INVALID_FREE:
+		} else {
 			if (str_has_prefix(buf, "kfence_") || str_has_prefix(buf, "__kfence_"))
-				fallback = skipnr + 1; /* In case kfree tail calls into kfence. */
+				fallback = skipnr + 1; /* In case of tail calls into kfence. */
 
 			/* Also the *_bulk() variants by only checking prefixes. */
 			if (str_has_prefix(buf, "kfree") || str_has_prefix(buf, "kmem_cache_free"))
 				goto found;
-			break;
+			if (str_has_prefix(buf, "__kmalloc") || str_has_prefix(buf, "kmem_cache_alloc"))
+				goto found;
 		}
 	}
 	if (fallback < num_entries)
@@ -70,10 +83,11 @@ static void kfence_print_stack(struct seq_file *seq, const struct kfence_metadat
 	const int nentries = show_alloc ? meta->num_alloc_stack : meta->num_free_stack;
 
 	if (nentries) {
-		int i;
+		/* Skip allocation/free internals stack. */
+		int i = get_stack_skipnr(entries, nentries, NULL);
 
 		/* stack_trace_seq_print() does not exist; open code our own. */
-		for (i = 0; i < nentries; i++)
+		for (; i < nentries; i++)
 			seq_con_printf(seq, " %pS\n", (void *)entries[i]);
 	} else {
 		seq_con_printf(seq, " no %s stack\n", show_alloc ? "allocation" : "deallocation");
@@ -131,7 +145,7 @@ void kfence_report_error(unsigned long address, const struct kfence_metadata *me
 {
 	unsigned long stack_entries[KFENCE_STACK_DEPTH] = { 0 };
 	int num_stack_entries = stack_trace_save(stack_entries, KFENCE_STACK_DEPTH, 1);
-	int skipnr = get_stack_skipnr(stack_entries, num_stack_entries, type);
+	int skipnr = get_stack_skipnr(stack_entries, num_stack_entries, &type);
 	const ptrdiff_t object_index = meta ? meta - kfence_metadata : -1;
 
 	/* Require non-NULL meta, except if KFENCE_ERROR_INVALID. */
