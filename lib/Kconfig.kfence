@@ -50,15 +50,17 @@ config KFENCE_NUM_OBJECTS
 	  pages are required; with one containing the object and two adjacent
 	  ones used as guard pages.
 
-config KFENCE_FAULT_INJECTION
-	int "Fault injection for stress testing"
+config KFENCE_STRESS_TEST_FAULTS
+	int "Stress testing of fault handling and error reporting"
 	default 0
 	depends on EXPERT
 	help
 	  The inverse probability with which to randomly protect KFENCE object
 	  pages, resulting in spurious use-after-frees. The main purpose of
-	  this option is to stress-test KFENCE with concurrent error reports
-	  and allocations/frees. A value of 0 disables fault injection.
+	  this option is to stress test KFENCE with concurrent error reports
+	  and allocations/frees. A value of 0 disables stress testing logic.
+
+	  The option is only to test KFENCE; set to 0 if you are unsure.
 
 config KFENCE_KUNIT_TEST
 	tristate "KFENCE integration test suite" if !KUNIT_ALL_TESTS

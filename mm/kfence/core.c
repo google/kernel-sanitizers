@@ -30,8 +30,8 @@
 		__cond;                                                        \
 	})
 
-#ifndef CONFIG_KFENCE_FAULT_INJECTION /* Only defined with CONFIG_EXPERT. */
-#define CONFIG_KFENCE_FAULT_INJECTION 0
+#ifndef CONFIG_KFENCE_STRESS_TEST_FAULTS /* Only defined with CONFIG_EXPERT. */
+#define CONFIG_KFENCE_STRESS_TEST_FAULTS 0
 #endif
 
 /* === Data ================================================================= */
@@ -295,7 +295,7 @@ static void *kfence_guarded_alloc(struct kmem_cache *cache, size_t size, gfp_t g
 	if (cache->ctor)
 		cache->ctor(addr);
 
-	if (CONFIG_KFENCE_FAULT_INJECTION && !prandom_u32_max(CONFIG_KFENCE_FAULT_INJECTION))
+	if (CONFIG_KFENCE_STRESS_TEST_FAULTS && !prandom_u32_max(CONFIG_KFENCE_STRESS_TEST_FAULTS))
 		kfence_protect(meta->addr); /* Random "faults" by protecting the object. */
 
 	atomic_long_inc(&counters[KFENCE_COUNTER_ALLOCATED]);
@@ -324,7 +324,7 @@ static void kfence_guarded_free(void *addr, struct kfence_metadata *meta)
 				  KCSAN_ACCESS_SCOPED | KCSAN_ACCESS_WRITE | KCSAN_ACCESS_ASSERT,
 				  &assert_page_exclusive);
 
-	if (CONFIG_KFENCE_FAULT_INJECTION)
+	if (CONFIG_KFENCE_STRESS_TEST_FAULTS)
 		kfence_unprotect((unsigned long)addr); /* To check canary bytes. */
 
 	/* Restore page protection if there was an OOB access. */
