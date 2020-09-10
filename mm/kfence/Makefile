@@ -2,5 +2,5 @@
 
 obj-$(CONFIG_KFENCE) := core.o report.o
 
-CFLAGS_kfence-test.o := -g -fno-omit-frame-pointer -fno-optimize-sibling-calls
-obj-$(CONFIG_KFENCE_TEST) += kfence-test.o
+CFLAGS_kfence_test.o := -g -fno-omit-frame-pointer -fno-optimize-sibling-calls
+obj-$(CONFIG_KFENCE_KUNIT_TEST) += kfence_test.o
