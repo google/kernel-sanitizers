@@ -212,8 +212,7 @@ static inline void for_each_canary(const struct kfence_metadata *meta, bool (*fn
 			break;
 	}
 
-	for (addr = meta->addr + meta->size; addr < PAGE_ALIGN(meta->addr);
-	     addr++) {
+	for (addr = meta->addr + meta->size; addr < PAGE_ALIGN(meta->addr); addr++) {
 		if (!fn((u8 *)addr))
 			break;
 	}
