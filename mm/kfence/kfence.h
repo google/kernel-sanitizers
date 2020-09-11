@@ -60,11 +60,9 @@ struct kfence_metadata {
 	unsigned long addr;
 
 	/*
-	 * The size of the original allocation:
-	 *	size > 0: left page alignment
-	 *	size < 0: right page alignment
+	 * The size of the original allocation.
 	 */
-	int size;
+	size_t size;
 
 	/*
 	 * The kmem_cache cache of the last allocation; NULL if never allocated
