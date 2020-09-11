@@ -45,14 +45,22 @@ further KFENCE allocations occur. With ``CONFIG_KFENCE_NUM_OBJECTS`` (default
 255), the number of available guarded objects can be controlled. Each object
 requires 2 pages, one for the object itself and the other one used as a guard
 page; object pages are interleaved with guard pages, and every object page is
-therefore surrounded by two guard pages.
-
-The total memory dedicated to the KFENCE memory pool can be computed as::
+therefore surrounded by two guard pages. The total memory dedicated to the
+KFENCE memory pool can be computed as::
 
     ( #objects + 1 ) * 2 * PAGE_SIZE
 
 Using the default config, and assuming a page size of 4 KiB, results in
 dedicating 2 MiB to the KFENCE memory pool.
+
+In order to avoid exhausting the KFENCE memory pool with long-lived objects,
+typically created in non-kmalloc caches, the kernel boot parameter
+``kfence.non_kmalloc_cutoff`` (default 80%) can be tweaked. This parameter
+denotes the KFENCE pool usage percentage cut-off: if exceeded, no further
+non-kmalloc cache allocations are serviced by KFENCE.
+
+All kernel boot parameters can be tweaked at runtime via
+``/sys/module/kfence/parameters/``.
 
 Error reports
 ~~~~~~~~~~~~~
