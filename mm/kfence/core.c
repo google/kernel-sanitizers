@@ -203,7 +203,6 @@ static inline bool check_canary_byte(u8 *addr)
 
 static inline void for_each_canary(const struct kfence_metadata *meta, bool (*fn)(u8 *))
 {
-	const int size = abs(meta->size);
 	unsigned long addr;
 
 	lockdep_assert_held(&meta->lock);
@@ -213,7 +212,7 @@ static inline void for_each_canary(const struct kfence_metadata *meta, bool (*fn
 			break;
 	}
 
-	for (addr = meta->addr + size; addr < PAGE_ALIGN(meta->addr); addr++) {
+	for (addr = meta->addr + meta->size; addr < PAGE_ALIGN(meta->addr); addr++) {
 		if (!fn((u8 *)addr))
 			break;
 	}
@@ -268,15 +267,16 @@ static void *kfence_guarded_alloc(struct kmem_cache *cache, size_t size, gfp_t g
 		kfence_unprotect(meta->addr);
 
 	/* Calculate address for this allocation. */
-	if (right)
+	if (right) {
 		meta->addr += PAGE_SIZE - size;
-	meta->addr = ALIGN_DOWN(meta->addr, cache->align);
+		meta->addr = ALIGN_DOWN(meta->addr, cache->align);
+	}
 
 	/* Update remaining metadata. */
 	metadata_update_state(meta, KFENCE_OBJECT_ALLOCATED);
 	/* Pairs with READ_ONCE() in kfence_shutdown_cache(). */
 	WRITE_ONCE(meta->cache, cache);
-	meta->size = right ? -size : size;
+	meta->size = size;
 	for_each_canary(meta, set_canary_byte);
 	virt_to_page(meta->addr)->slab_cache = cache;
 
@@ -342,7 +342,7 @@ static void kfence_guarded_free(void *addr, struct kfence_metadata *meta)
 	 * unprotect the page, so the data is still accessible.
 	 */
 	if (unlikely(slab_want_init_on_free(meta->cache)))
-		memzero_explicit(addr, abs(meta->size));
+		memzero_explicit(addr, meta->size);
 
 	/* Mark the object as freed. */
 	metadata_update_state(meta, KFENCE_OBJECT_FREED);
@@ -547,8 +547,8 @@ void __init kfence_init(void)
 		return;
 	}
 
-	schedule_delayed_work(&kfence_timer, 0);
 	WRITE_ONCE(kfence_enabled, true);
+	schedule_delayed_work(&kfence_timer, 0);
 	pr_info("initialized - using %lu bytes for %d objects", KFENCE_POOL_SIZE,
 		CONFIG_KFENCE_NUM_OBJECTS);
 	if (IS_ENABLED(CONFIG_DEBUG_KERNEL))
@@ -632,7 +632,7 @@ size_t kfence_ksize(const void *addr)
 	 * Read locklessly -- if there is a race with __kfence_alloc(), this is
 	 * either a use-after-free or invalid access.
 	 */
-	return meta ? abs(meta->size) : 0;
+	return meta ? meta->size : 0;
 }
 
 void *kfence_object_start(const void *addr)
@@ -685,7 +685,7 @@ bool kfence_handle_page_fault(unsigned long addr)
 		if (meta && READ_ONCE(meta->state) == KFENCE_OBJECT_ALLOCATED) {
 			to_report = meta;
 			/* Data race ok; distance calculation approximate. */
-			distance = addr - data_race(meta->addr + abs(meta->size));
+			distance = addr - data_race(meta->addr + meta->size);
 		}
 
 		meta = addr_to_metadata(addr + PAGE_SIZE);
