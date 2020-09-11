@@ -115,7 +115,7 @@ void kfence_print_object(struct seq_file *seq, const struct kfence_metadata *met
 	kfence_print_stack(seq, meta, true);
 
 	if (meta->state == KFENCE_OBJECT_FREED) {
-		seq_con_printf(seq, "freed in:\n");
+		seq_con_printf(seq, "\nfreed in:\n");
 		kfence_print_stack(seq, meta, false);
 	}
 }

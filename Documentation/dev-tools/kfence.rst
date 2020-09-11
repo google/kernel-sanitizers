@@ -105,6 +105,7 @@ Use-after-free accesses are reported as::
      kunit_generic_run_threadfn_adapter+0x16/0x30
      kthread+0x137/0x160
      ret_from_fork+0x22/0x30
+
     freed in:
      test_use_after_free_read+0xa8/0x143
      kunit_try_run_case+0x51/0x85
@@ -135,6 +136,7 @@ KFENCE also reports on invalid frees, such as double-frees::
      kunit_generic_run_threadfn_adapter+0x16/0x30
      kthread+0x137/0x160
      ret_from_fork+0x22/0x30
+
     freed in:
      test_double_free+0xa8/0x171
      kunit_try_run_case+0x51/0x85
@@ -213,12 +215,12 @@ Implementation Details
 
 Guarded allocations are set up based on the sample interval. After expiration
 of the sample interval, the next allocation through the main allocator (SLAB or
-SLUB) returns a guarded allocation from the KFENCE object pool. At this point,
-the timer is reset, and the next allocation is set up after the expiration of
-the interval. To "gate" a KFENCE allocation through the main allocator's
-fast-path without overhead, KFENCE relies on static branches via the static
-keys infrastructure. The static branch is toggled to redirect the allocation
-to KFENCE.
+SLUB) returns a guarded allocation from the KFENCE object pool (allocation
+sizes up to PAGE_SIZE are supported). At this point, the timer is reset, and
+the next allocation is set up after the expiration of the interval. To "gate" a
+KFENCE allocation through the main allocator's fast-path without overhead,
+KFENCE relies on static branches via the static keys infrastructure. The static
+branch is toggled to redirect the allocation to KFENCE.
 
 KFENCE objects each reside on a dedicated page, at either the left or right
 page boundaries selected at random. The pages to the left and right of the
