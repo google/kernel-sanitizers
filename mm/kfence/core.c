@@ -219,15 +219,6 @@ static inline void for_each_canary(const struct kfence_metadata *meta, bool (*fn
 
 static void *kfence_guarded_alloc(struct kmem_cache *cache, size_t size, gfp_t gfp)
 {
-	/*
-	 * Note: for allocations made before RNG initialization, will always
-	 * return zero. We still benefit from enabling KFENCE as early as
-	 * possible, even when the RNG is not yet available, as this will allow
-	 * KFENCE to detect bugs due to earlier allocations. The only downside
-	 * is that the out-of-bounds accesses detected are deterministic for
-	 * such allocations.
-	 */
-	const bool right = prandom_u32_max(2);
 	struct kfence_metadata *meta = NULL;
 	unsigned long flags;
 	void *addr;
@@ -265,8 +256,16 @@ static void *kfence_guarded_alloc(struct kmem_cache *cache, size_t size, gfp_t g
 	if (meta->state == KFENCE_OBJECT_FREED)
 		kfence_unprotect(meta->addr);
 
-	/* Calculate address for this allocation. */
-	if (right) {
+	/*
+	 * Note: for allocations made before RNG initialization, will always
+	 * return zero. We still benefit from enabling KFENCE as early as
+	 * possible, even when the RNG is not yet available, as this will allow
+	 * KFENCE to detect bugs due to earlier allocations. The only downside
+	 * is that the out-of-bounds accesses detected are deterministic for
+	 * such allocations.
+	 */
+	if (prandom_u32_max(2)) {
+		/* Allocate on the "right" side, re-calculate address. */
 		meta->addr += PAGE_SIZE - size;
 		meta->addr = ALIGN_DOWN(meta->addr, cache->align);
 	}
