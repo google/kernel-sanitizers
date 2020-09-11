@@ -37,12 +37,18 @@
 /* === Data ================================================================= */
 
 static unsigned long kfence_sample_interval __read_mostly = CONFIG_KFENCE_SAMPLE_INTERVAL;
+/*
+ * The cut-off percentage of KFENCE pool usage, after which no further
+ * non-kmalloc cache allocations will be serviced by KFENCE.
+ */
+static unsigned int kfence_non_kmalloc_cutoff __read_mostly = 80;
 
 #ifdef MODULE_PARAM_PREFIX
 #undef MODULE_PARAM_PREFIX
 #endif
 #define MODULE_PARAM_PREFIX "kfence."
 module_param_named(sample_interval, kfence_sample_interval, ulong, 0600);
+module_param_named(non_kmalloc_cutoff, kfence_non_kmalloc_cutoff, uint, 0600);
 
 static bool kfence_enabled __read_mostly;
 
@@ -215,6 +221,28 @@ static inline void for_each_canary(const struct kfence_metadata *meta, bool (*fn
 		if (!fn((u8 *)addr))
 			break;
 	}
+}
+
+/* Return if the allocation can be serviced by KFENCE. */
+static bool kfence_can_alloc(struct kmem_cache *cache, size_t size)
+{
+	int pool_usage;
+
+	if (size > PAGE_SIZE)
+		return false;
+
+	pool_usage = (100 * atomic_long_read(&counters[KFENCE_COUNTER_ALLOCATED])) /
+		     CONFIG_KFENCE_NUM_OBJECTS;
+	if (pool_usage > min(kfence_non_kmalloc_cutoff, 100U)) {
+		/*
+		 * Iterating through all kmem_caches is more expensive; just
+		 * checking the prefix of the name is simpler.
+		 */
+		if (!str_has_prefix(cache->name, "kmalloc"))
+			return false;
+	}
+
+	return true;
 }
 
 static void *kfence_guarded_alloc(struct kmem_cache *cache, size_t size, gfp_t gfp)
@@ -616,7 +644,7 @@ void *__kfence_alloc(struct kmem_cache *s, size_t size, gfp_t flags)
 	if (!READ_ONCE(kfence_enabled))
 		return NULL;
 
-	if (size > PAGE_SIZE)
+	if (!kfence_can_alloc(s, size))
 		return NULL;
 
 	return kfence_guarded_alloc(s, size, flags);
