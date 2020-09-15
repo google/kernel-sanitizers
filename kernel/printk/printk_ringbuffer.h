@@ -112,16 +112,26 @@ struct prb_reserved_entry {
 	unsigned int			text_space;
 };
 
-#define _DATA_SIZE(sz_bits)		(1UL << (sz_bits))
-#define _DESCS_COUNT(ct_bits)		(1U << (ct_bits))
-#define DESC_SV_BITS			(sizeof(unsigned long) * 8)
-#define DESC_COMMITTED_MASK		(1UL << (DESC_SV_BITS - 1))
-#define DESC_REUSE_MASK			(1UL << (DESC_SV_BITS - 2))
-#define DESC_FLAGS_MASK			(DESC_COMMITTED_MASK | DESC_REUSE_MASK)
-#define DESC_ID_MASK			(~DESC_FLAGS_MASK)
-#define DESC_ID(sv)			((sv) & DESC_ID_MASK)
-#define FAILED_LPOS			0x1
-#define NO_LPOS				0x3
+/* The possible responses of a descriptor state-query. */
+enum desc_state {
+	desc_miss	=  -1,	/* ID mismatch (pseudo state) */
+	desc_reserved	= 0x0,	/* reserved, in use by writer */
+	desc_committed	= 0x1,	/* committed by writer, could get reopened */
+	desc_finalized	= 0x2,	/* committed, no further modification allowed */
+	desc_reusable	= 0x3,	/* free, not yet used by any writer */
+};
+
+#define _DATA_SIZE(sz_bits)	(1UL << (sz_bits))
+#define _DESCS_COUNT(ct_bits)	(1U << (ct_bits))
+#define DESC_SV_BITS		(sizeof(unsigned long) * 8)
+#define DESC_FLAGS_SHIFT	(DESC_SV_BITS - 2)
+#define DESC_FLAGS_MASK		(3UL << DESC_FLAGS_SHIFT)
+#define DESC_STATE(sv)		(3UL & (sv >> DESC_FLAGS_SHIFT))
+#define DESC_SV(id, state)	(((unsigned long)state << DESC_FLAGS_SHIFT) | id)
+#define DESC_ID_MASK		(~DESC_FLAGS_MASK)
+#define DESC_ID(sv)		((sv) & DESC_ID_MASK)
+#define FAILED_LPOS		0x1
+#define NO_LPOS			0x3
 
 #define FAILED_BLK_LPOS	\
 {				\
@@ -213,7 +223,7 @@ struct prb_reserved_entry {
  */
 #define BLK0_LPOS(sz_bits)	(-(_DATA_SIZE(sz_bits)))
 #define DESC0_ID(ct_bits)	DESC_ID(-(_DESCS_COUNT(ct_bits) + 1))
-#define DESC0_SV(ct_bits)	(DESC_COMMITTED_MASK | DESC_REUSE_MASK | DESC0_ID(ct_bits))
+#define DESC0_SV(ct_bits)	DESC_SV(DESC0_ID(ct_bits), desc_reusable)
 
 /*
  * Define a ringbuffer with an external text data buffer. The same as
@@ -318,7 +328,10 @@ static inline void prb_rec_init_wr(struct printk_record *r,
 
 bool prb_reserve(struct prb_reserved_entry *e, struct printk_ringbuffer *rb,
 		 struct printk_record *r);
+bool prb_reserve_in_last(struct prb_reserved_entry *e, struct printk_ringbuffer *rb,
+			 struct printk_record *r, u32 caller_id);
 void prb_commit(struct prb_reserved_entry *e);
+void prb_final_commit(struct prb_reserved_entry *e);
 
 void prb_init(struct printk_ringbuffer *rb,
 	      char *text_buf, unsigned int text_buf_size,
