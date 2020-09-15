@@ -123,7 +123,7 @@ static inline struct kfence_metadata *addr_to_metadata(unsigned long addr)
 	 * __kfence_pool, in which case we would report an "invalid access"
 	 * error.
 	 */
-	index = ((addr - (unsigned long)__kfence_pool) / (PAGE_SIZE * 2)) - 1;
+	index = (addr - (unsigned long)__kfence_pool) / (PAGE_SIZE * 2) - 1;
 	if (index < 0 || index >= CONFIG_KFENCE_NUM_OBJECTS)
 		return NULL;
 
@@ -132,7 +132,7 @@ static inline struct kfence_metadata *addr_to_metadata(unsigned long addr)
 
 static inline unsigned long metadata_to_pageaddr(const struct kfence_metadata *meta)
 {
-	unsigned long offset = ((meta - kfence_metadata) + 1) * PAGE_SIZE * 2;
+	unsigned long offset = (meta - kfence_metadata + 1) * PAGE_SIZE * 2;
 	unsigned long pageaddr = (unsigned long)&__kfence_pool[offset];
 
 	/* The checks do not affect performance; only called from slow-paths. */
