@@ -63,9 +63,10 @@ static int get_stack_skipnr(const unsigned long stack_entries[], int num_entries
 				fallback = skipnr + 1; /* In case of tail calls into kfence. */
 
 			/* Also the *_bulk() variants by only checking prefixes. */
-			if (str_has_prefix(buf, "kfree") || str_has_prefix(buf, "kmem_cache_free"))
-				goto found;
-			if (str_has_prefix(buf, "__kmalloc") || str_has_prefix(buf, "kmem_cache_alloc"))
+			if (str_has_prefix(buf, "kfree") ||
+			    str_has_prefix(buf, "kmem_cache_free") ||
+			    str_has_prefix(buf, "__kmalloc") ||
+			    str_has_prefix(buf, "kmem_cache_alloc"))
 				goto found;
 		}
 	}
