@@ -139,7 +139,7 @@ static inline unsigned long metadata_to_pageaddr(const struct kfence_metadata *m
 
 	/* Only call with a pointer into kfence_metadata. */
 	if (KFENCE_WARN_ON(meta < kfence_metadata ||
-			   meta >= kfence_metadata + ARRAY_SIZE(kfence_metadata)))
+			   meta >= kfence_metadata + CONFIG_KFENCE_NUM_OBJECTS))
 		return 0;
 
 	/*
