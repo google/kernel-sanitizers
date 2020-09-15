@@ -29,15 +29,15 @@
 
 /* KFENCE object states. */
 enum kfence_object_state {
-	KFENCE_OBJECT_UNUSED, /* Object is unused. */
-	KFENCE_OBJECT_ALLOCATED, /* Object is currently allocated. */
-	KFENCE_OBJECT_FREED, /* Object was allocated, and then freed. */
+	KFENCE_OBJECT_UNUSED,		/* Object is unused. */
+	KFENCE_OBJECT_ALLOCATED,	/* Object is currently allocated. */
+	KFENCE_OBJECT_FREED,		/* Object was allocated, and then freed. */
 };
 
 /* KFENCE metadata per guarded allocation. */
 struct kfence_metadata {
-	struct list_head list; /* Freelist node; access under kfence_freelist_lock. */
-	struct rcu_head rcu_head; /* For delayed freeing. */
+	struct list_head list;		/* Freelist node; access under kfence_freelist_lock. */
+	struct rcu_head rcu_head;	/* For delayed freeing. */
 
 	/*
 	 * Lock protecting below data; to ensure consistency of the below data,
@@ -87,11 +87,11 @@ extern struct kfence_metadata kfence_metadata[CONFIG_KFENCE_NUM_OBJECTS];
 
 /* KFENCE error types for report generation. */
 enum kfence_error_type {
-	KFENCE_ERROR_OOB, /* Detected a out-of-bounds access. */
-	KFENCE_ERROR_UAF, /* Detected a use-after-free access. */
-	KFENCE_ERROR_CORRUPTION, /* Detected a memory corruption on free. */
-	KFENCE_ERROR_INVALID, /* Invalid access of unknown type. */
-	KFENCE_ERROR_INVALID_FREE, /* Invalid free. */
+	KFENCE_ERROR_OOB,		/* Detected a out-of-bounds access. */
+	KFENCE_ERROR_UAF,		/* Detected a use-after-free access. */
+	KFENCE_ERROR_CORRUPTION,	/* Detected a memory corruption on free. */
+	KFENCE_ERROR_INVALID,		/* Invalid access of unknown type. */
+	KFENCE_ERROR_INVALID_FREE,	/* Invalid free. */
 };
 
 void kfence_report_error(unsigned long address, const struct kfence_metadata *meta,
