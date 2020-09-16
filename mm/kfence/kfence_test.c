@@ -28,7 +28,7 @@
 static struct {
 	spinlock_t lock;
 	int nlines;
-	char lines[2][512];
+	char lines[2][256];
 } observed = {
 	.lock = __SPIN_LOCK_UNLOCKED(observed.lock),
 };
