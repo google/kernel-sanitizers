@@ -60,7 +60,11 @@ series -- also viewable here:
 [1] http://llvm.org/docs/GwpAsan.html
 [2] https://linux.die.net/man/3/efence
 
-v2:
+v3:
+* Rewrite SLAB/SLUB patch descriptions to clarify need for 'orig_size'.
+* Various smaller fixes (see details in patches).
+
+v2: https://lkml.kernel.org/r/20200915132046.3332537-1-elver@google.com
 * Various comment/documentation changes (see details in patches).
 * Various smaller fixes (see details in patches).
 * Change all reports to reference the kfence object, "kfence-#nn".
