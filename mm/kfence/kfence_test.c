@@ -583,11 +583,17 @@ static void test_memcache_typesafe_by_rcu(struct kunit *test)
 	rcu_read_lock();
 	test_free(expect.addr);
 	KUNIT_EXPECT_EQ(test, *expect.addr, (char)42);
+	/*
+	 * Up to this point, memory should not have been freed yet, and
+	 * therefore there should be no KFENCE report from the above access.
+	 */
 	rcu_read_unlock();
 
-	/* No reports yet, memory should not have been freed on access. */
+	/* Above access to @expect.addr should not have generated a report! */
 	KUNIT_EXPECT_FALSE(test, report_available());
-	rcu_barrier(); /* Wait for free to happen. */
+
+	/* Only after rcu_barrier() is the memory guaranteed to be freed. */
+	rcu_barrier();
 
 	/* Expect use-after-free. */
 	KUNIT_EXPECT_EQ(test, *expect.addr, (char)42);
