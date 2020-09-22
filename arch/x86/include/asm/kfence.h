@@ -12,7 +12,7 @@
 #include <asm/tlbflush.h>
 
 /* The alignment should be at least a 4K page. */
-#define KFENCE_POOL_ALIGNMENT PAGE_SIZE
+#define __kfence_pool_attrs __aligned(PAGE_SIZE)
 
 /*
  * The page fault handler entry function, up to which the stack trace is
