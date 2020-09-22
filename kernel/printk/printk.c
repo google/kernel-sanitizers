@@ -296,8 +296,8 @@ static int console_msg_format = MSG_FORMAT_DEFAULT;
 
 /*
  * The printk log buffer consists of a sequenced collection of records, each
- * containing variable length message and dictionary text. Every record
- * also contains its own meta-data (@info).
+ * containing variable length message text. Every record also contains its
+ * own meta-data (@info).
  *
  * Every record meta-data carries the timestamp in microseconds, as well as
  * the standard userspace syslog level and syslog facility. The usual kernel
@@ -310,9 +310,7 @@ static int console_msg_format = MSG_FORMAT_DEFAULT;
  * terminated.
  *
  * Optionally, a record can carry a dictionary of properties (key/value
- * pairs), to provide userspace with a machine-readable message context. The
- * length of the dictionary is available in @dict_len. The dictionary is not
- * terminated.
+ * pairs), to provide userspace with a machine-readable message context.
  *
  * Examples for well-defined, commonly used property names are:
  *   DEVICE=b12:8               device identifier
@@ -322,21 +320,20 @@ static int console_msg_format = MSG_FORMAT_DEFAULT;
  *                                +sound:card0  subsystem:devname
  *   SUBSYSTEM=pci              driver-core subsystem name
  *
- * Valid characters in property names are [a-zA-Z0-9.-_]. The plain text value
- * follows directly after a '=' character. Every property is terminated by
- * a '\0' character. The last property is not terminated.
+ * Valid characters in property names are [a-zA-Z0-9.-_]. Property names
+ * and values are terminated by a '\0' character.
  *
  * Example of record values:
- *   record.text_buf       = "it's a line" (unterminated)
- *   record.dict_buf       = "DEVICE=b8:2\0DRIVER=bug" (unterminated)
- *   record.info.seq       = 56
- *   record.info.ts_nsec   = 36863
- *   record.info.text_len  = 11
- *   record.info.dict_len  = 22
- *   record.info.facility  = 0 (LOG_KERN)
- *   record.info.flags     = 0
- *   record.info.level     = 3 (LOG_ERR)
- *   record.info.caller_id = 299 (task 299)
+ *   record.text_buf                = "it's a line" (unterminated)
+ *   record.info.seq                = 56
+ *   record.info.ts_nsec            = 36863
+ *   record.info.text_len           = 11
+ *   record.info.facility           = 0 (LOG_KERN)
+ *   record.info.flags              = 0
+ *   record.info.level              = 3 (LOG_ERR)
+ *   record.info.caller_id          = 299 (task 299)
+ *   record.info.dev_info.subsystem = "pci" (terminated)
+ *   record.info.dev_info.device    = "+pci:0000:00:01.0" (terminated)
  *
  * The 'struct printk_info' buffer must never be directly exported to
  * userspace, it is a kernel-private implementation detail that might
@@ -430,7 +427,6 @@ static u32 log_buf_len = __LOG_BUF_LEN;
  * Define the average message size. This only affects the number of
  * descriptors that will be available. Underestimating is better than
  * overestimating (too many available descriptors is better than not enough).
- * The dictionary buffer will be the same size as the text buffer.
  */
 #define PRB_AVGBITS 5	/* 32 character average length */
 
@@ -438,7 +434,7 @@ static u32 log_buf_len = __LOG_BUF_LEN;
 #error CONFIG_LOG_BUF_SHIFT value too small.
 #endif
 _DEFINE_PRINTKRB(printk_rb_static, CONFIG_LOG_BUF_SHIFT - PRB_AVGBITS,
-		 PRB_AVGBITS, PRB_AVGBITS, &__log_buf[0]);
+		 PRB_AVGBITS, &__log_buf[0]);
 
 static struct printk_ringbuffer printk_rb_dynamic;
 
@@ -498,19 +494,19 @@ static void truncate_msg(u16 *text_len, u16 *trunc_msg_len)
 /* insert record into the buffer, discard old ones, update heads */
 static int log_store(u32 caller_id, int facility, int level,
 		     enum log_flags flags, u64 ts_nsec,
-		     const char *dict, u16 dict_len,
+		     const struct dev_printk_info *dev_info,
 		     const char *text, u16 text_len)
 {
 	struct prb_reserved_entry e;
 	struct printk_record r;
 	u16 trunc_msg_len = 0;
 
-	prb_rec_init_wr(&r, text_len, dict_len);
+	prb_rec_init_wr(&r, text_len);
 
 	if (!prb_reserve(&e, prb, &r)) {
 		/* truncate the message if it is too long for empty buffer */
 		truncate_msg(&text_len, &trunc_msg_len);
-		prb_rec_init_wr(&r, text_len + trunc_msg_len, dict_len);
+		prb_rec_init_wr(&r, text_len + trunc_msg_len);
 		/* survive when the log buffer is too small for trunc_msg */
 		if (!prb_reserve(&e, prb, &r))
 			return 0;
@@ -521,10 +517,6 @@ static int log_store(u32 caller_id, int facility, int level,
 	if (trunc_msg_len)
 		memcpy(&r.text_buf[text_len], trunc_msg, trunc_msg_len);
 	r.info->text_len = text_len + trunc_msg_len;
-	if (r.dict_buf) {
-		memcpy(&r.dict_buf[0], dict, dict_len);
-		r.info->dict_len = dict_len;
-	}
 	r.info->facility = facility;
 	r.info->level = level & 7;
 	r.info->flags = flags & 0x1f;
@@ -533,6 +525,8 @@ static int log_store(u32 caller_id, int facility, int level,
 	else
 		r.info->ts_nsec = local_clock();
 	r.info->caller_id = caller_id;
+	if (dev_info)
+		memcpy(&r.info->dev_info, dev_info, sizeof(r.info->dev_info));
 
 	/* insert message */
 	if ((flags & LOG_CONT) || !(flags & LOG_NEWLINE))
@@ -613,9 +607,9 @@ static ssize_t info_print_ext_header(char *buf, size_t size,
 			 ts_usec, info->flags & LOG_CONT ? 'c' : '-', caller);
 }
 
-static ssize_t msg_print_ext_body(char *buf, size_t size,
-				  char *dict, size_t dict_len,
-				  char *text, size_t text_len)
+static ssize_t msg_add_ext_text(char *buf, size_t size,
+				const char *text, size_t text_len,
+				unsigned char endc)
 {
 	char *p = buf, *e = buf + size;
 	size_t i;
@@ -629,36 +623,44 @@ static ssize_t msg_print_ext_body(char *buf, size_t size,
 		else
 			append_char(&p, e, c);
 	}
-	append_char(&p, e, '\n');
-
-	if (dict_len) {
-		bool line = true;
-
-		for (i = 0; i < dict_len; i++) {
-			unsigned char c = dict[i];
-
-			if (line) {
-				append_char(&p, e, ' ');
-				line = false;
-			}
-
-			if (c == '\0') {
-				append_char(&p, e, '\n');
-				line = true;
-				continue;
-			}
-
-			if (c < ' ' || c >= 127 || c == '\\') {
-				p += scnprintf(p, e - p, "\\x%02x", c);
-				continue;
-			}
-
-			append_char(&p, e, c);
-		}
-		append_char(&p, e, '\n');
-	}
+	append_char(&p, e, endc);
 
 	return p - buf;
+}
+
+static ssize_t msg_add_dict_text(char *buf, size_t size,
+				 const char *key, const char *val)
+{
+	size_t val_len = strlen(val);
+	ssize_t len;
+
+	if (!val_len)
+		return 0;
+
+	len = msg_add_ext_text(buf, size, "", 0, ' ');	/* dict prefix */
+	len += msg_add_ext_text(buf + len, size - len, key, strlen(key), '=');
+	len += msg_add_ext_text(buf + len, size - len, val, val_len, '\n');
+
+	return len;
+}
+
+static ssize_t msg_print_ext_body(char *buf, size_t size,
+				  char *text, size_t text_len,
+				  struct dev_printk_info *dev_info)
+{
+	ssize_t len;
+
+	len = msg_add_ext_text(buf, size, text, text_len, '\n');
+
+	if (!dev_info)
+		goto out;
+
+	len += msg_add_dict_text(buf + len, size - len, "SUBSYSTEM",
+				 dev_info->subsystem);
+	len += msg_add_dict_text(buf + len, size - len, "DEVICE",
+				 dev_info->device);
+out:
+	return len;
 }
 
 /* /dev/kmsg - userspace message inject/listen interface */
@@ -670,7 +672,6 @@ struct devkmsg_user {
 
 	struct printk_info info;
 	char text_buf[CONSOLE_EXT_LOG_MAX];
-	char dict_buf[CONSOLE_EXT_LOG_MAX];
 	struct printk_record record;
 };
 
@@ -681,7 +682,7 @@ int devkmsg_emit(int facility, int level, const char *fmt, ...)
 	int r;
 
 	va_start(args, fmt);
-	r = vprintk_emit(facility, level, NULL, 0, fmt, args);
+	r = vprintk_emit(facility, level, NULL, fmt, args);
 	va_end(args);
 
 	return r;
@@ -791,8 +792,8 @@ static ssize_t devkmsg_read(struct file *file, char __user *buf,
 
 	len = info_print_ext_header(user->buf, sizeof(user->buf), r->info);
 	len += msg_print_ext_body(user->buf + len, sizeof(user->buf) - len,
-				  &r->dict_buf[0], r->info->dict_len,
-				  &r->text_buf[0], r->info->text_len);
+				  &r->text_buf[0], r->info->text_len,
+				  &r->info->dev_info);
 
 	user->seq = r->info->seq + 1;
 	logbuf_unlock_irq();
@@ -904,8 +905,7 @@ static int devkmsg_open(struct inode *inode, struct file *file)
 	mutex_init(&user->lock);
 
 	prb_rec_init_rd(&user->record, &user->info,
-			&user->text_buf[0], sizeof(user->text_buf),
-			&user->dict_buf[0], sizeof(user->dict_buf));
+			&user->text_buf[0], sizeof(user->text_buf));
 
 	logbuf_lock_irq();
 	user->seq = prb_first_valid_seq(prb);
@@ -949,6 +949,8 @@ const struct file_operations kmsg_fops = {
  */
 void log_buf_vmcoreinfo_setup(void)
 {
+	struct dev_printk_info *dev_info = NULL;
+
 	VMCOREINFO_SYMBOL(prb);
 	VMCOREINFO_SYMBOL(printk_rb_static);
 	VMCOREINFO_SYMBOL(clear_seq);
@@ -961,20 +963,18 @@ void log_buf_vmcoreinfo_setup(void)
 	VMCOREINFO_STRUCT_SIZE(printk_ringbuffer);
 	VMCOREINFO_OFFSET(printk_ringbuffer, desc_ring);
 	VMCOREINFO_OFFSET(printk_ringbuffer, text_data_ring);
-	VMCOREINFO_OFFSET(printk_ringbuffer, dict_data_ring);
 	VMCOREINFO_OFFSET(printk_ringbuffer, fail);
 
 	VMCOREINFO_STRUCT_SIZE(prb_desc_ring);
 	VMCOREINFO_OFFSET(prb_desc_ring, count_bits);
 	VMCOREINFO_OFFSET(prb_desc_ring, descs);
+	VMCOREINFO_OFFSET(prb_desc_ring, infos);
 	VMCOREINFO_OFFSET(prb_desc_ring, head_id);
 	VMCOREINFO_OFFSET(prb_desc_ring, tail_id);
 
 	VMCOREINFO_STRUCT_SIZE(prb_desc);
-	VMCOREINFO_OFFSET(prb_desc, info);
 	VMCOREINFO_OFFSET(prb_desc, state_var);
 	VMCOREINFO_OFFSET(prb_desc, text_blk_lpos);
-	VMCOREINFO_OFFSET(prb_desc, dict_blk_lpos);
 
 	VMCOREINFO_STRUCT_SIZE(prb_data_blk_lpos);
 	VMCOREINFO_OFFSET(prb_data_blk_lpos, begin);
@@ -984,8 +984,14 @@ void log_buf_vmcoreinfo_setup(void)
 	VMCOREINFO_OFFSET(printk_info, seq);
 	VMCOREINFO_OFFSET(printk_info, ts_nsec);
 	VMCOREINFO_OFFSET(printk_info, text_len);
-	VMCOREINFO_OFFSET(printk_info, dict_len);
 	VMCOREINFO_OFFSET(printk_info, caller_id);
+	VMCOREINFO_OFFSET(printk_info, dev_info);
+
+	VMCOREINFO_STRUCT_SIZE(dev_printk_info);
+	VMCOREINFO_OFFSET(dev_printk_info, subsystem);
+	VMCOREINFO_LENGTH(printk_info_subsystem, sizeof(dev_info->subsystem));
+	VMCOREINFO_OFFSET(dev_printk_info, device);
+	VMCOREINFO_LENGTH(printk_info_device, sizeof(dev_info->device));
 
 	VMCOREINFO_STRUCT_SIZE(prb_data_ring);
 	VMCOREINFO_OFFSET(prb_data_ring, size_bits);
@@ -1078,22 +1084,19 @@ static unsigned int __init add_to_rb(struct printk_ringbuffer *rb,
 	struct prb_reserved_entry e;
 	struct printk_record dest_r;
 
-	prb_rec_init_wr(&dest_r, r->info->text_len, r->info->dict_len);
+	prb_rec_init_wr(&dest_r, r->info->text_len);
 
 	if (!prb_reserve(&e, rb, &dest_r))
 		return 0;
 
 	memcpy(&dest_r.text_buf[0], &r->text_buf[0], r->info->text_len);
 	dest_r.info->text_len = r->info->text_len;
-	if (dest_r.dict_buf) {
-		memcpy(&dest_r.dict_buf[0], &r->dict_buf[0], r->info->dict_len);
-		dest_r.info->dict_len = r->info->dict_len;
-	}
 	dest_r.info->facility = r->info->facility;
 	dest_r.info->level = r->info->level;
 	dest_r.info->flags = r->info->flags;
 	dest_r.info->ts_nsec = r->info->ts_nsec;
 	dest_r.info->caller_id = r->info->caller_id;
+	memcpy(&dest_r.info->dev_info, &r->info->dev_info, sizeof(dest_r.info->dev_info));
 
 	prb_final_commit(&e);
 
@@ -1101,17 +1104,17 @@ static unsigned int __init add_to_rb(struct printk_ringbuffer *rb,
 }
 
 static char setup_text_buf[CONSOLE_EXT_LOG_MAX] __initdata;
-static char setup_dict_buf[CONSOLE_EXT_LOG_MAX] __initdata;
 
 void __init setup_log_buf(int early)
 {
+	struct printk_info *new_infos;
 	unsigned int new_descs_count;
 	struct prb_desc *new_descs;
 	struct printk_info info;
 	struct printk_record r;
 	size_t new_descs_size;
+	size_t new_infos_size;
 	unsigned long flags;
-	char *new_dict_buf;
 	char *new_log_buf;
 	unsigned int free;
 	u64 seq;
@@ -1146,32 +1149,28 @@ void __init setup_log_buf(int early)
 		return;
 	}
 
-	new_dict_buf = memblock_alloc(new_log_buf_len, LOG_ALIGN);
-	if (unlikely(!new_dict_buf)) {
-		pr_err("log_buf_len: %lu dict bytes not available\n",
-		       new_log_buf_len);
-		memblock_free(__pa(new_log_buf), new_log_buf_len);
-		return;
-	}
-
 	new_descs_size = new_descs_count * sizeof(struct prb_desc);
 	new_descs = memblock_alloc(new_descs_size, LOG_ALIGN);
 	if (unlikely(!new_descs)) {
 		pr_err("log_buf_len: %zu desc bytes not available\n",
 		       new_descs_size);
-		memblock_free(__pa(new_dict_buf), new_log_buf_len);
-		memblock_free(__pa(new_log_buf), new_log_buf_len);
-		return;
+		goto err_free_log_buf;
 	}
 
-	prb_rec_init_rd(&r, &info,
-			&setup_text_buf[0], sizeof(setup_text_buf),
-			&setup_dict_buf[0], sizeof(setup_dict_buf));
+	new_infos_size = new_descs_count * sizeof(struct printk_info);
+	new_infos = memblock_alloc(new_infos_size, LOG_ALIGN);
+	if (unlikely(!new_infos)) {
+		pr_err("log_buf_len: %zu info bytes not available\n",
+		       new_infos_size);
+		goto err_free_descs;
+	}
+
+	prb_rec_init_rd(&r, &info, &setup_text_buf[0], sizeof(setup_text_buf));
 
 	prb_init(&printk_rb_dynamic,
 		 new_log_buf, ilog2(new_log_buf_len),
-		 new_dict_buf, ilog2(new_log_buf_len),
-		 new_descs, ilog2(new_descs_count));
+		 new_descs, ilog2(new_descs_count),
+		 new_infos);
 
 	logbuf_lock_irqsave(flags);
 
@@ -1200,6 +1199,12 @@ void __init setup_log_buf(int early)
 	pr_info("log_buf_len: %u bytes\n", log_buf_len);
 	pr_info("early log buf free: %u(%u%%)\n",
 		free, (free * 100) / __LOG_BUF_LEN);
+	return;
+
+err_free_descs:
+	memblock_free(__pa(new_descs), new_descs_size);
+err_free_log_buf:
+	memblock_free(__pa(new_log_buf), new_log_buf_len);
 }
 
 static bool __read_mostly ignore_loglevel;
@@ -1448,7 +1453,7 @@ static int syslog_print(char __user *buf, int size)
 	if (!text)
 		return -ENOMEM;
 
-	prb_rec_init_rd(&r, &info, text, LOG_LINE_MAX + PREFIX_MAX, NULL, 0);
+	prb_rec_init_rd(&r, &info, text, LOG_LINE_MAX + PREFIX_MAX);
 
 	while (size > 0) {
 		size_t n;
@@ -1535,7 +1540,7 @@ static int syslog_print_all(char __user *buf, int size, bool clear)
 		len -= get_record_print_text_size(&info, line_count, true, time);
 	}
 
-	prb_rec_init_rd(&r, &info, text, LOG_LINE_MAX + PREFIX_MAX, NULL, 0);
+	prb_rec_init_rd(&r, &info, text, LOG_LINE_MAX + PREFIX_MAX);
 
 	len = 0;
 	prb_for_each_record(seq, prb, seq, &r) {
@@ -1895,7 +1900,9 @@ static inline u32 printk_caller_id(void)
 		0x80000000 + raw_smp_processor_id();
 }
 
-static size_t log_output(int facility, int level, enum log_flags lflags, const char *dict, size_t dictlen, char *text, size_t text_len)
+static size_t log_output(int facility, int level, enum log_flags lflags,
+			 const struct dev_printk_info *dev_info,
+			 char *text, size_t text_len)
 {
 	const u32 caller_id = printk_caller_id();
 
@@ -1903,7 +1910,7 @@ static size_t log_output(int facility, int level, enum log_flags lflags, const c
 		struct prb_reserved_entry e;
 		struct printk_record r;
 
-		prb_rec_init_wr(&r, text_len, 0);
+		prb_rec_init_wr(&r, text_len);
 		if (prb_reserve_in_last(&e, prb, &r, caller_id)) {
 			memcpy(&r.text_buf[r.info->text_len], text, text_len);
 			r.info->text_len += text_len;
@@ -1919,12 +1926,12 @@ static size_t log_output(int facility, int level, enum log_flags lflags, const c
 
 	/* Store it in the record log */
 	return log_store(caller_id, facility, level, lflags, 0,
-			 dict, dictlen, text, text_len);
+			 dev_info, text, text_len);
 }
 
 /* Must be called under logbuf_lock. */
 int vprintk_store(int facility, int level,
-		  const char *dict, size_t dictlen,
+		  const struct dev_printk_info *dev_info,
 		  const char *fmt, va_list args)
 {
 	static char textbuf[LOG_LINE_MAX];
@@ -1966,15 +1973,14 @@ int vprintk_store(int facility, int level,
 	if (level == LOGLEVEL_DEFAULT)
 		level = default_message_loglevel;
 
-	if (dict)
+	if (dev_info)
 		lflags |= LOG_NEWLINE;
 
-	return log_output(facility, level, lflags,
-			  dict, dictlen, text, text_len);
+	return log_output(facility, level, lflags, dev_info, text, text_len);
 }
 
 asmlinkage int vprintk_emit(int facility, int level,
-			    const char *dict, size_t dictlen,
+			    const struct dev_printk_info *dev_info,
 			    const char *fmt, va_list args)
 {
 	int printed_len;
@@ -1995,7 +2001,7 @@ asmlinkage int vprintk_emit(int facility, int level,
 
 	/* This stops the holder of console_sem just where we want him */
 	logbuf_lock_irqsave(flags);
-	printed_len = vprintk_store(facility, level, dict, dictlen, fmt, args);
+	printed_len = vprintk_store(facility, level, dev_info, fmt, args);
 	logbuf_unlock_irqrestore(flags);
 
 	/* If called from the scheduler, we can not call up(). */
@@ -2029,7 +2035,7 @@ EXPORT_SYMBOL(vprintk);
 
 int vprintk_default(const char *fmt, va_list args)
 {
-	return vprintk_emit(0, LOGLEVEL_DEFAULT, NULL, 0, fmt, args);
+	return vprintk_emit(0, LOGLEVEL_DEFAULT, NULL, fmt, args);
 }
 EXPORT_SYMBOL_GPL(vprintk_default);
 
@@ -2092,8 +2098,8 @@ static ssize_t info_print_ext_header(char *buf, size_t size,
 	return 0;
 }
 static ssize_t msg_print_ext_body(char *buf, size_t size,
-				  char *dict, size_t dict_len,
-				  char *text, size_t text_len) { return 0; }
+				  char *text, size_t text_len,
+				  struct dev_printk_info *dev_info) { return 0; }
 static void console_lock_spinning_enable(void) { }
 static int console_lock_spinning_disable_and_check(void) { return 0; }
 static void call_console_drivers(const char *ext_text, size_t ext_len,
@@ -2382,7 +2388,6 @@ void console_unlock(void)
 {
 	static char ext_text[CONSOLE_EXT_LOG_MAX];
 	static char text[LOG_LINE_MAX + PREFIX_MAX];
-	static char dict[LOG_LINE_MAX];
 	unsigned long flags;
 	bool do_cond_resched, retry;
 	struct printk_info info;
@@ -2393,7 +2398,7 @@ void console_unlock(void)
 		return;
 	}
 
-	prb_rec_init_rd(&r, &info, text, sizeof(text), dict, sizeof(dict));
+	prb_rec_init_rd(&r, &info, text, sizeof(text));
 
 	/*
 	 * Console drivers are called with interrupts disabled, so
@@ -2465,10 +2470,9 @@ skip:
 						r.info);
 			ext_len += msg_print_ext_body(ext_text + ext_len,
 						sizeof(ext_text) - ext_len,
-						&r.dict_buf[0],
-						r.info->dict_len,
 						&r.text_buf[0],
-						r.info->text_len);
+						r.info->text_len,
+						&r.info->dev_info);
 		}
 		len = record_print_text(&r,
 				console_msg_format & MSG_FORMAT_SYSLOG,
@@ -3047,7 +3051,7 @@ int vprintk_deferred(const char *fmt, va_list args)
 {
 	int r;
 
-	r = vprintk_emit(0, LOGLEVEL_SCHED, NULL, 0, fmt, args);
+	r = vprintk_emit(0, LOGLEVEL_SCHED, NULL, fmt, args);
 	defer_console_output();
 
 	return r;
@@ -3252,7 +3256,7 @@ bool kmsg_dump_get_line_nolock(struct kmsg_dumper *dumper, bool syslog,
 	size_t l = 0;
 	bool ret = false;
 
-	prb_rec_init_rd(&r, &info, line, size, NULL, 0);
+	prb_rec_init_rd(&r, &info, line, size);
 
 	if (!dumper->active)
 		goto out;
@@ -3343,7 +3347,7 @@ bool kmsg_dump_get_buffer(struct kmsg_dumper *dumper, bool syslog,
 	bool ret = false;
 	bool time = printk_time;
 
-	prb_rec_init_rd(&r, &info, buf, size, NULL, 0);
+	prb_rec_init_rd(&r, &info, buf, size);
 
 	if (!dumper->active || !buf || !size)
 		goto out;
@@ -3391,7 +3395,7 @@ bool kmsg_dump_get_buffer(struct kmsg_dumper *dumper, bool syslog,
 		l += record_print_text(&r, syslog, time);
 
 		/* adjust record to store to remaining buffer space */
-		prb_rec_init_rd(&r, &info, buf + l, size - l, NULL, 0);
+		prb_rec_init_rd(&r, &info, buf + l, size - l);
 
 		seq = r.info->seq + 1;
 	}

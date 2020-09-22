@@ -15,19 +15,14 @@
  * The printk_ringbuffer is made up of 3 internal ringbuffers:
  *
  *   desc_ring
- *     A ring of descriptors. A descriptor contains all record meta data
- *     (sequence number, timestamp, loglevel, etc.) as well as internal state
- *     information about the record and logical positions specifying where in
- *     the other ringbuffers the text and dictionary strings are located.
+ *     A ring of descriptors and their meta data (such as sequence number,
+ *     timestamp, loglevel, etc.) as well as internal state information about
+ *     the record and logical positions specifying where in the other
+ *     ringbuffer the text strings are located.
  *
  *   text_data_ring
  *     A ring of data blocks. A data block consists of an unsigned long
  *     integer (ID) that maps to a desc_ring index followed by the text
- *     string of the record.
- *
- *   dict_data_ring
- *     A ring of data blocks. A data block consists of an unsigned long
- *     integer (ID) that maps to a desc_ring index followed by the dictionary
  *     string of the record.
  *
  * The internal state information of a descriptor is the key element to allow
@@ -38,13 +33,14 @@
  *
  * Descriptor Ring
  * ~~~~~~~~~~~~~~~
- * The descriptor ring is an array of descriptors. A descriptor contains all
- * the meta data of a printk record as well as blk_lpos structs pointing to
- * associated text and dictionary data blocks (see "Data Rings" below). Each
- * descriptor is assigned an ID that maps directly to index values of the
- * descriptor array and has a state. The ID and the state are bitwise combined
- * into a single descriptor field named @state_var, allowing ID and state to
- * be synchronously and atomically updated.
+ * The descriptor ring is an array of descriptors. A descriptor contains
+ * essential meta data to track the data of a printk record using
+ * blk_lpos structs pointing to associated text data blocks (see
+ * "Data Rings" below). Each descriptor is assigned an ID that maps
+ * directly to index values of the descriptor array and has a state. The ID
+ * and the state are bitwise combined into a single descriptor field named
+ * @state_var, allowing ID and state to be synchronously and atomically
+ * updated.
  *
  * Descriptors have four states:
  *
@@ -61,8 +57,8 @@
  *     writer cannot reopen the descriptor.
  *
  *   reusable
- *     The record exists, but its text and/or dictionary data may no longer
- *     be available.
+ *     The record exists, but its text and/or meta data may no longer be
+ *     available.
  *
  * Querying the @state_var of a record requires providing the ID of the
  * descriptor to query. This can yield a possible fifth (pseudo) state:
@@ -76,7 +72,7 @@
  * When a new descriptor should be created (and the ring is full), the tail
  * descriptor is invalidated by first transitioning to the reusable state and
  * then invalidating all tail data blocks up to and including the data blocks
- * associated with the tail descriptor (for text and dictionary rings). Then
+ * associated with the tail descriptor (for the text ring). Then
  * @tail_id is advanced, followed by advancing @head_id. And finally the
  * @state_var of the new descriptor is initialized to the new ID and reserved
  * state.
@@ -107,13 +103,9 @@
  *   3) When a record is committed via prb_commit() and a newer record
  *      already exists, the record being committed is automatically finalized.
  *
- * Data Rings
- * ~~~~~~~~~~
- * The two data rings (text and dictionary) function identically. They exist
- * separately so that their buffer sizes can be individually set and they do
- * not affect one another.
- *
- * Data rings are byte arrays composed of data blocks. Data blocks are
+ * Data Ring
+ * ~~~~~~~~~
+ * The text data ring is a byte array composed of data blocks. Data blocks are
  * referenced by blk_lpos structs that point to the logical position of the
  * beginning of a data block and the beginning of the next adjacent data
  * block. Logical positions are mapped directly to index values of the byte
@@ -150,40 +142,42 @@
  * descriptor. If a data block is not valid, the @tail_lpos cannot be
  * advanced beyond it.
  *
+ * Info Array
+ * ~~~~~~~~~~
+ * The general meta data of printk records are stored in printk_info structs,
+ * stored in an array with the same number of elements as the descriptor ring.
+ * Each info corresponds to the descriptor of the same index in the
+ * descriptor ring. Info validity is confirmed by evaluating the corresponding
+ * descriptor before and after loading the info.
+ *
  * Usage
  * -----
  * Here are some simple examples demonstrating writers and readers. For the
  * examples a global ringbuffer (test_rb) is available (which is not the
  * actual ringbuffer used by printk)::
  *
- *	DEFINE_PRINTKRB(test_rb, 15, 5, 3);
+ *	DEFINE_PRINTKRB(test_rb, 15, 5);
  *
  * This ringbuffer allows up to 32768 records (2 ^ 15) and has a size of
- * 1 MiB (2 ^ (15 + 5)) for text data and 256 KiB (2 ^ (15 + 3)) for
- * dictionary data.
+ * 1 MiB (2 ^ (15 + 5)) for text data.
  *
  * Sample writer code::
  *
- *	const char *dictstr = "dictionary text";
  *	const char *textstr = "message text";
  *	struct prb_reserved_entry e;
  *	struct printk_record r;
  *
  *	// specify how much to allocate
- *	prb_rec_init_wr(&r, strlen(textstr) + 1, strlen(dictstr) + 1);
+ *	prb_rec_init_wr(&r, strlen(textstr) + 1);
  *
  *	if (prb_reserve(&e, &test_rb, &r)) {
  *		snprintf(r.text_buf, r.text_buf_size, "%s", textstr);
+ *
  *		r.info->text_len = strlen(textstr);
- *
- *		// dictionary allocation may have failed
- *		if (r.dict_buf) {
- *			snprintf(r.dict_buf, r.dict_buf_size, "%s", dictstr);
- *			r.info->dict_len = strlen(dictstr);
- *		}
- *
  *		r.info->ts_nsec = local_clock();
+ *		r.info->caller_id = printk_caller_id();
  *
+ *		// commit and finalize the record
  *		prb_final_commit(&e);
  *	}
  *
@@ -194,8 +188,9 @@
  * Sample writer code (record extending)::
  *
  *		// alternate rest of previous example
- *		r.info->ts_nsec = local_clock();
+ *
  *		r.info->text_len = strlen(textstr);
+ *		r.info->ts_nsec = local_clock();
  *		r.info->caller_id = printk_caller_id();
  *
  *		// commit the record (but do not finalize yet)
@@ -205,7 +200,7 @@
  *	...
  *
  *	// specify additional 5 bytes text space to extend
- *	prb_rec_init_wr(&r, 5, 0);
+ *	prb_rec_init_wr(&r, 5);
  *
  *	if (prb_reserve_in_last(&e, &test_rb, &r, printk_caller_id())) {
  *		snprintf(&r.text_buf[r.info->text_len],
@@ -213,6 +208,7 @@
  *
  *		r.info->text_len += 5;
  *
+ *		// commit and finalize the record
  *		prb_final_commit(&e);
  *	}
  *
@@ -221,11 +217,9 @@
  *	struct printk_info info;
  *	struct printk_record r;
  *	char text_buf[32];
- *	char dict_buf[32];
  *	u64 seq;
  *
- *	prb_rec_init_rd(&r, &info, &text_buf[0], sizeof(text_buf),
- *			&dict_buf[0], sizeof(dict_buf));
+ *	prb_rec_init_rd(&r, &info, &text_buf[0], sizeof(text_buf));
  *
  *	prb_for_each_record(0, &test_rb, &seq, &r) {
  *		if (info.seq != seq)
@@ -236,13 +230,8 @@
  *			text_buf[r.text_buf_size - 1] = 0;
  *		}
  *
- *		if (info.dict_len > r.dict_buf_size) {
- *			pr_warn("record %llu dict truncated\n", info.seq);
- *			dict_buf[r.dict_buf_size - 1] = 0;
- *		}
- *
- *		pr_info("%llu: %llu: %s;%s\n", info.seq, info.ts_nsec,
- *			&text_buf[0], info.dict_len ? &dict_buf[0] : "");
+ *		pr_info("%llu: %llu: %s\n", info.seq, info.ts_nsec,
+ *			&text_buf[0]);
  *	}
  *
  * Note that additional less convenient reader functions are available to
@@ -367,6 +356,15 @@ static struct prb_desc *to_desc(struct prb_desc_ring *desc_ring, u64 n)
 	return &desc_ring->descs[DESC_INDEX(desc_ring, n)];
 }
 
+/*
+ * Return the printk_info associated with @n. @n can be either a
+ * descriptor ID or a sequence number.
+ */
+static struct printk_info *to_info(struct prb_desc_ring *desc_ring, u64 n)
+{
+	return &desc_ring->infos[DESC_INDEX(desc_ring, n)];
+}
+
 static struct prb_data_block *to_block(struct prb_data_ring *data_ring,
 				       unsigned long begin_lpos)
 {
@@ -425,10 +423,16 @@ static enum desc_state get_desc_state(unsigned long id,
  * Get a copy of a specified descriptor and return its queried state. If the
  * descriptor is in an inconsistent state (miss or reserved), the caller can
  * only expect the descriptor's @state_var field to be valid.
+ *
+ * The sequence number and caller_id can be optionally retrieved. Like all
+ * non-state_var data, they are only valid if the descriptor is in a
+ * consistent state.
  */
 static enum desc_state desc_read(struct prb_desc_ring *desc_ring,
-				 unsigned long id, struct prb_desc *desc_out)
+				 unsigned long id, struct prb_desc *desc_out,
+				 u64 *seq_out, u32 *caller_id_out)
 {
+	struct printk_info *info = to_info(desc_ring, id);
 	struct prb_desc *desc = to_desc(desc_ring, id);
 	atomic_long_t *state_var = &desc->state_var;
 	enum desc_state d_state;
@@ -469,11 +473,12 @@ static enum desc_state desc_read(struct prb_desc_ring *desc_ring,
 	 * state has been re-checked. A memcpy() for all of @desc
 	 * cannot be used because of the atomic_t @state_var field.
 	 */
-	memcpy(&desc_out->info, &desc->info, sizeof(desc_out->info)); /* LMM(desc_read:C) */
 	memcpy(&desc_out->text_blk_lpos, &desc->text_blk_lpos,
-	       sizeof(desc_out->text_blk_lpos)); /* also part of desc_read:C */
-	memcpy(&desc_out->dict_blk_lpos, &desc->dict_blk_lpos,
-	       sizeof(desc_out->dict_blk_lpos)); /* also part of desc_read:C */
+	       sizeof(desc_out->text_blk_lpos)); /* LMM(desc_read:C) */
+	if (seq_out)
+		*seq_out = info->seq; /* also part of desc_read:C */
+	if (caller_id_out)
+		*caller_id_out = info->caller_id; /* also part of desc_read:C */
 
 	/*
 	 * 1. Guarantee the descriptor content is loaded before re-checking
@@ -544,7 +549,7 @@ static void desc_make_reusable(struct prb_desc_ring *desc_ring,
 }
 
 /*
- * Given a data ring (text or dict), put the associated descriptor of each
+ * Given the text data ring, put the associated descriptor of each
  * data block from @lpos_begin until @lpos_end into the reusable state.
  *
  * If there is any problem making the associated descriptor reusable, either
@@ -559,20 +564,11 @@ static bool data_make_reusable(struct printk_ringbuffer *rb,
 			       unsigned long *lpos_out)
 {
 	struct prb_desc_ring *desc_ring = &rb->desc_ring;
-	struct prb_data_blk_lpos *blk_lpos;
 	struct prb_data_block *blk;
 	enum desc_state d_state;
 	struct prb_desc desc;
+	struct prb_data_blk_lpos *blk_lpos = &desc.text_blk_lpos;
 	unsigned long id;
-
-	/*
-	 * Using the provided @data_ring, point @blk_lpos to the correct
-	 * blk_lpos within the local copy of the descriptor.
-	 */
-	if (data_ring == &rb->text_data_ring)
-		blk_lpos = &desc.text_blk_lpos;
-	else
-		blk_lpos = &desc.dict_blk_lpos;
 
 	/* Loop until @lpos_begin has advanced to or beyond @lpos_end. */
 	while ((lpos_end - lpos_begin) - 1 < DATA_SIZE(data_ring)) {
@@ -588,7 +584,8 @@ static bool data_make_reusable(struct printk_ringbuffer *rb,
 		 */
 		id = blk->id; /* LMM(data_make_reusable:A) */
 
-		d_state = desc_read(desc_ring, id, &desc); /* LMM(data_make_reusable:B) */
+		d_state = desc_read(desc_ring, id, &desc,
+				    NULL, NULL); /* LMM(data_make_reusable:B) */
 
 		switch (d_state) {
 		case desc_miss:
@@ -771,7 +768,7 @@ static bool desc_push_tail(struct printk_ringbuffer *rb,
 	enum desc_state d_state;
 	struct prb_desc desc;
 
-	d_state = desc_read(desc_ring, tail_id, &desc);
+	d_state = desc_read(desc_ring, tail_id, &desc, NULL, NULL);
 
 	switch (d_state) {
 	case desc_miss:
@@ -811,8 +808,6 @@ static bool desc_push_tail(struct printk_ringbuffer *rb,
 
 	if (!data_push_tail(rb, &rb->text_data_ring, desc.text_blk_lpos.next))
 		return false;
-	if (!data_push_tail(rb, &rb->dict_data_ring, desc.dict_blk_lpos.next))
-		return false;
 
 	/*
 	 * Check the next descriptor after @tail_id before pushing the tail
@@ -823,7 +818,8 @@ static bool desc_push_tail(struct printk_ringbuffer *rb,
 	 * equal to @head_id so there is no risk of pushing the tail past the
 	 * head.
 	 */
-	d_state = desc_read(desc_ring, DESC_ID(tail_id + 1), &desc); /* LMM(desc_push_tail:A) */
+	d_state = desc_read(desc_ring, DESC_ID(tail_id + 1), &desc,
+			    NULL, NULL); /* LMM(desc_push_tail:A) */
 
 	if (d_state == desc_finalized || d_state == desc_reusable) {
 		/*
@@ -1264,6 +1260,7 @@ static struct prb_desc *desc_reopen_last(struct prb_desc_ring *desc_ring,
 	struct prb_desc desc;
 	struct prb_desc *d;
 	unsigned long id;
+	u32 cid;
 
 	id = atomic_long_read(&desc_ring->head_id);
 
@@ -1271,8 +1268,8 @@ static struct prb_desc *desc_reopen_last(struct prb_desc_ring *desc_ring,
 	 * To reduce unnecessarily reopening, first check if the descriptor
 	 * state and caller ID are correct.
 	 */
-	d_state = desc_read(desc_ring, id, &desc);
-	if (d_state != desc_committed || desc.info.caller_id != caller_id)
+	d_state = desc_read(desc_ring, id, &desc, NULL, &cid);
+	if (d_state != desc_committed || cid != caller_id)
 		return NULL;
 
 	d = to_desc(desc_ring, id);
@@ -1317,9 +1314,8 @@ static struct prb_desc *desc_reopen_last(struct prb_desc_ring *desc_ring,
  * data.
  *
  * The writer specifies the text size to extend (not the new total size) by
- * setting the @text_buf_size field of @r. Extending dictionaries is not
- * supported, so @dict_buf_size of @r should be set to 0. To ensure proper
- * initialization of @r, prb_rec_init_wr() should be used.
+ * setting the @text_buf_size field of @r. To ensure proper initialization
+ * of @r, prb_rec_init_wr() should be used.
  *
  * This function will fail if @caller_id does not match the caller ID of the
  * newest record. In that case the caller must reserve new data using
@@ -1334,9 +1330,6 @@ static struct prb_desc *desc_reopen_last(struct prb_desc_ring *desc_ring,
  *
  *   - @r->text_buf_size is set to the new total size of the buffer.
  *
- *   - @r->dict_buf and @r->dict_buf_size are cleared because extending
- *     the dict buffer is not supported.
- *
  *   - @r->info is not touched so that @r->info->text_len could be used
  *     to append the text.
  *
@@ -1345,14 +1338,15 @@ static struct prb_desc *desc_reopen_last(struct prb_desc_ring *desc_ring,
  *
  * Important: All @r->info fields will already be set with the current values
  *            for the record. I.e. @r->info->text_len will be less than
- *            @text_buf_size and @r->info->dict_len may be set, even though
- *            @dict_buf_size is 0. Writers can use @r->info->text_len to know
+ *            @text_buf_size. Writers can use @r->info->text_len to know
  *            where concatenation begins and writers should update
  *            @r->info->text_len after concatenating.
  */
 bool prb_reserve_in_last(struct prb_reserved_entry *e, struct printk_ringbuffer *rb,
 			 struct printk_record *r, u32 caller_id)
 {
+	struct prb_desc_ring *desc_ring = &rb->desc_ring;
+	struct printk_info *info;
 	unsigned int data_size;
 	struct prb_desc *d;
 	unsigned long id;
@@ -1360,13 +1354,15 @@ bool prb_reserve_in_last(struct prb_reserved_entry *e, struct printk_ringbuffer 
 	local_irq_save(e->irqflags);
 
 	/* Transition the newest descriptor back to the reserved state. */
-	d = desc_reopen_last(&rb->desc_ring, caller_id, &id);
+	d = desc_reopen_last(desc_ring, caller_id, &id);
 	if (!d) {
 		local_irq_restore(e->irqflags);
 		goto fail_reopen;
 	}
 
 	/* Now the writer has exclusive access: LMM(prb_reserve_in_last:A) */
+
+	info = to_info(desc_ring, id);
 
 	/*
 	 * Set the @e fields here so that prb_commit() can be used if
@@ -1380,14 +1376,14 @@ bool prb_reserve_in_last(struct prb_reserved_entry *e, struct printk_ringbuffer 
 	 * exclusive access at that point. The descriptor may have
 	 * changed since then.
 	 */
-	if (caller_id != d->info.caller_id)
+	if (caller_id != info->caller_id)
 		goto fail;
 
 	if (BLK_DATALESS(&d->text_blk_lpos)) {
-		if (WARN_ON_ONCE(d->info.text_len != 0)) {
+		if (WARN_ON_ONCE(info->text_len != 0)) {
 			pr_warn_once("wrong text_len value (%hu, expecting 0)\n",
-				     d->info.text_len);
-			d->info.text_len = 0;
+				     info->text_len);
+			info->text_len = 0;
 		}
 
 		if (!data_check_size(&rb->text_data_ring, r->text_buf_size))
@@ -1404,12 +1400,12 @@ bool prb_reserve_in_last(struct prb_reserved_entry *e, struct printk_ringbuffer 
 		 * the meta data (@text_len) is not sane, use the full data
 		 * block size.
 		 */
-		if (WARN_ON_ONCE(d->info.text_len > data_size)) {
+		if (WARN_ON_ONCE(info->text_len > data_size)) {
 			pr_warn_once("wrong text_len value (%hu, expecting <=%u)\n",
-				     d->info.text_len, data_size);
-			d->info.text_len = data_size;
+				     info->text_len, data_size);
+			info->text_len = data_size;
 		}
-		r->text_buf_size += d->info.text_len;
+		r->text_buf_size += info->text_len;
 
 		if (!data_check_size(&rb->text_data_ring, r->text_buf_size))
 			goto fail;
@@ -1420,11 +1416,7 @@ bool prb_reserve_in_last(struct prb_reserved_entry *e, struct printk_ringbuffer 
 	if (r->text_buf_size && !r->text_buf)
 		goto fail;
 
-	/* Although dictionary data may be in use, it cannot be extended. */
-	r->dict_buf = NULL;
-	r->dict_buf_size = 0;
-
-	r->info = &d->info;
+	r->info = info;
 
 	e->text_space = space_used(&rb->text_data_ring, &d->text_blk_lpos);
 
@@ -1460,40 +1452,32 @@ static void desc_make_final(struct prb_desc_ring *desc_ring, unsigned long id)
  *
  * This is the public function available to writers to reserve data.
  *
- * The writer specifies the text and dict sizes to reserve by setting the
- * @text_buf_size and @dict_buf_size fields of @r, respectively. Dictionaries
- * are optional, so @dict_buf_size is allowed to be 0. To ensure proper
- * initialization of @r, prb_rec_init_wr() should be used.
+ * The writer specifies the text size to reserve by setting the
+ * @text_buf_size field of @r. To ensure proper initialization of @r,
+ * prb_rec_init_wr() should be used.
  *
  * Context: Any context. Disables local interrupts on success.
  * Return: true if at least text data could be allocated, otherwise false.
  *
- * On success, the fields @info, @text_buf, @dict_buf of @r will be set by
- * this function and should be filled in by the writer before committing. Also
+ * On success, the fields @info and @text_buf of @r will be set by this
+ * function and should be filled in by the writer before committing. Also
  * on success, prb_record_text_space() can be used on @e to query the actual
  * space used for the text data block.
  *
- * If the function fails to reserve dictionary space (but all else succeeded),
- * it will still report success. In that case @dict_buf is set to NULL and
- * @dict_buf_size is set to 0. Writers must check this before writing to
- * dictionary space.
- *
- * Important: @info->text_len and @info->dict_len need to be set correctly by
- *            the writer in order for data to be readable and/or extended.
- *            Their values are initialized to 0.
+ * Important: @info->text_len needs to be set correctly by the writer in
+ *            order for data to be readable and/or extended. Its value
+ *            is initialized to 0.
  */
 bool prb_reserve(struct prb_reserved_entry *e, struct printk_ringbuffer *rb,
 		 struct printk_record *r)
 {
 	struct prb_desc_ring *desc_ring = &rb->desc_ring;
+	struct printk_info *info;
 	struct prb_desc *d;
 	unsigned long id;
 	u64 seq;
 
 	if (!data_check_size(&rb->text_data_ring, r->text_buf_size))
-		goto fail;
-
-	if (!data_check_size(&rb->dict_data_ring, r->dict_buf_size))
 		goto fail;
 
 	/*
@@ -1512,14 +1496,15 @@ bool prb_reserve(struct prb_reserved_entry *e, struct printk_ringbuffer *rb,
 	}
 
 	d = to_desc(desc_ring, id);
+	info = to_info(desc_ring, id);
 
 	/*
 	 * All @info fields (except @seq) are cleared and must be filled in
 	 * by the writer. Save @seq before clearing because it is used to
 	 * determine the new sequence number.
 	 */
-	seq = d->info.seq;
-	memset(&d->info, 0, sizeof(d->info));
+	seq = info->seq;
+	memset(info, 0, sizeof(*info));
 
 	/*
 	 * Set the @e fields here so that prb_commit() can be used if
@@ -1533,16 +1518,16 @@ bool prb_reserve(struct prb_reserved_entry *e, struct printk_ringbuffer *rb,
 	 * Otherwise just increment it by a full wrap.
 	 *
 	 * @seq is considered "never been set" if it has a value of 0,
-	 * _except_ for @descs[0], which was specially setup by the ringbuffer
+	 * _except_ for @infos[0], which was specially setup by the ringbuffer
 	 * initializer and therefore is always considered as set.
 	 *
 	 * See the "Bootstrap" comment block in printk_ringbuffer.h for
 	 * details about how the initializer bootstraps the descriptors.
 	 */
 	if (seq == 0 && DESC_INDEX(desc_ring, id) != 0)
-		d->info.seq = DESC_INDEX(desc_ring, id);
+		info->seq = DESC_INDEX(desc_ring, id);
 	else
-		d->info.seq = seq + DESCS_COUNT(desc_ring);
+		info->seq = seq + DESCS_COUNT(desc_ring);
 
 	/*
 	 * New data is about to be reserved. Once that happens, previous
@@ -1550,7 +1535,7 @@ bool prb_reserve(struct prb_reserved_entry *e, struct printk_ringbuffer *rb,
 	 * previous descriptor now so that it can be made available to
 	 * readers. (For seq==0 there is no previous descriptor.)
 	 */
-	if (d->info.seq > 0)
+	if (info->seq > 0)
 		desc_make_final(desc_ring, DESC_ID(id - 1));
 
 	r->text_buf = data_alloc(rb, &rb->text_data_ring, r->text_buf_size,
@@ -1562,16 +1547,7 @@ bool prb_reserve(struct prb_reserved_entry *e, struct printk_ringbuffer *rb,
 		goto fail;
 	}
 
-	r->dict_buf = data_alloc(rb, &rb->dict_data_ring, r->dict_buf_size,
-				 &d->dict_blk_lpos, id);
-	/*
-	 * If dict data allocation fails, the caller can still commit
-	 * text. But dictionary information will not be available.
-	 */
-	if (r->dict_buf_size && !r->dict_buf)
-		r->dict_buf_size = 0;
-
-	r->info = &d->info;
+	r->info = info;
 
 	/* Record full text space used by record. */
 	e->text_space = space_used(&rb->text_data_ring, &d->text_blk_lpos);
@@ -1726,12 +1702,12 @@ static bool copy_data(struct prb_data_ring *data_ring,
 	/*
 	 * Actual cannot be less than expected. It can be more than expected
 	 * because of the trailing alignment padding.
+	 *
+	 * Note that invalid @len values can occur because the caller loads
+	 * the value during an allowed data race.
 	 */
-	if (WARN_ON_ONCE(data_size < (unsigned int)len)) {
-		pr_warn_once("wrong data size (%u, expecting >=%hu) for data: %.*s\n",
-			     data_size, len, data_size, data);
+	if (data_size < (unsigned int)len)
 		return false;
-	}
 
 	/* Caller interested in the line count? */
 	if (line_count)
@@ -1764,8 +1740,9 @@ static int desc_read_finalized_seq(struct prb_desc_ring *desc_ring,
 {
 	struct prb_data_blk_lpos *blk_lpos = &desc_out->text_blk_lpos;
 	enum desc_state d_state;
+	u64 s;
 
-	d_state = desc_read(desc_ring, id, desc_out);
+	d_state = desc_read(desc_ring, id, desc_out, &s, NULL);
 
 	/*
 	 * An unexpected @id (desc_miss) or @seq mismatch means the record
@@ -1775,7 +1752,7 @@ static int desc_read_finalized_seq(struct prb_desc_ring *desc_ring,
 	if (d_state == desc_miss ||
 	    d_state == desc_reserved ||
 	    d_state == desc_committed ||
-	    desc_out->info.seq != seq) {
+	    s != seq) {
 		return -EINVAL;
 	}
 
@@ -1802,6 +1779,7 @@ static int prb_read(struct printk_ringbuffer *rb, u64 seq,
 		    struct printk_record *r, unsigned int *line_count)
 {
 	struct prb_desc_ring *desc_ring = &rb->desc_ring;
+	struct printk_info *info = to_info(desc_ring, seq);
 	struct prb_desc *rdesc = to_desc(desc_ring, seq);
 	atomic_long_t *state_var = &rdesc->state_var;
 	struct prb_desc desc;
@@ -1823,23 +1801,12 @@ static int prb_read(struct printk_ringbuffer *rb, u64 seq,
 
 	/* If requested, copy meta data. */
 	if (r->info)
-		memcpy(r->info, &desc.info, sizeof(*(r->info)));
+		memcpy(r->info, info, sizeof(*(r->info)));
 
 	/* Copy text data. If it fails, this is a data-less record. */
-	if (!copy_data(&rb->text_data_ring, &desc.text_blk_lpos, desc.info.text_len,
+	if (!copy_data(&rb->text_data_ring, &desc.text_blk_lpos, info->text_len,
 		       r->text_buf, r->text_buf_size, line_count)) {
 		return -ENOENT;
-	}
-
-	/*
-	 * Copy dict data. Although this should not fail, dict data is not
-	 * important. So if it fails, modify the copied meta data to report
-	 * that there is no dict data, thus silently dropping the dict data.
-	 */
-	if (!copy_data(&rb->dict_data_ring, &desc.dict_blk_lpos, desc.info.dict_len,
-		       r->dict_buf, r->dict_buf_size, NULL)) {
-		if (r->info)
-			r->info->dict_len = 0;
 	}
 
 	/* Ensure the record is still finalized and has the same @seq. */
@@ -1853,11 +1820,12 @@ static u64 prb_first_seq(struct printk_ringbuffer *rb)
 	enum desc_state d_state;
 	struct prb_desc desc;
 	unsigned long id;
+	u64 seq;
 
 	for (;;) {
 		id = atomic_long_read(&rb->desc_ring.tail_id); /* LMM(prb_first_seq:A) */
 
-		d_state = desc_read(desc_ring, id, &desc); /* LMM(prb_first_seq:B) */
+		d_state = desc_read(desc_ring, id, &desc, &seq, NULL); /* LMM(prb_first_seq:B) */
 
 		/*
 		 * This loop will not be infinite because the tail is
@@ -1886,7 +1854,7 @@ static u64 prb_first_seq(struct printk_ringbuffer *rb)
 		smp_rmb(); /* LMM(prb_first_seq:C) */
 	}
 
-	return desc.info.seq;
+	return seq;
 }
 
 /*
@@ -1935,7 +1903,7 @@ static bool _prb_read_valid(struct printk_ringbuffer *rb, u64 *seq,
  *
  * This is the public function available to readers to read a record.
  *
- * The reader provides the @info, @text_buf, @dict_buf buffers of @r to be
+ * The reader provides the @info and @text_buf buffers of @r to be
  * filled in. Any of the buffer pointers can be set to NULL if the reader
  * is not interested in that data. To ensure proper initialization of @r,
  * prb_rec_init_rd() should be used.
@@ -1983,7 +1951,7 @@ bool prb_read_valid_info(struct printk_ringbuffer *rb, u64 seq,
 {
 	struct printk_record r;
 
-	prb_rec_init_rd(&r, info, NULL, 0, NULL, 0);
+	prb_rec_init_rd(&r, info, NULL, 0);
 
 	return _prb_read_valid(rb, &seq, &r, line_count);
 }
@@ -2045,10 +2013,9 @@ u64 prb_next_seq(struct printk_ringbuffer *rb)
  * @rb:       The ringbuffer to initialize.
  * @text_buf: The data buffer for text data.
  * @textbits: The size of @text_buf as a power-of-2 value.
- * @dict_buf: The data buffer for dictionary data.
- * @dictbits: The size of @dict_buf as a power-of-2 value.
  * @descs:    The descriptor buffer for ringbuffer records.
  * @descbits: The count of @descs items as a power-of-2 value.
+ * @infos:    The printk_info buffer for ringbuffer records.
  *
  * This is the public function available to writers to setup a ringbuffer
  * during runtime using provided buffers.
@@ -2059,13 +2026,15 @@ u64 prb_next_seq(struct printk_ringbuffer *rb)
  */
 void prb_init(struct printk_ringbuffer *rb,
 	      char *text_buf, unsigned int textbits,
-	      char *dict_buf, unsigned int dictbits,
-	      struct prb_desc *descs, unsigned int descbits)
+	      struct prb_desc *descs, unsigned int descbits,
+	      struct printk_info *infos)
 {
 	memset(descs, 0, _DESCS_COUNT(descbits) * sizeof(descs[0]));
+	memset(infos, 0, _DESCS_COUNT(descbits) * sizeof(infos[0]));
 
 	rb->desc_ring.count_bits = descbits;
 	rb->desc_ring.descs = descs;
+	rb->desc_ring.infos = infos;
 	atomic_long_set(&rb->desc_ring.head_id, DESC0_ID(descbits));
 	atomic_long_set(&rb->desc_ring.tail_id, DESC0_ID(descbits));
 
@@ -2074,21 +2043,14 @@ void prb_init(struct printk_ringbuffer *rb,
 	atomic_long_set(&rb->text_data_ring.head_lpos, BLK0_LPOS(textbits));
 	atomic_long_set(&rb->text_data_ring.tail_lpos, BLK0_LPOS(textbits));
 
-	rb->dict_data_ring.size_bits = dictbits;
-	rb->dict_data_ring.data = dict_buf;
-	atomic_long_set(&rb->dict_data_ring.head_lpos, BLK0_LPOS(dictbits));
-	atomic_long_set(&rb->dict_data_ring.tail_lpos, BLK0_LPOS(dictbits));
-
 	atomic_long_set(&rb->fail, 0);
 
-	descs[0].info.seq = -(u64)_DESCS_COUNT(descbits);
-
-	descs[_DESCS_COUNT(descbits) - 1].info.seq = 0;
 	atomic_long_set(&(descs[_DESCS_COUNT(descbits) - 1].state_var), DESC0_SV(descbits));
 	descs[_DESCS_COUNT(descbits) - 1].text_blk_lpos.begin = FAILED_LPOS;
 	descs[_DESCS_COUNT(descbits) - 1].text_blk_lpos.next = FAILED_LPOS;
-	descs[_DESCS_COUNT(descbits) - 1].dict_blk_lpos.begin = FAILED_LPOS;
-	descs[_DESCS_COUNT(descbits) - 1].dict_blk_lpos.next = FAILED_LPOS;
+
+	infos[0].seq = -(u64)_DESCS_COUNT(descbits);
+	infos[_DESCS_COUNT(descbits) - 1].seq = 0;
 }
 
 /**
