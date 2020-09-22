@@ -54,7 +54,7 @@ static bool kfence_enabled __read_mostly;
  * or another.
  */
 #ifdef CONFIG_HAVE_ARCH_KFENCE_STATIC_POOL
-char __kfence_pool[KFENCE_POOL_SIZE] __aligned(KFENCE_POOL_ALIGNMENT);
+char __kfence_pool[KFENCE_POOL_SIZE] __kfence_pool_attrs;
 #else
 char *__kfence_pool __read_mostly;
 #endif
