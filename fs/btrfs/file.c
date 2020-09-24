@@ -1999,8 +1999,6 @@ relock:
 		goto buffered;
 	}
 
-	down_read(&BTRFS_I(inode)->dio_sem);
-
 	/*
 	 * This is actually a sync iocb, so we need our fancy endio to know if
 	 * we need to sync.
@@ -2015,7 +2013,6 @@ relock:
 	if (written == -ENOTBLK)
 		written = 0;
 
-	up_read(&BTRFS_I(inode)->dio_sem);
 	btrfs_inode_unlock(inode, ilock_flags);
 
 	if (written < 0 || !iov_iter_count(from)) {
@@ -2223,13 +2220,6 @@ int btrfs_sync_file(struct file *file, loff_t start, loff_t end, int datasync)
 
 	inode_lock(inode);
 
-	/*
-	 * We take the dio_sem here because the tree log stuff can race with
-	 * lockless dio writes and get an extent map logged for an extent we
-	 * never waited on.  We need it this high up for lockdep reasons.
-	 */
-	down_write(&BTRFS_I(inode)->dio_sem);
-
 	atomic_inc(&root->log_batch);
 
 	/*
@@ -2260,7 +2250,6 @@ int btrfs_sync_file(struct file *file, loff_t start, loff_t end, int datasync)
 	 */
 	ret = start_ordered_ops(inode, start, end);
 	if (ret) {
-		up_write(&BTRFS_I(inode)->dio_sem);
 		inode_unlock(inode);
 		goto out;
 	}
@@ -2357,7 +2346,6 @@ int btrfs_sync_file(struct file *file, loff_t start, loff_t end, int datasync)
 	 * file again, but that will end up using the synchronization
 	 * inside btrfs_sync_log to keep things safe.
 	 */
-	up_write(&BTRFS_I(inode)->dio_sem);
 	inode_unlock(inode);
 
 	if (ret != BTRFS_NO_LOG_SYNC) {
@@ -2388,7 +2376,6 @@ out:
 
 out_release_extents:
 	btrfs_release_log_ctx_extents(&ctx);
-	up_write(&BTRFS_I(inode)->dio_sem);
 	inode_unlock(inode);
 	goto out;
 }
