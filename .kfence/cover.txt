@@ -1,5 +1,5 @@
 vim: set ft=mail :
-COMMIT_RANGE: gh-kasan/kfence-rebase-wip|mm: add Kernel Electric..gh-kasan/kfence-rebase-wip|kfence: add test
+COMMIT_RANGE: gh-kasan/kfence-rebase-wip|mm: add Kernel Electric..gh-kasan/kfence-rebase-wip|MAINTAINERS: Add entry for KFENCE
 NO_GET_MAINTAINER
 
 --------------------------------------------------------------------------------
