@@ -84,8 +84,9 @@ void *__kfence_alloc(struct kmem_cache *s, size_t size, gfp_t flags);
  */
 static __always_inline void *kfence_alloc(struct kmem_cache *s, size_t size, gfp_t flags)
 {
-	return static_branch_unlikely(&kfence_allocation_key) ? __kfence_alloc(s, size, flags) :
-								      NULL;
+	if (static_branch_unlikely(&kfence_allocation_key))
+		return __kfence_alloc(s, size, flags);
+	return NULL;
 }
 
 /**
