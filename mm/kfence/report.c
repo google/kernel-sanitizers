@@ -59,8 +59,14 @@ static int get_stack_skipnr(const unsigned long stack_entries[], int num_entries
 			if (!strncmp(buf, KFENCE_SKIP_ARCH_FAULT_HANDLER, len))
 				goto found;
 		} else {
-			if (str_has_prefix(buf, "kfence_") || str_has_prefix(buf, "__kfence_"))
-				fallback = skipnr + 1; /* In case of tail calls into kfence. */
+			if (str_has_prefix(buf, "kfence_") || str_has_prefix(buf, "__kfence_") ||
+			    !strncmp(buf, "__slab_free", len)) {
+				/*
+				 * In case of tail calls from any of the below
+				 * to any of the above.
+				 */
+				fallback = skipnr + 1;
+			}
 
 			/* Also the *_bulk() variants by only checking prefixes. */
 			if (str_has_prefix(buf, "kfree") ||
