@@ -60,7 +60,13 @@ series -- also viewable here:
 [1] http://llvm.org/docs/GwpAsan.html
 [2] https://linux.die.net/man/3/efence
 
-v3:
+v4:
+* MAINTAINERS: Split out from first patch.
+* Make static memory pool's attrs entirely arch-dependent.
+* Fix report generation if __slab_free tail-called.
+* Clarify RCU test comment [reported by Paul E. McKenney].
+
+v3: https://lkml.kernel.org/r/20200921132611.1700350-1-elver@google.com
 * Rewrite SLAB/SLUB patch descriptions to clarify need for 'orig_size'.
 * Various smaller fixes (see details in patches).
 
