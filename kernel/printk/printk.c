@@ -1103,7 +1103,7 @@ static unsigned int __init add_to_rb(struct printk_ringbuffer *rb,
 	return prb_record_text_space(&e);
 }
 
-static char setup_text_buf[CONSOLE_EXT_LOG_MAX] __initdata;
+static char setup_text_buf[LOG_LINE_MAX] __initdata;
 
 void __init setup_log_buf(int early)
 {
@@ -1356,6 +1356,13 @@ static size_t record_print_text(struct printk_record *r, bool syslog,
 	size_t line_len;
 	size_t len = 0;
 	char *next;
+
+	/*
+	 * If the message was truncated because the buffer was not large
+	 * enough, treat the available text as if it were the full text.
+	 */
+	if (text_len > buf_size)
+		text_len = buf_size;
 
 	prefix_len = info_print_prefix(r->info, syslog, time, prefix);
 
@@ -1911,7 +1918,7 @@ static size_t log_output(int facility, int level, enum log_flags lflags,
 		struct printk_record r;
 
 		prb_rec_init_wr(&r, text_len);
-		if (prb_reserve_in_last(&e, prb, &r, caller_id)) {
+		if (prb_reserve_in_last(&e, prb, &r, caller_id, LOG_LINE_MAX)) {
 			memcpy(&r.text_buf[r.info->text_len], text, text_len);
 			r.info->text_len += text_len;
 			if (lflags & LOG_NEWLINE) {
