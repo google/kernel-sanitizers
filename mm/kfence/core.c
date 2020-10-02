@@ -9,6 +9,7 @@
 #include <linux/kfence.h>
 #include <linux/list.h>
 #include <linux/lockdep.h>
+#include <linux/log2.h>
 #include <linux/moduleparam.h>
 #include <linux/random.h>
 #include <linux/rcupdate.h>
@@ -368,6 +369,28 @@ static void rcu_guarded_free(struct rcu_head *h)
 	kfence_guarded_free((void *)meta->addr, meta);
 }
 
+#ifdef CONFIG_HAVE_ARCH_KFENCE_STATIC_POOL
+static bool __init alloc_kfence_pool(void) { return true; }
+#else
+static bool __init alloc_kfence_pool(void)
+{
+	unsigned int num_pages;
+	struct page *pages;
+
+	if (__kfence_pool)
+		return true; /* Allocated in arch_kfence_initialize_pool(). */
+
+	num_pages = ilog2(roundup_pow_of_two(KFENCE_POOL_SIZE / PAGE_SIZE));
+	pages = alloc_pages(GFP_KERNEL, num_pages);
+
+	if (!pages)
+		return false;
+
+	__kfence_pool = page_address(pages);
+	return true;
+}
+#endif
+
 static bool __init kfence_initialize_pool(void)
 {
 	unsigned long addr;
@@ -375,6 +398,9 @@ static bool __init kfence_initialize_pool(void)
 	int i;
 
 	if (!arch_kfence_initialize_pool())
+		return false;
+
+	if (!alloc_kfence_pool())
 		return false;
 
 	addr = (unsigned long)__kfence_pool;
