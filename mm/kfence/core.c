@@ -200,7 +200,8 @@ static inline bool check_canary_byte(u8 *addr)
 	return false;
 }
 
-static inline void for_each_canary(const struct kfence_metadata *meta, bool (*fn)(u8 *))
+/* __always_inline this to ensure we won't do an indirect call to fn. */
+static __always_inline void for_each_canary(const struct kfence_metadata *meta, bool (*fn)(u8 *))
 {
 	unsigned long addr;
 
