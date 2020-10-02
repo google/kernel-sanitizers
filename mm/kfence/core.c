@@ -414,6 +414,10 @@ static bool __init kfence_initialize_pool(void)
 		if (!i || (i % 2))
 			continue;
 
+		/* Verify we do not have a compound head page. */
+		if (WARN_ON(compound_head(&pages[i]) != &pages[i]))
+			return false;
+
 		__SetPageSlab(&pages[i]);
 	}
 
