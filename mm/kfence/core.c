@@ -9,7 +9,6 @@
 #include <linux/kfence.h>
 #include <linux/list.h>
 #include <linux/lockdep.h>
-#include <linux/log2.h>
 #include <linux/moduleparam.h>
 #include <linux/random.h>
 #include <linux/rcupdate.h>
@@ -374,15 +373,12 @@ static bool __init alloc_kfence_pool(void) { return true; }
 #else
 static bool __init alloc_kfence_pool(void)
 {
-	unsigned int num_pages;
 	struct page *pages;
 
 	if (__kfence_pool)
 		return true; /* Allocated in arch_kfence_initialize_pool(). */
 
-	num_pages = ilog2(roundup_pow_of_two(KFENCE_POOL_SIZE / PAGE_SIZE));
-	pages = alloc_pages(GFP_KERNEL, num_pages);
-
+	pages = alloc_pages(GFP_KERNEL, get_order(KFENCE_POOL_SIZE));
 	if (!pages)
 		return false;
 
