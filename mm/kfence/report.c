@@ -212,7 +212,7 @@ void kfence_report_error(unsigned long address, const struct kfence_metadata *me
 
 	/* Print report footer. */
 	pr_err("\n");
-	dump_stack_print_info(KERN_DEFAULT);
+	dump_stack_print_info(KERN_ERR);
 	pr_err("==================================================================\n");
 
 	lockdep_on();
