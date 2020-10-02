@@ -56,7 +56,7 @@ static bool kfence_enabled __read_mostly;
 #ifdef CONFIG_HAVE_ARCH_KFENCE_STATIC_POOL
 char __kfence_pool[KFENCE_POOL_SIZE] __kfence_pool_attrs;
 #else
-char *__kfence_pool __read_mostly;
+char *__kfence_pool __ro_after_init;
 #endif
 EXPORT_SYMBOL(__kfence_pool); /* Export for test modules. */
 
