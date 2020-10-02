@@ -72,7 +72,7 @@ struct kfence_metadata {
 
 	/*
 	 * In case of an invalid access, the page that was unprotected; we
-	 * optimistically only store address.
+	 * optimistically only store one address.
 	 */
 	unsigned long unprotected_page;
 
