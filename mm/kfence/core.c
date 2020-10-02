@@ -541,6 +541,12 @@ late_initcall(kfence_debugfs_init);
  * Set up delayed work, which will enable and disable the static key. We need to
  * use a work queue (rather than a simple timer), since enabling and disabling a
  * static key cannot be done from an interrupt.
+ *
+ * Note: Toggling a static branch currently causes IPIs, and here we'll end up
+ * with a total of 2 IPIs to all CPUs. If this ends up a problem in future (with
+ * more aggressive sampling intervals), we could get away with a variant that
+ * avoids IPIs, at the cost of not immediately capturing allocations if the
+ * instructions remain cached.
  */
 static struct delayed_work kfence_timer;
 static void toggle_allocation_gate(struct work_struct *work)
