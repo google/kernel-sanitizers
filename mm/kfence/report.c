@@ -185,12 +185,18 @@ void kfence_report_error(unsigned long address, const struct kfence_metadata *me
 		pr_err("Use-after-free access at 0x" PTR_FMT " (in kfence-#%zd):\n",
 		       (void *)address, object_index);
 		break;
-	case KFENCE_ERROR_CORRUPTION:
+	case KFENCE_ERROR_CORRUPTION: {
+		size_t bytes_to_show = 16;
+
 		pr_err("BUG: KFENCE: memory corruption in %pS\n\n", (void *)stack_entries[skipnr]);
 		pr_err("Corrupted memory at 0x" PTR_FMT " ", (void *)address);
-		print_diff_canary((u8 *)address, 16);
+
+		if (address < meta->addr)
+			bytes_to_show = min(bytes_to_show, meta->addr - address);
+		print_diff_canary((u8 *)address, bytes_to_show);
 		pr_cont(" (in kfence-#%zd):\n", object_index);
 		break;
+	}
 	case KFENCE_ERROR_INVALID:
 		pr_err("BUG: KFENCE: invalid access in %pS\n\n", (void *)stack_entries[skipnr]);
 		pr_err("Invalid access at 0x" PTR_FMT ":\n", (void *)address);
