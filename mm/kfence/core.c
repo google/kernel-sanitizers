@@ -36,15 +36,45 @@
 
 /* === Data ================================================================= */
 
+static bool kfence_enabled __read_mostly;
+
 static unsigned long kfence_sample_interval __read_mostly = CONFIG_KFENCE_SAMPLE_INTERVAL;
 
 #ifdef MODULE_PARAM_PREFIX
 #undef MODULE_PARAM_PREFIX
 #endif
 #define MODULE_PARAM_PREFIX "kfence."
-module_param_named(sample_interval, kfence_sample_interval, ulong, 0600);
 
-static bool kfence_enabled __read_mostly;
+static int param_set_sample_interval(const char *val, const struct kernel_param *kp)
+{
+	unsigned long num;
+	int ret = kstrtoul(val, 0, &num);
+
+	if (ret < 0)
+		return ret;
+
+	if (!num) /* Using 0 to indicate KFENCE is disabled. */
+		WRITE_ONCE(kfence_enabled, false);
+	else if (!READ_ONCE(kfence_enabled))
+		return -EINVAL; /* Cannot (re-)enable KFENCE on-the-fly. */
+
+	*((unsigned long *)kp->arg) = num;
+	return 0;
+}
+
+static int param_get_sample_interval(char *buffer, const struct kernel_param *kp)
+{
+	if (!READ_ONCE(kfence_enabled))
+		return sprintf(buffer, "0\n");
+
+	return param_get_ulong(buffer, kp);
+}
+
+static const struct kernel_param_ops sample_interval_param_ops = {
+	.set = param_set_sample_interval,
+	.get = param_get_sample_interval,
+};
+module_param_cb(sample_interval, &sample_interval_param_ops, &kfence_sample_interval, 0600);
 
 /*
  * The pool of pages used for guard pages and objects. If supported, allocated
