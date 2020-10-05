@@ -39,8 +39,11 @@ extern struct static_key_false kfence_allocation_key;
  */
 static __always_inline bool is_kfence_address(const void *addr)
 {
-	return unlikely((char *)addr >= __kfence_pool &&
-			(char *)addr < __kfence_pool + KFENCE_POOL_SIZE && addr);
+	/*
+	 * The non-NULL check is required in case the __kfence_pool pointer was
+	 * never initialized; keep it in the slow-path after the range-check.
+	 */
+	return unlikely((unsigned long)((char *)addr - __kfence_pool) < KFENCE_POOL_SIZE && addr);
 }
 
 /**
