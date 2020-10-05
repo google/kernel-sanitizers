@@ -233,16 +233,19 @@ static inline bool check_canary_byte(u8 *addr)
 /* __always_inline this to ensure we won't do an indirect call to fn. */
 static __always_inline void for_each_canary(const struct kfence_metadata *meta, bool (*fn)(u8 *))
 {
+	const unsigned long pageaddr = ALIGN_DOWN(meta->addr, PAGE_SIZE);
 	unsigned long addr;
 
 	lockdep_assert_held(&meta->lock);
 
-	for (addr = ALIGN_DOWN(meta->addr, PAGE_SIZE); addr < meta->addr; addr++) {
+	/* Check left of object. */
+	for (addr = pageaddr; addr < meta->addr; addr++) {
 		if (!fn((u8 *)addr))
 			break;
 	}
 
-	for (addr = meta->addr + meta->size; addr < PAGE_ALIGN(meta->addr); addr++) {
+	/* Check right of object. */
+	for (addr = meta->addr + meta->size; addr < pageaddr + PAGE_SIZE; addr++) {
 		if (!fn((u8 *)addr))
 			break;
 	}
