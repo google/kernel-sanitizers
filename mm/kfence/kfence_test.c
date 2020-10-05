@@ -355,6 +355,32 @@ static void test_invalid_addr_free(struct kunit *test)
 	KUNIT_EXPECT_TRUE(test, report_matches(&expect));
 }
 
+static void test_corruption(struct kunit *test)
+{
+	size_t size = 32;
+	struct expect_report expect = {
+		.type = KFENCE_ERROR_CORRUPTION,
+		.fn = test_corruption,
+	};
+	char *buf;
+
+	setup_test_cache(test, size, 0, NULL);
+
+	/* Test both sides. */
+
+	buf = test_alloc(test, size, GFP_KERNEL, ALLOCATE_LEFT);
+	expect.addr = buf + size;
+	WRITE_ONCE(*expect.addr, 42);
+	test_free(buf);
+	KUNIT_EXPECT_TRUE(test, report_matches(&expect));
+
+	buf = test_alloc(test, size, GFP_KERNEL, ALLOCATE_RIGHT);
+	expect.addr = buf - 1;
+	WRITE_ONCE(*expect.addr, 42);
+	test_free(buf);
+	KUNIT_EXPECT_TRUE(test, report_matches(&expect));
+}
+
 /*
  * KFENCE is unable to detect an OOB if the allocation's alignment requirements
  * leave a gap between the object and the guard page. Specifically, an
@@ -692,6 +718,7 @@ static struct kunit_case kfence_test_cases[] = {
 	KFENCE_KUNIT_CASE(test_use_after_free_read),
 	KFENCE_KUNIT_CASE(test_double_free),
 	KFENCE_KUNIT_CASE(test_invalid_addr_free),
+	KFENCE_KUNIT_CASE(test_corruption),
 	KFENCE_KUNIT_CASE(test_free_bulk),
 	KFENCE_KUNIT_CASE(test_init_on_free),
 	KUNIT_CASE(test_kmalloc_aligned_oob_read),
