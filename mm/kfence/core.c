@@ -36,15 +36,45 @@
 
 /* === Data ================================================================= */
 
+static bool kfence_enabled __read_mostly;
+
 static unsigned long kfence_sample_interval __read_mostly = CONFIG_KFENCE_SAMPLE_INTERVAL;
 
 #ifdef MODULE_PARAM_PREFIX
 #undef MODULE_PARAM_PREFIX
 #endif
 #define MODULE_PARAM_PREFIX "kfence."
-module_param_named(sample_interval, kfence_sample_interval, ulong, 0600);
 
-static bool kfence_enabled __read_mostly;
+static int param_set_sample_interval(const char *val, const struct kernel_param *kp)
+{
+	unsigned long num;
+	int ret = kstrtoul(val, 0, &num);
+
+	if (ret < 0)
+		return ret;
+
+	if (!num) /* Using 0 to indicate KFENCE is disabled. */
+		WRITE_ONCE(kfence_enabled, false);
+	else if (!READ_ONCE(kfence_enabled))
+		return -EINVAL; /* Cannot (re-)enable KFENCE on-the-fly. */
+
+	*((unsigned long *)kp->arg) = num;
+	return 0;
+}
+
+static int param_get_sample_interval(char *buffer, const struct kernel_param *kp)
+{
+	if (!READ_ONCE(kfence_enabled))
+		return sprintf(buffer, "0\n");
+
+	return param_get_ulong(buffer, kp);
+}
+
+static const struct kernel_param_ops sample_interval_param_ops = {
+	.set = param_set_sample_interval,
+	.get = param_get_sample_interval,
+};
+module_param_cb(sample_interval, &sample_interval_param_ops, &kfence_sample_interval, 0600);
 
 /*
  * The pool of pages used for guard pages and objects. If supported, allocated
@@ -56,7 +86,7 @@ static bool kfence_enabled __read_mostly;
 #ifdef CONFIG_HAVE_ARCH_KFENCE_STATIC_POOL
 char __kfence_pool[KFENCE_POOL_SIZE] __kfence_pool_attrs;
 #else
-char *__kfence_pool __read_mostly;
+char *__kfence_pool __ro_after_init;
 #endif
 EXPORT_SYMBOL(__kfence_pool); /* Export for test modules. */
 
@@ -191,7 +221,7 @@ static inline bool set_canary_byte(u8 *addr)
 /* Check canary byte at @addr. */
 static inline bool check_canary_byte(u8 *addr)
 {
-	if (*addr == KFENCE_CANARY_PATTERN(addr))
+	if (likely(*addr == KFENCE_CANARY_PATTERN(addr)))
 		return true;
 
 	atomic_long_inc(&counters[KFENCE_COUNTER_BUGS]);
@@ -200,18 +230,22 @@ static inline bool check_canary_byte(u8 *addr)
 	return false;
 }
 
-static inline void for_each_canary(const struct kfence_metadata *meta, bool (*fn)(u8 *))
+/* __always_inline this to ensure we won't do an indirect call to fn. */
+static __always_inline void for_each_canary(const struct kfence_metadata *meta, bool (*fn)(u8 *))
 {
+	const unsigned long pageaddr = ALIGN_DOWN(meta->addr, PAGE_SIZE);
 	unsigned long addr;
 
 	lockdep_assert_held(&meta->lock);
 
-	for (addr = ALIGN_DOWN(meta->addr, PAGE_SIZE); addr < meta->addr; addr++) {
+	/* Check left of object. */
+	for (addr = pageaddr; addr < meta->addr; addr++) {
 		if (!fn((u8 *)addr))
 			break;
 	}
 
-	for (addr = meta->addr + meta->size; addr < PAGE_ALIGN(meta->addr); addr++) {
+	/* Check right of object. */
+	for (addr = meta->addr + meta->size; addr < pageaddr + PAGE_SIZE; addr++) {
 		if (!fn((u8 *)addr))
 			break;
 	}
@@ -368,6 +402,25 @@ static void rcu_guarded_free(struct rcu_head *h)
 	kfence_guarded_free((void *)meta->addr, meta);
 }
 
+#ifdef CONFIG_HAVE_ARCH_KFENCE_STATIC_POOL
+static bool __init alloc_kfence_pool(void) { return true; }
+#else
+static bool __init alloc_kfence_pool(void)
+{
+	struct page *pages;
+
+	if (__kfence_pool)
+		return true; /* Allocated in arch_kfence_initialize_pool(). */
+
+	pages = alloc_pages(GFP_KERNEL, get_order(KFENCE_POOL_SIZE));
+	if (!pages)
+		return false;
+
+	__kfence_pool = page_address(pages);
+	return true;
+}
+#endif
+
 static bool __init kfence_initialize_pool(void)
 {
 	unsigned long addr;
@@ -375,6 +428,9 @@ static bool __init kfence_initialize_pool(void)
 	int i;
 
 	if (!arch_kfence_initialize_pool())
+		return false;
+
+	if (!alloc_kfence_pool())
 		return false;
 
 	addr = (unsigned long)__kfence_pool;
@@ -391,6 +447,10 @@ static bool __init kfence_initialize_pool(void)
 	for (i = 0; i < KFENCE_POOL_SIZE / PAGE_SIZE; i++) {
 		if (!i || (i % 2))
 			continue;
+
+		/* Verify we do not have a compound head page. */
+		if (WARN_ON(compound_head(&pages[i]) != &pages[i]))
+			return false;
 
 		__SetPageSlab(&pages[i]);
 	}
@@ -514,6 +574,12 @@ late_initcall(kfence_debugfs_init);
  * Set up delayed work, which will enable and disable the static key. We need to
  * use a work queue (rather than a simple timer), since enabling and disabling a
  * static key cannot be done from an interrupt.
+ *
+ * Note: Toggling a static branch currently causes IPIs, and here we'll end up
+ * with a total of 2 IPIs to all CPUs. If this ends up a problem in future (with
+ * more aggressive sampling intervals), we could get away with a variant that
+ * avoids IPIs, at the cost of not immediately capturing allocations if the
+ * instructions remain cached.
  */
 static struct delayed_work kfence_timer;
 static void toggle_allocation_gate(struct work_struct *work)
