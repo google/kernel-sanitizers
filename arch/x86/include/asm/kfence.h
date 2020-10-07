@@ -11,8 +11,7 @@
 #include <asm/set_memory.h>
 #include <asm/tlbflush.h>
 
-/* The alignment should be at least a 4K page. */
-#define __kfence_pool_attrs __aligned(PAGE_SIZE)
+extern bool kfence_alloc_pool(void);
 
 /*
  * The page fault handler entry function, up to which the stack trace is
@@ -24,6 +23,9 @@
 static inline bool arch_kfence_initialize_pool(void)
 {
 	unsigned long addr;
+
+	if (!kfence_alloc_pool())
+		return false;
 
 	for (addr = (unsigned long)__kfence_pool; is_kfence_address((void *)addr);
 	     addr += PAGE_SIZE) {
@@ -44,8 +46,9 @@ static inline bool kfence_protect_page(unsigned long addr, bool protect)
 {
 	unsigned int level;
 	pte_t *pte = lookup_address(addr, &level);
+	struct page *page = virt_to_page(addr);
 
-	if (!pte || level != PG_LEVEL_4K)
+	if (WARN_ON(!pte || level != PG_LEVEL_4K))
 		return false;
 
 	/*
@@ -56,9 +59,9 @@ static inline bool kfence_protect_page(unsigned long addr, bool protect)
 	 */
 
 	if (protect)
-		set_pte(pte, __pte(pte_val(*pte) & ~_PAGE_PRESENT));
+		set_direct_map_invalid_noflush(page);
 	else
-		set_pte(pte, __pte(pte_val(*pte) | _PAGE_PRESENT));
+		set_direct_map_default_noflush(page);
 
 	/* Flush this CPU's TLB. */
 	flush_tlb_one_kernel(addr);
