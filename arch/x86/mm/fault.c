@@ -702,9 +702,6 @@ no_context(struct pt_regs *regs, unsigned long error_code,
 	}
 #endif
 
-	if (kfence_handle_page_fault(address))
-		return;
-
 	/*
 	 * 32-bit:
 	 *
@@ -728,6 +725,9 @@ no_context(struct pt_regs *regs, unsigned long error_code,
 	 */
 	if (IS_ENABLED(CONFIG_EFI))
 		efi_recover_from_page_fault(address);
+
+	if (kfence_handle_page_fault(address))
+		return;
 
 oops:
 	/*
