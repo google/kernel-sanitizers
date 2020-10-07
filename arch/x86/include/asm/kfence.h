@@ -44,6 +44,7 @@ static inline bool kfence_protect_page(unsigned long addr, bool protect)
 {
 	unsigned int level;
 	pte_t *pte = lookup_address(addr, &level);
+	struct page *page = virt_to_page(addr);
 
 	if (!pte || level != PG_LEVEL_4K)
 		return false;
@@ -56,9 +57,9 @@ static inline bool kfence_protect_page(unsigned long addr, bool protect)
 	 */
 
 	if (protect)
-		set_pte(pte, __pte(pte_val(*pte) & ~_PAGE_PRESENT));
+		set_direct_map_invalid_noflush(page);
 	else
-		set_pte(pte, __pte(pte_val(*pte) | _PAGE_PRESENT));
+		set_direct_map_default_noflush(page);
 
 	/* Flush this CPU's TLB. */
 	flush_tlb_one_kernel(addr);
