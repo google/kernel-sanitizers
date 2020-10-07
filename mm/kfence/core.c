@@ -403,9 +403,9 @@ static void rcu_guarded_free(struct rcu_head *h)
 }
 
 #ifdef CONFIG_HAVE_ARCH_KFENCE_STATIC_POOL
-static bool __init alloc_kfence_pool(void) { return true; }
+bool __init kfence_alloc_pool(void) { return true; }
 #else
-static bool __init alloc_kfence_pool(void)
+bool __init kfence_alloc_pool(void)
 {
 	struct page *pages;
 
@@ -430,7 +430,7 @@ static bool __init kfence_initialize_pool(void)
 	if (!arch_kfence_initialize_pool())
 		return false;
 
-	if (!alloc_kfence_pool())
+	if (!kfence_alloc_pool())
 		return false;
 
 	addr = (unsigned long)__kfence_pool;
