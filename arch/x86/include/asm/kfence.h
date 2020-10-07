@@ -39,7 +39,7 @@ static inline bool arch_kfence_initialize_pool(void)
 	return true;
 }
 
-/* Protect the given page and flush TLBs. */
+/* Protect the given page and flush TLB. */
 static inline bool kfence_protect_page(unsigned long addr, bool protect)
 {
 	unsigned int level;
@@ -48,11 +48,19 @@ static inline bool kfence_protect_page(unsigned long addr, bool protect)
 	if (!pte || level != PG_LEVEL_4K)
 		return false;
 
+	/*
+	 * We need to avoid IPIs, as we may get KFENCE allocations or faults
+	 * with interrupts disabled. Therefore, the below is best-effort, and
+	 * does not flush TLBs on all CPUs. We can tolerate some inaccuracy;
+	 * lazy fault handling takes care of faults after the page is PRESENT.
+	 */
+
 	if (protect)
 		set_pte(pte, __pte(pte_val(*pte) & ~_PAGE_PRESENT));
 	else
 		set_pte(pte, __pte(pte_val(*pte) | _PAGE_PRESENT));
 
+	/* Flush this CPU's TLB. */
 	flush_tlb_one_kernel(addr);
 	return true;
 }
