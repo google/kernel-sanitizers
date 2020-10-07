@@ -46,7 +46,7 @@ static inline bool kfence_protect_page(unsigned long addr, bool protect)
 	pte_t *pte = lookup_address(addr, &level);
 	struct page *page = virt_to_page(addr);
 
-	if (!pte || level != PG_LEVEL_4K)
+	if (WARN_ON(!pte || level != PG_LEVEL_4K))
 		return false;
 
 	/*
