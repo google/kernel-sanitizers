@@ -7,12 +7,6 @@
 
 #define KFENCE_SKIP_ARCH_FAULT_HANDLER "el1_sync"
 
-/*
- * FIXME: Support HAVE_ARCH_KFENCE_STATIC_POOL: Use the statically allocated
- * __kfence_pool, to avoid the extra pointer load for is_kfence_address(). By
- * default, however, we do not have struct pages for static allocations.
- */
-
 static inline bool arch_kfence_initialize_pool(void) { return true; }
 
 static inline bool kfence_protect_page(unsigned long addr, bool protect)
