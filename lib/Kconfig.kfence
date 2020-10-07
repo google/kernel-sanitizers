@@ -3,11 +3,6 @@
 config HAVE_ARCH_KFENCE
 	bool
 
-config HAVE_ARCH_KFENCE_STATIC_POOL
-	bool
-	help
-	  If the architecture supports using the static pool.
-
 menuconfig KFENCE
 	bool "KFENCE: low-overhead sampling-based memory safety error detector"
 	depends on HAVE_ARCH_KFENCE && (!KASAN || EXPERT) && (SLAB || SLUB)

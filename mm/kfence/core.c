@@ -76,18 +76,8 @@ static const struct kernel_param_ops sample_interval_param_ops = {
 };
 module_param_cb(sample_interval, &sample_interval_param_ops, &kfence_sample_interval, 0600);
 
-/*
- * The pool of pages used for guard pages and objects. If supported, allocated
- * statically, so that is_kfence_address() avoids a pointer load, and simply
- * compares against a constant address. Assume that if KFENCE is compiled into
- * the kernel, it is usually enabled, and the space is to be allocated one way
- * or another.
- */
-#ifdef CONFIG_HAVE_ARCH_KFENCE_STATIC_POOL
-char __kfence_pool[KFENCE_POOL_SIZE] __kfence_pool_attrs;
-#else
+/* The pool of pages used for guard pages and objects. */
 char *__kfence_pool __ro_after_init;
-#endif
 EXPORT_SYMBOL(__kfence_pool); /* Export for test modules. */
 
 /*
@@ -402,9 +392,6 @@ static void rcu_guarded_free(struct rcu_head *h)
 	kfence_guarded_free((void *)meta->addr, meta);
 }
 
-#ifdef CONFIG_HAVE_ARCH_KFENCE_STATIC_POOL
-bool __init kfence_alloc_pool(void) { return true; }
-#else
 bool __init kfence_alloc_pool(void)
 {
 	struct page *pages;
@@ -419,7 +406,6 @@ bool __init kfence_alloc_pool(void)
 	__kfence_pool = page_address(pages);
 	return true;
 }
-#endif
 
 static bool __init kfence_initialize_pool(void)
 {
