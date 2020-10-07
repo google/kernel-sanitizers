@@ -97,7 +97,6 @@
 #include <linux/atomic.h>
 
 #include <linux/kasan.h>
-#include <linux/kfence.h>
 #include <linux/kmemleak.h>
 #include <linux/memory_hotplug.h>
 
@@ -1949,11 +1948,6 @@ void __init kmemleak_init(void)
 		      KMEMLEAK_GREY, GFP_ATOMIC);
 	create_object((unsigned long)__bss_start, __bss_stop - __bss_start,
 		      KMEMLEAK_GREY, GFP_ATOMIC);
-#if defined(CONFIG_KFENCE) && defined(CONFIG_HAVE_ARCH_KFENCE_STATIC_POOL)
-	/* KFENCE objects are located in .bss, which may confuse kmemleak. Skip them. */
-	delete_object_part((unsigned long)__kfence_pool, KFENCE_POOL_SIZE);
-#endif
-
 	/* only register .data..ro_after_init if not within .data */
 	if (&__start_ro_after_init < &_sdata || &__end_ro_after_init > &_edata)
 		create_object((unsigned long)__start_ro_after_init,
