@@ -10,6 +10,7 @@
 
 #include "ipcsocket.h"
 
+static char sock_name[MAX_SOCK_NAME_LEN];
 
 int opensocket(int *sockfd, const char *name, int connecttype)
 {
