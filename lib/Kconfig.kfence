@@ -39,7 +39,7 @@ config KFENCE_SAMPLE_INTERVAL
 config KFENCE_NUM_OBJECTS
 	int "Number of guarded objects available"
 	default 255
-	range 1 16383
+	range 1 1023 # For most architectures max is: 2^(MAX_ORDER - 1) - 1
 	help
 	  The number of guarded objects available. For each KFENCE object, 2
 	  pages are required; with one containing the object and two adjacent
