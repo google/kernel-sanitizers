@@ -667,7 +667,7 @@ enospc:
  */
 static void flush_space(struct btrfs_fs_info *fs_info,
 		       struct btrfs_space_info *space_info, u64 num_bytes,
-		       int state)
+		       enum btrfs_flush_state state)
 {
 	struct btrfs_root *root = fs_info->extent_root;
 	struct btrfs_trans_handle *trans;
@@ -920,7 +920,7 @@ static void btrfs_async_reclaim_metadata_space(struct work_struct *work)
 	struct btrfs_fs_info *fs_info;
 	struct btrfs_space_info *space_info;
 	u64 to_reclaim;
-	int flush_state;
+	enum btrfs_flush_state flush_state;
 	int commit_cycles = 0;
 	u64 last_tickets_id;
 
