@@ -399,6 +399,8 @@ bool __init kfence_alloc_pool(void)
 	if (__kfence_pool)
 		return true; /* Allocated in arch_kfence_initialize_pool(). */
 
+	BUILD_BUG_ON(get_order(KFENCE_POOL_SIZE) >= MAX_ORDER);
+
 	pages = alloc_pages(GFP_KERNEL, get_order(KFENCE_POOL_SIZE));
 	if (!pages)
 		return false;
