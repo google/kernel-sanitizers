@@ -60,7 +60,10 @@ series -- also viewable here:
 [1] http://llvm.org/docs/GwpAsan.html
 [2] https://linux.die.net/man/3/efence
 
-v4:
+v5:
+* .... TODO ...
+
+v4: https://lkml.kernel.org/r/20200929133814.2834621-1-elver@google.com
 * MAINTAINERS: Split out from first patch.
 * Make static memory pool's attrs entirely arch-dependent.
 * Fix report generation if __slab_free tail-called.
