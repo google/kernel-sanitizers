@@ -20,7 +20,7 @@ extern bool kfence_alloc_pool(void);
 #define KFENCE_SKIP_ARCH_FAULT_HANDLER "asm_exc_page_fault"
 
 /* Force 4K pages for __kfence_pool. */
-static inline bool arch_kfence_initialize_pool(void)
+static inline bool arch_kfence_init_pool(void)
 {
 	unsigned long addr;
 
