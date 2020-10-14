@@ -55,7 +55,7 @@ static int param_set_sample_interval(const char *val, const struct kernel_param 
 
 	if (!num) /* Using 0 to indicate KFENCE is disabled. */
 		WRITE_ONCE(kfence_enabled, false);
-	else if (!READ_ONCE(kfence_enabled))
+	else if (!READ_ONCE(kfence_enabled) && system_state != SYSTEM_BOOTING)
 		return -EINVAL; /* Cannot (re-)enable KFENCE on-the-fly. */
 
 	*((unsigned long *)kp->arg) = num;
