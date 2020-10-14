@@ -37,7 +37,8 @@ config KFENCE_SAMPLE_INTERVAL
 	  setting "kfence.sample_interval" to a non-zero value enables KFENCE.
 
 config KFENCE_NUM_OBJECTS
-	int "Number of guarded objects available" if !COMPILE_TEST
+	int "Number of guarded objects available"
+	range 1 65535
 	default 255
 	help
 	  The number of guarded objects available. For each KFENCE object, 2
