@@ -961,7 +961,7 @@ static int octeon_mgmt_init_phy(struct net_device *netdev)
 				PHY_INTERFACE_MODE_MII);
 
 	if (!phydev)
-		return -ENODEV;
+		return -EPROBE_DEFER;
 
 	return 0;
 }
@@ -1219,7 +1219,7 @@ static int octeon_mgmt_open(struct net_device *netdev)
 	 */
 	if (netdev->phydev) {
 		netif_carrier_off(netdev);
-		phy_start_aneg(netdev->phydev);
+		phy_start(netdev->phydev);
 	}
 
 	netif_wake_queue(netdev);
@@ -1247,8 +1247,10 @@ static int octeon_mgmt_stop(struct net_device *netdev)
 	napi_disable(&p->napi);
 	netif_stop_queue(netdev);
 
-	if (netdev->phydev)
+	if (netdev->phydev) {
+		phy_stop(netdev->phydev);
 		phy_disconnect(netdev->phydev);
+	}
 
 	netif_carrier_off(netdev);
 
@@ -1554,12 +1556,8 @@ static struct platform_driver octeon_mgmt_driver = {
 	.remove		= octeon_mgmt_remove,
 };
 
-extern void octeon_mdiobus_force_mod_depencency(void);
-
 static int __init octeon_mgmt_mod_init(void)
 {
-	/* Force our mdiobus driver module to be loaded first. */
-	octeon_mdiobus_force_mod_depencency();
 	return platform_driver_register(&octeon_mgmt_driver);
 }
 
@@ -1571,6 +1569,7 @@ static void __exit octeon_mgmt_mod_exit(void)
 module_init(octeon_mgmt_mod_init);
 module_exit(octeon_mgmt_mod_exit);
 
+MODULE_SOFTDEP("pre: mdio-cavium");
 MODULE_DESCRIPTION(DRV_DESCRIPTION);
 MODULE_AUTHOR("David Daney");
 MODULE_LICENSE("GPL");

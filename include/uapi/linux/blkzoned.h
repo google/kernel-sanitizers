@@ -74,6 +74,15 @@ enum blk_zone_cond {
 };
 
 /**
+ * enum blk_zone_report_flags - Feature flags of reported zone descriptors.
+ *
+ * @BLK_ZONE_REP_CAPACITY: Zone descriptor has capacity field.
+ */
+enum blk_zone_report_flags {
+	BLK_ZONE_REP_CAPACITY	= (1 << 0),
+};
+
+/**
  * struct blk_zone - Zone descriptor for BLKREPORTZONE ioctl.
  *
  * @start: Zone start in 512 B sector units
@@ -84,12 +93,15 @@ enum blk_zone_cond {
  * @non_seq: Flag indicating that the zone is using non-sequential resources
  *           (for host-aware zoned block devices only).
  * @reset: Flag indicating that a zone reset is recommended.
- * @reserved: Padding to 64 B to match the ZBC/ZAC defined zone descriptor size.
+ * @resv: Padding for 8B alignment.
+ * @capacity: Zone usable capacity in 512 B sector units
+ * @reserved: Padding to 64 B to match the ZBC, ZAC and ZNS defined zone
+ *            descriptor size.
  *
- * start, len and wp use the regular 512 B sector unit, regardless of the
- * device logical block size. The overall structure size is 64 B to match the
- * ZBC/ZAC defined zone descriptor and allow support for future additional
- * zone information.
+ * start, len, capacity and wp use the regular 512 B sector unit, regardless
+ * of the device logical block size. The overall structure size is 64 B to
+ * match the ZBC, ZAC and ZNS defined zone descriptor and allow support for
+ * future additional zone information.
  */
 struct blk_zone {
 	__u64	start;		/* Zone start sector */
@@ -99,7 +111,9 @@ struct blk_zone {
 	__u8	cond;		/* Zone condition */
 	__u8	non_seq;	/* Non-sequential write resources active */
 	__u8	reset;		/* Reset write pointer recommended */
-	__u8	reserved[36];
+	__u8	resv[4];
+	__u64	capacity;	/* Zone capacity in number of sectors */
+	__u8	reserved[24];
 };
 
 /**
@@ -107,7 +121,7 @@ struct blk_zone {
  *
  * @sector: starting sector of report
  * @nr_zones: IN maximum / OUT actual
- * @reserved: padding to 16 byte alignment
+ * @flags: one or more flags as defined by enum blk_zone_report_flags.
  * @zones: Space to hold @nr_zones @zones entries on reply.
  *
  * The array of at most @nr_zones must follow this structure in memory.
@@ -115,7 +129,7 @@ struct blk_zone {
 struct blk_zone_report {
 	__u64		sector;
 	__u32		nr_zones;
-	__u8		reserved[4];
+	__u32		flags;
 	struct blk_zone zones[0];
 };
 

@@ -170,6 +170,14 @@ __first_valid_page(unsigned long pfn, unsigned long nr_pages)
  * pageblocks we may have modified and return -EBUSY to caller. This
  * prevents two threads from simultaneously working on overlapping ranges.
  *
+ * Please note that there is no strong synchronization with the page allocator
+ * either. Pages might be freed while their page blocks are marked ISOLATED.
+ * In some cases pages might still end up on pcp lists and that would allow
+ * for their allocation even when they are in fact isolated already. Depending
+ * on how strong of a guarantee the caller needs drain_all_pages might be needed
+ * (e.g. __offline_pages will need to call it after check for isolated range for
+ * a next retry).
+ *
  * Return: the number of isolated pageblocks on success and -EBUSY if any part
  * of range cannot be isolated.
  */
@@ -305,9 +313,4 @@ int test_pages_isolated(unsigned long start_pfn, unsigned long end_pfn,
 	trace_test_pages_isolated(start_pfn, end_pfn, pfn);
 
 	return pfn < end_pfn ? -EBUSY : 0;
-}
-
-struct page *alloc_migrate_target(struct page *page, unsigned long private)
-{
-	return new_page_nodemask(page, numa_node_id(), &node_states[N_MEMORY]);
 }

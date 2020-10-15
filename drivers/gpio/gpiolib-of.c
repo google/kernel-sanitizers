@@ -25,6 +25,9 @@
 
 /**
  * of_gpio_spi_cs_get_count() - special GPIO counting for SPI
+ * @dev:    Consuming device
+ * @con_id: Function within the GPIO consumer
+ *
  * Some elder GPIO controllers need special quirks. Currently we handle
  * the Freescale and PPC GPIO controller with bindings that doesn't use the
  * established "cs-gpios" for chip selects but instead rely on
@@ -1022,11 +1025,6 @@ int of_gpiochip_add(struct gpio_chip *chip)
 	ret = of_gpiochip_add_pin_range(chip);
 	if (ret)
 		return ret;
-
-	/* If the chip defines names itself, these take precedence */
-	if (!chip->names)
-		devprop_gpiochip_set_names(chip,
-					   of_fwnode_handle(chip->of_node));
 
 	of_node_get(chip->of_node);
 

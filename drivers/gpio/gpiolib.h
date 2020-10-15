@@ -56,7 +56,7 @@ struct gpio_device {
 	const char		*label;
 	void			*data;
 	struct list_head        list;
-	struct atomic_notifier_head notifier;
+	struct blocking_notifier_head notifier;
 
 #ifdef CONFIG_PINCTRL
 	/*
@@ -114,6 +114,8 @@ struct gpio_desc {
 #define FLAG_PULL_UP    13	/* GPIO has pull up enabled */
 #define FLAG_PULL_DOWN  14	/* GPIO has pull down enabled */
 #define FLAG_BIAS_DISABLE    15	/* GPIO has pull disabled */
+#define FLAG_EDGE_RISING     16	/* GPIO CDEV detects rising edge events */
+#define FLAG_EDGE_FALLING    17	/* GPIO CDEV detects falling edge events */
 
 	/* Connection label */
 	const char		*label;
@@ -121,6 +123,10 @@ struct gpio_desc {
 	const char		*name;
 #ifdef CONFIG_OF_DYNAMIC
 	struct device_node	*hog;
+#endif
+#ifdef CONFIG_GPIO_CDEV
+	/* debounce period in microseconds */
+	unsigned int		debounce_period_us;
 #endif
 };
 
@@ -174,23 +180,5 @@ static inline int gpio_chip_hwgpio(const struct gpio_desc *desc)
 	dev_info(&gc->gpiodev->dev, "(%s): " fmt, gc->label, ##__VA_ARGS__)
 #define chip_dbg(gc, fmt, ...)					\
 	dev_dbg(&gc->gpiodev->dev, "(%s): " fmt, gc->label, ##__VA_ARGS__)
-
-#ifdef CONFIG_GPIO_SYSFS
-
-int gpiochip_sysfs_register(struct gpio_device *gdev);
-void gpiochip_sysfs_unregister(struct gpio_device *gdev);
-
-#else
-
-static inline int gpiochip_sysfs_register(struct gpio_device *gdev)
-{
-	return 0;
-}
-
-static inline void gpiochip_sysfs_unregister(struct gpio_device *gdev)
-{
-}
-
-#endif /* CONFIG_GPIO_SYSFS */
 
 #endif /* GPIOLIB_H */

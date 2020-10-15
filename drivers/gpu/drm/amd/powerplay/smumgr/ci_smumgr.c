@@ -37,6 +37,7 @@
 #include "cgs_common.h"
 #include "atombios.h"
 #include "pppcielanes.h"
+#include "smu7_smumgr.h"
 
 #include "smu/smu_7_0_1_d.h"
 #include "smu/smu_7_0_1_sh_mask.h"
@@ -183,7 +184,7 @@ static int ci_program_jump_on_start(struct pp_hwmgr *hwmgr)
 	return 0;
 }
 
-bool ci_is_smc_ram_running(struct pp_hwmgr *hwmgr)
+static bool ci_is_smc_ram_running(struct pp_hwmgr *hwmgr)
 {
 	return ((0 == PHM_READ_VFPF_INDIRECT_FIELD(hwmgr->device,
 			CGS_IND_REG__SMC, SMC_SYSCON_CLOCK_CNTL_0, ck_disable))
@@ -2725,7 +2726,10 @@ static int ci_initialize_mc_reg_table(struct pp_hwmgr *hwmgr)
 
 static bool ci_is_dpm_running(struct pp_hwmgr *hwmgr)
 {
-	return ci_is_smc_ram_running(hwmgr);
+	return (1 == PHM_READ_INDIRECT_FIELD(hwmgr->device,
+					     CGS_IND_REG__SMC, FEATURE_STATUS,
+					     VOLTAGE_CONTROLLER_ON))
+		? true : false;
 }
 
 static int ci_smu_init(struct pp_hwmgr *hwmgr)
@@ -2945,6 +2949,7 @@ const struct pp_smumgr_func ci_smu_funcs = {
 	.request_smu_load_specific_fw = NULL,
 	.send_msg_to_smc = ci_send_msg_to_smc,
 	.send_msg_to_smc_with_parameter = ci_send_msg_to_smc_with_parameter,
+	.get_argument = smu7_get_argument,
 	.download_pptable_settings = NULL,
 	.upload_pptable_settings = NULL,
 	.get_offsetof = ci_get_offsetof,

@@ -107,8 +107,11 @@
  * @ioarea: The resource created when we claimed the IO area.
  * @pdata: The platform data for this controller.
  * @cur_clk: The index of the current bus clock.
+ * @ext_cd_irq: External card detect interrupt.
  * @clk_io: The clock for the internal bus interface.
+ * @clk_rates: Clock frequencies.
  * @clk_bus: The clocks that are available for the SD/MMC bus clock.
+ * @no_divider: No or non-standard internal clock divider.
  */
 struct sdhci_s3c {
 	struct sdhci_host	*host;
@@ -128,6 +131,7 @@ struct sdhci_s3c {
 /**
  * struct sdhci_s3c_driver_data - S3C SDHCI platform specific driver data
  * @sdhci_quirks: sdhci host specific quirks.
+ * @no_divider: no or non-standard internal clock divider.
  *
  * Specifies platform specific configuration of sdhci controller.
  * Note: A structure for driver specific platform data is used for future
@@ -457,7 +461,9 @@ static int sdhci_s3c_parse_dt(struct device *dev,
 }
 #endif
 
+#ifdef CONFIG_OF
 static const struct of_device_id sdhci_s3c_dt_match[];
+#endif
 
 static inline struct sdhci_s3c_drv_data *sdhci_s3c_get_driver_data(
 			struct platform_device *pdev)
@@ -605,7 +611,7 @@ static int sdhci_s3c_probe(struct platform_device *pdev)
 	switch (pdata->max_width) {
 	case 8:
 		host->mmc->caps |= MMC_CAP_8_BIT_DATA;
-		/* Fall through */
+		fallthrough;
 	case 4:
 		host->mmc->caps |= MMC_CAP_4_BIT_DATA;
 		break;
@@ -780,6 +786,7 @@ static struct platform_driver sdhci_s3c_driver = {
 	.id_table	= sdhci_s3c_driver_ids,
 	.driver		= {
 		.name	= "s3c-sdhci",
+		.probe_type = PROBE_PREFER_ASYNCHRONOUS,
 		.of_match_table = of_match_ptr(sdhci_s3c_dt_match),
 		.pm	= &sdhci_s3c_pmops,
 	},

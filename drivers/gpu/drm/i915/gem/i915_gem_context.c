@@ -101,8 +101,7 @@ static void lut_close(struct i915_gem_context *ctx)
 	struct radix_tree_iter iter;
 	void __rcu **slot;
 
-	lockdep_assert_held(&ctx->mutex);
-
+	mutex_lock(&ctx->lut_mutex);
 	rcu_read_lock();
 	radix_tree_for_each_slot(slot, &ctx->handles_vma, &iter, 0) {
 		struct i915_vma *vma = rcu_dereference_raw(*slot);
@@ -112,8 +111,7 @@ static void lut_close(struct i915_gem_context *ctx)
 		if (!kref_get_unless_zero(&obj->base.refcount))
 			continue;
 
-		rcu_read_unlock();
-		i915_gem_object_lock(obj);
+		spin_lock(&obj->lut_lock);
 		list_for_each_entry(lut, &obj->lut_list, obj_link) {
 			if (lut->ctx != ctx)
 				continue;
@@ -124,8 +122,7 @@ static void lut_close(struct i915_gem_context *ctx)
 			list_del(&lut->obj_link);
 			break;
 		}
-		i915_gem_object_unlock(obj);
-		rcu_read_lock();
+		spin_unlock(&obj->lut_lock);
 
 		if (&lut->obj_link != &obj->lut_list) {
 			i915_lut_handle_free(lut);
@@ -137,6 +134,7 @@ static void lut_close(struct i915_gem_context *ctx)
 		i915_gem_object_put(obj);
 	}
 	rcu_read_unlock();
+	mutex_unlock(&ctx->lut_mutex);
 }
 
 static struct intel_context *
@@ -344,6 +342,7 @@ static void i915_gem_context_free(struct i915_gem_context *ctx)
 	spin_unlock(&ctx->i915->gem.contexts.lock);
 
 	mutex_destroy(&ctx->engines_mutex);
+	mutex_destroy(&ctx->lut_mutex);
 
 	if (ctx->timeline)
 		intel_timeline_put(ctx->timeline);
@@ -440,29 +439,36 @@ static bool __cancel_engine(struct intel_engine_cs *engine)
 	return __reset_engine(engine);
 }
 
-static struct intel_engine_cs *__active_engine(struct i915_request *rq)
+static bool
+__active_engine(struct i915_request *rq, struct intel_engine_cs **active)
 {
 	struct intel_engine_cs *engine, *locked;
+	bool ret = false;
 
 	/*
 	 * Serialise with __i915_request_submit() so that it sees
 	 * is-banned?, or we know the request is already inflight.
+	 *
+	 * Note that rq->engine is unstable, and so we double
+	 * check that we have acquired the lock on the final engine.
 	 */
 	locked = READ_ONCE(rq->engine);
 	spin_lock_irq(&locked->active.lock);
 	while (unlikely(locked != (engine = READ_ONCE(rq->engine)))) {
 		spin_unlock(&locked->active.lock);
-		spin_lock(&engine->active.lock);
 		locked = engine;
+		spin_lock(&locked->active.lock);
 	}
 
-	engine = NULL;
-	if (i915_request_is_active(rq) && rq->fence.error != -EIO)
-		engine = rq->engine;
+	if (!i915_request_completed(rq)) {
+		if (i915_request_is_active(rq) && rq->fence.error != -EIO)
+			*active = locked;
+		ret = true;
+	}
 
 	spin_unlock_irq(&locked->active.lock);
 
-	return engine;
+	return ret;
 }
 
 static struct intel_engine_cs *active_engine(struct intel_context *ce)
@@ -473,17 +479,16 @@ static struct intel_engine_cs *active_engine(struct intel_context *ce)
 	if (!ce->timeline)
 		return NULL;
 
-	mutex_lock(&ce->timeline->mutex);
-	list_for_each_entry_reverse(rq, &ce->timeline->requests, link) {
-		if (i915_request_completed(rq))
-			break;
+	rcu_read_lock();
+	list_for_each_entry_rcu(rq, &ce->timeline->requests, link) {
+		if (i915_request_is_active(rq) && i915_request_completed(rq))
+			continue;
 
 		/* Check with the backend if the request is inflight */
-		engine = __active_engine(rq);
-		if (engine)
+		if (__active_engine(rq, &engine))
 			break;
 	}
-	mutex_unlock(&ce->timeline->mutex);
+	rcu_read_unlock();
 
 	return engine;
 }
@@ -650,7 +655,7 @@ static void context_close(struct i915_gem_context *ctx)
 	 * context close.
 	 */
 	if (!i915_gem_context_is_persistent(ctx) ||
-	    !i915_modparams.enable_hangcheck)
+	    !ctx->i915->params.enable_hangcheck)
 		kill_context(ctx);
 
 	i915_gem_context_put(ctx);
@@ -667,7 +672,7 @@ static int __context_set_persistence(struct i915_gem_context *ctx, bool state)
 		 * reset] are allowed to survive past termination. We require
 		 * hangcheck to ensure that the persistent requests are healthy.
 		 */
-		if (!i915_modparams.enable_hangcheck)
+		if (!ctx->i915->params.enable_hangcheck)
 			return -EINVAL;
 
 		i915_gem_context_set_persistence(ctx);
@@ -714,6 +719,7 @@ __create_context(struct drm_i915_private *i915)
 	ctx->i915 = i915;
 	ctx->sched.priority = I915_USER_PRIORITY(I915_PRIORITY_NORMAL);
 	mutex_init(&ctx->mutex);
+	INIT_LIST_HEAD(&ctx->link);
 
 	spin_lock_init(&ctx->stale.lock);
 	INIT_LIST_HEAD(&ctx->stale.engines);
@@ -727,6 +733,7 @@ __create_context(struct drm_i915_private *i915)
 	RCU_INIT_POINTER(ctx->engines, e);
 
 	INIT_RADIX_TREE(&ctx->handles_vma, GFP_KERNEL);
+	mutex_init(&ctx->lut_mutex);
 
 	/* NB: Mark all slices as needing a remap so that when the context first
 	 * loads it will restore whatever remap state already exists. If there
@@ -739,10 +746,6 @@ __create_context(struct drm_i915_private *i915)
 
 	for (i = 0; i < ARRAY_SIZE(ctx->hang_timestamp); i++)
 		ctx->hang_timestamp[i] = jiffies - CONTEXT_FAST_HANG_JIFFIES;
-
-	spin_lock(&i915->gem.contexts.lock);
-	list_add_tail(&ctx->link, &i915->gem.contexts.list);
-	spin_unlock(&i915->gem.contexts.lock);
 
 	return ctx;
 
@@ -931,6 +934,7 @@ static int gem_context_register(struct i915_gem_context *ctx,
 				struct drm_i915_file_private *fpriv,
 				u32 *id)
 {
+	struct drm_i915_private *i915 = ctx->i915;
 	struct i915_address_space *vm;
 	int ret;
 
@@ -949,8 +953,16 @@ static int gem_context_register(struct i915_gem_context *ctx,
 	/* And finally expose ourselves to userspace via the idr */
 	ret = xa_alloc(&fpriv->context_xa, id, ctx, xa_limit_32b, GFP_KERNEL);
 	if (ret)
-		put_pid(fetch_and_zero(&ctx->pid));
+		goto err_pid;
 
+	spin_lock(&i915->gem.contexts.lock);
+	list_add_tail(&ctx->link, &i915->gem.contexts.list);
+	spin_unlock(&i915->gem.contexts.lock);
+
+	return 0;
+
+err_pid:
+	put_pid(fetch_and_zero(&ctx->pid));
 	return ret;
 }
 
@@ -1314,10 +1326,10 @@ static int set_ppgtt(struct drm_i915_file_private *file_priv,
 	if (vm == rcu_access_pointer(ctx->vm))
 		goto unlock;
 
+	old = __set_ppgtt(ctx, vm);
+
 	/* Teardown the existing obj:vma cache, it will have to be rebuilt. */
 	lut_close(ctx);
-
-	old = __set_ppgtt(ctx, vm);
 
 	/*
 	 * We need to flush any requests using the current ppgtt before
@@ -1332,6 +1344,7 @@ static int set_ppgtt(struct drm_i915_file_private *file_priv,
 	if (err) {
 		i915_vm_close(__set_ppgtt(ctx, old));
 		i915_vm_close(old);
+		lut_close(ctx); /* force a rebuild of the old obj:vma cache */
 	}
 
 unlock:
@@ -1399,11 +1412,12 @@ static int get_ringsize(struct i915_gem_context *ctx,
 }
 
 int
-i915_gem_user_to_context_sseu(struct drm_i915_private *i915,
+i915_gem_user_to_context_sseu(struct intel_gt *gt,
 			      const struct drm_i915_gem_context_param_sseu *user,
 			      struct intel_sseu *context)
 {
-	const struct sseu_dev_info *device = &RUNTIME_INFO(i915)->sseu;
+	const struct sseu_dev_info *device = &gt->info.sseu;
+	struct drm_i915_private *i915 = gt->i915;
 
 	/* No zeros in any field. */
 	if (!user->slice_mask || !user->subslice_mask ||
@@ -1536,7 +1550,7 @@ static int set_sseu(struct i915_gem_context *ctx,
 		goto out_ce;
 	}
 
-	ret = i915_gem_user_to_context_sseu(i915, &user_sseu, &sseu);
+	ret = i915_gem_user_to_context_sseu(ce->engine->gt, &user_sseu, &sseu);
 	if (ret)
 		goto out_ce;
 

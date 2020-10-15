@@ -6,7 +6,6 @@
 
 #include <linux/bug.h>
 #include <linux/kernel.h>
-#include <linux/random.h>
 #include <asm/cpufeature.h>
 
 static inline bool __arm64_rndr(unsigned long *v)
@@ -79,11 +78,6 @@ arch_get_random_seed_long_early(unsigned long *v)
 	return __arm64_rndr(v);
 }
 #define arch_get_random_seed_long_early arch_get_random_seed_long_early
-
-#else
-
-static inline bool __arm64_rndr(unsigned long *v) { return false; }
-static inline bool __init __early_cpu_has_rndr(void) { return false; }
 
 #endif /* CONFIG_ARCH_RANDOM */
 #endif /* _ASM_ARCHRANDOM_H */

@@ -150,7 +150,8 @@ int tipc_buf_append(struct sk_buff **headbuf, struct sk_buff **buf)
 	if (fragid == FIRST_FRAGMENT) {
 		if (unlikely(head))
 			goto err;
-		if (unlikely(skb_unclone(frag, GFP_ATOMIC)))
+		frag = skb_unshare(frag, GFP_ATOMIC);
+		if (unlikely(!frag))
 			goto err;
 		head = *headbuf = frag;
 		*buf = NULL;
@@ -202,7 +203,7 @@ err:
 
 /**
  * tipc_msg_append(): Append data to tail of an existing buffer queue
- * @hdr: header to be used
+ * @_hdr: header to be used
  * @m: the data to be appended
  * @mss: max allowable size of buffer
  * @dlen: size of data to be appended

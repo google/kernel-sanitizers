@@ -154,14 +154,13 @@ sysfs 会为这个类型调用适当的方法。当一个文件被读写时，�
 
 示例:
 
-#define to_dev(obj) container_of(obj, struct device, kobj)
 #define to_dev_attr(_attr) container_of(_attr, struct device_attribute, attr)
 
 static ssize_t dev_attr_show(struct kobject *kobj, struct attribute *attr,
                              char *buf)
 {
         struct device_attribute *dev_attr = to_dev_attr(attr);
-        struct device *dev = to_dev(kobj);
+        struct device *dev = kobj_to_dev(kobj);
         ssize_t ret = -EIO;
 
         if (dev_attr->show)
@@ -213,10 +212,12 @@ Sysfs 将会为每次读写操作调用一次这个方法。这使得这些方�
 
 - 缓冲区应总是 PAGE_SIZE 大小。对于i386，这个值为4096。
 
-- show() 方法应该返回写入缓冲区的字节数，也就是 snprintf()的
+- show() 方法应该返回写入缓冲区的字节数，也就是 scnprintf()的
   返回值。
 
-- show() 应始终使用 snprintf()。
+- show() 方法在将格式化返回值返回用户空间的时候，禁止使用snprintf()。
+  如果可以保证不会发生缓冲区溢出，可以使用sprintf()，否则必须使用
+  scnprintf()。
 
 - store() 应返回缓冲区的已用字节数。如果整个缓存都已填满，只需返回
   count 参数。

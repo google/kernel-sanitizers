@@ -19,12 +19,14 @@
 #include <linux/hugetlb.h>
 #include <linux/tboot.h>
 #include <linux/usb/xhci-dbgp.h>
+#include <linux/static_call.h>
 
 #include <uapi/linux/mount.h>
 
 #include <xen/xen.h>
 
 #include <asm/apic.h>
+#include <asm/numa.h>
 #include <asm/bios_ebda.h>
 #include <asm/bugs.h>
 #include <asm/cpu.h>
@@ -848,6 +850,7 @@ void __init setup_arch(char **cmdline_p)
 	early_cpu_init();
 	arch_init_ideal_nops();
 	jump_label_init();
+	static_call_init();
 	early_ioremap_init();
 
 	setup_olpc_ofw_pgd();
@@ -870,8 +873,6 @@ void __init setup_arch(char **cmdline_p)
 
 #ifdef CONFIG_BLK_DEV_RAM
 	rd_image_start = boot_params.hdr.ram_size & RAMDISK_IMAGE_START_MASK;
-	rd_prompt = ((boot_params.hdr.ram_size & RAMDISK_PROMPT_FLAG) != 0);
-	rd_doload = ((boot_params.hdr.ram_size & RAMDISK_LOAD_FLAG) != 0);
 #endif
 #ifdef CONFIG_EFI
 	if (!strncmp((char *)&boot_params.efi_info.efi_loader_signature,
@@ -1078,6 +1079,7 @@ void __init setup_arch(char **cmdline_p)
 	efi_fake_memmap();
 	efi_find_mirror();
 	efi_esrt_init();
+	efi_mokvar_table_init();
 
 	/*
 	 * The EFI specification says that boot service code won't be

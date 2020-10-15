@@ -30,6 +30,7 @@ Hardware Monitoring Kernel Drivers
    adm1026
    adm1031
    adm1177
+   adm1266
    adm1275
    adm9240
    ads7828
@@ -47,6 +48,7 @@ Hardware Monitoring Kernel Drivers
    bel-pfe
    bt1-pvt
    coretemp
+   corsair-cpro
    da9052
    da9055
    dell-smm-hwmon
@@ -72,6 +74,7 @@ Hardware Monitoring Kernel Drivers
    ina209
    ina2xx
    ina3221
+   intel-m10-bmc-hwmon
    ir35221
    ir38064
    isl68137
@@ -157,6 +160,7 @@ Hardware Monitoring Kernel Drivers
    smsc47b397
    smsc47m192
    smsc47m1
+   sparx5-temp
    tc654
    tc74
    thmc50

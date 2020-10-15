@@ -8,6 +8,8 @@
 
 const char *ice_vsi_type_str(enum ice_vsi_type vsi_type);
 
+bool ice_pf_state_is_nominal(struct ice_pf *pf);
+
 void ice_update_eth_stats(struct ice_vsi *vsi);
 
 int ice_vsi_cfg_rxqs(struct ice_vsi *vsi);
@@ -43,10 +45,6 @@ int ice_cfg_vlan_pruning(struct ice_vsi *vsi, bool ena, bool vlan_promisc);
 
 void ice_cfg_sw_lldp(struct ice_vsi *vsi, bool tx, bool create);
 
-void ice_vsi_delete(struct ice_vsi *vsi);
-
-int ice_vsi_clear(struct ice_vsi *vsi);
-
 #ifdef CONFIG_DCB
 int ice_vsi_cfg_tc(struct ice_vsi *vsi, u8 ena_tc);
 #endif /* CONFIG_DCB */
@@ -76,8 +74,6 @@ bool ice_is_reset_in_progress(unsigned long *state);
 
 void
 ice_write_qrxflxp_cntxt(struct ice_hw *hw, u16 pf_q, u32 rxdid, u32 prio);
-
-void ice_vsi_put_qs(struct ice_vsi *vsi);
 
 void ice_vsi_dis_irq(struct ice_vsi *vsi);
 

@@ -1159,6 +1159,11 @@ bool is_filter_exact_match(struct adapter *adap,
 	if (!is_hashfilter(adap))
 		return false;
 
+	if ((atomic_read(&adap->tids.hash_tids_in_use) +
+	     atomic_read(&adap->tids.tids_in_use)) >=
+	    (adap->tids.nhash + (adap->tids.stid_base - adap->tids.tid_base)))
+		return false;
+
 	 /* Keep tunnel VNI match disabled for hash-filters for now */
 	if (fs->mask.encap_vld)
 		return false;
@@ -1906,13 +1911,16 @@ out:
 static int configure_filter_tcb(struct adapter *adap, unsigned int tid,
 				struct filter_entry *f)
 {
-	if (f->fs.hitcnts)
+	if (f->fs.hitcnts) {
 		set_tcb_field(adap, f, tid, TCB_TIMESTAMP_W,
-			      TCB_TIMESTAMP_V(TCB_TIMESTAMP_M) |
+			      TCB_TIMESTAMP_V(TCB_TIMESTAMP_M),
+			      TCB_TIMESTAMP_V(0ULL),
+			      1);
+		set_tcb_field(adap, f, tid, TCB_RTT_TS_RECENT_AGE_W,
 			      TCB_RTT_TS_RECENT_AGE_V(TCB_RTT_TS_RECENT_AGE_M),
-			      TCB_TIMESTAMP_V(0ULL) |
 			      TCB_RTT_TS_RECENT_AGE_V(0ULL),
 			      1);
+	}
 
 	if (f->fs.newdmac)
 		set_tcb_tflag(adap, f, tid, TF_CCTRL_ECE_S, 1,

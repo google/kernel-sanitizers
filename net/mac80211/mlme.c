@@ -533,7 +533,7 @@ static void ieee80211_add_ht_ie(struct ieee80211_sub_if_data *sdata,
 	case IEEE80211_SMPS_AUTOMATIC:
 	case IEEE80211_SMPS_NUM_MODES:
 		WARN_ON(1);
-		/* fall through */
+		fallthrough;
 	case IEEE80211_SMPS_OFF:
 		cap |= WLAN_HT_CAP_SM_PS_DISABLED <<
 			IEEE80211_HT_CAP_SM_PS_SHIFT;
@@ -1529,7 +1529,7 @@ ieee80211_find_80211h_pwr_constr(struct ieee80211_sub_if_data *sdata,
 	switch (channel->band) {
 	default:
 		WARN_ON_ONCE(1);
-		/* fall through */
+		fallthrough;
 	case NL80211_BAND_2GHZ:
 	case NL80211_BAND_60GHZ:
 		chan_increment = 1;
@@ -2988,7 +2988,10 @@ static void ieee80211_rx_mgmt_auth(struct ieee80211_sub_if_data *sdata,
 		cfg80211_rx_mlme_mgmt(sdata->dev, (u8 *)mgmt, len);
 
 		if (auth_alg == WLAN_AUTH_SAE &&
-		    status_code == WLAN_STATUS_ANTI_CLOG_REQUIRED)
+		    (status_code == WLAN_STATUS_ANTI_CLOG_REQUIRED ||
+		     (auth_transaction == 1 &&
+		      (status_code == WLAN_STATUS_SAE_HASH_TO_ELEMENT ||
+		       status_code == WLAN_STATUS_SAE_PK))))
 			return;
 
 		sdata_info(sdata, "%pM denied authentication (status %d)\n",
@@ -3460,10 +3463,12 @@ static bool ieee80211_assoc_success(struct ieee80211_sub_if_data *sdata,
 		bss_conf->he_bss_color.partial =
 			le32_get_bits(elems->he_operation->he_oper_params,
 				      IEEE80211_HE_OPERATION_PARTIAL_BSS_COLOR);
-		bss_conf->he_bss_color.disabled =
-			le32_get_bits(elems->he_operation->he_oper_params,
-				      IEEE80211_HE_OPERATION_BSS_COLOR_DISABLED);
-		changed |= BSS_CHANGED_HE_BSS_COLOR;
+		bss_conf->he_bss_color.enabled =
+			!le32_get_bits(elems->he_operation->he_oper_params,
+				       IEEE80211_HE_OPERATION_BSS_COLOR_DISABLED);
+
+		if (bss_conf->he_bss_color.enabled)
+			changed |= BSS_CHANGED_HE_BSS_COLOR;
 
 		bss_conf->htc_trig_based_pkt_ext =
 			le32_get_bits(elems->he_operation->he_oper_params,
@@ -4558,6 +4563,9 @@ static void ieee80211_sta_bcn_mon_timer(struct timer_list *t)
 	if (sdata->vif.csa_active && !ifmgd->csa_waiting_bcn)
 		return;
 
+	if (sdata->vif.driver_flags & IEEE80211_VIF_BEACON_FILTER)
+		return;
+
 	sdata->u.mgd.connection_loss = false;
 	ieee80211_queue_work(&sdata->local->hw,
 			     &sdata->u.mgd.beacon_connection_loss_work);
@@ -4853,6 +4861,7 @@ static int ieee80211_prep_channel(struct ieee80211_sub_if_data *sdata,
 	struct ieee80211_supported_band *sband;
 	struct cfg80211_chan_def chandef;
 	bool is_6ghz = cbss->channel->band == NL80211_BAND_6GHZ;
+	bool is_5ghz = cbss->channel->band == NL80211_BAND_5GHZ;
 	struct ieee80211_bss *bss = (void *)cbss->priv;
 	int ret;
 	u32 i;
@@ -4871,7 +4880,7 @@ static int ieee80211_prep_channel(struct ieee80211_sub_if_data *sdata,
 		ifmgd->flags |= IEEE80211_STA_DISABLE_HE;
 	}
 
-	if (!sband->vht_cap.vht_supported && !is_6ghz) {
+	if (!sband->vht_cap.vht_supported && is_5ghz) {
 		ifmgd->flags |= IEEE80211_STA_DISABLE_VHT;
 		ifmgd->flags |= IEEE80211_STA_DISABLE_HE;
 	}

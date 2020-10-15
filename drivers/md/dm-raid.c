@@ -701,7 +701,7 @@ static void rs_set_capacity(struct raid_set *rs)
 	struct gendisk *gendisk = dm_disk(dm_table_get_md(rs->ti->table));
 
 	set_capacity(gendisk, rs->md.array_sectors);
-	revalidate_disk(gendisk);
+	revalidate_disk_size(gendisk, true);
 }
 
 /*
@@ -2337,8 +2337,6 @@ static int super_init_validation(struct raid_set *rs, struct md_rdev *rdev)
 
 	if (new_devs == rs->raid_disks || !rebuilds) {
 		/* Replace a broken device */
-		if (new_devs == 1 && !rs->delta_disks)
-			;
 		if (new_devs == rs->raid_disks) {
 			DMINFO("Superblocks created for new raid set");
 			set_bit(MD_ARRAY_FIRST_USE, &mddev->flags);

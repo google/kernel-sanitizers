@@ -1455,12 +1455,12 @@ void mmc_detach_bus(struct mmc_host *host)
 void _mmc_detect_change(struct mmc_host *host, unsigned long delay, bool cd_irq)
 {
 	/*
-	 * If the device is configured as wakeup, we prevent a new sleep for
-	 * 5 s to give provision for user space to consume the event.
+	 * Prevent system sleep for 5s to allow user space to consume the
+	 * corresponding uevent. This is especially useful, when CD irq is used
+	 * as a system wakeup, but doesn't hurt in other cases.
 	 */
-	if (cd_irq && !(host->caps & MMC_CAP_NEEDS_POLL) &&
-		device_can_wakeup(mmc_dev(host)))
-		pm_wakeup_event(mmc_dev(host), 5000);
+	if (cd_irq && !(host->caps & MMC_CAP_NEEDS_POLL))
+		__pm_wakeup_event(host->ws, 5000);
 
 	host->detect_change = 1;
 	mmc_schedule_delayed_work(&host->detect, delay);
@@ -2063,6 +2063,16 @@ static void mmc_hw_reset_for_init(struct mmc_host *host)
 	host->ops->hw_reset(host);
 }
 
+/**
+ * mmc_hw_reset - reset the card in hardware
+ * @host: MMC host to which the card is attached
+ *
+ * Hard reset the card. This function is only for upper layers, like the
+ * block layer or card drivers. You cannot use it in host drivers (struct
+ * mmc_card might be gone then).
+ *
+ * Return: 0 on success, -errno on failure
+ */
 int mmc_hw_reset(struct mmc_host *host)
 {
 	int ret;
@@ -2303,7 +2313,6 @@ void mmc_start_host(struct mmc_host *host)
 {
 	host->f_init = max(min(freqs[0], host->f_max), host->f_min);
 	host->rescan_disable = 0;
-	host->ios.power_mode = MMC_POWER_UNDEFINED;
 
 	if (!(host->caps2 & MMC_CAP2_NO_PRESCAN_POWERUP)) {
 		mmc_claim_host(host);

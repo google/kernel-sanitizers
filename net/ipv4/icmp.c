@@ -352,7 +352,7 @@ static int icmp_glue_bits(void *from, char *to, int offset, int len, int odd,
 
 	csum = skb_copy_and_csum_bits(icmp_param->skb,
 				      icmp_param->offset + offset,
-				      to, len, 0);
+				      to, len);
 
 	skb->csum = csum_block_add(skb->csum, csum, odd);
 	if (icmp_pointers[icmp_param->data.icmph.type].error)
@@ -376,15 +376,15 @@ static void icmp_push_reply(struct icmp_bxm *icmp_param,
 		ip_flush_pending_frames(sk);
 	} else if ((skb = skb_peek(&sk->sk_write_queue)) != NULL) {
 		struct icmphdr *icmph = icmp_hdr(skb);
-		__wsum csum = 0;
+		__wsum csum;
 		struct sk_buff *skb1;
 
+		csum = csum_partial_copy_nocheck((void *)&icmp_param->data,
+						 (char *)icmph,
+						 icmp_param->head_len);
 		skb_queue_walk(&sk->sk_write_queue, skb1) {
 			csum = csum_add(csum, skb1->csum);
 		}
-		csum = csum_partial_copy_nocheck((void *)&icmp_param->data,
-						 (char *)icmph,
-						 icmp_param->head_len, csum);
 		icmph->checksum = csum_fold(csum);
 		skb->ip_summed = CHECKSUM_NONE;
 		ip_push_pending_frames(sk, fl4);
@@ -1115,6 +1115,65 @@ error:
 	__ICMP_INC_STATS(net, ICMP_MIB_INERRORS);
 	goto drop;
 }
+
+static bool ip_icmp_error_rfc4884_validate(const struct sk_buff *skb, int off)
+{
+	struct icmp_extobj_hdr *objh, _objh;
+	struct icmp_ext_hdr *exth, _exth;
+	u16 olen;
+
+	exth = skb_header_pointer(skb, off, sizeof(_exth), &_exth);
+	if (!exth)
+		return false;
+	if (exth->version != 2)
+		return true;
+
+	if (exth->checksum &&
+	    csum_fold(skb_checksum(skb, off, skb->len - off, 0)))
+		return false;
+
+	off += sizeof(_exth);
+	while (off < skb->len) {
+		objh = skb_header_pointer(skb, off, sizeof(_objh), &_objh);
+		if (!objh)
+			return false;
+
+		olen = ntohs(objh->length);
+		if (olen < sizeof(_objh))
+			return false;
+
+		off += olen;
+		if (off > skb->len)
+			return false;
+	}
+
+	return true;
+}
+
+void ip_icmp_error_rfc4884(const struct sk_buff *skb,
+			   struct sock_ee_data_rfc4884 *out,
+			   int thlen, int off)
+{
+	int hlen;
+
+	/* original datagram headers: end of icmph to payload (skb->data) */
+	hlen = -skb_transport_offset(skb) - thlen;
+
+	/* per rfc 4884: minimal datagram length of 128 bytes */
+	if (off < 128 || off < hlen)
+		return;
+
+	/* kernel has stripped headers: return payload offset in bytes */
+	off -= hlen;
+	if (off + sizeof(struct icmp_ext_hdr) > skb->len)
+		return;
+
+	out->len = off;
+
+	if (!ip_icmp_error_rfc4884_validate(skb, off))
+		out->flags |= SO_EE_RFC4884_FLAG_INVALID;
+}
+EXPORT_SYMBOL_GPL(ip_icmp_error_rfc4884);
 
 int icmp_err(struct sk_buff *skb, u32 info)
 {

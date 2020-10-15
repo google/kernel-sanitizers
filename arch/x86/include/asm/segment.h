@@ -222,10 +222,6 @@
 
 #endif
 
-#ifndef CONFIG_PARAVIRT_XXL
-# define get_kernel_rpl()		0
-#endif
-
 #define IDT_ENTRIES			256
 #define NUM_EXCEPTION_VECTORS		32
 
@@ -301,7 +297,7 @@ static inline void vdso_read_cpunode(unsigned *cpu, unsigned *node)
 extern const char early_idt_handler_array[NUM_EXCEPTION_VECTORS][EARLY_IDT_HANDLER_SIZE];
 extern void early_ignore_irq(void);
 
-#if defined(CONFIG_X86_64) && defined(CONFIG_XEN_PV)
+#ifdef CONFIG_XEN_PV
 extern const char xen_early_idt_handler_array[NUM_EXCEPTION_VECTORS][XEN_EARLY_IDT_HANDLER_SIZE];
 #endif
 

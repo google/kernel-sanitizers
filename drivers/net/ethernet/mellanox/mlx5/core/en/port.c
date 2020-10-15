@@ -76,6 +76,9 @@ static const u32 mlx5e_ext_link_speed[MLX5E_EXT_LINK_MODES_NUMBER] = {
 	[MLX5E_100GAUI_2_100GBASE_CR2_KR2]	= 100000,
 	[MLX5E_200GAUI_4_200GBASE_CR4_KR4]	= 200000,
 	[MLX5E_400GAUI_8]			= 400000,
+	[MLX5E_100GAUI_1_100GBASE_CR_KR]	= 100000,
+	[MLX5E_200GAUI_2_200GBASE_CR2_KR2]	= 200000,
+	[MLX5E_400GAUI_4_400GBASE_CR4_KR4]	= 400000,
 };
 
 bool mlx5e_ptys_ext_supported(struct mlx5_core_dev *mdev)
@@ -487,11 +490,8 @@ bool mlx5e_fec_in_caps(struct mlx5_core_dev *dev, int fec_policy)
 	int err;
 	int i;
 
-	if (!MLX5_CAP_GEN(dev, pcam_reg))
-		return -EOPNOTSUPP;
-
-	if (!MLX5_CAP_PCAM_REG(dev, pplm))
-		return -EOPNOTSUPP;
+	if (!MLX5_CAP_GEN(dev, pcam_reg) || !MLX5_CAP_PCAM_REG(dev, pplm))
+		return false;
 
 	MLX5_SET(pplm_reg, in, local_port, 1);
 	err =  mlx5_core_access_reg(dev, in, sz, out, sz, MLX5_REG_PPLM, 0, 0);
@@ -567,6 +567,9 @@ int mlx5e_set_fec_mode(struct mlx5_core_dev *dev, u16 fec_policy)
 		return -EOPNOTSUPP;
 
 	if (fec_policy >= (1 << MLX5E_FEC_LLRS_272_257_1) && !fec_50g_per_lane)
+		return -EOPNOTSUPP;
+
+	if (fec_policy && !mlx5e_fec_in_caps(dev, fec_policy))
 		return -EOPNOTSUPP;
 
 	MLX5_SET(pplm_reg, in, local_port, 1);

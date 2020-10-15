@@ -32,6 +32,7 @@ TARGETS += lkdtm
 TARGETS += membarrier
 TARGETS += memfd
 TARGETS += memory-hotplug
+TARGETS += mincore
 TARGETS += mount
 TARGETS += mqueue
 TARGETS += net
@@ -56,6 +57,7 @@ TARGETS += splice
 TARGETS += static_keys
 TARGETS += sync
 TARGETS += sysctl
+TARGETS += tc-testing
 TARGETS += timens
 ifneq (1, $(quicktest))
 TARGETS += timers

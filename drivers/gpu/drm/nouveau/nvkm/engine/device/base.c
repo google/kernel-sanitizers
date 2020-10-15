@@ -2046,7 +2046,7 @@ nv120_chipset = {
 	.mmu = gm200_mmu_new,
 	.mxm = nv50_mxm_new,
 	.pci = gk104_pci_new,
-	.pmu = gm107_pmu_new,
+	.pmu = gm200_pmu_new,
 	.therm = gm200_therm_new,
 	.timer = gk20a_timer_new,
 	.top = gk104_top_new,
@@ -2084,7 +2084,7 @@ nv124_chipset = {
 	.mmu = gm200_mmu_new,
 	.mxm = nv50_mxm_new,
 	.pci = gk104_pci_new,
-	.pmu = gm107_pmu_new,
+	.pmu = gm200_pmu_new,
 	.therm = gm200_therm_new,
 	.timer = gk20a_timer_new,
 	.top = gk104_top_new,
@@ -2122,7 +2122,7 @@ nv126_chipset = {
 	.mmu = gm200_mmu_new,
 	.mxm = nv50_mxm_new,
 	.pci = gk104_pci_new,
-	.pmu = gm107_pmu_new,
+	.pmu = gm200_pmu_new,
 	.therm = gm200_therm_new,
 	.timer = gk20a_timer_new,
 	.top = gk104_top_new,
@@ -2184,7 +2184,7 @@ nv130_chipset = {
 	.mmu = gp100_mmu_new,
 	.therm = gp100_therm_new,
 	.pci = gp100_pci_new,
-	.pmu = gp100_pmu_new,
+	.pmu = gm200_pmu_new,
 	.timer = gk20a_timer_new,
 	.top = gk104_top_new,
 	.ce[0] = gp100_ce_new,
@@ -3149,6 +3149,7 @@ nvkm_device_ctor(const struct nvkm_device_func *func,
 		case 0x168: device->chip = &nv168_chipset; break;
 		default:
 			nvdev_error(device, "unknown chipset (%08x)\n", boot0);
+			ret = -ENODEV;
 			goto done;
 		}
 

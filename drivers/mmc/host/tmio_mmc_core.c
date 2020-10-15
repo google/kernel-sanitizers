@@ -57,6 +57,12 @@ static inline void tmio_mmc_start_dma(struct tmio_mmc_host *host,
 		host->dma_ops->start(host, data);
 }
 
+static inline void tmio_mmc_end_dma(struct tmio_mmc_host *host)
+{
+	if (host->dma_ops && host->dma_ops->end)
+		host->dma_ops->end(host);
+}
+
 static inline void tmio_mmc_enable_dma(struct tmio_mmc_host *host, bool enable)
 {
 	if (host->dma_ops)
@@ -166,22 +172,13 @@ static void tmio_mmc_reset(struct tmio_mmc_host *host)
 	sd_ctrl_write16(host, CTL_RESET_SD, 0x0001);
 	usleep_range(10000, 11000);
 
+	if (host->reset)
+		host->reset(host);
+
 	if (host->pdata->flags & TMIO_MMC_SDIO_IRQ) {
 		sd_ctrl_write16(host, CTL_SDIO_IRQ_MASK, host->sdio_irq_mask);
 		sd_ctrl_write16(host, CTL_TRANSACTION_CTL, 0x0001);
 	}
-}
-
-static void tmio_mmc_hw_reset(struct mmc_host *mmc)
-{
-	struct tmio_mmc_host *host = mmc_priv(mmc);
-
-	host->reset(host);
-
-	tmio_mmc_abort_dma(host);
-
-	if (host->hw_reset)
-		host->hw_reset(host);
 }
 
 static void tmio_mmc_reset_work(struct work_struct *work)
@@ -222,11 +219,12 @@ static void tmio_mmc_reset_work(struct work_struct *work)
 
 	spin_unlock_irqrestore(&host->lock, flags);
 
-	tmio_mmc_hw_reset(host->mmc);
+	tmio_mmc_reset(host);
 
 	/* Ready for new calls */
 	host->mrq = NULL;
 
+	tmio_mmc_abort_dma(host);
 	mmc_request_done(host->mmc, mrq);
 }
 
@@ -714,24 +712,6 @@ static int tmio_mmc_start_data(struct tmio_mmc_host *host,
 	return 0;
 }
 
-static int tmio_mmc_execute_tuning(struct mmc_host *mmc, u32 opcode)
-{
-	struct tmio_mmc_host *host = mmc_priv(mmc);
-	int ret;
-
-	if (!host->execute_tuning)
-		return 0;
-
-	ret = host->execute_tuning(host, opcode);
-
-	if (ret < 0) {
-		dev_warn(&host->pdev->dev, "Tuning procedure failed\n");
-		tmio_mmc_hw_reset(mmc);
-	}
-
-	return ret;
-}
-
 static void tmio_process_mrq(struct tmio_mmc_host *host,
 			     struct mmc_request *mrq)
 {
@@ -797,6 +777,8 @@ static void tmio_mmc_finish_request(struct tmio_mmc_host *host)
 
 	spin_lock_irqsave(&host->lock, flags);
 
+	tmio_mmc_end_dma(host);
+
 	mrq = host->mrq;
 	if (IS_ERR_OR_NULL(mrq)) {
 		spin_unlock_irqrestore(&host->lock, flags);
@@ -826,6 +808,9 @@ static void tmio_mmc_finish_request(struct tmio_mmc_host *host)
 		tmio_process_mrq(host, mrq);
 		return;
 	}
+
+	if (host->fixup_request)
+		host->fixup_request(host, mrq);
 
 	mmc_request_done(host->mmc, mrq);
 }
@@ -1003,8 +988,6 @@ static struct mmc_host_ops tmio_mmc_ops = {
 	.get_cd		= tmio_mmc_get_cd,
 	.enable_sdio_irq = tmio_mmc_enable_sdio_irq,
 	.multi_io_quirk	= tmio_multi_io_quirk,
-	.hw_reset	= tmio_mmc_hw_reset,
-	.execute_tuning = tmio_mmc_execute_tuning,
 };
 
 static int tmio_mmc_init_ocr(struct tmio_mmc_host *host)
@@ -1148,9 +1131,6 @@ int tmio_mmc_host_probe(struct tmio_mmc_host *_host)
 				  mmc->caps & MMC_CAP_NEEDS_POLL ||
 				  !mmc_card_is_removable(mmc));
 
-	if (!_host->reset)
-		_host->reset = tmio_mmc_reset;
-
 	/*
 	 * On Gen2+, eMMC with NONREMOVABLE currently fails because native
 	 * hotplug gets disabled. It seems RuntimePM related yet we need further
@@ -1172,7 +1152,7 @@ int tmio_mmc_host_probe(struct tmio_mmc_host *_host)
 		_host->sdio_irq_mask = TMIO_SDIO_MASK_ALL;
 
 	_host->set_clock(_host, 0);
-	tmio_mmc_hw_reset(mmc);
+	tmio_mmc_reset(_host);
 
 	_host->sdcard_irq_mask = sd_ctrl_read16_and_16_as_32(_host, CTL_IRQ_MASK);
 	tmio_mmc_disable_mmc_irqs(_host, TMIO_MASK_ALL);
@@ -1275,7 +1255,7 @@ int tmio_mmc_host_runtime_resume(struct device *dev)
 	struct tmio_mmc_host *host = dev_get_drvdata(dev);
 
 	tmio_mmc_clk_enable(host);
-	tmio_mmc_hw_reset(host->mmc);
+	tmio_mmc_reset(host);
 
 	if (host->clk_cache)
 		host->set_clock(host, host->clk_cache);

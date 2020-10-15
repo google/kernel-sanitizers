@@ -110,9 +110,6 @@ static int tcf_csum_init(struct net *net, struct nlattr *nla,
 	if (params_new)
 		kfree_rcu(params_new, rcu);
 
-	if (ret == ACT_P_CREATED)
-		tcf_idr_insert(tn, *a);
-
 	return ret;
 put_chain:
 	if (goto_ch)
@@ -598,7 +595,8 @@ again:
 		if (!tcf_csum_ipv6(skb, update_flags))
 			goto drop;
 		break;
-	case cpu_to_be16(ETH_P_8021AD): /* fall through */
+	case cpu_to_be16(ETH_P_8021AD):
+		fallthrough;
 	case cpu_to_be16(ETH_P_8021Q):
 		if (skb_vlan_tag_present(skb) && !orig_vlan_tag_present) {
 			protocol = skb->protocol;

@@ -216,6 +216,7 @@ int drm_universal_plane_init(struct drm_device *dev, struct drm_plane *plane,
 
 	if (format_modifiers) {
 		const uint64_t *temp_modifiers = format_modifiers;
+
 		while (*temp_modifiers++ != DRM_FORMAT_MOD_INVALID)
 			format_modifier_count++;
 	}
@@ -791,7 +792,7 @@ static int setplane_internal(struct drm_plane *plane,
 					  crtc_x, crtc_y, crtc_w, crtc_h,
 					  src_x, src_y, src_w, src_h, &ctx);
 
-	DRM_MODESET_LOCK_ALL_END(ctx, ret);
+	DRM_MODESET_LOCK_ALL_END(plane->dev, ctx, ret);
 
 	return ret;
 }
