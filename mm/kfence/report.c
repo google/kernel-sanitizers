@@ -227,5 +227,5 @@ void kfence_report_error(unsigned long address, const struct kfence_metadata *me
 		panic("panic_on_warn set ...\n");
 
 	/* We encountered a memory unsafety error, taint the kernel! */
-	add_taint(TAINT_WARN, LOCKDEP_STILL_OK);
+	add_taint(TAINT_BAD_PAGE, LOCKDEP_STILL_OK);
 }
