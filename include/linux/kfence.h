@@ -18,7 +18,7 @@
 #define KFENCE_POOL_SIZE ((CONFIG_KFENCE_NUM_OBJECTS + 1) * 2 * PAGE_SIZE)
 extern char *__kfence_pool;
 
-extern struct static_key_false kfence_allocation_key;
+DECLARE_STATIC_KEY_FALSE(kfence_allocation_key);
 
 /**
  * is_kfence_address() - check if an address belongs to KFENCE pool
