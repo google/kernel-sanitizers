@@ -43,9 +43,17 @@ static __always_inline bool is_kfence_address(const void *addr)
 }
 
 /**
- * kfence_init() - perform KFENCE initialization at boot time
+ * kfence_alloc_pool() - allocate the KFENCE pool via memblock
  */
-void kfence_init(void);
+void __init kfence_alloc_pool(void);
+
+/**
+ * kfence_init() - perform KFENCE initialization at boot time
+ *
+ * Requires that kfence_alloc_pool() was called before. This sets up the
+ * allocation gate timer, and requires that workqueues are available.
+ */
+void __init kfence_init(void);
 
 /**
  * kfence_shutdown_cache() - handle shutdown_cache() for KFENCE objects
@@ -161,6 +169,7 @@ bool __must_check kfence_handle_page_fault(unsigned long addr);
 #else /* CONFIG_KFENCE */
 
 static inline bool is_kfence_address(const void *addr) { return false; }
+static inline void kfence_alloc_pool(void) { }
 static inline void kfence_init(void) { }
 static inline bool __must_check kfence_shutdown_cache(struct kmem_cache *s) { return true; }
 static inline void *kfence_alloc(struct kmem_cache *s, size_t size, gfp_t flags) { return NULL; }

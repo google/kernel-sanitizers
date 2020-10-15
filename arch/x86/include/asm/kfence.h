@@ -11,8 +11,6 @@
 #include <asm/set_memory.h>
 #include <asm/tlbflush.h>
 
-extern bool kfence_alloc_pool(void);
-
 /*
  * The page fault handler entry function, up to which the stack trace is
  * truncated in reports.
@@ -20,12 +18,9 @@ extern bool kfence_alloc_pool(void);
 #define KFENCE_SKIP_ARCH_FAULT_HANDLER "asm_exc_page_fault"
 
 /* Force 4K pages for __kfence_pool. */
-static inline bool arch_kfence_initialize_pool(void)
+static inline bool arch_kfence_init_pool(void)
 {
 	unsigned long addr;
-
-	if (!kfence_alloc_pool())
-		return false;
 
 	for (addr = (unsigned long)__kfence_pool; is_kfence_address((void *)addr);
 	     addr += PAGE_SIZE) {

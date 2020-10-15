@@ -9,6 +9,7 @@
 #include <linux/kfence.h>
 #include <linux/list.h>
 #include <linux/lockdep.h>
+#include <linux/memblock.h>
 #include <linux/moduleparam.h>
 #include <linux/random.h>
 #include <linux/rcupdate.h>
@@ -55,7 +56,7 @@ static int param_set_sample_interval(const char *val, const struct kernel_param 
 
 	if (!num) /* Using 0 to indicate KFENCE is disabled. */
 		WRITE_ONCE(kfence_enabled, false);
-	else if (!READ_ONCE(kfence_enabled))
+	else if (!READ_ONCE(kfence_enabled) && system_state != SYSTEM_BOOTING)
 		return -EINVAL; /* Cannot (re-)enable KFENCE on-the-fly. */
 
 	*((unsigned long *)kp->arg) = num;
@@ -392,36 +393,18 @@ static void rcu_guarded_free(struct rcu_head *h)
 	kfence_guarded_free((void *)meta->addr, meta);
 }
 
-bool __init kfence_alloc_pool(void)
+static bool __init kfence_init_pool(void)
 {
-	struct page *pages;
-
-	if (__kfence_pool)
-		return true; /* Allocated in arch_kfence_initialize_pool(). */
-
-	BUILD_BUG_ON(get_order(KFENCE_POOL_SIZE) >= MAX_ORDER);
-
-	pages = alloc_pages(GFP_KERNEL, get_order(KFENCE_POOL_SIZE));
-	if (!pages)
-		return false;
-
-	__kfence_pool = page_address(pages);
-	return true;
-}
-
-static bool __init kfence_initialize_pool(void)
-{
-	unsigned long addr;
+	unsigned long addr = (unsigned long)__kfence_pool;
 	struct page *pages;
 	int i;
 
-	if (!arch_kfence_initialize_pool())
+	if (!__kfence_pool)
 		return false;
 
-	if (!kfence_alloc_pool())
-		return false;
+	if (!arch_kfence_init_pool())
+		goto err;
 
-	addr = (unsigned long)__kfence_pool;
 	pages = virt_to_page(addr);
 
 	/*
@@ -438,7 +421,7 @@ static bool __init kfence_initialize_pool(void)
 
 		/* Verify we do not have a compound head page. */
 		if (WARN_ON(compound_head(&pages[i]) != &pages[i]))
-			return false;
+			goto err;
 
 		__SetPageSlab(&pages[i]);
 	}
@@ -451,7 +434,7 @@ static bool __init kfence_initialize_pool(void)
 	 */
 	for (i = 0; i < 2; i++) {
 		if (unlikely(!kfence_protect(addr)))
-			return false;
+			goto err;
 
 		addr += PAGE_SIZE;
 	}
@@ -468,12 +451,24 @@ static bool __init kfence_initialize_pool(void)
 
 		/* Protect the right redzone. */
 		if (unlikely(!kfence_protect(addr + PAGE_SIZE)))
-			return false;
+			goto err;
 
 		addr += 2 * PAGE_SIZE;
 	}
 
 	return true;
+
+err:
+	/*
+	 * Only release unprotected pages, and do not try to go back and change
+	 * page attributes due to risk of failing to do so as well. If changing
+	 * page attributes for some pages fails, it is very likely that it also
+	 * fails for the first page, and therefore expect addr==__kfence_pool in
+	 * most failure cases.
+	 */
+	memblock_free_late(__pa(addr), KFENCE_POOL_SIZE - (addr - (unsigned long)__kfence_pool));
+	__kfence_pool = NULL;
+	return false;
 }
 
 /* === DebugFS Interface ==================================================== */
@@ -588,13 +583,24 @@ static DECLARE_DELAYED_WORK(kfence_timer, toggle_allocation_gate);
 
 /* === Public interface ===================================================== */
 
+void __init kfence_alloc_pool(void)
+{
+	if (!kfence_sample_interval)
+		return;
+
+	__kfence_pool = memblock_alloc(KFENCE_POOL_SIZE, PAGE_SIZE);
+
+	if (!__kfence_pool)
+		pr_err("failed to allocate pool\n");
+}
+
 void __init kfence_init(void)
 {
 	/* Setting kfence_sample_interval to 0 on boot disables KFENCE. */
 	if (!kfence_sample_interval)
 		return;
 
-	if (!kfence_initialize_pool()) {
+	if (!kfence_init_pool()) {
 		pr_err("%s failed\n", __func__);
 		return;
 	}

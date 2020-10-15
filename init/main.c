@@ -814,6 +814,7 @@ static void __init mm_init(void)
 	 */
 	page_ext_init_flatmem();
 	init_debug_pagealloc();
+	kfence_alloc_pool();
 	report_meminit();
 	mem_init();
 	kmem_cache_init();
