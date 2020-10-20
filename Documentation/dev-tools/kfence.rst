@@ -62,7 +62,7 @@ A typical out-of-bounds access looks like this::
     ==================================================================
     BUG: KFENCE: out-of-bounds in test_out_of_bounds_read+0xa3/0x22b
 
-    Out-of-bounds access at 0xffffffffb672efff (left of kfence-#17):
+    Out-of-bounds access at 0xffffffffb672efff (1B left of kfence-#17):
      test_out_of_bounds_read+0xa3/0x22b
      kunit_try_run_case+0x51/0x85
      kunit_generic_run_threadfn_adapter+0x16/0x30
