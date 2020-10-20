@@ -175,11 +175,16 @@ void kfence_report_error(unsigned long address, const struct kfence_metadata *me
 	pr_err("==================================================================\n");
 	/* Print report header. */
 	switch (type) {
-	case KFENCE_ERROR_OOB:
+	case KFENCE_ERROR_OOB: {
+		const bool left_of_object = address < meta->addr;
+
 		pr_err("BUG: KFENCE: out-of-bounds in %pS\n\n", (void *)stack_entries[skipnr]);
-		pr_err("Out-of-bounds access at 0x" PTR_FMT " (%s of kfence-#%zd):\n",
-		       (void *)address, address < meta->addr ? "left" : "right", object_index);
+		pr_err("Out-of-bounds access at 0x" PTR_FMT " (%luB %s of kfence-#%zd):\n",
+		       (void *)address,
+		       left_of_object ? meta->addr - address : address - meta->addr,
+		       left_of_object ? "left" : "right", object_index);
 		break;
+	}
 	case KFENCE_ERROR_UAF:
 		pr_err("BUG: KFENCE: use-after-free in %pS\n\n", (void *)stack_entries[skipnr]);
 		pr_err("Use-after-free access at 0x" PTR_FMT " (in kfence-#%zd):\n",
