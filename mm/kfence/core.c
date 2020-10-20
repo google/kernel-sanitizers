@@ -106,6 +106,7 @@ enum kfence_counter_id {
 	KFENCE_COUNTER_ALLOCATED,
 	KFENCE_COUNTER_ALLOCS,
 	KFENCE_COUNTER_FREES,
+	KFENCE_COUNTER_ZOMBIES,
 	KFENCE_COUNTER_BUGS,
 	KFENCE_COUNTER_COUNT,
 };
@@ -114,6 +115,7 @@ static const char *const counter_names[] = {
 	[KFENCE_COUNTER_ALLOCATED]	= "currently allocated",
 	[KFENCE_COUNTER_ALLOCS]		= "total allocations",
 	[KFENCE_COUNTER_FREES]		= "total frees",
+	[KFENCE_COUNTER_ZOMBIES]	= "zombie allocations",
 	[KFENCE_COUNTER_BUGS]		= "total bugs",
 };
 static_assert(ARRAY_SIZE(counter_names) == KFENCE_COUNTER_COUNT);
@@ -327,7 +329,7 @@ static void *kfence_guarded_alloc(struct kmem_cache *cache, size_t size, gfp_t g
 	return addr;
 }
 
-static void kfence_guarded_free(void *addr, struct kfence_metadata *meta)
+static void kfence_guarded_free(void *addr, struct kfence_metadata *meta, bool zombie)
 {
 	struct kcsan_scoped_access assert_page_exclusive;
 	unsigned long flags;
@@ -364,7 +366,7 @@ static void kfence_guarded_free(void *addr, struct kfence_metadata *meta)
 	 * data is still there, and after a use-after-free is detected, we
 	 * unprotect the page, so the data is still accessible.
 	 */
-	if (unlikely(slab_want_init_on_free(meta->cache)))
+	if (!zombie && unlikely(slab_want_init_on_free(meta->cache)))
 		memzero_explicit(addr, meta->size);
 
 	/* Mark the object as freed. */
@@ -375,22 +377,27 @@ static void kfence_guarded_free(void *addr, struct kfence_metadata *meta)
 	/* Protect to detect use-after-frees. */
 	kfence_protect((unsigned long)addr);
 
-	/* Add it to the tail of the freelist for reuse. */
-	raw_spin_lock_irqsave(&kfence_freelist_lock, flags);
-	KFENCE_WARN_ON(!list_empty(&meta->list));
-	list_add_tail(&meta->list, &kfence_freelist);
 	kcsan_end_scoped_access(&assert_page_exclusive);
-	raw_spin_unlock_irqrestore(&kfence_freelist_lock, flags);
+	if (!zombie) {
+		/* Add it to the tail of the freelist for reuse. */
+		raw_spin_lock_irqsave(&kfence_freelist_lock, flags);
+		KFENCE_WARN_ON(!list_empty(&meta->list));
+		list_add_tail(&meta->list, &kfence_freelist);
+		raw_spin_unlock_irqrestore(&kfence_freelist_lock, flags);
 
-	atomic_long_dec(&counters[KFENCE_COUNTER_ALLOCATED]);
-	atomic_long_inc(&counters[KFENCE_COUNTER_FREES]);
+		atomic_long_dec(&counters[KFENCE_COUNTER_ALLOCATED]);
+		atomic_long_inc(&counters[KFENCE_COUNTER_FREES]);
+	} else {
+		/* See kfence_shutdown_cache(). */
+		atomic_long_inc(&counters[KFENCE_COUNTER_ZOMBIES]);
+	}
 }
 
 static void rcu_guarded_free(struct rcu_head *h)
 {
 	struct kfence_metadata *meta = container_of(h, struct kfence_metadata, rcu_head);
 
-	kfence_guarded_free((void *)meta->addr, meta);
+	kfence_guarded_free((void *)meta->addr, meta, false);
 }
 
 static bool __init kfence_init_pool(void)
@@ -616,7 +623,7 @@ void __init kfence_init(void)
 		pr_cont("\n");
 }
 
-bool kfence_shutdown_cache(struct kmem_cache *s)
+void kfence_shutdown_cache(struct kmem_cache *s)
 {
 	unsigned long flags;
 	struct kfence_metadata *meta;
@@ -642,8 +649,23 @@ bool kfence_shutdown_cache(struct kmem_cache *s)
 		in_use = meta->cache == s && meta->state == KFENCE_OBJECT_ALLOCATED;
 		raw_spin_unlock_irqrestore(&meta->lock, flags);
 
-		if (in_use)
-			return false;
+		if (in_use) {
+			/*
+			 * This cache still has allocations, and we should not
+			 * release them back into the freelist so they can still
+			 * safely be used and retain the kernel's default
+			 * behaviour of keeping the allocations alive (leak the
+			 * cache); however, they effectively become "zombie
+			 * allocations" as the KFENCE objects are the only ones
+			 * still in use and the owning cache is being destroyed.
+			 *
+			 * We mark them freed, so that any subsequent use shows
+			 * more useful error messages that will include stack
+			 * traces of the user of the object, the original
+			 * allocation, and caller to shutdown_cache().
+			 */
+			kfence_guarded_free((void *)meta->addr, meta, /*zombie=*/true);
+		}
 	}
 
 	for (i = 0; i < CONFIG_KFENCE_NUM_OBJECTS; i++) {
@@ -658,8 +680,6 @@ bool kfence_shutdown_cache(struct kmem_cache *s)
 			meta->cache = NULL;
 		raw_spin_unlock_irqrestore(&meta->lock, flags);
 	}
-
-	return true;
 }
 
 void *__kfence_alloc(struct kmem_cache *s, size_t size, gfp_t flags)
@@ -711,12 +731,13 @@ void __kfence_free(void *addr)
 	/*
 	 * If the objects of the cache are SLAB_TYPESAFE_BY_RCU, defer freeing
 	 * the object, as the object page may be recycled for other-typed
-	 * objects once it has been freed.
+	 * objects once it has been freed. meta->cache may be NULL if the cache
+	 * was destroyed.
 	 */
-	if (unlikely(meta->cache->flags & SLAB_TYPESAFE_BY_RCU))
+	if (unlikely(meta->cache && (meta->cache->flags & SLAB_TYPESAFE_BY_RCU)))
 		call_rcu(&meta->rcu_head, rcu_guarded_free);
 	else
-		kfence_guarded_free(addr, meta);
+		kfence_guarded_free(addr, meta, false);
 }
 
 bool kfence_handle_page_fault(unsigned long addr)
