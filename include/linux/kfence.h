@@ -59,13 +59,22 @@ void __init kfence_init(void);
  * kfence_shutdown_cache() - handle shutdown_cache() for KFENCE objects
  * @s: cache being shut down
  *
- * Return: true on success, false if any leftover objects persist.
- *
  * Before shutting down a cache, one must ensure there are no remaining objects
- * allocated from it. KFENCE objects are not referenced from the cache, so
- * kfence_shutdown_cache() takes care of them.
+ * allocated from it. Because KFENCE objects are not referenced from the cache
+ * directly, we need to check them here.
+ *
+ * Note that shutdown_cache() is internal to SL*B, and kmem_cache_destroy() does
+ * not return if allocated objects still exist: it prints an error message and
+ * simply aborts destruction of a cache, leaking memory.
+ *
+ * If the only such objects are KFENCE objects, we will not leak the entire
+ * cache, but instead try to provide more useful debug info by making allocated
+ * objects "zombie allocations". Objects may then still be used or freed (which
+ * is handled gracefully), but usage will result in showing KFENCE error reports
+ * which include stack traces to the user of the object, the original allocation
+ * site, and caller to shutdown_cache().
  */
-bool __must_check kfence_shutdown_cache(struct kmem_cache *s);
+void kfence_shutdown_cache(struct kmem_cache *s);
 
 /*
  * Allocate a KFENCE object. Allocators must not call this function directly,
@@ -171,7 +180,7 @@ bool __must_check kfence_handle_page_fault(unsigned long addr);
 static inline bool is_kfence_address(const void *addr) { return false; }
 static inline void kfence_alloc_pool(void) { }
 static inline void kfence_init(void) { }
-static inline bool __must_check kfence_shutdown_cache(struct kmem_cache *s) { return true; }
+static inline void kfence_shutdown_cache(struct kmem_cache *s) { }
 static inline void *kfence_alloc(struct kmem_cache *s, size_t size, gfp_t flags) { return NULL; }
 static inline size_t kfence_ksize(const void *addr) { return 0; }
 static inline void *kfence_object_start(const void *addr) { return NULL; }
