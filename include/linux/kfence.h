@@ -4,7 +4,6 @@
 #define _LINUX_KFENCE_H
 
 #include <linux/mm.h>
-#include <linux/percpu.h>
 #include <linux/static_key.h>
 #include <linux/types.h>
 
