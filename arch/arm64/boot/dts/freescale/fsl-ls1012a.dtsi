@@ -18,6 +18,8 @@
 
 	aliases {
 		crypto = &crypto;
+		mmc0 = &esdhc0;
+		mmc1 = &esdhc1;
 		rtc1 = &ftm_alarm0;
 		rtic-a = &rtic_a;
 		rtic-b = &rtic_b;
