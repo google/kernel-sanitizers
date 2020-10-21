@@ -2831,16 +2831,29 @@ void btrfs_writepage_endio_finish_ordered(struct page *page, u64 start,
 	btrfs_queue_work(wq, &ordered_extent->work);
 }
 
+/*
+ * Verify checksum of one sector of uncompressed data.
+ *
+ * @inode:	The inode.
+ * @io_bio:	The btrfs_io_bio which contains the csum.
+ * @icsum:	The csum index in the io_bio->csum array, size of csum_size.
+ * @page:	The page where is the data to be verified.
+ * @pgoff:	The offset inside the page.
+ *
+ * The length of such check is always one sector size.
+ */
 static int check_data_csum(struct inode *inode, struct btrfs_io_bio *io_bio,
-			   int icsum, struct page *page, int pgoff, u64 start,
-			   size_t len)
+			   int icsum, struct page *page, int pgoff)
 {
 	struct btrfs_fs_info *fs_info = btrfs_sb(inode->i_sb);
 	SHASH_DESC_ON_STACK(shash, fs_info->csum_shash);
 	char *kaddr;
+	u32 len = fs_info->sectorsize;
 	u16 csum_size = btrfs_super_csum_size(fs_info->super_copy);
 	u8 *csum_expected;
 	u8 csum[BTRFS_CSUM_SIZE];
+
+	ASSERT(pgoff + len <= PAGE_SIZE);
 
 	csum_expected = ((u8 *)io_bio->csum) + icsum * csum_size;
 
@@ -2855,8 +2868,8 @@ static int check_data_csum(struct inode *inode, struct btrfs_io_bio *io_bio,
 	kunmap_atomic(kaddr);
 	return 0;
 zeroit:
-	btrfs_print_data_csum_error(BTRFS_I(inode), start, csum, csum_expected,
-				    io_bio->mirror_num);
+	btrfs_print_data_csum_error(BTRFS_I(inode), page_offset(page) + pgoff,
+				    csum, csum_expected, io_bio->mirror_num);
 	if (io_bio->device)
 		btrfs_dev_stat_inc_and_print(io_bio->device,
 					     BTRFS_DEV_STAT_CORRUPTION_ERRS);
@@ -2897,8 +2910,7 @@ int btrfs_verify_data_csum(struct btrfs_io_bio *io_bio, u64 phy_offset,
 	}
 
 	phy_offset >>= inode->i_sb->s_blocksize_bits;
-	return check_data_csum(inode, io_bio, phy_offset, page, offset, start,
-			       (size_t)(end - start + 1));
+	return check_data_csum(inode, io_bio, phy_offset, page, offset);
 }
 
 /*
@@ -7616,8 +7628,7 @@ static blk_status_t btrfs_check_read_dio_bio(struct inode *inode,
 			ASSERT(pgoff < PAGE_SIZE);
 			if (uptodate &&
 			    (!csum || !check_data_csum(inode, io_bio, icsum,
-						       bvec.bv_page, pgoff,
-						       start, sectorsize))) {
+						       bvec.bv_page, pgoff))) {
 				clean_io_failure(fs_info, failure_tree, io_tree,
 						 start, bvec.bv_page,
 						 btrfs_ino(BTRFS_I(inode)),
