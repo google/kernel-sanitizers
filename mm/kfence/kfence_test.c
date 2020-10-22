@@ -255,6 +255,17 @@ static void *test_alloc(struct kunit *test, size_t size, gfp_t gfp, enum allocat
 			alloc = kmalloc(size, gfp);
 
 		if (is_kfence_address(alloc)) {
+			struct page *page = virt_to_head_page(alloc);
+			struct kmem_cache *s = test_cache ?: kmalloc_caches[kmalloc_type(GFP_KERNEL)][kmalloc_index(size)];
+
+			/*
+			 * Verify that various helpers return the right values
+			 * even for KFENCE objects; these are required so that
+			 * memcg accounting works correctly.
+			 */
+			KUNIT_EXPECT_EQ(test, obj_to_index(s, page, alloc), 0U);
+			KUNIT_EXPECT_EQ(test, objs_per_slab_page(s, page), 1);
+
 			if (policy == ALLOCATE_ANY)
 				return alloc;
 			if (policy == ALLOCATE_LEFT && IS_ALIGNED((unsigned long)alloc, PAGE_SIZE))
