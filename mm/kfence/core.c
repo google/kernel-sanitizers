@@ -248,6 +248,7 @@ static void *kfence_guarded_alloc(struct kmem_cache *cache, size_t size, gfp_t g
 {
 	struct kfence_metadata *meta = NULL;
 	unsigned long flags;
+	struct page *page;
 	void *addr;
 
 	/* Try to obtain a free object. */
@@ -297,13 +298,22 @@ static void *kfence_guarded_alloc(struct kmem_cache *cache, size_t size, gfp_t g
 		meta->addr = ALIGN_DOWN(meta->addr, cache->align);
 	}
 
+	addr = (void *)meta->addr;
+
 	/* Update remaining metadata. */
 	metadata_update_state(meta, KFENCE_OBJECT_ALLOCATED);
 	/* Pairs with READ_ONCE() in kfence_shutdown_cache(). */
 	WRITE_ONCE(meta->cache, cache);
 	meta->size = size;
 	for_each_canary(meta, set_canary_byte);
-	virt_to_page(meta->addr)->slab_cache = cache;
+
+	/* Set required struct page fields. */
+	page = virt_to_page(meta->addr);
+	page->slab_cache = cache;
+	if (IS_ENABLED(CONFIG_SLUB))
+		page->objects = 1;
+	if (IS_ENABLED(CONFIG_SLAB))
+		page->s_mem = addr;
 
 	raw_spin_unlock_irqrestore(&meta->lock, flags);
 
@@ -314,7 +324,6 @@ static void *kfence_guarded_alloc(struct kmem_cache *cache, size_t size, gfp_t g
 	 * SL*B do the initialization, as otherwise we might overwrite KFENCE's
 	 * redzone.
 	 */
-	addr = (void *)meta->addr;
 	if (unlikely(slab_want_init_on_alloc(gfp, cache)))
 		memzero_explicit(addr, size);
 	if (cache->ctor)
