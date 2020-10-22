@@ -4154,18 +4154,15 @@ void __check_heap_object(const void *ptr, unsigned long n, struct page *page,
 			 bool to_user)
 {
 	struct kmem_cache *cachep;
-	unsigned int objnr = 0;
+	unsigned int objnr;
 	unsigned long offset;
-	bool is_kfence = is_kfence_address(ptr);
 
 	ptr = kasan_reset_tag(ptr);
 
 	/* Find and validate object. */
 	cachep = page->slab_cache;
-	if (!is_kfence) {
-		objnr = obj_to_index(cachep, page, (void *)ptr);
-		BUG_ON(objnr >= cachep->num);
-	}
+	objnr = obj_to_index(cachep, page, (void *)ptr);
+	BUG_ON(objnr >= cachep->num);
 
 	/* Find offset within object. */
 	if (is_kfence_address(ptr))
