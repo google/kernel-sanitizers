@@ -562,17 +562,14 @@ void do_cpu_irq_mask(struct pt_regs *regs)
 
 static void claim_cpu_irqs(void)
 {
-	unsigned long flags = IRQF_TIMER | IRQF_PERCPU | IRQF_IRQPOLL;
 	int i;
 
 	for (i = CPU_IRQ_BASE; i <= CPU_IRQ_MAX; i++) {
 		irq_set_chip_and_handler(i, &cpu_interrupt_type,
 					 handle_percpu_irq);
 	}
-
-	irq_set_handler(TIMER_IRQ, handle_percpu_irq);
-	if (request_irq(TIMER_IRQ, timer_interrupt, flags, "timer", NULL))
-		pr_err("Failed to register timer interrupt\n");
+	irq_set_percpu_devid(TIMER_IRQ);
+	irq_set_handler(TIMER_IRQ, handle_percpu_devid_irq);
 #ifdef CONFIG_SMP
 	irq_set_handler(IPI_IRQ, handle_percpu_irq);
 	if (request_irq(IPI_IRQ, ipi_interrupt, IRQF_PERCPU, "IPI", NULL))
