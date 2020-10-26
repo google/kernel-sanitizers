@@ -18,6 +18,7 @@
 #include <linux/mm.h>
 #include <linux/random.h>
 #include <linux/slab.h>
+#include <linux/spinlock.h>
 #include <linux/string.h>
 #include <linux/tracepoint.h>
 #include <trace/events/printk.h>
