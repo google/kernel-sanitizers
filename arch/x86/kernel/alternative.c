@@ -239,7 +239,7 @@ void __init arch_init_ideal_nops(void)
 			return;
 		}
 
-		/* fall through */
+		fallthrough;
 
 	default:
 #ifdef CONFIG_X86_64
@@ -1103,6 +1103,10 @@ noinstr int poke_int3_handler(struct pt_regs *regs)
 		 */
 		goto out_put;
 
+	case RET_INSN_OPCODE:
+		int3_emulate_ret(regs);
+		break;
+
 	case CALL_INSN_OPCODE:
 		int3_emulate_call(regs, (long)ip + tp->rel32);
 		break;
@@ -1277,6 +1281,7 @@ static void text_poke_loc_init(struct text_poke_loc *tp, void *addr,
 
 	switch (tp->opcode) {
 	case INT3_INSN_OPCODE:
+	case RET_INSN_OPCODE:
 		break;
 
 	case CALL_INSN_OPCODE:
