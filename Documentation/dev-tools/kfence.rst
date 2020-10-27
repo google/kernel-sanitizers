@@ -69,7 +69,7 @@ A typical out-of-bounds access looks like this::
      kthread+0x137/0x160
      ret_from_fork+0x22/0x30
 
-    kfence-#17 [0xffffffffb672f000-0xffffffffb672f01f, size=32, cache=kmalloc-32] allocated in:
+    kfence-#17 [0xffffffffb672f000-0xffffffffb672f01f, size=32, cache=kmalloc-32] allocated by task 507:
      test_alloc+0xf3/0x25b
      test_out_of_bounds_read+0x98/0x22b
      kunit_try_run_case+0x51/0x85
@@ -98,7 +98,7 @@ Use-after-free accesses are reported as::
      kthread+0x137/0x160
      ret_from_fork+0x22/0x30
 
-    kfence-#24 [0xffffffffb673dfe0-0xffffffffb673dfff, size=32, cache=kmalloc-32] allocated in:
+    kfence-#24 [0xffffffffb673dfe0-0xffffffffb673dfff, size=32, cache=kmalloc-32] allocated by task 507:
      test_alloc+0xf3/0x25b
      test_use_after_free_read+0x76/0x143
      kunit_try_run_case+0x51/0x85
@@ -106,7 +106,7 @@ Use-after-free accesses are reported as::
      kthread+0x137/0x160
      ret_from_fork+0x22/0x30
 
-    freed in:
+    freed by task 507:
      test_use_after_free_read+0xa8/0x143
      kunit_try_run_case+0x51/0x85
      kunit_generic_run_threadfn_adapter+0x16/0x30
@@ -129,7 +129,7 @@ KFENCE also reports on invalid frees, such as double-frees::
      kthread+0x137/0x160
      ret_from_fork+0x22/0x30
 
-    kfence-#26 [0xffffffffb6741000-0xffffffffb674101f, size=32, cache=kmalloc-32] allocated in:
+    kfence-#26 [0xffffffffb6741000-0xffffffffb674101f, size=32, cache=kmalloc-32] allocated by task 507:
      test_alloc+0xf3/0x25b
      test_double_free+0x76/0x171
      kunit_try_run_case+0x51/0x85
@@ -137,7 +137,7 @@ KFENCE also reports on invalid frees, such as double-frees::
      kthread+0x137/0x160
      ret_from_fork+0x22/0x30
 
-    freed in:
+    freed by task 507:
      test_double_free+0xa8/0x171
      kunit_try_run_case+0x51/0x85
      kunit_generic_run_threadfn_adapter+0x16/0x30
@@ -162,7 +162,7 @@ These are reported on frees::
      kthread+0x137/0x160
      ret_from_fork+0x22/0x30
 
-    kfence-#69 [0xffffffffb6797fb0-0xffffffffb6797ff8, size=73, cache=kmalloc-96] allocated in:
+    kfence-#69 [0xffffffffb6797fb0-0xffffffffb6797ff8, size=73, cache=kmalloc-96] allocated by task 507:
      test_alloc+0xf3/0x25b
      test_kmalloc_aligned_oob_write+0x57/0x184
      kunit_try_run_case+0x51/0x85
