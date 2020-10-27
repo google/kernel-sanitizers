@@ -136,6 +136,12 @@ void ftrace_likely_update(struct ftrace_likely_data *f, int val,
 } while (0)
 #endif
 
+#ifdef __has_builtin
+#define has_builtin(x) __has_builtin(x)
+#else
+#define has_builtin(x) (0)
+#endif
+
 /*
  * KENTRY - kernel entry point
  * This can be used to annotate symbols (functions or data) that are used
