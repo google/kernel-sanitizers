@@ -61,7 +61,18 @@ series -- also viewable here:
 [2] https://linux.die.net/man/3/efence
 
 v5:
-* .... TODO ...
+* Lots of smaller fixes (see details in patches).
+* Optimize is_kfence_address() by using better in-range check.
+* Removal of HAVE_ARCH_KFENCE_STATIC_POOL and static pool
+  support in favor of memblock_alloc'd pool only, as it avoids all
+  issues with virt_to translations. With the new optimizations to
+  is_kfence_address(), we measure no noticeable performance impact.
+* Taint with TAINT_BAD_PAGE, to distinguish memory errors from regular
+  warnings (also used by SL*B/KASAN/etc. for memory errors).
+* Rework sample_interval parameter dynamic setting semantics.
+* Rework kfence_shutdown_cache().
+* Fix obj_to_index+objs_per_slab_page, which among other things is
+  required when using memcg accounted allocations.
 
 v4: https://lkml.kernel.org/r/20200929133814.2834621-1-elver@google.com
 * MAINTAINERS: Split out from first patch.
