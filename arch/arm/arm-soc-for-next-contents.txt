@@ -32,4 +32,8 @@ arm/fixes
 		git://git.kernel.org/pub/scm/linux/kernel/git/sudeep.holla/linux tags/scmi-fixes-5.10
 	<no branch> (d6820bc6508c0cefd6e407cf5be50d9efda6c85c)
 		git://git.kernel.org/pub/scm/linux/kernel/git/shawnguo/linux tags/imx-fixes-5.10
+	<no branch> (f7d933388f11f66e5af9e5663a17f26523fddd07)
+		git://git.kernel.org/pub/scm/linux/kernel/git/khilman/linux-amlogic tags/amlogic-fixes
+	<no branch> (ccee91b568e35e87d61ae72b51fd07ddf5a3d999)
+		git://git.kernel.org/pub/scm/linux/kernel/git/shawnguo/linux tags/imx-fixes-5.10-2
 
