@@ -34,6 +34,13 @@ enum kfence_object_state {
 	KFENCE_OBJECT_FREED,		/* Object was allocated, and then freed. */
 };
 
+/* Alloc/free tracking information. */
+struct kfence_track {
+	pid_t pid;
+	int num_stack_entries;
+	unsigned long stack_entries[KFENCE_STACK_DEPTH];
+};
+
 /* KFENCE metadata per guarded allocation. */
 struct kfence_metadata {
 	struct list_head list;		/* Freelist node; access under kfence_freelist_lock. */
@@ -77,10 +84,8 @@ struct kfence_metadata {
 	unsigned long unprotected_page;
 
 	/* Allocation and free stack information. */
-	int num_alloc_stack;
-	int num_free_stack;
-	unsigned long alloc_stack[KFENCE_STACK_DEPTH];
-	unsigned long free_stack[KFENCE_STACK_DEPTH];
+	struct kfence_track alloc_track;
+	struct kfence_track free_track;
 };
 
 extern struct kfence_metadata kfence_metadata[CONFIG_KFENCE_NUM_OBJECTS];

@@ -182,19 +182,17 @@ static inline unsigned long metadata_to_pageaddr(const struct kfence_metadata *m
 static noinline void metadata_update_state(struct kfence_metadata *meta,
 					   enum kfence_object_state next)
 {
-	unsigned long *entries = next == KFENCE_OBJECT_FREED ? meta->free_stack : meta->alloc_stack;
+	struct kfence_track *track =
+		next == KFENCE_OBJECT_FREED ? &meta->free_track : &meta->alloc_track;
+
+	lockdep_assert_held(&meta->lock);
+
 	/*
 	 * Skip over 1 (this) functions; noinline ensures we do not accidentally
 	 * skip over the caller by never inlining.
 	 */
-	const int nentries = stack_trace_save(entries, KFENCE_STACK_DEPTH, 1);
-
-	lockdep_assert_held(&meta->lock);
-
-	if (next == KFENCE_OBJECT_FREED)
-		meta->num_free_stack = nentries;
-	else
-		meta->num_alloc_stack = nentries;
+	track->num_stack_entries = stack_trace_save(track->stack_entries, KFENCE_STACK_DEPTH, 1);
+	track->pid = task_pid_nr(current);
 
 	/*
 	 * Pairs with READ_ONCE() in

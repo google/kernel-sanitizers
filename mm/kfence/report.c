@@ -86,16 +86,15 @@ found:
 static void kfence_print_stack(struct seq_file *seq, const struct kfence_metadata *meta,
 			       bool show_alloc)
 {
-	const unsigned long *entries = show_alloc ? meta->alloc_stack : meta->free_stack;
-	const int nentries = show_alloc ? meta->num_alloc_stack : meta->num_free_stack;
+	const struct kfence_track *track = show_alloc ? &meta->alloc_track : &meta->free_track;
 
-	if (nentries) {
+	if (track->num_stack_entries) {
 		/* Skip allocation/free internals stack. */
-		int i = get_stack_skipnr(entries, nentries, NULL);
+		int i = get_stack_skipnr(track->stack_entries, track->num_stack_entries, NULL);
 
 		/* stack_trace_seq_print() does not exist; open code our own. */
-		for (; i < nentries; i++)
-			seq_con_printf(seq, " %pS\n", (void *)entries[i]);
+		for (; i < track->num_stack_entries; i++)
+			seq_con_printf(seq, " %pS\n", (void *)track->stack_entries[i]);
 	} else {
 		seq_con_printf(seq, " no %s stack\n", show_alloc ? "allocation" : "deallocation");
 	}
@@ -116,13 +115,13 @@ void kfence_print_object(struct seq_file *seq, const struct kfence_metadata *met
 
 	seq_con_printf(seq,
 		       "kfence-#%zd [0x" PTR_FMT "-0x" PTR_FMT
-		       ", size=%d, cache=%s] allocated in:\n",
+		       ", size=%d, cache=%s] allocated by task %d:\n",
 		       meta - kfence_metadata, (void *)start, (void *)(start + size - 1), size,
-		       (cache && cache->name) ? cache->name : "<destroyed>");
+		       (cache && cache->name) ? cache->name : "<destroyed>", meta->alloc_track.pid);
 	kfence_print_stack(seq, meta, true);
 
 	if (meta->state == KFENCE_OBJECT_FREED) {
-		seq_con_printf(seq, "\nfreed in:\n");
+		seq_con_printf(seq, "\nfreed by task %d:\n", meta->free_track.pid);
 		kfence_print_stack(seq, meta, false);
 	}
 }
