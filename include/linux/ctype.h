@@ -37,7 +37,7 @@ extern const unsigned char _ctype[];
 #define isascii(c) (((unsigned char)(c))<=0x7f)
 #define toascii(c) (((unsigned char)(c))&0x7f)
 
-#if has_builtin(__builtin_isdigit)
+#if __has_builtin(__builtin_isdigit)
 #define  isdigit(c) __builtin_isdigit(c)
 #else
 static inline int isdigit(int c)
