@@ -36,19 +36,7 @@
 		};
 	};
 
-	gpio_keys {
-		pinctrl-0 = <&gpio_power_key &gpio_home_key>;
-
-		home_key {
-			gpios = <&gpx2 2 GPIO_ACTIVE_HIGH>;
-			linux,code = <KEY_HOME>;
-			label = "home key";
-			debounce-interval = <10>;
-			wakeup-source;
-		};
-	};
-
-	regulator_p3v3 {
+	regulator-1 {
 		compatible = "regulator-fixed";
 		regulator-name = "p3v3_en";
 		regulator-min-microvolt = <3300000>;
@@ -76,12 +64,24 @@
 	phy-names = "hsic0";
 };
 
+&gpio_keys {
+	pinctrl-0 = <&gpio_power_key &gpio_home_key>;
+
+	home-key {
+		gpios = <&gpx2 2 GPIO_ACTIVE_HIGH>;
+		linux,code = <KEY_HOME>;
+		label = "home key";
+		debounce-interval = <10>;
+		wakeup-source;
+	};
+};
+
 &mshc_0 {
 	vqmmc-supply = <&buck8_reg>;
 };
 
 &pinctrl_1 {
-	gpio_home_key: home_key {
+	gpio_home_key: home-key {
 		samsung,pins = "gpx2-2";
 		samsung,pin-pud = <EXYNOS_PIN_PULL_NONE>;
 	};
