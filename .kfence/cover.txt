@@ -60,7 +60,11 @@ series -- also viewable here:
 [1] http://llvm.org/docs/GwpAsan.html
 [2] https://linux.die.net/man/3/efence
 
-v5:
+v6:
+* Record allocation and free task pids, and show them in reports. This
+  information helps more easily identify e.g. racy use-after-frees.
+
+v5: https://lkml.kernel.org/r/20201027141606.426816-1-elver@google.com
 * Lots of smaller fixes (see details in patches).
 * Optimize is_kfence_address() by using better in-range check.
 * Removal of HAVE_ARCH_KFENCE_STATIC_POOL and static pool
@@ -73,6 +77,7 @@ v5:
 * Rework kfence_shutdown_cache().
 * Fix obj_to_index+objs_per_slab_page, which among other things is
   required when using memcg accounted allocations.
+* Rebase to 5.10-rc1.
 
 v4: https://lkml.kernel.org/r/20200929133814.2834621-1-elver@google.com
 * MAINTAINERS: Split out from first patch.
