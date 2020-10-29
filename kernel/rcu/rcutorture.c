@@ -146,11 +146,22 @@ static struct task_struct *read_exit_task;
 
 #define RCU_TORTURE_PIPE_LEN 10
 
+// Mailbox-like structure to check RCU global memory ordering.
+struct rcu_torture_reader_check {
+	unsigned long rtc_myloops;
+	int rtc_chkrdr;
+	unsigned long rtc_chkloops;
+	int rtc_ready;
+	struct rcu_torture_reader_check *rtc_assigner;
+} ____cacheline_internodealigned_in_smp;
+
+// Update-side data structure used to check RCU readers.
 struct rcu_torture {
 	struct rcu_head rtort_rcu;
 	int rtort_pipe_count;
 	struct list_head rtort_free;
 	int rtort_mbtest;
+	struct rcu_torture_reader_check *rtort_chkp;
 };
 
 static LIST_HEAD(rcu_torture_freelist);
@@ -161,10 +172,13 @@ static DEFINE_SPINLOCK(rcu_torture_lock);
 static DEFINE_PER_CPU(long [RCU_TORTURE_PIPE_LEN + 1], rcu_torture_count);
 static DEFINE_PER_CPU(long [RCU_TORTURE_PIPE_LEN + 1], rcu_torture_batch);
 static atomic_t rcu_torture_wcount[RCU_TORTURE_PIPE_LEN + 1];
+static struct rcu_torture_reader_check *rcu_torture_reader_mbchk;
 static atomic_t n_rcu_torture_alloc;
 static atomic_t n_rcu_torture_alloc_fail;
 static atomic_t n_rcu_torture_free;
 static atomic_t n_rcu_torture_mberror;
+static atomic_t n_rcu_torture_mbchk_fail;
+static atomic_t n_rcu_torture_mbchk_tries;
 static atomic_t n_rcu_torture_error;
 static long n_rcu_torture_barrier_error;
 static long n_rcu_torture_boost_ktrerror;
@@ -392,7 +406,12 @@ static bool
 rcu_torture_pipe_update_one(struct rcu_torture *rp)
 {
 	int i;
+	struct rcu_torture_reader_check *rtrcp = READ_ONCE(rp->rtort_chkp);
 
+	if (rtrcp) {
+		WRITE_ONCE(rp->rtort_chkp, NULL);
+		smp_store_release(&rtrcp->rtc_ready, 1); // Pair with smp_load_acquire().
+	}
 	i = READ_ONCE(rp->rtort_pipe_count);
 	if (i > RCU_TORTURE_PIPE_LEN)
 		i = RCU_TORTURE_PIPE_LEN;
@@ -1233,6 +1252,58 @@ static void rcu_torture_timer_cb(struct rcu_head *rhp)
 	kfree(rhp);
 }
 
+// Set up and carry out testing of RCU's global memory ordering
+static void rcu_torture_reader_do_mbchk(long myid, struct rcu_torture *rtp,
+					struct torture_random_state *trsp)
+{
+	unsigned long loops;
+	int noc = num_online_cpus();
+	int rdrchked;
+	int rdrchker;
+	struct rcu_torture_reader_check *rtrcp; // Me.
+	struct rcu_torture_reader_check *rtrcp_assigner; // Assigned us to do checking.
+	struct rcu_torture_reader_check *rtrcp_chked; // Reader being checked.
+	struct rcu_torture_reader_check *rtrcp_chker; // Reader doing checking when not me.
+
+	if (myid < 0)
+		return; // Don't try this from timer handlers.
+
+	// Increment my counter.
+	rtrcp = &rcu_torture_reader_mbchk[myid];
+	WRITE_ONCE(rtrcp->rtc_myloops, rtrcp->rtc_myloops + 1);
+
+	// Attempt to assign someone else some checking work.
+	rdrchked = torture_random(trsp) % nrealreaders;
+	rtrcp_chked = &rcu_torture_reader_mbchk[rdrchked];
+	rdrchker = torture_random(trsp) % nrealreaders;
+	rtrcp_chker = &rcu_torture_reader_mbchk[rdrchker];
+	if (rdrchked != myid && rdrchked != rdrchker && noc >= rdrchked && noc >= rdrchker &&
+	    smp_load_acquire(&rtrcp->rtc_chkrdr) < 0 &&
+	    !READ_ONCE(rtp->rtort_chkp) && !smp_load_acquire(&rtrcp_chker->rtc_assigner)) {
+		rtrcp->rtc_chkloops = READ_ONCE(rtrcp_chked->rtc_myloops);
+		rtrcp->rtc_chkrdr = rdrchked;
+		rtrcp->rtc_ready = 0; // This gets set after the grace period ends.
+		if (cmpxchg_release(&rtrcp_chker->rtc_assigner, NULL, rtrcp) ||
+		    cmpxchg_release(&rtp->rtort_chkp, NULL, rtrcp))
+			(void)cmpxchg_relaxed(&rtrcp_chker->rtc_assigner, rtrcp, NULL); // Back out.
+	}
+
+	// If assigned some completed work, do it!
+	rtrcp_assigner = READ_ONCE(rtrcp->rtc_assigner);
+	if (!rtrcp_assigner || !smp_load_acquire(&rtrcp_assigner->rtc_ready))
+		return; // No work or work not yet ready.
+	rdrchked = rtrcp_assigner->rtc_chkrdr;
+	if (WARN_ON_ONCE(rdrchked < 0))
+		return;
+	rtrcp_chked = &rcu_torture_reader_mbchk[rdrchked];
+	loops = READ_ONCE(rtrcp_chked->rtc_myloops);
+	atomic_inc(&n_rcu_torture_mbchk_tries);
+	if (ULONG_CMP_LT(loops, rtrcp_assigner->rtc_chkloops))
+		atomic_inc(&n_rcu_torture_mbchk_fail);
+	smp_store_release(&rtrcp->rtc_assigner, NULL); // Someone else can assign us work.
+	smp_store_release(&rtrcp_assigner->rtc_chkrdr, -1); // Assigner can again assign.
+}
+
 /*
  * Do one extension of an RCU read-side critical section using the
  * current reader state in readstate (set to zero for initial entry
@@ -1368,7 +1439,7 @@ rcutorture_loop_extend(int *readstate, struct torture_random_state *trsp,
  * no data to read.  Can be invoked both from process context and
  * from a timer handler.
  */
-static bool rcu_torture_one_read(struct torture_random_state *trsp)
+static bool rcu_torture_one_read(struct torture_random_state *trsp, long myid)
 {
 	int i;
 	unsigned long started;
@@ -1400,6 +1471,7 @@ static bool rcu_torture_one_read(struct torture_random_state *trsp)
 	}
 	if (p->rtort_mbtest == 0)
 		atomic_inc(&n_rcu_torture_mberror);
+	rcu_torture_reader_do_mbchk(myid, p, trsp);
 	rtrsp = rcutorture_loop_extend(&readstate, trsp, rtrsp);
 	preempt_disable();
 	pipe_count = READ_ONCE(p->rtort_pipe_count);
@@ -1449,7 +1521,7 @@ static DEFINE_TORTURE_RANDOM_PERCPU(rcu_torture_timer_rand);
 static void rcu_torture_timer(struct timer_list *unused)
 {
 	atomic_long_inc(&n_rcu_torture_timers);
-	(void)rcu_torture_one_read(this_cpu_ptr(&rcu_torture_timer_rand));
+	(void)rcu_torture_one_read(this_cpu_ptr(&rcu_torture_timer_rand), -1);
 
 	/* Test call_rcu() invocation from interrupt handler. */
 	if (cur_ops->call) {
@@ -1485,7 +1557,7 @@ rcu_torture_reader(void *arg)
 			if (!timer_pending(&t))
 				mod_timer(&t, jiffies + 1);
 		}
-		if (!rcu_torture_one_read(&rand) && !torture_must_stop())
+		if (!rcu_torture_one_read(&rand, myid) && !torture_must_stop())
 			schedule_timeout_interruptible(HZ);
 		if (time_after(jiffies, lastsleep) && !torture_must_stop()) {
 			schedule_timeout_interruptible(1);
@@ -1595,8 +1667,9 @@ rcu_torture_stats_print(void)
 		atomic_read(&n_rcu_torture_alloc),
 		atomic_read(&n_rcu_torture_alloc_fail),
 		atomic_read(&n_rcu_torture_free));
-	pr_cont("rtmbe: %d rtbe: %ld rtbke: %ld rtbre: %ld ",
+	pr_cont("rtmbe: %d rtmbkf: %d/%d rtbe: %ld rtbke: %ld rtbre: %ld ",
 		atomic_read(&n_rcu_torture_mberror),
+		atomic_read(&n_rcu_torture_mbchk_fail), atomic_read(&n_rcu_torture_mbchk_tries),
 		n_rcu_torture_barrier_error,
 		n_rcu_torture_boost_ktrerror,
 		n_rcu_torture_boost_rterror);
@@ -1615,12 +1688,14 @@ rcu_torture_stats_print(void)
 
 	pr_alert("%s%s ", torture_type, TORTURE_FLAG);
 	if (atomic_read(&n_rcu_torture_mberror) ||
+	    atomic_read(&n_rcu_torture_mbchk_fail) ||
 	    n_rcu_torture_barrier_error || n_rcu_torture_boost_ktrerror ||
 	    n_rcu_torture_boost_rterror || n_rcu_torture_boost_failure ||
 	    i > 1) {
 		pr_cont("%s", "!!! ");
 		atomic_inc(&n_rcu_torture_error);
 		WARN_ON_ONCE(atomic_read(&n_rcu_torture_mberror));
+		WARN_ON_ONCE(atomic_read(&n_rcu_torture_mbchk_fail));
 		WARN_ON_ONCE(n_rcu_torture_barrier_error);  // rcu_barrier()
 		WARN_ON_ONCE(n_rcu_torture_boost_ktrerror); // no boost kthread
 		WARN_ON_ONCE(n_rcu_torture_boost_rterror); // can't set RT prio
@@ -2452,7 +2527,7 @@ static int rcu_torture_read_exit_child(void *trsp_in)
 	// Minimize time between reading and exiting.
 	while (!kthread_should_stop())
 		schedule_timeout_uninterruptible(1);
-	(void)rcu_torture_one_read(trsp);
+	(void)rcu_torture_one_read(trsp, -1);
 	return 0;
 }
 
@@ -2574,6 +2649,8 @@ rcu_torture_cleanup(void)
 		kfree(reader_tasks);
 		reader_tasks = NULL;
 	}
+	kfree(rcu_torture_reader_mbchk);
+	rcu_torture_reader_mbchk = NULL;
 
 	if (fakewriter_tasks) {
 		for (i = 0; i < nfakewriters; i++)
@@ -2777,6 +2854,8 @@ rcu_torture_init(void)
 	atomic_set(&n_rcu_torture_alloc_fail, 0);
 	atomic_set(&n_rcu_torture_free, 0);
 	atomic_set(&n_rcu_torture_mberror, 0);
+	atomic_set(&n_rcu_torture_mbchk_fail, 0);
+	atomic_set(&n_rcu_torture_mbchk_tries, 0);
 	atomic_set(&n_rcu_torture_error, 0);
 	n_rcu_torture_barrier_error = 0;
 	n_rcu_torture_boost_ktrerror = 0;
@@ -2818,12 +2897,15 @@ rcu_torture_init(void)
 	}
 	reader_tasks = kcalloc(nrealreaders, sizeof(reader_tasks[0]),
 			       GFP_KERNEL);
-	if (reader_tasks == NULL) {
+	rcu_torture_reader_mbchk = kcalloc(nrealreaders, sizeof(*rcu_torture_reader_mbchk),
+					   GFP_KERNEL);
+	if (!reader_tasks || !rcu_torture_reader_mbchk) {
 		VERBOSE_TOROUT_ERRSTRING("out of memory");
 		firsterr = -ENOMEM;
 		goto unwind;
 	}
 	for (i = 0; i < nrealreaders; i++) {
+		rcu_torture_reader_mbchk[i].rtc_chkrdr = -1;
 		firsterr = torture_create_kthread(rcu_torture_reader, (void *)i,
 						  reader_tasks[i]);
 		if (firsterr)
