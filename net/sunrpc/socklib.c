@@ -226,9 +226,12 @@ static int xprt_send_pagedata(struct socket *sock, struct msghdr *msg,
 	if (err < 0)
 		return err;
 
+	msg->msg_flags |= MSG_ZEROCOPY;
 	iov_iter_bvec(&msg->msg_iter, WRITE, xdr->bvec, xdr_buf_pagecount(xdr),
 		      xdr->page_len + xdr->page_base);
-	return xprt_sendmsg(sock, msg, base + xdr->page_base);
+	err = xprt_sendmsg(sock, msg, base + xdr->page_base);
+	msg->msg_flags &= ~MSG_ZEROCOPY;
+	return err;
 }
 
 /* Common case:
