@@ -125,6 +125,10 @@ void kasan_poison_shadow(const void *address, size_t size, u8 value)
 	 */
 	address = reset_tag(address);
 
+	/* Skip KFENCE memory if called explicitly outside of sl*b. */
+	if (is_kfence_address(address))
+		return;
+
 	shadow_start = kasan_mem_to_shadow(address);
 	shadow_end = kasan_mem_to_shadow(address + size);
 
@@ -143,9 +147,9 @@ void kasan_unpoison_shadow(const void *address, size_t size)
 	address = reset_tag(address);
 
 	/*
-	 * We may be called from SL*B internals, such as ksize(): with a size
-	 * not a multiple of machine-word size, avoid poisoning the invalid
-	 * portion of the word for KFENCE memory.
+	 * Skip KFENCE memory if called explicitly outside of sl*b. Also note
+	 * that calls to ksize(), where size is not a multiple of machine-word
+	 * size, would otherwise poison the invalid portion of the word.
 	 */
 	if (is_kfence_address(address))
 		return;
