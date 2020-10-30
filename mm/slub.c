@@ -2664,8 +2664,7 @@ static inline void *get_freelist(struct kmem_cache *s, struct page *page)
  * already disabled (which is the case for bulk allocation).
  */
 static void *___slab_alloc(struct kmem_cache *s, gfp_t gfpflags, int node,
-			  unsigned long addr, struct kmem_cache_cpu *c,
-			  size_t orig_size)
+			  unsigned long addr, struct kmem_cache_cpu *c)
 {
 	void *freelist;
 	struct page *page;
@@ -2770,8 +2769,7 @@ new_slab:
  * cpu changes by refetching the per cpu area pointer.
  */
 static void *__slab_alloc(struct kmem_cache *s, gfp_t gfpflags, int node,
-			  unsigned long addr, struct kmem_cache_cpu *c,
-			  size_t orig_size)
+			  unsigned long addr, struct kmem_cache_cpu *c)
 {
 	void *p;
 	unsigned long flags;
@@ -2786,7 +2784,7 @@ static void *__slab_alloc(struct kmem_cache *s, gfp_t gfpflags, int node,
 	c = this_cpu_ptr(s->cpu_slab);
 #endif
 
-	p = ___slab_alloc(s, gfpflags, node, addr, c, orig_size);
+	p = ___slab_alloc(s, gfpflags, node, addr, c);
 	local_irq_restore(flags);
 	return p;
 }
@@ -2866,7 +2864,7 @@ redo:
 	object = c->freelist;
 	page = c->page;
 	if (unlikely(!object || !node_match(page, node))) {
-		object = __slab_alloc(s, gfpflags, node, addr, c, orig_size);
+		object = __slab_alloc(s, gfpflags, node, addr, c);
 	} else {
 		void *next_object = get_freepointer_safe(s, object);
 
@@ -3338,7 +3336,7 @@ int kmem_cache_alloc_bulk(struct kmem_cache *s, gfp_t flags, size_t size,
 			 * of re-populating per CPU c->freelist
 			 */
 			p[i] = ___slab_alloc(s, flags, NUMA_NO_NODE,
-					    _RET_IP_, c, size);
+					    _RET_IP_, c);
 			if (unlikely(!p[i]))
 				goto error;
 
