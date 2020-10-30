@@ -3827,6 +3827,7 @@ bool f2fs_compress_write_end(struct inode *inode, void *fsdata,
 int f2fs_truncate_partial_cluster(struct inode *inode, u64 from, bool lock);
 void f2fs_compress_write_end_io(struct bio *bio, struct page *page);
 bool f2fs_is_compress_backend_ready(struct inode *inode);
+bool f2fs_is_compress_algorithm_valid(unsigned char algorithm);
 int f2fs_init_compress_mempool(void);
 void f2fs_destroy_compress_mempool(void);
 void f2fs_decompress_pages(struct bio *bio, struct page *page, bool verity);
@@ -3859,6 +3860,10 @@ static inline bool f2fs_is_compress_backend_ready(struct inode *inode)
 	if (!f2fs_compressed_file(inode))
 		return true;
 	/* not support compression */
+	return false;
+}
+static inline bool f2fs_is_compress_algorithm_valid(unsigned char algorithm)
+{
 	return false;
 }
 static inline struct page *f2fs_compress_control_page(struct page *page)
