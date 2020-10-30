@@ -246,7 +246,8 @@ static void *test_alloc(struct kunit *test, size_t size, gfp_t gfp, enum allocat
 	timeout = jiffies + msecs_to_jiffies(100 * CONFIG_KFENCE_SAMPLE_INTERVAL);
 	/*
 	 * Especially for non-preemption kernels, ensure the allocation-gate
-	 * timer has time to catch up.
+	 * timer can catch up: after @resched_after, every failed allocation
+	 * attempt yields, to ensure the allocation-gate timer is scheduled.
 	 */
 	resched_after = jiffies + msecs_to_jiffies(CONFIG_KFENCE_SAMPLE_INTERVAL);
 	do {
@@ -397,10 +398,10 @@ static void test_corruption(struct kunit *test)
  * KFENCE is unable to detect an OOB if the allocation's alignment requirements
  * leave a gap between the object and the guard page. Specifically, an
  * allocation of e.g. 73 bytes is aligned on 8 and 128 bytes for SLUB or SLAB
- * respectively. Therefore it is impossible for the allocated object to adhere
- * to either of the page boundaries.
+ * respectively. Therefore it is impossible for the allocated object to
+ * contiguously line up with the right guard page.
  *
- * However, we test that an access to memory beyond the gap result in KFENCE
+ * However, we test that an access to memory beyond the gap results in KFENCE
  * detecting an OOB access.
  */
 static void test_kmalloc_aligned_oob_read(struct kunit *test)
