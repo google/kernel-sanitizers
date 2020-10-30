@@ -31,6 +31,11 @@ DECLARE_STATIC_KEY_FALSE(kfence_allocation_key);
  * allocator freelists). Failing to do so may and will result in heap
  * corruptions, therefore is_kfence_address() must be used to check whether
  * an object requires specific handling.
+ *
+ * Note: This function may be used in fast-paths, and is performance critical.
+ * Future changes should take this into account; for instance, we want to avoid
+ * introducing another load and therefore need to keep KFENCE_POOL_SIZE a
+ * constant (until immediate patching support is added to the kernel).
  */
 static __always_inline bool is_kfence_address(const void *addr)
 {
