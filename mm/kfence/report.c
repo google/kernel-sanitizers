@@ -28,7 +28,7 @@ static void seq_con_printf(struct seq_file *seq, const char *fmt, ...)
 }
 
 /*
- * Get the number of stack entries to skip get out of MM internals. @type is
+ * Get the number of stack entries to skip to get out of MM internals. @type is
  * optional, and if set to NULL, assumes an allocation or free stack.
  */
 static int get_stack_skipnr(const unsigned long stack_entries[], int num_entries,
