@@ -3427,8 +3427,9 @@ free_done:
 static __always_inline void __cache_free(struct kmem_cache *cachep, void *objp,
 					 unsigned long caller)
 {
-	if (kfence_free(objp)) {
+	if (is_kfence_address(objp)) {
 		kmemleak_free_recursive(objp, cachep->flags);
+		__kfence_free(objp);
 		return;
 	}
 
