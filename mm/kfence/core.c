@@ -162,8 +162,8 @@ static inline unsigned long metadata_to_pageaddr(const struct kfence_metadata *m
 		return 0;
 
 	/*
-	 * This metadata object only ever maps to 1 page; verify the calculation
-	 * happens and that the stored address was not corrupted.
+	 * This metadata object only ever maps to 1 page; verify that the stored
+	 * address is in the expected range.
 	 */
 	if (KFENCE_WARN_ON(ALIGN_DOWN(meta->addr, PAGE_SIZE) != pageaddr))
 		return 0;
