@@ -225,13 +225,22 @@ static __always_inline void for_each_canary(const struct kfence_metadata *meta, 
 
 	lockdep_assert_held(&meta->lock);
 
-	/* Check left of object. */
+	/*
+	 * We'll iterate over each canary byte per-side until fn() returns
+	 * false. However, we'll still iterate over the canary bytes to the
+	 * right of the object even if there was an error in the canary bytes to
+	 * the left of the object. Specifically, if check_canary_byte()
+	 * generates an error, showing both sides might give more clues as to
+	 * what the error is about when displaying which bytes were corrupted.
+	 */
+
+	/* Apply to left of object. */
 	for (addr = pageaddr; addr < meta->addr; addr++) {
 		if (!fn((u8 *)addr))
 			break;
 	}
 
-	/* Check right of object. */
+	/* Apply to right of object. */
 	for (addr = meta->addr + meta->size; addr < pageaddr + PAGE_SIZE; addr++) {
 		if (!fn((u8 *)addr))
 			break;
