@@ -31,10 +31,6 @@
 		__cond;                                                        \
 	})
 
-#ifndef CONFIG_KFENCE_STRESS_TEST_FAULTS /* Only defined with CONFIG_EXPERT. */
-#define CONFIG_KFENCE_STRESS_TEST_FAULTS 0
-#endif
-
 /* === Data ================================================================= */
 
 static bool kfence_enabled __read_mostly;
