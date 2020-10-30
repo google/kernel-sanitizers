@@ -3233,7 +3233,7 @@ int build_detached_freelist(struct kmem_cache *s, size_t size,
 
 	if (is_kfence_address(object)) {
 		slab_free_hook(df->s, object);
-		WARN_ON(!kfence_free(object));
+		__kfence_free(object);
 		p[size] = NULL; /* mark object processed */
 		return size;
 	}
