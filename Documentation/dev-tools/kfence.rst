@@ -54,6 +54,10 @@ The total memory dedicated to the KFENCE memory pool can be computed as::
 Using the default config, and assuming a page size of 4 KiB, results in
 dedicating 2 MiB to the KFENCE memory pool.
 
+Note: On architectures that support huge pages, KFENCE will ensure that the
+pool is using pages of size ``PAGE_SIZE``. This will result in additional page
+tables being allocated.
+
 Error reports
 ~~~~~~~~~~~~~
 
@@ -174,13 +178,14 @@ These are reported on frees::
     Hardware name: QEMU Standard PC (i440FX + PIIX, 1996), BIOS 1.13.0-1 04/01/2014
     ==================================================================
 
-For such errors, the address where the corruption as well as the invalidly
-written bytes (offset from the address) are shown; in this representation, '.'
-denote untouched bytes. In the example above ``0xac`` is the value written to
-the invalid address at offset 0, and the remaining '.' denote that no following
-bytes have been touched. Note that, real values are only shown for
-``CONFIG_DEBUG_KERNEL=y`` builds; to avoid information disclosure for non-debug
-builds, '!' is used instead to denote invalidly written bytes.
+For such errors, the address where the corruption occurred as well as the
+invalidly written bytes (offset from the address) are shown; in this
+representation, '.' denote untouched bytes. In the example above ``0xac`` is
+the value written to the invalid address at offset 0, and the remaining '.'
+denote that no following bytes have been touched. Note that, real values are
+only shown for ``CONFIG_DEBUG_KERNEL=y`` builds; to avoid information
+disclosure for non-debug builds, '!' is used instead to denote invalidly
+written bytes.
 
 And finally, KFENCE may also report on invalid accesses to any protected page
 where it was not possible to determine an associated object, e.g. if adjacent
@@ -227,7 +232,8 @@ page boundaries selected at random. The pages to the left and right of the
 object page are "guard pages", whose attributes are changed to a protected
 state, and cause page faults on any attempted access. Such page faults are then
 intercepted by KFENCE, which handles the fault gracefully by reporting an
-out-of-bounds access.
+out-of-bounds access, and marking the page as accessible so that the faulting
+code can (wrongly) continue executing (set ``panic_on_warn`` to panic instead).
 
 To detect out-of-bounds writes to memory within the object's page itself,
 KFENCE also uses pattern-based redzones. For each object page, a redzone is set
@@ -257,8 +263,8 @@ is increased.
 Interface
 ---------
 
-The following describes the functions which are used by allocators as well page
-handling code to set up and deal with KFENCE allocations.
+The following describes the functions which are used by allocators as well as
+page handling code to set up and deal with KFENCE allocations.
 
 .. kernel-doc:: include/linux/kfence.h
    :functions: is_kfence_address
