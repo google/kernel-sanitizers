@@ -130,16 +130,22 @@ void kfence_print_object(struct seq_file *seq, const struct kfence_metadata *met
  * Show bytes at @addr that are different from the expected canary values, up to
  * @max_bytes.
  */
-static void print_diff_canary(const u8 *addr, size_t max_bytes)
+static void print_diff_canary(unsigned long address, size_t bytes_to_show,
+			      const struct kfence_metadata *meta)
 {
-	const u8 *max_addr = min((const u8 *)PAGE_ALIGN((unsigned long)addr), addr + max_bytes);
+	const unsigned long show_until_addr = address + bytes_to_show;
+	const u8 *cur, *end;
+
+	/* Do not show contents of object nor read into following guard page. */
+	end = (const u8 *)(address < meta->addr ? min(show_until_addr, meta->addr)
+						: min(show_until_addr, PAGE_ALIGN(address)));
 
 	pr_cont("[");
-	for (; addr < max_addr; addr++) {
-		if (*addr == KFENCE_CANARY_PATTERN(addr))
+	for (cur = (const u8 *)address; cur < end; cur++) {
+		if (*cur == KFENCE_CANARY_PATTERN(cur))
 			pr_cont(" .");
 		else if (IS_ENABLED(CONFIG_DEBUG_KERNEL))
-			pr_cont(" 0x%02x", *addr);
+			pr_cont(" 0x%02x", *cur);
 		else /* Do not leak kernel memory in non-debug builds. */
 			pr_cont(" !");
 	}
@@ -189,18 +195,12 @@ void kfence_report_error(unsigned long address, const struct kfence_metadata *me
 		pr_err("Use-after-free access at 0x" PTR_FMT " (in kfence-#%zd):\n",
 		       (void *)address, object_index);
 		break;
-	case KFENCE_ERROR_CORRUPTION: {
-		size_t bytes_to_show = 16;
-
+	case KFENCE_ERROR_CORRUPTION:
 		pr_err("BUG: KFENCE: memory corruption in %pS\n\n", (void *)stack_entries[skipnr]);
 		pr_err("Corrupted memory at 0x" PTR_FMT " ", (void *)address);
-
-		if (address < meta->addr)
-			bytes_to_show = min(bytes_to_show, meta->addr - address);
-		print_diff_canary((u8 *)address, bytes_to_show);
+		print_diff_canary(address, 16, meta);
 		pr_cont(" (in kfence-#%zd):\n", object_index);
 		break;
-	}
 	case KFENCE_ERROR_INVALID:
 		pr_err("BUG: KFENCE: invalid access in %pS\n\n", (void *)stack_entries[skipnr]);
 		pr_err("Invalid access at 0x" PTR_FMT ":\n", (void *)address);
