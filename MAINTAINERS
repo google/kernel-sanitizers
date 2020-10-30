@@ -9760,6 +9760,7 @@ R:	Dmitry Vyukov <dvyukov@google.com>
 L:	kasan-dev@googlegroups.com
 S:	Maintained
 F:	Documentation/dev-tools/kfence.rst
+F:	arch/*/include/asm/kfence.h
 F:	include/linux/kfence.h
 F:	lib/Kconfig.kfence
 F:	mm/kfence/
