@@ -5,6 +5,9 @@
 #include <linux/dma-direction.h>
 #include <linux/init.h>
 #include <linux/types.h>
+#ifndef CONFIG_SWIOTLB
+#include <linux/limits.h>
+#endif
 
 struct device;
 struct page;
