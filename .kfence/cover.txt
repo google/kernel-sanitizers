@@ -60,7 +60,18 @@ series -- also viewable here:
 [1] http://llvm.org/docs/GwpAsan.html
 [2] https://linux.die.net/man/3/efence
 
-v6:
+v7:
+* Clean up print_diff_canary() boundary calculation.
+* Cleaner CONFIG_KFENCE_STRESS_TEST_FAULTS, using "if EXPERT".
+* Make __kfence_free() part of the public API.
+* Only not-present faults should be handled by KFENCE.
+* Remove arm64 dependency on 4K page size.
+* Move kmemleak_free_recursive() before kfence_free() in SLAB.
+* Revert unused orig_size in SLUB.
+* For KASAN compatibility, also skip kasan_poison_*().
+* Various smaller fixes (see details in patches).
+
+v6: https://lkml.kernel.org/r/20201029131649.182037-1-elver@google.com
 * Record allocation and free task pids, and show them in reports. This
   information helps more easily identify e.g. racy use-after-frees.
 
