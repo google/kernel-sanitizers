@@ -18,6 +18,8 @@
 
 	aliases {
 		crypto = &crypto;
+		mmc0 = &esdhc0;
+		mmc1 = &esdhc1;
 		rtc1 = &ftm_alarm0;
 		rtic-a = &rtic_a;
 		rtic-b = &rtic_b;
@@ -401,7 +403,7 @@
 			#interrupt-cells = <2>;
 		};
 
-		wdog0: wdog@2ad0000 {
+		wdog0: watchdog@2ad0000 {
 			compatible = "fsl,ls1012a-wdt",
 				     "fsl,imx21-wdt";
 			reg = <0x0 0x2ad0000 0x0 0x10000>;
@@ -454,7 +456,7 @@
 				 <&clockgen 4 3>;
 		};
 
-		usb0: usb3@2f00000 {
+		usb0: usb@2f00000 {
 			compatible = "snps,dwc3";
 			reg = <0x0 0x2f00000 0x0 0x10000>;
 			interrupts = <0 60 0x4>;
@@ -475,7 +477,7 @@
 			status = "disabled";
 		};
 
-		usb1: usb2@8600000 {
+		usb1: usb@8600000 {
 			compatible = "fsl-usb2-dr-v2.5", "fsl-usb2-dr";
 			reg = <0x0 0x8600000 0x0 0x1000>;
 			interrupts = <0 139 0x4>;
