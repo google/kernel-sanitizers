@@ -4,6 +4,10 @@ vim: set ft=mail :
 
 <subject-prefix> KFENCE: A low-overhead sampling-based memory safety error detector
 
+[ From v7 we think this series is ready to be included in the mm tree.
+  Where appropriate, we would welcome additional Acks / Reviews by MM,
+  x86, and arm64 maintainers. Thank you! ]
+
 This adds the Kernel Electric-Fence (KFENCE) infrastructure. KFENCE is a
 low-overhead sampling-based memory safety error detector of heap
 use-after-free, invalid-free, and out-of-bounds access errors.  This
