@@ -1013,7 +1013,7 @@ struct task_struct {
 	struct held_lock		held_locks[MAX_LOCK_DEPTH];
 #endif
 
-#ifdef CONFIG_UBSAN
+#if defined(CONFIG_UBSAN) && !defined(CONFIG_UBSAN_TRAP)
 	unsigned int			in_ubsan;
 #endif
 
@@ -1206,6 +1206,10 @@ struct task_struct {
 #ifdef CONFIG_TRACE_IRQFLAGS
 	struct irqtrace_events		kcsan_save_irqtrace;
 #endif
+#endif
+
+#if IS_ENABLED(CONFIG_KUNIT)
+	struct kunit			*kunit_test;
 #endif
 
 #ifdef CONFIG_FUNCTION_GRAPH_TRACER
