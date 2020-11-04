@@ -1093,9 +1093,15 @@ __getblk_slow(struct block_device *bdev, sector_t block,
 #ifdef CONFIG_DEBUG_AID_FOR_SYZBOT
 		if (!time_after(jiffies, current->getblk_stamp + 3 * HZ))
 			continue;
-		printk(KERN_ERR "%s(%u): getblk(): executed=%x bh_count=%d bh_state=%lx\n",
+		printk(KERN_ERR "%s(%u): getblk(): executed=%x bh_count=%d bh_state=%lx bdev_super_blocksize=%ld size=%u bdev_super_blocksize_bits=%d bdev_inode_blkbits=%d\n",
 		       current->comm, current->pid, current->getblk_executed,
-		       current->getblk_bh_count, current->getblk_bh_state);
+		       current->getblk_bh_count, current->getblk_bh_state,
+		       IS_ERR_OR_NULL(bdev->bd_super) ? -1L :
+		       bdev->bd_super->s_blocksize, size,
+		       IS_ERR_OR_NULL(bdev->bd_super) ? -1 :
+		       bdev->bd_super->s_blocksize_bits,
+		       IS_ERR_OR_NULL(bdev->bd_inode) ? -1 :
+		       bdev->bd_inode->i_blkbits);
 		current->getblk_executed = 0;
 		current->getblk_bh_count = 0;
 		current->getblk_bh_state = 0;
