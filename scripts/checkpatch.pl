@@ -6241,12 +6241,9 @@ sub process {
 						$fixed[$fixlinenr] =~ s/$remove//;
 						$fixed[$fixlinenr] =~ s/\b__attribute__/$new __attribute__/;
 						$fixed[$fixlinenr] =~ s/\}\Q$new\E/} $new/;
+						$fixed[$fixlinenr] =~ s/ __attribute__\s*\(\s*\(\s*\)\s*\)//;
 					}
 				}
-			}
-
-			if (show_type("PREFER_DEFINED_ATTRIBUTE_MACRO") && $fix) {
-				$fixed[$fixlinenr] =~ s/ __attribute__\s*\(\s*\(\s*\)\s*\)//;
 			}
 
 			# Check for __attribute__ unused, prefer __always_unused or __maybe_unused
