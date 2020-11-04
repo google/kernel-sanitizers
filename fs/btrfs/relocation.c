@@ -783,7 +783,7 @@ static struct btrfs_root *create_reloc_root(struct btrfs_trans_handle *trans,
 		btrfs_set_root_refs(root_item, 0);
 		memset(&root_item->drop_progress, 0,
 		       sizeof(struct btrfs_disk_key));
-		root_item->drop_level = 0;
+		btrfs_set_root_drop_level(root_item, 0);
 	}
 
 	btrfs_tree_unlock(eb);
@@ -1196,7 +1196,6 @@ again:
 	btrfs_node_key_to_cpu(path->nodes[lowest_level], &key, slot);
 
 	eb = btrfs_lock_root_node(dest);
-	btrfs_set_lock_blocking_write(eb);
 	level = btrfs_header_level(eb);
 
 	if (level < lowest_level) {
@@ -1210,7 +1209,6 @@ again:
 				      BTRFS_NESTING_COW);
 		BUG_ON(ret);
 	}
-	btrfs_set_lock_blocking_write(eb);
 
 	if (next_key) {
 		next_key->objectid = (u64)-1;
@@ -1279,7 +1277,6 @@ again:
 						      BTRFS_NESTING_COW);
 				BUG_ON(ret);
 			}
-			btrfs_set_lock_blocking_write(eb);
 
 			btrfs_tree_unlock(parent);
 			free_extent_buffer(parent);
@@ -1575,7 +1572,7 @@ static void insert_dirty_subvol(struct btrfs_trans_handle *trans,
 	reloc_root_item = &reloc_root->root_item;
 	memset(&reloc_root_item->drop_progress, 0,
 		sizeof(reloc_root_item->drop_progress));
-	reloc_root_item->drop_level = 0;
+	btrfs_set_root_drop_level(reloc_root_item, 0);
 	btrfs_set_root_refs(reloc_root_item, 0);
 	btrfs_update_reloc_root(trans, root);
 
@@ -1648,6 +1645,7 @@ static noinline_for_stack int merge_reloc_root(struct reloc_control *rc,
 	struct btrfs_root_item *root_item;
 	struct btrfs_path *path;
 	struct extent_buffer *leaf;
+	int reserve_level;
 	int level;
 	int max_level;
 	int replaced = 0;
@@ -1671,7 +1669,7 @@ static noinline_for_stack int merge_reloc_root(struct reloc_control *rc,
 	} else {
 		btrfs_disk_key_to_cpu(&key, &root_item->drop_progress);
 
-		level = root_item->drop_level;
+		level = btrfs_root_drop_level(root_item);
 		BUG_ON(level == 0);
 		path->lowest_level = level;
 		ret = btrfs_search_slot(NULL, reloc_root, &key, path, 0, 0);
@@ -1696,7 +1694,8 @@ static noinline_for_stack int merge_reloc_root(struct reloc_control *rc,
 	 * Thus the needed metadata size is at most root_level * nodesize,
 	 * and * 2 since we have two trees to COW.
 	 */
-	min_reserved = fs_info->nodesize * btrfs_root_level(root_item) * 2;
+	reserve_level = max_t(int, 1, btrfs_root_level(root_item));
+	min_reserved = fs_info->nodesize * reserve_level * 2;
 	memset(&next_key, 0, sizeof(next_key));
 
 	while (1) {
@@ -1767,7 +1766,7 @@ static noinline_for_stack int merge_reloc_root(struct reloc_control *rc,
 		 */
 		btrfs_node_key(path->nodes[level], &root_item->drop_progress,
 			       path->slots[level]);
-		root_item->drop_level = level;
+		btrfs_set_root_drop_level(root_item, level);
 
 		btrfs_end_transaction_throttle(trans);
 		trans = NULL;
@@ -2307,7 +2306,6 @@ static int do_relocation(struct btrfs_trans_handle *trans,
 			goto next;
 		}
 		btrfs_tree_lock(eb);
-		btrfs_set_lock_blocking_write(eb);
 
 		if (!node->eb) {
 			ret = btrfs_cow_block(trans, root, eb, upper->eb,
@@ -3692,7 +3690,7 @@ static noinline_for_stack int mark_garbage_root(struct btrfs_root *root)
 
 	memset(&root->root_item.drop_progress, 0,
 		sizeof(root->root_item.drop_progress));
-	root->root_item.drop_level = 0;
+	btrfs_set_root_drop_level(&root->root_item, 0);
 	btrfs_set_root_refs(&root->root_item, 0);
 	ret = btrfs_update_root(trans, fs_info->tree_root,
 				&root->root_key, &root->root_item);

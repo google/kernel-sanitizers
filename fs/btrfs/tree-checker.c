@@ -336,7 +336,7 @@ static int check_csum_item(struct extent_buffer *leaf, struct btrfs_key *key,
 {
 	struct btrfs_fs_info *fs_info = leaf->fs_info;
 	u32 sectorsize = fs_info->sectorsize;
-	u32 csumsize = btrfs_super_csum_size(fs_info->super_copy);
+	const u32 csumsize = fs_info->csum_size;
 
 	if (key->objectid != BTRFS_EXTENT_CSUM_OBJECTID) {
 		generic_err(leaf, slot,
@@ -1117,10 +1117,10 @@ static int check_root_item(struct extent_buffer *leaf, struct btrfs_key *key,
 			    btrfs_root_level(&ri), BTRFS_MAX_LEVEL - 1);
 		return -EUCLEAN;
 	}
-	if (ri.drop_level >= BTRFS_MAX_LEVEL) {
+	if (btrfs_root_drop_level(&ri) >= BTRFS_MAX_LEVEL) {
 		generic_err(leaf, slot,
 			    "invalid root level, have %u expect [0, %u]",
-			    ri.drop_level, BTRFS_MAX_LEVEL - 1);
+			    btrfs_root_drop_level(&ri), BTRFS_MAX_LEVEL - 1);
 		return -EUCLEAN;
 	}
 
