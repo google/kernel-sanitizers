@@ -2712,11 +2712,12 @@ static int process_create_flags(struct mlx5_ib_dev *dev, struct mlx5_ib_qp *qp,
 	process_create_flag(dev, &create_flags, MLX5_IB_QP_CREATE_SQPN_QP1,
 			    true, qp);
 
-	if (create_flags)
+	if (create_flags) {
 		mlx5_ib_dbg(dev, "Create QP has unsupported flags 0x%X\n",
 			    create_flags);
-
-	return (create_flags) ? -EINVAL : 0;
+		return -EOPNOTSUPP;
+	}
+	return 0;
 }
 
 static int process_udata_size(struct mlx5_ib_dev *dev,
@@ -4246,6 +4247,9 @@ int mlx5_ib_modify_qp(struct ib_qp *ibqp, struct ib_qp_attr *attr,
 	enum ib_qp_state cur_state, new_state;
 	int err = -EINVAL;
 	int port;
+
+	if (attr_mask & ~(IB_QP_ATTR_STANDARD_BITS | IB_QP_RATE_LIMIT))
+		return -EOPNOTSUPP;
 
 	if (ibqp->rwq_ind_tbl)
 		return -ENOSYS;

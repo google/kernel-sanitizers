@@ -2062,11 +2062,6 @@ static void hns_roce_v1_write_cqc(struct hns_roce_dev *hr_dev,
 		       CQ_CONTEXT_CQC_BYTE_32_CQ_CONS_IDX_S, 0);
 }
 
-static int hns_roce_v1_modify_cq(struct ib_cq *cq, u16 cq_count, u16 cq_period)
-{
-	return -EOPNOTSUPP;
-}
-
 static int hns_roce_v1_req_notify_cq(struct ib_cq *ibcq,
 				     enum ib_cq_notify_flags flags)
 {
@@ -3261,6 +3256,8 @@ static int hns_roce_v1_modify_qp(struct ib_qp *ibqp,
 				 enum ib_qp_state cur_state,
 				 enum ib_qp_state new_state)
 {
+	if (attr_mask & ~IB_QP_ATTR_STANDARD_BITS)
+		return -EOPNOTSUPP;
 
 	if (ibqp->qp_type == IB_QPT_GSI || ibqp->qp_type == IB_QPT_SMI)
 		return hns_roce_v1_m_sqp(ibqp, attr, attr_mask, cur_state,
@@ -4347,7 +4344,6 @@ static void hns_roce_v1_cleanup_eq_table(struct hns_roce_dev *hr_dev)
 
 static const struct ib_device_ops hns_roce_v1_dev_ops = {
 	.destroy_qp = hns_roce_v1_destroy_qp,
-	.modify_cq = hns_roce_v1_modify_cq,
 	.poll_cq = hns_roce_v1_poll_cq,
 	.post_recv = hns_roce_v1_post_recv,
 	.post_send = hns_roce_v1_post_send,
@@ -4367,7 +4363,6 @@ static const struct hns_roce_hw hns_roce_hw_v1 = {
 	.set_mtu = hns_roce_v1_set_mtu,
 	.write_mtpt = hns_roce_v1_write_mtpt,
 	.write_cqc = hns_roce_v1_write_cqc,
-	.modify_cq = hns_roce_v1_modify_cq,
 	.clear_hem = hns_roce_v1_clear_hem,
 	.modify_qp = hns_roce_v1_modify_qp,
 	.query_qp = hns_roce_v1_query_qp,

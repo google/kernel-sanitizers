@@ -1234,6 +1234,8 @@ enum ib_qp_attr_mask {
 	IB_QP_RESERVED3			= (1<<23),
 	IB_QP_RESERVED4			= (1<<24),
 	IB_QP_RATE_LIMIT		= (1<<25),
+
+	IB_QP_ATTR_STANDARD_BITS = GENMASK(20, 0),
 };
 
 enum ib_qp_state {
@@ -2401,6 +2403,8 @@ struct ib_device_ops {
 	int (*dealloc_pd)(struct ib_pd *pd, struct ib_udata *udata);
 	int (*create_ah)(struct ib_ah *ah, struct rdma_ah_init_attr *attr,
 			 struct ib_udata *udata);
+	int (*create_user_ah)(struct ib_ah *ah, struct rdma_ah_init_attr *attr,
+			      struct ib_udata *udata);
 	int (*modify_ah)(struct ib_ah *ah, struct rdma_ah_attr *ah_attr);
 	int (*query_ah)(struct ib_ah *ah, struct rdma_ah_attr *ah_attr);
 	int (*destroy_ah)(struct ib_ah *ah, u32 flags);
@@ -2665,7 +2669,6 @@ struct ib_device {
 	const struct attribute_group	*groups[3];
 
 	u64			     uverbs_cmd_mask;
-	u64			     uverbs_ex_cmd_mask;
 
 	char			     node_desc[IB_DEVICE_NODE_DESC_MAX];
 	__be64			     node_guid;

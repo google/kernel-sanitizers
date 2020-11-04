@@ -533,7 +533,10 @@ static struct ib_ah *_rdma_create_ah(struct ib_pd *pd,
 	init_attr.flags = flags;
 	init_attr.xmit_slave = xmit_slave;
 
-	ret = device->ops.create_ah(ah, &init_attr, udata);
+	if (udata)
+		ret = device->ops.create_user_ah(ah, &init_attr, udata);
+	else
+		ret = device->ops.create_ah(ah, &init_attr, NULL);
 	if (ret) {
 		kfree(ah);
 		return ERR_PTR(ret);
@@ -1698,8 +1701,10 @@ static int _ib_modify_qp(struct ib_qp *qp, struct ib_qp_attr *attr,
 			slave = rdma_lag_get_ah_roce_slave(qp->device,
 							   &attr->ah_attr,
 							   GFP_KERNEL);
-			if (IS_ERR(slave))
+			if (IS_ERR(slave)) {
+				ret = PTR_ERR(slave);
 				goto out_av;
+			}
 			attr->xmit_slave = slave;
 		}
 	}

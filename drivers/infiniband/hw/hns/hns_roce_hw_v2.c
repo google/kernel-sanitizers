@@ -474,9 +474,6 @@ static inline int set_ud_wqe(struct hns_roce_qp *qp,
 	roce_set_bit(ud_sq_wqe->byte_4, V2_UD_SEND_WQE_BYTE_4_SE_S,
 		     (wr->send_flags & IB_SEND_SOLICITED) ? 1 : 0);
 
-	roce_set_bit(ud_sq_wqe->byte_4, V2_UD_SEND_WQE_BYTE_4_OWNER_S,
-		     owner_bit);
-
 	roce_set_field(ud_sq_wqe->byte_16, V2_UD_SEND_WQE_BYTE_16_PD_M,
 		       V2_UD_SEND_WQE_BYTE_16_PD_S, to_hr_pd(qp->ibqp.pd)->pdn);
 
@@ -517,7 +514,18 @@ static inline int set_ud_wqe(struct hns_roce_qp *qp,
 
 	set_extend_sge(qp, wr, &curr_idx, valid_num_sge);
 
+	/*
+	 * The pipeline can sequentially post all valid WQEs into WQ buffer,
+	 * including new WQEs waiting for the doorbell to update the PI again.
+	 * Therefore, the owner bit of WQE MUST be updated after all fields
+	 * and extSGEs have been written into DDR instead of cache.
+	 */
+	if (qp->en_flags & HNS_ROCE_QP_CAP_OWNER_DB)
+		dma_wmb();
+
 	*sge_idx = curr_idx;
+	roce_set_bit(ud_sq_wqe->byte_4, V2_UD_SEND_WQE_BYTE_4_OWNER_S,
+		     owner_bit);
 
 	return 0;
 }
@@ -591,9 +599,6 @@ static inline int set_rc_wqe(struct hns_roce_qp *qp,
 	roce_set_bit(rc_sq_wqe->byte_4, V2_RC_SEND_WQE_BYTE_4_CQE_S,
 		     (wr->send_flags & IB_SEND_SIGNALED) ? 1 : 0);
 
-	roce_set_bit(rc_sq_wqe->byte_4, V2_RC_SEND_WQE_BYTE_4_OWNER_S,
-		     owner_bit);
-
 	if (wr->opcode == IB_WR_ATOMIC_CMP_AND_SWP ||
 	    wr->opcode == IB_WR_ATOMIC_FETCH_AND_ADD)
 		set_atomic_seg(wr, rc_sq_wqe, valid_num_sge);
@@ -601,7 +606,18 @@ static inline int set_rc_wqe(struct hns_roce_qp *qp,
 		ret = set_rwqe_data_seg(&qp->ibqp, wr, rc_sq_wqe,
 					&curr_idx, valid_num_sge);
 
+	/*
+	 * The pipeline can sequentially post all valid WQEs into WQ buffer,
+	 * including new WQEs waiting for the doorbell to update the PI again.
+	 * Therefore, the owner bit of WQE MUST be updated after all fields
+	 * and extSGEs have been written into DDR instead of cache.
+	 */
+	if (qp->en_flags & HNS_ROCE_QP_CAP_OWNER_DB)
+		dma_wmb();
+
 	*sge_idx = curr_idx;
+	roce_set_bit(rc_sq_wqe->byte_4, V2_RC_SEND_WQE_BYTE_4_OWNER_S,
+		     owner_bit);
 
 	return ret;
 }
@@ -1573,6 +1589,10 @@ static int hns_roce_query_pf_resource(struct hns_roce_dev *hr_dev)
 					     PF_RES_DATA_4_PF_SCCC_BT_NUM_M,
 					     PF_RES_DATA_4_PF_SCCC_BT_NUM_S);
 
+	hr_dev->caps.gmv_bt_num = roce_get_field(req_b->gmv_idx_num,
+						 PF_RES_DATA_5_PF_GMV_BT_NUM_M,
+						 PF_RES_DATA_5_PF_GMV_BT_NUM_S);
+
 	return 0;
 }
 
@@ -1896,6 +1916,15 @@ static void set_default_caps(struct hns_roce_dev *hr_dev)
 		caps->ceqe_size = HNS_ROCE_V3_EQE_SIZE;
 		caps->cqe_sz = HNS_ROCE_V3_CQE_SIZE;
 		caps->qpc_sz = HNS_ROCE_V3_QPC_SZ;
+		caps->sccc_sz = HNS_ROCE_V3_SCCC_SZ;
+		caps->gmv_entry_sz = HNS_ROCE_V3_GMV_ENTRY_SZ;
+		caps->gmv_entry_num = caps->gmv_bt_num * (PAGE_SIZE /
+							  caps->gmv_entry_sz);
+		caps->gmv_hop_num = HNS_ROCE_HOP_NUM_0;
+		caps->gmv_ba_pg_sz = 0;
+		caps->gmv_buf_pg_sz = 0;
+		caps->gid_table_len[0] = caps->gmv_bt_num * (HNS_HW_PAGE_SIZE /
+					 caps->gmv_entry_sz);
 	}
 }
 
@@ -2122,6 +2151,14 @@ static int hns_roce_query_pf_caps(struct hns_roce_dev *hr_dev)
 		caps->cqe_sz = HNS_ROCE_V3_CQE_SIZE;
 		caps->qpc_sz = HNS_ROCE_V3_QPC_SZ;
 		caps->sccc_sz = HNS_ROCE_V3_SCCC_SZ;
+		caps->gmv_entry_sz = HNS_ROCE_V3_GMV_ENTRY_SZ;
+		caps->gmv_entry_num = caps->gmv_bt_num * (PAGE_SIZE /
+						    caps->gmv_entry_sz);
+		caps->gmv_hop_num = HNS_ROCE_HOP_NUM_0;
+		caps->gmv_ba_pg_sz = 0;
+		caps->gmv_buf_pg_sz = 0;
+		caps->gid_table_len[0] = caps->gmv_bt_num *
+				(HNS_HW_PAGE_SIZE / caps->gmv_entry_sz);
 	}
 
 	calc_pg_sz(caps->num_qps, caps->qpc_sz, caps->qpc_hop_num,
@@ -2465,24 +2502,13 @@ static void hns_roce_free_link_table(struct hns_roce_dev *hr_dev,
 			  link_tbl->table.map);
 }
 
-static int hns_roce_v2_init(struct hns_roce_dev *hr_dev)
+static int get_hem_table(struct hns_roce_dev *hr_dev)
 {
-	struct hns_roce_v2_priv *priv = hr_dev->priv;
-	int qpc_count, cqc_count;
-	int ret, i;
-
-	/* TSQ includes SQ doorbell and ack doorbell */
-	ret = hns_roce_init_link_table(hr_dev, TSQ_LINK_TABLE);
-	if (ret) {
-		dev_err(hr_dev->dev, "TSQ init failed, ret = %d.\n", ret);
-		return ret;
-	}
-
-	ret = hns_roce_init_link_table(hr_dev, TPQ_LINK_TABLE);
-	if (ret) {
-		dev_err(hr_dev->dev, "TPQ init failed, ret = %d.\n", ret);
-		goto err_tpq_init_failed;
-	}
+	unsigned int qpc_count;
+	unsigned int cqc_count;
+	unsigned int gmv_count;
+	int ret;
+	int i;
 
 	/* Alloc memory for QPC Timer buffer space chunk */
 	for (qpc_count = 0; qpc_count < hr_dev->caps.qpc_timer_bt_num;
@@ -2506,7 +2532,22 @@ static int hns_roce_v2_init(struct hns_roce_dev *hr_dev)
 		}
 	}
 
+	/* Alloc memory for GMV(GID/MAC/VLAN) table buffer space chunk */
+	for (gmv_count = 0; gmv_count < hr_dev->caps.gmv_entry_num;
+	     gmv_count++) {
+		ret = hns_roce_table_get(hr_dev, &hr_dev->gmv_table, gmv_count);
+		if (ret) {
+			dev_err(hr_dev->dev,
+				"failed to get gmv table, ret = %d.\n", ret);
+			goto err_gmv_failed;
+		}
+	}
+
 	return 0;
+
+err_gmv_failed:
+	for (i = 0; i < gmv_count; i++)
+		hns_roce_table_put(hr_dev, &hr_dev->gmv_table, i);
 
 err_cqc_timer_failed:
 	for (i = 0; i < cqc_count; i++)
@@ -2516,6 +2557,32 @@ err_qpc_timer_failed:
 	for (i = 0; i < qpc_count; i++)
 		hns_roce_table_put(hr_dev, &hr_dev->qpc_timer_table, i);
 
+	return ret;
+}
+
+static int hns_roce_v2_init(struct hns_roce_dev *hr_dev)
+{
+	struct hns_roce_v2_priv *priv = hr_dev->priv;
+	int ret;
+
+	/* TSQ includes SQ doorbell and ack doorbell */
+	ret = hns_roce_init_link_table(hr_dev, TSQ_LINK_TABLE);
+	if (ret) {
+		dev_err(hr_dev->dev, "failed to init TSQ, ret = %d.\n", ret);
+		return ret;
+	}
+
+	ret = hns_roce_init_link_table(hr_dev, TPQ_LINK_TABLE);
+	if (ret) {
+		dev_err(hr_dev->dev, "failed to init TPQ, ret = %d.\n", ret);
+		goto err_tpq_init_failed;
+	}
+
+	ret = get_hem_table(hr_dev);
+	if (ret)
+		goto err_get_hem_table_failed;
+
+err_get_hem_table_failed:
 	hns_roce_free_link_table(hr_dev, &priv->tpq);
 
 err_tpq_init_failed:
@@ -2637,14 +2704,27 @@ static int hns_roce_v2_chk_mbox(struct hns_roce_dev *hr_dev,
 	return 0;
 }
 
-static int hns_roce_config_sgid_table(struct hns_roce_dev *hr_dev,
-				      int gid_index, const union ib_gid *gid,
-				      enum hns_roce_sgid_type sgid_type)
+static void copy_gid(void *dest, const union ib_gid *gid)
+{
+#define GID_SIZE 4
+	const union ib_gid *src = gid;
+	__le32 (*p)[GID_SIZE] = dest;
+	int i;
+
+	if (!gid)
+		src = &zgid;
+
+	for (i = 0; i < GID_SIZE; i++)
+		(*p)[i] = cpu_to_le32(*(u32 *)&src->raw[i * sizeof(u32)]);
+}
+
+static int config_sgid_table(struct hns_roce_dev *hr_dev,
+			     int gid_index, const union ib_gid *gid,
+			     enum hns_roce_sgid_type sgid_type)
 {
 	struct hns_roce_cmq_desc desc;
 	struct hns_roce_cfg_sgid_tb *sgid_tb =
 				    (struct hns_roce_cfg_sgid_tb *)desc.data;
-	u32 *p;
 
 	hns_roce_cmq_setup_basic_desc(&desc, HNS_ROCE_OPC_CFG_SGID_TB, false);
 
@@ -2653,19 +2733,54 @@ static int hns_roce_config_sgid_table(struct hns_roce_dev *hr_dev,
 	roce_set_field(sgid_tb->vf_sgid_type_rsv, CFG_SGID_TB_VF_SGID_TYPE_M,
 		       CFG_SGID_TB_VF_SGID_TYPE_S, sgid_type);
 
-	p = (u32 *)&gid->raw[0];
-	sgid_tb->vf_sgid_l = cpu_to_le32(*p);
-
-	p = (u32 *)&gid->raw[4];
-	sgid_tb->vf_sgid_ml = cpu_to_le32(*p);
-
-	p = (u32 *)&gid->raw[8];
-	sgid_tb->vf_sgid_mh = cpu_to_le32(*p);
-
-	p = (u32 *)&gid->raw[0xc];
-	sgid_tb->vf_sgid_h = cpu_to_le32(*p);
+	copy_gid(&sgid_tb->vf_sgid_l, gid);
 
 	return hns_roce_cmq_send(hr_dev, &desc, 1);
+}
+
+static int config_gmv_table(struct hns_roce_dev *hr_dev,
+			    int gid_index, const union ib_gid *gid,
+			    enum hns_roce_sgid_type sgid_type,
+			    const struct ib_gid_attr *attr)
+{
+	struct hns_roce_cmq_desc desc[2];
+	struct hns_roce_cfg_gmv_tb_a *tb_a =
+				(struct hns_roce_cfg_gmv_tb_a *)desc[0].data;
+	struct hns_roce_cfg_gmv_tb_b *tb_b =
+				(struct hns_roce_cfg_gmv_tb_b *)desc[1].data;
+
+	u16 vlan_id = VLAN_CFI_MASK;
+	u8 mac[ETH_ALEN] = {};
+	int ret;
+
+	if (gid) {
+		ret = rdma_read_gid_l2_fields(attr, &vlan_id, mac);
+		if (ret)
+			return ret;
+	}
+
+	hns_roce_cmq_setup_basic_desc(&desc[0], HNS_ROCE_OPC_CFG_GMV_TBL, false);
+	desc[0].flag |= cpu_to_le16(HNS_ROCE_CMD_FLAG_NEXT);
+
+	hns_roce_cmq_setup_basic_desc(&desc[1], HNS_ROCE_OPC_CFG_GMV_TBL, false);
+
+	copy_gid(&tb_a->vf_sgid_l, gid);
+
+	roce_set_field(tb_a->vf_sgid_type_vlan, CFG_GMV_TB_VF_SGID_TYPE_M,
+		       CFG_GMV_TB_VF_SGID_TYPE_S, sgid_type);
+	roce_set_bit(tb_a->vf_sgid_type_vlan, CFG_GMV_TB_VF_VLAN_EN_S,
+		     vlan_id < VLAN_CFI_MASK);
+	roce_set_field(tb_a->vf_sgid_type_vlan, CFG_GMV_TB_VF_VLAN_ID_M,
+		       CFG_GMV_TB_VF_VLAN_ID_S, vlan_id);
+
+	tb_b->vf_smac_l = cpu_to_le32(*(u32 *)mac);
+	roce_set_field(tb_b->vf_smac_h, CFG_GMV_TB_SMAC_H_M,
+		       CFG_GMV_TB_SMAC_H_S, *(u16 *)&mac[4]);
+
+	roce_set_field(tb_b->table_idx_rsv, CFG_GMV_TB_SGID_IDX_M,
+		       CFG_GMV_TB_SGID_IDX_S, gid_index);
+
+	return hns_roce_cmq_send(hr_dev, desc, 2);
 }
 
 static int hns_roce_v2_set_gid(struct hns_roce_dev *hr_dev, u8 port,
@@ -2675,23 +2790,24 @@ static int hns_roce_v2_set_gid(struct hns_roce_dev *hr_dev, u8 port,
 	enum hns_roce_sgid_type sgid_type = GID_TYPE_FLAG_ROCE_V1;
 	int ret;
 
-	if (!gid || !attr)
-		return -EINVAL;
-
-	if (attr->gid_type == IB_GID_TYPE_ROCE)
-		sgid_type = GID_TYPE_FLAG_ROCE_V1;
-
-	if (attr->gid_type == IB_GID_TYPE_ROCE_UDP_ENCAP) {
-		if (ipv6_addr_v4mapped((void *)gid))
-			sgid_type = GID_TYPE_FLAG_ROCE_V2_IPV4;
-		else
-			sgid_type = GID_TYPE_FLAG_ROCE_V2_IPV6;
+	if (gid) {
+		if (attr->gid_type == IB_GID_TYPE_ROCE_UDP_ENCAP) {
+			if (ipv6_addr_v4mapped((void *)gid))
+				sgid_type = GID_TYPE_FLAG_ROCE_V2_IPV4;
+			else
+				sgid_type = GID_TYPE_FLAG_ROCE_V2_IPV6;
+		} else if (attr->gid_type == IB_GID_TYPE_ROCE) {
+			sgid_type = GID_TYPE_FLAG_ROCE_V1;
+		}
 	}
 
-	ret = hns_roce_config_sgid_table(hr_dev, gid_index, gid, sgid_type);
+	if (hr_dev->pci_dev->revision >= PCI_REVISION_ID_HIP09)
+		ret = config_gmv_table(hr_dev, gid_index, gid, sgid_type, attr);
+	else
+		ret = config_sgid_table(hr_dev, gid_index, gid, sgid_type);
+
 	if (ret)
-		ibdev_err(&hr_dev->ib_dev,
-			  "failed to configure sgid table, ret = %d!\n",
+		ibdev_err(&hr_dev->ib_dev, "failed to set gid, ret = %d!\n",
 			  ret);
 
 	return ret;
@@ -3582,8 +3698,24 @@ static int set_hem_to_hw(struct hns_roce_dev *hr_dev, int obj, u64 bt_ba,
 			 u32 hem_type, int step_idx)
 {
 	struct hns_roce_cmd_mailbox *mailbox;
+	struct hns_roce_cmq_desc desc;
+	struct hns_roce_cfg_gmv_bt *gmv_bt =
+				(struct hns_roce_cfg_gmv_bt *)desc.data;
 	int ret;
 	int op;
+
+	if (hem_type == HEM_TYPE_GMV) {
+		hns_roce_cmq_setup_basic_desc(&desc, HNS_ROCE_OPC_CFG_GMV_BT,
+					      false);
+
+		gmv_bt->gmv_ba_l = cpu_to_le32(bt_ba >> HNS_HW_PAGE_SHIFT);
+		gmv_bt->gmv_ba_h = cpu_to_le32(bt_ba >> (HNS_HW_PAGE_SHIFT +
+							 32));
+		gmv_bt->gmv_bt_idx = cpu_to_le32(obj /
+			(HNS_HW_PAGE_SIZE / hr_dev->caps.gmv_entry_sz));
+
+		return hns_roce_cmq_send(hr_dev, &desc, 1);
+	}
 
 	op = get_op_for_set_hem(hr_dev, hem_type, step_idx);
 	if (op < 0)
@@ -3682,23 +3814,19 @@ static int hns_roce_v2_clear_hem(struct hns_roce_dev *hr_dev,
 	case HEM_TYPE_CQC:
 		op = HNS_ROCE_CMD_DESTROY_CQC_BT0;
 		break;
-	case HEM_TYPE_SCCC:
-	case HEM_TYPE_QPC_TIMER:
-	case HEM_TYPE_CQC_TIMER:
-		break;
 	case HEM_TYPE_SRQC:
 		op = HNS_ROCE_CMD_DESTROY_SRQC_BT0;
 		break;
+	case HEM_TYPE_SCCC:
+	case HEM_TYPE_QPC_TIMER:
+	case HEM_TYPE_CQC_TIMER:
+	case HEM_TYPE_GMV:
+		return 0;
 	default:
 		dev_warn(dev, "Table %d not to be destroyed by mailbox!\n",
 			 table->type);
 		return 0;
 	}
-
-	if (table->type == HEM_TYPE_SCCC ||
-	    table->type == HEM_TYPE_QPC_TIMER ||
-	    table->type == HEM_TYPE_CQC_TIMER)
-		return 0;
 
 	op += step_idx;
 
@@ -4420,7 +4548,9 @@ static int hns_roce_v2_set_path(struct ib_qp *ibqp,
 				 IB_GID_TYPE_ROCE_UDP_ENCAP);
 	}
 
-	if (vlan_id < VLAN_N_VID) {
+	/* Only HIP08 needs to set the vlan_en bits in QPC */
+	if (vlan_id < VLAN_N_VID &&
+	    hr_dev->pci_dev->revision == PCI_REVISION_ID_HIP08) {
 		roce_set_bit(context->byte_76_srqn_op_en,
 			     V2_QPC_BYTE_76_RQ_VLAN_EN_S, 1);
 		roce_set_bit(qpc_mask->byte_76_srqn_op_en,
@@ -4756,6 +4886,9 @@ static int hns_roce_v2_modify_qp(struct ib_qp *ibqp,
 	unsigned long sq_flag = 0;
 	unsigned long rq_flag = 0;
 	int ret;
+
+	if (attr_mask & ~IB_QP_ATTR_STANDARD_BITS)
+		return -EOPNOTSUPP;
 
 	/*
 	 * In v2 engine, software pass context and context mask to hardware

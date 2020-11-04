@@ -1493,7 +1493,7 @@ static int _mlx4_ib_create_qp(struct ib_pd *pd, struct mlx4_ib_qp *qp,
 					MLX4_IB_SRIOV_SQP |
 					MLX4_IB_QP_NETIF |
 					MLX4_IB_QP_CREATE_ROCE_V2_GSI))
-		return -EINVAL;
+		return -EOPNOTSUPP;
 
 	if (init_attr->create_flags & IB_QP_CREATE_NETIF_QP) {
 		if (init_attr->qp_type != IB_QPT_UD)
@@ -2786,6 +2786,9 @@ int mlx4_ib_modify_qp(struct ib_qp *ibqp, struct ib_qp_attr *attr,
 {
 	struct mlx4_ib_qp *mqp = to_mqp(ibqp);
 	int ret;
+
+	if (attr_mask & ~IB_QP_ATTR_STANDARD_BITS)
+		return -EOPNOTSUPP;
 
 	ret = _mlx4_ib_modify_qp(ibqp, attr, attr_mask, udata);
 

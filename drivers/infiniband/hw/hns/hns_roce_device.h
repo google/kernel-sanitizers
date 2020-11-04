@@ -129,9 +129,10 @@ enum {
 	SERV_TYPE_UD,
 };
 
-enum {
+enum hns_roce_qp_caps {
 	HNS_ROCE_QP_CAP_RQ_RECORD_DB = BIT(0),
 	HNS_ROCE_QP_CAP_SQ_RECORD_DB = BIT(1),
+	HNS_ROCE_QP_CAP_OWNER_DB = BIT(2),
 };
 
 enum hns_roce_cq_flags {
@@ -221,6 +222,7 @@ enum {
 	HNS_ROCE_CAP_FLAG_FRMR                  = BIT(8),
 	HNS_ROCE_CAP_FLAG_QP_FLOW_CTRL		= BIT(9),
 	HNS_ROCE_CAP_FLAG_ATOMIC		= BIT(10),
+	HNS_ROCE_CAP_FLAG_SDI_MODE		= BIT(14),
 };
 
 #define HNS_ROCE_DB_TYPE_COUNT			2
@@ -825,6 +827,7 @@ struct hns_roce_caps {
 	u32		cqc_timer_bt_num;
 	u32		mpt_bt_num;
 	u32		sccc_bt_num;
+	u32		gmv_bt_num;
 	u32		qpc_ba_pg_sz;
 	u32		qpc_buf_pg_sz;
 	u32		qpc_hop_num;
@@ -864,6 +867,11 @@ struct hns_roce_caps {
 	u32		eqe_ba_pg_sz;
 	u32		eqe_buf_pg_sz;
 	u32		eqe_hop_num;
+	u32		gmv_entry_num;
+	u32		gmv_entry_sz;
+	u32		gmv_ba_pg_sz;
+	u32		gmv_buf_pg_sz;
+	u32		gmv_hop_num;
 	u32		sl_num;
 	u32		tsq_buf_pg_sz;
 	u32		tpq_buf_pg_sz;
@@ -999,6 +1007,10 @@ struct hns_roce_dev {
 	struct hns_roce_eq_table  eq_table;
 	struct hns_roce_hem_table  qpc_timer_table;
 	struct hns_roce_hem_table  cqc_timer_table;
+	/* GMV is the memory area that the driver allocates for the hardware
+	 * to store SGID, SMAC and VLAN information.
+	 */
+	struct hns_roce_hem_table  gmv_table;
 
 	int			cmd_mod;
 	int			loop_idc;

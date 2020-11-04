@@ -284,6 +284,7 @@ static void ib_device_check_mandatory(struct ib_device *device)
 		IB_MANDATORY_FUNC(poll_cq),
 		IB_MANDATORY_FUNC(req_notify_cq),
 		IB_MANDATORY_FUNC(get_dma_mr),
+		IB_MANDATORY_FUNC(reg_user_mr),
 		IB_MANDATORY_FUNC(dereg_mr),
 		IB_MANDATORY_FUNC(get_port_immutable)
 	};
@@ -600,6 +601,37 @@ struct ib_device *_ib_alloc_device(size_t size)
 	init_completion(&device->unreg_completion);
 	INIT_WORK(&device->unregistration_work, ib_unregister_work);
 
+	device->uverbs_cmd_mask =
+		BIT_ULL(IB_USER_VERBS_CMD_ALLOC_MW) |
+		BIT_ULL(IB_USER_VERBS_CMD_ALLOC_PD) |
+		BIT_ULL(IB_USER_VERBS_CMD_ATTACH_MCAST) |
+		BIT_ULL(IB_USER_VERBS_CMD_CLOSE_XRCD) |
+		BIT_ULL(IB_USER_VERBS_CMD_CREATE_AH) |
+		BIT_ULL(IB_USER_VERBS_CMD_CREATE_COMP_CHANNEL) |
+		BIT_ULL(IB_USER_VERBS_CMD_CREATE_CQ) |
+		BIT_ULL(IB_USER_VERBS_CMD_CREATE_QP) |
+		BIT_ULL(IB_USER_VERBS_CMD_CREATE_SRQ) |
+		BIT_ULL(IB_USER_VERBS_CMD_CREATE_XSRQ) |
+		BIT_ULL(IB_USER_VERBS_CMD_DEALLOC_MW) |
+		BIT_ULL(IB_USER_VERBS_CMD_DEALLOC_PD) |
+		BIT_ULL(IB_USER_VERBS_CMD_DEREG_MR) |
+		BIT_ULL(IB_USER_VERBS_CMD_DESTROY_AH) |
+		BIT_ULL(IB_USER_VERBS_CMD_DESTROY_CQ) |
+		BIT_ULL(IB_USER_VERBS_CMD_DESTROY_QP) |
+		BIT_ULL(IB_USER_VERBS_CMD_DESTROY_SRQ) |
+		BIT_ULL(IB_USER_VERBS_CMD_DETACH_MCAST) |
+		BIT_ULL(IB_USER_VERBS_CMD_GET_CONTEXT) |
+		BIT_ULL(IB_USER_VERBS_CMD_MODIFY_QP) |
+		BIT_ULL(IB_USER_VERBS_CMD_MODIFY_SRQ) |
+		BIT_ULL(IB_USER_VERBS_CMD_OPEN_QP) |
+		BIT_ULL(IB_USER_VERBS_CMD_OPEN_XRCD) |
+		BIT_ULL(IB_USER_VERBS_CMD_QUERY_DEVICE) |
+		BIT_ULL(IB_USER_VERBS_CMD_QUERY_PORT) |
+		BIT_ULL(IB_USER_VERBS_CMD_QUERY_QP) |
+		BIT_ULL(IB_USER_VERBS_CMD_QUERY_SRQ) |
+		BIT_ULL(IB_USER_VERBS_CMD_REG_MR) |
+		BIT_ULL(IB_USER_VERBS_CMD_REREG_MR) |
+		BIT_ULL(IB_USER_VERBS_CMD_RESIZE_CQ);
 	return device;
 }
 EXPORT_SYMBOL(_ib_alloc_device);
@@ -2576,6 +2608,7 @@ void ib_set_device_ops(struct ib_device *dev, const struct ib_device_ops *ops)
 	SET_DEVICE_OP(dev_ops, create_qp);
 	SET_DEVICE_OP(dev_ops, create_rwq_ind_table);
 	SET_DEVICE_OP(dev_ops, create_srq);
+	SET_DEVICE_OP(dev_ops, create_user_ah);
 	SET_DEVICE_OP(dev_ops, create_wq);
 	SET_DEVICE_OP(dev_ops, dealloc_dm);
 	SET_DEVICE_OP(dev_ops, dealloc_driver);

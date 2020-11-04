@@ -1906,8 +1906,7 @@ static int ib_uverbs_modify_qp(struct uverbs_attr_bundle *attrs)
 	if (ret)
 		return ret;
 
-	if (cmd.base.attr_mask &
-	    ~((IB_USER_LEGACY_LAST_QP_ATTR_MASK << 1) - 1))
+	if (cmd.base.attr_mask & ~IB_QP_ATTR_STANDARD_BITS)
 		return -EOPNOTSUPP;
 
 	return modify_qp(attrs, &cmd);
@@ -1929,10 +1928,7 @@ static int ib_uverbs_ex_modify_qp(struct uverbs_attr_bundle *attrs)
 	 * Last bit is reserved for extending the attr_mask by
 	 * using another field.
 	 */
-	BUILD_BUG_ON(IB_USER_LAST_QP_ATTR_MASK == (1ULL << 31));
-
-	if (cmd.base.attr_mask &
-	    ~((IB_USER_LAST_QP_ATTR_MASK << 1) - 1))
+	if (cmd.base.attr_mask & ~(IB_QP_ATTR_STANDARD_BITS | IB_QP_RATE_LIMIT))
 		return -EOPNOTSUPP;
 
 	ret = modify_qp(attrs, &cmd);
@@ -3693,13 +3689,13 @@ const struct uapi_definition uverbs_def_write_intf[] = {
 				     ib_uverbs_create_ah,
 				     UAPI_DEF_WRITE_UDATA_IO(
 					     struct ib_uverbs_create_ah,
-					     struct ib_uverbs_create_ah_resp),
-				     UAPI_DEF_METHOD_NEEDS_FN(create_ah)),
+					     struct ib_uverbs_create_ah_resp)),
 		DECLARE_UVERBS_WRITE(
 			IB_USER_VERBS_CMD_DESTROY_AH,
 			ib_uverbs_destroy_ah,
-			UAPI_DEF_WRITE_I(struct ib_uverbs_destroy_ah),
-			UAPI_DEF_METHOD_NEEDS_FN(destroy_ah))),
+			UAPI_DEF_WRITE_I(struct ib_uverbs_destroy_ah)),
+		UAPI_DEF_OBJ_NEEDS_FN(create_user_ah),
+		UAPI_DEF_OBJ_NEEDS_FN(destroy_ah)),
 
 	DECLARE_UVERBS_OBJECT(
 		UVERBS_OBJECT_COMP_CHANNEL,
@@ -3753,7 +3749,7 @@ const struct uapi_definition uverbs_def_write_intf[] = {
 			IB_USER_VERBS_EX_CMD_MODIFY_CQ,
 			ib_uverbs_ex_modify_cq,
 			UAPI_DEF_WRITE_I(struct ib_uverbs_ex_modify_cq),
-			UAPI_DEF_METHOD_NEEDS_FN(create_cq))),
+			UAPI_DEF_METHOD_NEEDS_FN(modify_cq))),
 
 	DECLARE_UVERBS_OBJECT(
 		UVERBS_OBJECT_DEVICE,
@@ -3999,8 +3995,7 @@ const struct uapi_definition uverbs_def_write_intf[] = {
 		DECLARE_UVERBS_WRITE(
 			IB_USER_VERBS_CMD_CLOSE_XRCD,
 			ib_uverbs_close_xrcd,
-			UAPI_DEF_WRITE_I(struct ib_uverbs_close_xrcd),
-			UAPI_DEF_METHOD_NEEDS_FN(dealloc_xrcd)),
+			UAPI_DEF_WRITE_I(struct ib_uverbs_close_xrcd)),
 		DECLARE_UVERBS_WRITE(IB_USER_VERBS_CMD_OPEN_QP,
 				     ib_uverbs_open_qp,
 				     UAPI_DEF_WRITE_UDATA_IO(
@@ -4010,8 +4005,9 @@ const struct uapi_definition uverbs_def_write_intf[] = {
 				     ib_uverbs_open_xrcd,
 				     UAPI_DEF_WRITE_UDATA_IO(
 					     struct ib_uverbs_open_xrcd,
-					     struct ib_uverbs_open_xrcd_resp),
-				     UAPI_DEF_METHOD_NEEDS_FN(alloc_xrcd))),
+					     struct ib_uverbs_open_xrcd_resp)),
+		UAPI_DEF_OBJ_NEEDS_FN(alloc_xrcd),
+		UAPI_DEF_OBJ_NEEDS_FN(dealloc_xrcd)),
 
 	{},
 };

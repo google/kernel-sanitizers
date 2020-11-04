@@ -725,6 +725,9 @@ static int alloc_qp_db(struct hns_roce_dev *hr_dev, struct hns_roce_qp *hr_qp,
 	struct ib_device *ibdev = &hr_dev->ib_dev;
 	int ret;
 
+	if (hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_SDI_MODE)
+		hr_qp->en_flags |= HNS_ROCE_QP_CAP_OWNER_DB;
+
 	if (udata) {
 		if (user_qp_has_sdb(hr_dev, init_attr, udata, resp, ucmd)) {
 			ret = hns_roce_db_map_user(uctx, udata, ucmd->sdb_addr,
@@ -869,17 +872,6 @@ static int set_qp_param(struct hns_roce_dev *hr_dev, struct hns_roce_qp *hr_qp,
 		if (ret)
 			ibdev_err(ibdev, "Failed to set user SQ size\n");
 	} else {
-		if (init_attr->create_flags &
-		    IB_QP_CREATE_BLOCK_MULTICAST_LOOPBACK) {
-			ibdev_err(ibdev, "Failed to check multicast loopback\n");
-			return -EINVAL;
-		}
-
-		if (init_attr->create_flags & IB_QP_CREATE_IPOIB_UD_LSO) {
-			ibdev_err(ibdev, "Failed to check ipoib ud lso\n");
-			return -EINVAL;
-		}
-
 		ret = set_kernel_sq_size(hr_dev, &init_attr->cap, hr_qp);
 		if (ret)
 			ibdev_err(ibdev, "Failed to set kernel SQ size\n");
@@ -905,6 +897,9 @@ static int hns_roce_create_qp_common(struct hns_roce_dev *hr_dev,
 
 	hr_qp->state = IB_QPS_RESET;
 	hr_qp->flush_flag = 0;
+
+	if (init_attr->create_flags)
+		return -EOPNOTSUPP;
 
 	ret = set_qp_param(hr_dev, hr_qp, init_attr, udata, &ucmd);
 	if (ret) {

@@ -1083,10 +1083,11 @@ struct ib_qp *rvt_create_qp(struct ib_pd *ibpd,
 	if (!rdi)
 		return ERR_PTR(-EINVAL);
 
+	if (init_attr->create_flags & ~IB_QP_CREATE_NETDEV_USE)
+		return ERR_PTR(-EOPNOTSUPP);
+
 	if (init_attr->cap.max_send_sge > rdi->dparms.props.max_send_sge ||
-	    init_attr->cap.max_send_wr > rdi->dparms.props.max_qp_wr ||
-	    (init_attr->create_flags &&
-	     init_attr->create_flags != IB_QP_CREATE_NETDEV_USE))
+	    init_attr->cap.max_send_wr > rdi->dparms.props.max_qp_wr)
 		return ERR_PTR(-EINVAL);
 
 	/* Check receive queue parameters if no SRQ is specified. */
@@ -1468,6 +1469,9 @@ int rvt_modify_qp(struct ib_qp *ibqp, struct ib_qp_attr *attr,
 	int mig = 0;
 	int pmtu = 0; /* for gcc warning only */
 	int opa_ah;
+
+	if (attr_mask & ~IB_QP_ATTR_STANDARD_BITS)
+		return -EOPNOTSUPP;
 
 	spin_lock_irq(&qp->r_lock);
 	spin_lock(&qp->s_hlock);
