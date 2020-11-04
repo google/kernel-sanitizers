@@ -167,6 +167,7 @@ EXPORT_SYMBOL(vm_zone_stat);
 EXPORT_SYMBOL(vm_numa_stat);
 EXPORT_SYMBOL(vm_node_stat);
 
+/* Maximum sync threshold for per-cpu vmstat counters */
 #ifdef CONFIG_SMP
 #define MAX_THRESHOLD 125
 #else
