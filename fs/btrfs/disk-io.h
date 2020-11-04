@@ -50,6 +50,8 @@ struct extent_buffer *btrfs_find_create_tree_block(
 						struct btrfs_fs_info *fs_info,
 						u64 bytenr);
 void btrfs_clean_tree_block(struct extent_buffer *buf);
+void btrfs_clear_oneshot_options(struct btrfs_fs_info *fs_info);
+int btrfs_mount_rw(struct btrfs_fs_info *fs_info);
 int __cold open_ctree(struct super_block *sb,
 	       struct btrfs_fs_devices *fs_devices,
 	       char *options);
@@ -112,10 +114,10 @@ int btrfs_read_buffer(struct extent_buffer *buf, u64 parent_transid, int level,
 		      struct btrfs_key *first_key);
 blk_status_t btrfs_bio_wq_end_io(struct btrfs_fs_info *info, struct bio *bio,
 			enum btrfs_wq_endio_type metadata);
-blk_status_t btrfs_wq_submit_bio(struct btrfs_fs_info *fs_info, struct bio *bio,
-			int mirror_num, unsigned long bio_flags,
-			u64 bio_offset, void *private_data,
-			extent_submit_bio_start_t *submit_bio_start);
+blk_status_t btrfs_wq_submit_bio(struct inode *inode, struct bio *bio,
+				 int mirror_num, unsigned long bio_flags,
+				 u64 bio_offset,
+				 extent_submit_bio_start_t *submit_bio_start);
 blk_status_t btrfs_submit_bio_done(void *private_data, struct bio *bio,
 			  int mirror_num);
 int btrfs_init_log_root_tree(struct btrfs_trans_handle *trans,
@@ -135,12 +137,9 @@ int __init btrfs_end_io_wq_init(void);
 void __cold btrfs_end_io_wq_exit(void);
 
 #ifdef CONFIG_DEBUG_LOCK_ALLOC
-void btrfs_init_lockdep(void);
 void btrfs_set_buffer_lockdep_class(u64 objectid,
 			            struct extent_buffer *eb, int level);
 #else
-static inline void btrfs_init_lockdep(void)
-{ }
 static inline void btrfs_set_buffer_lockdep_class(u64 objectid,
 					struct extent_buffer *eb, int level)
 {

@@ -161,7 +161,6 @@ struct scrub_ctx {
 	atomic_t		workers_pending;
 	spinlock_t		list_lock;
 	wait_queue_head_t	list_wait;
-	u16			csum_size;
 	struct list_head	csum_list;
 	atomic_t		cancel_req;
 	int			readonly;
@@ -610,7 +609,6 @@ static noinline_for_stack struct scrub_ctx *scrub_setup_ctx(
 	atomic_set(&sctx->bios_in_flight, 0);
 	atomic_set(&sctx->workers_pending, 0);
 	atomic_set(&sctx->cancel_req, 0);
-	sctx->csum_size = btrfs_super_csum_size(fs_info->super_copy);
 
 	spin_lock_init(&sctx->list_lock);
 	spin_lock_init(&sctx->stat_lock);
@@ -1349,7 +1347,7 @@ leave_nomem:
 			if (have_csum)
 				memcpy(page->csum,
 				       original_sblock->pagev[0]->csum,
-				       sctx->csum_size);
+				       sctx->fs_info->csum_size);
 
 			scrub_stripe_index_and_offset(logical,
 						      bbio->map_type,
@@ -1800,7 +1798,7 @@ static int scrub_checksum_data(struct scrub_block *sblock)
 	crypto_shash_init(shash);
 	crypto_shash_digest(shash, kaddr, PAGE_SIZE, csum);
 
-	if (memcmp(csum, spage->csum, sctx->csum_size))
+	if (memcmp(csum, spage->csum, sctx->fs_info->csum_size))
 		sblock->checksum_error = 1;
 
 	return sblock->checksum_error;
@@ -1823,7 +1821,7 @@ static int scrub_checksum_tree_block(struct scrub_block *sblock)
 	spage = sblock->pagev[0];
 	kaddr = page_address(spage->page);
 	h = (struct btrfs_header *)kaddr;
-	memcpy(on_disk_csum, h->csum, sctx->csum_size);
+	memcpy(on_disk_csum, h->csum, sctx->fs_info->csum_size);
 
 	/*
 	 * we don't use the getter functions here, as we
@@ -1856,7 +1854,7 @@ static int scrub_checksum_tree_block(struct scrub_block *sblock)
 	}
 
 	crypto_shash_final(shash, calculated_csum);
-	if (memcmp(calculated_csum, on_disk_csum, sctx->csum_size))
+	if (memcmp(calculated_csum, on_disk_csum, sctx->fs_info->csum_size))
 		sblock->checksum_error = 1;
 
 	return sblock->header_error || sblock->checksum_error;
@@ -1893,7 +1891,7 @@ static int scrub_checksum_super(struct scrub_block *sblock)
 	crypto_shash_digest(shash, kaddr + BTRFS_CSUM_SIZE,
 			BTRFS_SUPER_INFO_SIZE - BTRFS_CSUM_SIZE, calculated_csum);
 
-	if (memcmp(calculated_csum, s->csum, sctx->csum_size))
+	if (memcmp(calculated_csum, s->csum, sctx->fs_info->csum_size))
 		++fail_cor;
 
 	if (fail_cor + fail_gen) {
@@ -2198,7 +2196,7 @@ leave_nomem:
 		spage->mirror_num = mirror_num;
 		if (csum) {
 			spage->have_csum = 1;
-			memcpy(spage->csum, csum, sctx->csum_size);
+			memcpy(spage->csum, csum, sctx->fs_info->csum_size);
 		} else {
 			spage->have_csum = 0;
 		}
@@ -2300,7 +2298,7 @@ static inline void __scrub_mark_bitmap(struct scrub_parity *sparity,
 	u64 offset;
 	u64 nsectors64;
 	u32 nsectors;
-	int sectorsize = sparity->sctx->fs_info->sectorsize;
+	u32 sectorsize_bits = sparity->sctx->fs_info->sectorsize_bits;
 
 	if (len >= sparity->stripe_len) {
 		bitmap_set(bitmap, 0, sparity->nsectors);
@@ -2309,8 +2307,8 @@ static inline void __scrub_mark_bitmap(struct scrub_parity *sparity,
 
 	start -= sparity->logic_start;
 	start = div64_u64_rem(start, sparity->stripe_len, &offset);
-	offset = div_u64(offset, sectorsize);
-	nsectors64 = div_u64(len, sectorsize);
+	offset = offset >> sectorsize_bits;
+	nsectors64 = len >> sectorsize_bits;
 
 	ASSERT(nsectors64 < UINT_MAX);
 	nsectors = (u32)nsectors64;
@@ -2386,11 +2384,12 @@ static int scrub_find_csum(struct scrub_ctx *sctx, u64 logical, u8 *csum)
 	if (!sum)
 		return 0;
 
-	index = div_u64(logical - sum->bytenr, sctx->fs_info->sectorsize);
+	index = (logical - sum->bytenr) >> sctx->fs_info->sectorsize_bits;
 	ASSERT(index < UINT_MAX);
 
-	num_sectors = sum->len / sctx->fs_info->sectorsize;
-	memcpy(csum, sum->sums + index * sctx->csum_size, sctx->csum_size);
+	num_sectors = sum->len >> sctx->fs_info->sectorsize_bits;
+	memcpy(csum, sum->sums + index * sctx->fs_info->csum_size,
+		sctx->fs_info->csum_size);
 	if (index == num_sectors - 1) {
 		list_del(&sum->list);
 		kfree(sum);
@@ -2508,7 +2507,7 @@ leave_nomem:
 		spage->mirror_num = mirror_num;
 		if (csum) {
 			spage->have_csum = 1;
-			memcpy(spage->csum, csum, sctx->csum_size);
+			memcpy(spage->csum, csum, sctx->fs_info->csum_size);
 		} else {
 			spage->have_csum = 0;
 		}
@@ -2776,7 +2775,7 @@ static noinline_for_stack int scrub_raid56_parity(struct scrub_ctx *sctx,
 	int extent_mirror_num;
 	int stop_loop = 0;
 
-	nsectors = div_u64(map->stripe_len, fs_info->sectorsize);
+	nsectors = map->stripe_len >> fs_info->sectorsize_bits;
 	bitmap_len = scrub_calc_parity_bitmap_len(nsectors);
 	sparity = kzalloc(sizeof(struct scrub_parity) + 2 * bitmap_len,
 			  GFP_NOFS);
@@ -3084,17 +3083,21 @@ static noinline_for_stack int scrub_stripe(struct scrub_ctx *sctx,
 	key_end.offset = (u64)-1;
 	reada1 = btrfs_reada_add(root, &key, &key_end);
 
-	key.objectid = BTRFS_EXTENT_CSUM_OBJECTID;
-	key.type = BTRFS_EXTENT_CSUM_KEY;
-	key.offset = logical;
-	key_end.objectid = BTRFS_EXTENT_CSUM_OBJECTID;
-	key_end.type = BTRFS_EXTENT_CSUM_KEY;
-	key_end.offset = logic_end;
-	reada2 = btrfs_reada_add(csum_root, &key, &key_end);
+	if (cache->flags & BTRFS_BLOCK_GROUP_DATA) {
+		key.objectid = BTRFS_EXTENT_CSUM_OBJECTID;
+		key.type = BTRFS_EXTENT_CSUM_KEY;
+		key.offset = logical;
+		key_end.objectid = BTRFS_EXTENT_CSUM_OBJECTID;
+		key_end.type = BTRFS_EXTENT_CSUM_KEY;
+		key_end.offset = logic_end;
+		reada2 = btrfs_reada_add(csum_root, &key, &key_end);
+	} else {
+		reada2 = NULL;
+	}
 
 	if (!IS_ERR(reada1))
 		btrfs_reada_wait(reada1);
-	if (!IS_ERR(reada2))
+	if (!IS_ERR_OR_NULL(reada2))
 		btrfs_reada_wait(reada2);
 
 
@@ -3866,8 +3869,9 @@ int btrfs_scrub_dev(struct btrfs_fs_info *fs_info, u64 devid, u64 start,
 	if (!is_dev_replace && !readonly &&
 	    !test_bit(BTRFS_DEV_STATE_WRITEABLE, &dev->dev_state)) {
 		mutex_unlock(&fs_info->fs_devices->device_list_mutex);
-		btrfs_err_in_rcu(fs_info, "scrub: device %s is not writable",
-				rcu_str_deref(dev->name));
+		btrfs_err_in_rcu(fs_info,
+			"scrub on devid %llu: filesystem on %s is not writable",
+				 devid, rcu_str_deref(dev->name));
 		ret = -EROFS;
 		goto out;
 	}
