@@ -1431,10 +1431,8 @@ static bool is_debug_pagealloc_cache(struct kmem_cache *cachep)
 #ifdef CONFIG_DEBUG_PAGEALLOC
 static void slab_kernel_map(struct kmem_cache *cachep, void *objp, int map)
 {
-	if (!is_debug_pagealloc_cache(cachep))
-		return;
-
-	kernel_map_pages(virt_to_page(objp), cachep->size / PAGE_SIZE, map);
+	debug_pagealloc_map_pages(virt_to_page(objp),
+				  cachep->size / PAGE_SIZE, map);
 }
 
 #else
@@ -2062,7 +2060,7 @@ done:
 
 #if DEBUG
 	/*
-	 * If we're going to use the generic kernel_map_pages()
+	 * If we're going to use the generic debug_pagealloc_map_pages()
 	 * poisoning, then it's going to smash the contents of
 	 * the redzone and userword anyhow, so switch them off.
 	 */
