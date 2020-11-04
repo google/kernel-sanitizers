@@ -5,8 +5,6 @@
 
 #define MAX_SOCK_NAME_LEN	64
 
-char sock_name[MAX_SOCK_NAME_LEN];
-
 /* This structure is responsible for holding the IPC data
  * data: hold the buffer fd
  * len: just the length of 32-bit integer fd
