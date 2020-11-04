@@ -47,8 +47,9 @@ with only 255 objects, resulting in a pool size of 2 MiB (with 4 KiB
 pages).
 
 We have verified by running synthetic benchmarks (sysbench I/O,
-hackbench) that a kernel with KFENCE is performance-neutral compared to
-a non-KFENCE baseline kernel.
+hackbench) and production server-workload benchmarks that a kernel with
+KFENCE (using sample intervals 100-500ms) is performance-neutral
+compared to a non-KFENCE baseline kernel.
 
 KFENCE is inspired by GWP-ASan [1], a userspace tool with similar
 properties. The name "KFENCE" is a homage to the Electric Fence Malloc
@@ -62,7 +63,7 @@ series -- also viewable here:
 [1] http://llvm.org/docs/GwpAsan.html
 [2] https://linux.die.net/man/3/efence
 
-v7:
+v7: https://lkml.kernel.org/r/20201103175841.3495947-1-elver@google.com
 * Clean up print_diff_canary() boundary calculation.
 * Cleaner CONFIG_KFENCE_STRESS_TEST_FAULTS, using "if EXPERT".
 * Make __kfence_free() part of the public API.
