@@ -11,6 +11,7 @@
 #include <linux/lockdep.h>
 #include <linux/memblock.h>
 #include <linux/moduleparam.h>
+#include <linux/ptrace.h>
 #include <linux/random.h>
 #include <linux/rcupdate.h>
 #include <linux/seq_file.h>
@@ -212,7 +213,7 @@ static inline bool check_canary_byte(u8 *addr)
 		return true;
 
 	atomic_long_inc(&counters[KFENCE_COUNTER_BUGS]);
-	kfence_report_error((unsigned long)addr, addr_to_metadata((unsigned long)addr),
+	kfence_report_error((unsigned long)addr, NULL, addr_to_metadata((unsigned long)addr),
 			    KFENCE_ERROR_CORRUPTION);
 	return false;
 }
@@ -351,7 +352,7 @@ static void kfence_guarded_free(void *addr, struct kfence_metadata *meta, bool z
 	if (meta->state != KFENCE_OBJECT_ALLOCATED || meta->addr != (unsigned long)addr) {
 		/* Invalid or double-free, bail out. */
 		atomic_long_inc(&counters[KFENCE_COUNTER_BUGS]);
-		kfence_report_error((unsigned long)addr, meta, KFENCE_ERROR_INVALID_FREE);
+		kfence_report_error((unsigned long)addr, NULL, meta, KFENCE_ERROR_INVALID_FREE);
 		raw_spin_unlock_irqrestore(&meta->lock, flags);
 		return;
 	}
@@ -752,7 +753,7 @@ void __kfence_free(void *addr)
 		kfence_guarded_free(addr, meta, false);
 }
 
-bool kfence_handle_page_fault(unsigned long addr)
+bool kfence_handle_page_fault(unsigned long addr, struct pt_regs *regs)
 {
 	const int page_index = (addr - (unsigned long)__kfence_pool) / PAGE_SIZE;
 	struct kfence_metadata *to_report = NULL;
@@ -815,11 +816,11 @@ bool kfence_handle_page_fault(unsigned long addr)
 
 out:
 	if (to_report) {
-		kfence_report_error(addr, to_report, error_type);
+		kfence_report_error(addr, regs, to_report, error_type);
 		raw_spin_unlock_irqrestore(&to_report->lock, flags);
 	} else {
 		/* This may be a UAF or OOB access, but we can't be sure. */
-		kfence_report_error(addr, NULL, KFENCE_ERROR_INVALID);
+		kfence_report_error(addr, regs, NULL, KFENCE_ERROR_INVALID);
 	}
 
 	return kfence_unprotect(addr); /* Unprotect and let access proceed. */
