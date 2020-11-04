@@ -502,6 +502,7 @@ common_exception_return:
 	_bbsi.l	a4, TIF_NEED_RESCHED, 3f
 	_bbsi.l	a4, TIF_NOTIFY_RESUME, 2f
 	_bbci.l	a4, TIF_SIGPENDING, 5f
+	_bbci.l	a4, TIF_NOTIFY_SIGNAL, 5f
 
 2:	l32i	a4, a1, PT_DEPC
 	bgeui	a4, VALID_DOUBLE_EXCEPTION_ADDRESS, 4f

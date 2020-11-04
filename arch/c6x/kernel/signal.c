@@ -313,7 +313,7 @@ asmlinkage void do_notify_resume(struct pt_regs *regs, u32 thread_info_flags,
 				 int syscall)
 {
 	/* deal with pending signal delivery */
-	if (thread_info_flags & (1 << TIF_SIGPENDING))
+	if (thread_info_flags & (_TIF_SIGPENDING | _TIF_NOTIFY_SIGNAL))
 		do_signal(regs, syscall);
 
 	if (thread_info_flags & (1 << TIF_NOTIFY_RESUME))
