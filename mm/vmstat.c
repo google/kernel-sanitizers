@@ -168,9 +168,12 @@ EXPORT_SYMBOL(vm_numa_stat);
 EXPORT_SYMBOL(vm_node_stat);
 
 #ifdef CONFIG_SMP
-
 #define MAX_THRESHOLD 125
+#else
+#define MAX_THRESHOLD 0
+#endif
 
+#ifdef CONFIG_SMP
 int calculate_pressure_threshold(struct zone *zone)
 {
 	int threshold;
@@ -610,8 +613,6 @@ void dec_node_page_state(struct page *page, enum node_stat_item item)
 }
 EXPORT_SYMBOL(dec_node_page_state);
 #else
-
-#define MAX_THRESHOLD 0
 
 /*
  * Use interrupt disable to serialize counter updates
