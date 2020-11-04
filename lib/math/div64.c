@@ -22,6 +22,7 @@
 #include <linux/export.h>
 #include <linux/math.h>
 #include <linux/math64.h>
+#include <linux/log2.h>
 
 /* Not needed on 64bit architectures */
 #if BITS_PER_LONG == 32
