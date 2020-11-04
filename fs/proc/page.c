@@ -117,6 +117,9 @@ u64 stable_page_flags(struct page *page)
 	if (!page)
 		return BIT_ULL(KPF_NOPAGE);
 
+	if (pfn_zone_device_reserved(page_to_pfn(page)))
+		return BIT_ULL(KPF_RESERVED);
+
 	k = page->flags;
 	u = 0;
 
