@@ -868,9 +868,7 @@ int btrfs_find_ordered_sum(struct btrfs_inode *inode, u64 offset,
 	struct btrfs_ordered_inode_tree *tree = &inode->ordered_tree;
 	unsigned long num_sectors;
 	unsigned long i;
-	u32 sectorsize = btrfs_inode_sectorsize(inode);
-	const u8 blocksize_bits = inode->vfs_inode.i_sb->s_blocksize_bits;
-	const u16 csum_size = btrfs_super_csum_size(fs_info->super_copy);
+	const u32 csum_size = fs_info->csum_size;
 	int index = 0;
 
 	ordered = btrfs_lookup_ordered_extent(inode, offset);
@@ -881,8 +879,9 @@ int btrfs_find_ordered_sum(struct btrfs_inode *inode, u64 offset,
 	list_for_each_entry_reverse(ordered_sum, &ordered->list, list) {
 		if (disk_bytenr >= ordered_sum->bytenr &&
 		    disk_bytenr < ordered_sum->bytenr + ordered_sum->len) {
-			i = (disk_bytenr - ordered_sum->bytenr) >> blocksize_bits;
-			num_sectors = ordered_sum->len >> blocksize_bits;
+			i = (disk_bytenr - ordered_sum->bytenr) >>
+			    fs_info->sectorsize_bits;
+			num_sectors = ordered_sum->len >> fs_info->sectorsize_bits;
 			num_sectors = min_t(int, len - index, num_sectors - i);
 			memcpy(sum + index, ordered_sum->sums + i * csum_size,
 			       num_sectors * csum_size);
@@ -890,7 +889,7 @@ int btrfs_find_ordered_sum(struct btrfs_inode *inode, u64 offset,
 			index += (int)num_sectors * csum_size;
 			if (index == len)
 				goto out;
-			disk_bytenr += num_sectors * sectorsize;
+			disk_bytenr += num_sectors * fs_info->sectorsize;
 		}
 	}
 out:

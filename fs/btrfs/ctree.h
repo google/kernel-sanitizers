@@ -28,6 +28,7 @@
 #include <linux/dynamic_debug.h>
 #include <linux/refcount.h>
 #include <linux/crc32c.h>
+#include <linux/iomap.h>
 #include "extent-io-tree.h"
 #include "extent_io.h"
 #include "extent_map.h"
@@ -370,7 +371,6 @@ struct btrfs_path {
 	unsigned int search_for_split:1;
 	unsigned int keep_locks:1;
 	unsigned int skip_locking:1;
-	unsigned int leave_spinning:1;
 	unsigned int search_commit_root:1;
 	unsigned int need_commit_sem:1;
 	unsigned int skip_release_on_error:1;
@@ -931,6 +931,10 @@ struct btrfs_fs_info {
 	/* Cached block sizes */
 	u32 nodesize;
 	u32 sectorsize;
+	/* ilog2 of sectorsize, use to avoid 64bit division */
+	u32 sectorsize_bits;
+	u32 csum_size;
+	u32 csums_per_leaf;
 	u32 stripesize;
 
 	/* Block groups and devices containing active swapfiles. */
@@ -1295,6 +1299,8 @@ static inline u32 BTRFS_MAX_XATTR_SIZE(const struct btrfs_fs_info *info)
 #define BTRFS_MOUNT_NOLOGREPLAY		(1 << 27)
 #define BTRFS_MOUNT_REF_VERIFY		(1 << 28)
 #define BTRFS_MOUNT_DISCARD_ASYNC	(1 << 29)
+#define BTRFS_MOUNT_IGNOREBADROOTS	(1 << 30)
+#define BTRFS_MOUNT_IGNOREDATACSUMS	(1 << 31)
 
 #define BTRFS_DEFAULT_COMMIT_INTERVAL	(30)
 #define BTRFS_DEFAULT_MAX_INLINE	(2048)
@@ -1402,7 +1408,7 @@ struct btrfs_map_token {
 };
 
 #define BTRFS_BYTES_TO_BLKS(fs_info, bytes) \
-				((bytes) >> (fs_info)->sb->s_blocksize_bits)
+				((bytes) >> (fs_info)->sectorsize_bits)
 
 static inline void btrfs_init_map_token(struct btrfs_map_token *token,
 					struct extent_buffer *eb)
@@ -2083,6 +2089,7 @@ BTRFS_SETGET_FUNCS(disk_root_level, struct btrfs_root_item, level, 8);
 BTRFS_SETGET_STACK_FUNCS(root_generation, struct btrfs_root_item,
 			 generation, 64);
 BTRFS_SETGET_STACK_FUNCS(root_bytenr, struct btrfs_root_item, bytenr, 64);
+BTRFS_SETGET_STACK_FUNCS(root_drop_level, struct btrfs_root_item, drop_level, 8);
 BTRFS_SETGET_STACK_FUNCS(root_level, struct btrfs_root_item, level, 8);
 BTRFS_SETGET_STACK_FUNCS(root_dirid, struct btrfs_root_item, root_dirid, 64);
 BTRFS_SETGET_STACK_FUNCS(root_refs, struct btrfs_root_item, refs, 32);
@@ -2515,7 +2522,17 @@ int btrfs_get_extent_inline_ref_type(const struct extent_buffer *eb,
 				     enum btrfs_inline_ref_type is_data);
 u64 hash_extent_data_ref(u64 root_objectid, u64 owner, u64 offset);
 
-u64 btrfs_csum_bytes_to_leaves(struct btrfs_fs_info *fs_info, u64 csum_bytes);
+/*
+ * Take the number of bytes to be checksummmed and figure out how many leaves
+ * it would require to store the csums for that many bytes.
+ */
+static inline u64 btrfs_csum_bytes_to_leaves(
+			const struct btrfs_fs_info *fs_info, u64 csum_bytes)
+{
+	const u64 num_csums = csum_bytes >> fs_info->sectorsize_bits;
+
+	return DIV_ROUND_UP_ULL(num_csums, fs_info->csums_per_leaf);
+}
 
 /*
  * Use this if we would be adding new items, as we could split nodes as we cow
@@ -3060,7 +3077,15 @@ int btrfs_writepage_cow_fixup(struct page *page, u64 start, u64 end);
 void btrfs_writepage_endio_finish_ordered(struct page *page, u64 start,
 					  u64 end, int uptodate);
 extern const struct dentry_operations btrfs_dentry_operations;
-ssize_t btrfs_direct_IO(struct kiocb *iocb, struct iov_iter *iter);
+extern const struct iomap_ops btrfs_dio_iomap_ops;
+extern const struct iomap_dio_ops btrfs_dio_ops;
+
+/* Inode locking type flags, by default the exclusive lock is taken */
+#define BTRFS_ILOCK_SHARED	(1U << 0)
+#define BTRFS_ILOCK_TRY 	(1U << 1)
+
+int btrfs_inode_lock(struct inode *inode, unsigned int ilock_flags);
+void btrfs_inode_unlock(struct inode *inode, unsigned int ilock_flags);
 
 /* ioctl.c */
 long btrfs_ioctl(struct file *file, unsigned int cmd, unsigned long arg);
@@ -3109,7 +3134,7 @@ int btrfs_mark_extent_written(struct btrfs_trans_handle *trans,
 int btrfs_release_file(struct inode *inode, struct file *file);
 int btrfs_dirty_pages(struct btrfs_inode *inode, struct page **pages,
 		      size_t num_pages, loff_t pos, size_t write_bytes,
-		      struct extent_state **cached);
+		      struct extent_state **cached, bool noreserve);
 int btrfs_fdatawrite_range(struct inode *inode, loff_t start, loff_t end);
 int btrfs_check_nocow_lock(struct btrfs_inode *inode, loff_t pos,
 			   size_t *write_bytes);
