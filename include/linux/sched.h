@@ -929,6 +929,7 @@ struct task_struct {
 #ifdef CONFIG_DETECT_HUNG_TASK
 	unsigned long			last_switch_count;
 	unsigned long			last_switch_time;
+	unsigned long			killed_time;
 #endif
 	/* Filesystem information: */
 	struct fs_struct		*fs;
