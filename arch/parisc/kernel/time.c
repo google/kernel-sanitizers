@@ -22,6 +22,7 @@
 #include <linux/string.h>
 #include <linux/mm.h>
 #include <linux/interrupt.h>
+#include <linux/clockchips.h>
 #include <linux/time.h>
 #include <linux/init.h>
 #include <linux/smp.h>
@@ -40,79 +41,75 @@
 
 #include <linux/timex.h>
 
+/*
+ * The PA-RISC Interval Timer is a pair of registers; one is read-only and one
+ * is write-only; both accessed through CR16.  The read-only register is 32 or
+ * 64 bits wide, and increments by 1 every CPU clock tick.  The architecture
+ * only guarantees us a rate between 0.5 and 2, but all implementations use a
+ * rate of 1.  The write-only register is 32-bits wide.  When the lowest 32
+ * bits of the read-only register compare equal to the write-only register, it
+ * raises a maskable external interrupt.  Each processor has an Interval Timer
+ * of its own and they are not synchronised.
+ */
+
+#define cr16_hz	(100 * PAGE0->mem_10msec)	/* Hz */
 static unsigned long clocktick __ro_after_init;	/* timer cycles per tick */
 
+static DEFINE_PER_CPU(struct clock_event_device, hppa_clk_events);
+
 /*
- * We keep time on PA-RISC Linux by using the Interval Timer which is
- * a pair of registers; one is read-only and one is write-only; both
- * accessed through CR16.  The read-only register is 32 or 64 bits wide,
- * and increments by 1 every CPU clock tick.  The architecture only
- * guarantees us a rate between 0.5 and 2, but all implementations use a
- * rate of 1.  The write-only register is 32-bits wide.  When the lowest
- * 32 bits of the read-only register compare equal to the write-only
- * register, it raises a maskable external interrupt.  Each processor has
- * an Interval Timer of its own and they are not synchronised.  
- *
- * We want to generate an interrupt every 1/HZ seconds.  So we program
- * CR16 to interrupt every @clocktick cycles.  The it_value in cpu_data
- * is programmed with the intended time of the next tick.  We can be
- * held off for an arbitrarily long period of time by interrupts being
- * disabled, so we may miss one or more ticks.
+ * Do not disable the timer irq. The clockevents get that frequently
+ * programmed, that it's unlikely the timer will wrap and trigger again. So
+ * it's not worth to disable and reenable the hardware irqs, instead store in a
+ * static per-cpu variable if the irq is expected or not.
  */
-irqreturn_t __irq_entry timer_interrupt(int irq, void *dev_id)
+static DEFINE_PER_CPU(bool, cr16_clockevent_enabled);
+
+static void cr16_set_next(unsigned long delta, bool reenable_irq)
 {
-	unsigned long now;
-	unsigned long next_tick;
-	unsigned long ticks_elapsed = 0;
+	mtctl(mfctl(16) + delta, 16);
+
+	if (reenable_irq)
+		per_cpu(cr16_clockevent_enabled, smp_processor_id()) = true;
+}
+
+static int cr16_clockevent_shutdown(struct clock_event_device *evt)
+{
+	per_cpu(cr16_clockevent_enabled, smp_processor_id()) = false;
+	return 0;
+}
+
+static int cr16_clockevent_set_periodic(struct clock_event_device *evt)
+{
+	cr16_set_next(clocktick, true);
+	return 0;
+}
+
+static int cr16_clockevent_set_next_event(unsigned long delta,
+					struct clock_event_device *evt)
+{
+	cr16_set_next(delta, true);
+	return 0;
+}
+
+static irqreturn_t timer_interrupt(int irq, void *dev_id)
+{
 	unsigned int cpu = smp_processor_id();
-	struct cpuinfo_parisc *cpuinfo = &per_cpu(cpu_data, cpu);
+	struct clock_event_device *evt;
+	bool handle_irq;
 
-	/* gcc can optimize for "read-only" case with a local clocktick */
-	unsigned long cpt = clocktick;
+	evt = &per_cpu(hppa_clk_events, cpu);
+	handle_irq = per_cpu(cr16_clockevent_enabled, cpu);
 
-	/* Initialize next_tick to the old expected tick time. */
-	next_tick = cpuinfo->it_value;
+	if (clockevent_state_oneshot(evt))
+		per_cpu(cr16_clockevent_enabled, smp_processor_id()) = false;
+	else {
+		if (handle_irq)
+			cr16_set_next(clocktick, false);
+	}
 
-	/* Calculate how many ticks have elapsed. */
-	now = mfctl(16);
-	do {
-		++ticks_elapsed;
-		next_tick += cpt;
-	} while (next_tick - now > cpt);
-
-	/* Store (in CR16 cycles) up to when we are accounting right now. */
-	cpuinfo->it_value = next_tick;
-
-	/* Go do system house keeping. */
-	if (cpu != 0)
-		ticks_elapsed = 0;
-	legacy_timer_tick(ticks_elapsed);
-
-	/* Skip clockticks on purpose if we know we would miss those.
-	 * The new CR16 must be "later" than current CR16 otherwise
-	 * itimer would not fire until CR16 wrapped - e.g 4 seconds
-	 * later on a 1Ghz processor. We'll account for the missed
-	 * ticks on the next timer interrupt.
-	 * We want IT to fire modulo clocktick even if we miss/skip some.
-	 * But those interrupts don't in fact get delivered that regularly.
-	 *
-	 * "next_tick - now" will always give the difference regardless
-	 * if one or the other wrapped. If "now" is "bigger" we'll end up
-	 * with a very large unsigned number.
-	 */
-	now = mfctl(16);
-	while (next_tick - now > cpt)
-		next_tick += cpt;
-
-	/* Program the IT when to deliver the next interrupt.
-	 * Only bottom 32-bits of next_tick are writable in CR16!
-	 * Timer interrupt will be delivered at least a few hundred cycles
-	 * after the IT fires, so if we are too close (<= 8000 cycles) to the
-	 * next cycle, simply skip it.
-	 */
-	if (next_tick - now <= 8000)
-		next_tick += cpt;
-	mtctl(next_tick, 16);
+	if (handle_irq)
+		evt->event_handler(evt);
 
 	return IRQ_HANDLED;
 }
@@ -153,11 +150,29 @@ static struct clocksource clocksource_cr16 = {
 void __init start_cpu_itimer(void)
 {
 	unsigned int cpu = smp_processor_id();
-	unsigned long next_tick = mfctl(16) + clocktick;
 
-	mtctl(next_tick, 16);		/* kick off Interval Timer (CR16) */
+	struct clock_event_device *clk = this_cpu_ptr(&hppa_clk_events);
 
-	per_cpu(cpu_data, cpu).it_value = next_tick;
+	clk->name = "cr16";
+	clk->features = CLOCK_EVT_FEAT_PERIODIC | CLOCK_EVT_FEAT_ONESHOT |
+			CLOCK_EVT_FEAT_PERCPU;
+	clk->set_state_shutdown = cr16_clockevent_shutdown;
+	clk->set_state_periodic = cr16_clockevent_set_periodic;
+	clk->set_state_oneshot = cr16_clockevent_shutdown;
+	clk->set_state_oneshot_stopped = cr16_clockevent_shutdown;
+	clk->set_next_event = cr16_clockevent_set_next_event;
+	clk->cpumask = cpumask_of(cpu);
+	clk->rating = 300;
+	clk->irq = TIMER_IRQ;
+	clockevents_config_and_register(clk, cr16_hz, 4000, 0xffffffff);
+
+	if (cpu == 0) {
+		int err = request_percpu_irq(TIMER_IRQ, timer_interrupt,
+					 "timer", clk);
+		BUG_ON(err);
+	}
+
+	enable_percpu_irq(clk->irq, IRQ_TYPE_NONE);
 }
 
 #if IS_ENABLED(CONFIG_RTC_DRV_GENERIC)
@@ -235,12 +250,8 @@ static u64 notrace read_cr16_sched_clock(void)
 
 void __init time_init(void)
 {
-	unsigned long cr16_hz;
-
-	clocktick = (100 * PAGE0->mem_10msec) / HZ;
+	clocktick = DIV_ROUND_CLOSEST(cr16_hz, HZ);
 	start_cpu_itimer();	/* get CPU 0 started */
-
-	cr16_hz = 100 * PAGE0->mem_10msec;  /* Hz */
 
 	/* register as sched_clock source */
 	sched_clock_register(read_cr16_sched_clock, BITS_PER_LONG, cr16_hz);
