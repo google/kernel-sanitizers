@@ -1,0 +1,45 @@
+arm/soc
+
+arm/dt
+
+arm/drivers
+	optee/uuid
+		git://git.linaro.org:/people/jens.wiklander/linux-tee tags/optee-use-uuid-api-for-v5.10
+
+arm/defconfig
+
+arm/newsoc
+
+arm/late
+
+arm/fixes
+	patch
+		MAINTAINERS: step down as maintainer of UniPhier SoCs and Denali driver
+		MAINTAINERS: Move Kukjin Kim to credits
+		MAINTAINERS: Move Sangbeom Kim to credits
+	<no branch> (0b58725fb9a446890c1fd28fc6c9e393ce21acb7)
+		git://git.kernel.org/pub/scm/linux/kernel/git/gclement/mvebu tags/mvebu-fixes-5.9-1
+	<no branch> (dea252fa41cd8ce332d148444e4799235a8a03ec)
+		git://git.kernel.org/pub/scm/linux/kernel/git/sunxi/linux tags/sunxi-fixes-for-5.9-2
+	patch
+		dt-bindings: sram: sunxi-sram: add V3s compatible string
+		arm64: berlin: Select DW_APB_TIMER_OF
+		ARM: dts: mmp3: Add power domain for the camera
+		ARM: dts: mmp2-olpc-xo-1-75: Use plural form of "-gpios"
+	<no branch> (722939528a37aa0cb22d441e2045c0cf53e78fb0)
+		git://git.linaro.org:/people/jens.wiklander/linux-tee tags/tee-fix-for-v5.10
+	<no branch> (b9ceca6be43233845be70792be9b5ab315d2e010)
+		git://git.kernel.org/pub/scm/linux/kernel/git/sudeep.holla/linux tags/scmi-fixes-5.10
+	<no branch> (d6820bc6508c0cefd6e407cf5be50d9efda6c85c)
+		git://git.kernel.org/pub/scm/linux/kernel/git/shawnguo/linux tags/imx-fixes-5.10
+	<no branch> (f7d933388f11f66e5af9e5663a17f26523fddd07)
+		git://git.kernel.org/pub/scm/linux/kernel/git/khilman/linux-amlogic tags/amlogic-fixes
+	<no branch> (ccee91b568e35e87d61ae72b51fd07ddf5a3d999)
+		git://git.kernel.org/pub/scm/linux/kernel/git/shawnguo/linux tags/imx-fixes-5.10-2
+	<no branch> (728a7e225ad807b4b4de3be3fb653424199f8a76)
+		git://git.kernel.org/pub/scm/linux/kernel/git/atorgue/stm32 tags/stm32-dt-for-v5.10-fixes-1
+	patch
+		soc: ti: ti_sci_pm_domains: check for proper args count in xlate
+	<no branch> (107954afc5df667da438644aa4982606663f9b17)
+		git://git.kernel.org/pub/scm/linux/kernel/git/sunxi/linux tags/sunxi-fixes-for-5.10-1
+
