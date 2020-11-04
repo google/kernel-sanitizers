@@ -24,7 +24,7 @@
 #include <linux/of.h>
 #include <linux/of_fdt.h>
 #include <linux/of_address.h>
-#include <linux/clk-provider.h>
+#include <linux/of_clk.h>
 #include <linux/memblock.h>
 #include <linux/screen_info.h>
 #include <linux/clocksource.h>

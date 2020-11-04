@@ -37,7 +37,6 @@ config SMC91X
 	tristate "SMC 91C9x/91C1xxx support"
 	select CRC32
 	select MII
-	depends on !OF || GPIOLIB
 	depends on ARM || ARM64 || ATARI_ETHERNAT || COLDFIRE || \
 		   MIPS || NIOS2 || SUPERH || XTENSA || H8300
 	help

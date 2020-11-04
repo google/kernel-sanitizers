@@ -97,4 +97,8 @@ config OFFSET
         hex "Load offset"
 	default 0
 
+config BOOT_LINK_OFFSET
+	hex	"zImage link offset"
+	default	0x200000
+
 endmenu
