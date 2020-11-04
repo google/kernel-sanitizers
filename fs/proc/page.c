@@ -115,7 +115,7 @@ u64 stable_page_flags(struct page *page)
 	 * it differentiates a memory hole from a page with no flags
 	 */
 	if (!page)
-		return 1 << KPF_NOPAGE;
+		return BIT_ULL(KPF_NOPAGE);
 
 	k = page->flags;
 	u = 0;
@@ -127,22 +127,22 @@ u64 stable_page_flags(struct page *page)
 	 * simple test in page_mapped() is not enough.
 	 */
 	if (!PageSlab(page) && page_mapped(page))
-		u |= 1 << KPF_MMAP;
+		u |= BIT_ULL(KPF_MMAP);
 	if (PageAnon(page))
-		u |= 1 << KPF_ANON;
+		u |= BIT_ULL(KPF_ANON);
 	if (PageKsm(page))
-		u |= 1 << KPF_KSM;
+		u |= BIT_ULL(KPF_KSM);
 
 	/*
 	 * compound pages: export both head/tail info
 	 * they together define a compound page's start/end pos and order
 	 */
 	if (PageHead(page))
-		u |= 1 << KPF_COMPOUND_HEAD;
+		u |= BIT_ULL(KPF_COMPOUND_HEAD);
 	if (PageTail(page))
-		u |= 1 << KPF_COMPOUND_TAIL;
+		u |= BIT_ULL(KPF_COMPOUND_TAIL);
 	if (PageHuge(page))
-		u |= 1 << KPF_HUGE;
+		u |= BIT_ULL(KPF_HUGE);
 	/*
 	 * PageTransCompound can be true for non-huge compound pages (slab
 	 * pages or pages allocated by drivers with __GFP_COMP) because it
@@ -153,14 +153,13 @@ u64 stable_page_flags(struct page *page)
 		struct page *head = compound_head(page);
 
 		if (PageLRU(head) || PageAnon(head))
-			u |= 1 << KPF_THP;
+			u |= BIT_ULL(KPF_THP);
 		else if (is_huge_zero_page(head)) {
-			u |= 1 << KPF_ZERO_PAGE;
-			u |= 1 << KPF_THP;
+			u |= BIT_ULL(KPF_ZERO_PAGE);
+			u |= BIT_ULL(KPF_THP);
 		}
 	} else if (is_zero_pfn(page_to_pfn(page)))
-		u |= 1 << KPF_ZERO_PAGE;
-
+		u |= BIT_ULL(KPF_ZERO_PAGE);
 
 	/*
 	 * Caveats on high order pages: page->_refcount will only be set
@@ -168,23 +167,23 @@ u64 stable_page_flags(struct page *page)
 	 * SLOB won't set PG_slab at all on compound pages.
 	 */
 	if (PageBuddy(page))
-		u |= 1 << KPF_BUDDY;
+		u |= BIT_ULL(KPF_BUDDY);
 	else if (page_count(page) == 0 && is_free_buddy_page(page))
-		u |= 1 << KPF_BUDDY;
+		u |= BIT_ULL(KPF_BUDDY);
 
 	if (PageOffline(page))
-		u |= 1 << KPF_OFFLINE;
+		u |= BIT_ULL(KPF_OFFLINE);
 	if (PageTable(page))
-		u |= 1 << KPF_PGTABLE;
+		u |= BIT_ULL(KPF_PGTABLE);
 
 	if (page_is_idle(page))
-		u |= 1 << KPF_IDLE;
+		u |= BIT_ULL(KPF_IDLE);
 
 	u |= kpf_copy_bit(k, KPF_LOCKED,	PG_locked);
 
 	u |= kpf_copy_bit(k, KPF_SLAB,		PG_slab);
 	if (PageTail(page) && PageSlab(compound_head(page)))
-		u |= 1 << KPF_SLAB;
+		u |= BIT_ULL(KPF_SLAB);
 
 	u |= kpf_copy_bit(k, KPF_ERROR,		PG_error);
 	u |= kpf_copy_bit(k, KPF_DIRTY,		PG_dirty);
@@ -197,7 +196,7 @@ u64 stable_page_flags(struct page *page)
 	u |= kpf_copy_bit(k, KPF_RECLAIM,	PG_reclaim);
 
 	if (PageSwapCache(page))
-		u |= 1 << KPF_SWAPCACHE;
+		u |= BIT_ULL(KPF_SWAPCACHE);
 	u |= kpf_copy_bit(k, KPF_SWAPBACKED,	PG_swapbacked);
 
 	u |= kpf_copy_bit(k, KPF_UNEVICTABLE,	PG_unevictable);
