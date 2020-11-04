@@ -707,6 +707,7 @@ int
 nfs3svc_encode_readlinkres(struct svc_rqst *rqstp, __be32 *p)
 {
 	struct nfsd3_readlinkres *resp = rqstp->rq_resp;
+	struct kvec *head = rqstp->rq_res.head;
 
 	*p++ = resp->status;
 	p = encode_post_op_attr(rqstp, p, &resp->fh);
@@ -720,6 +721,8 @@ nfs3svc_encode_readlinkres(struct svc_rqst *rqstp, __be32 *p)
 			*p = 0;
 			rqstp->rq_res.tail[0].iov_len = 4 - (resp->len&3);
 		}
+		if (svc_encode_result_payload(rqstp, head->iov_len, resp->len))
+			return 0;
 		return 1;
 	} else
 		return xdr_ressize_check(rqstp, p);
@@ -730,6 +733,7 @@ int
 nfs3svc_encode_readres(struct svc_rqst *rqstp, __be32 *p)
 {
 	struct nfsd3_readres *resp = rqstp->rq_resp;
+	struct kvec *head = rqstp->rq_res.head;
 
 	*p++ = resp->status;
 	p = encode_post_op_attr(rqstp, p, &resp->fh);
@@ -746,6 +750,8 @@ nfs3svc_encode_readres(struct svc_rqst *rqstp, __be32 *p)
 			*p = 0;
 			rqstp->rq_res.tail[0].iov_len = 4 - (resp->count & 3);
 		}
+		if (svc_encode_result_payload(rqstp, head->iov_len, resp->count))
+			return 0;
 		return 1;
 	} else
 		return xdr_ressize_check(rqstp, p);
@@ -1114,6 +1120,7 @@ nfs3svc_encode_pathconfres(struct svc_rqst *rqstp, __be32 *p)
 {
 	struct nfsd3_pathconfres *resp = rqstp->rq_resp;
 
+	*p++ = resp->status;
 	*p++ = xdr_zero;	/* no post_op_attr */
 
 	if (resp->status == 0) {
