@@ -655,8 +655,7 @@ static void __init prepare_test_data(unsigned int index)
 	int i;
 	unsigned long width = 0;
 
-	for(i = 0; i < clump_test_data[index].count; i++)
-	{
+	for (i = 0; i < clump_test_data[index].count; i++) {
 		bitmap_set_value(clump_test_data[index].data,
 			clump_bitmap_data[(clump_test_data[index].offset)++], width, 32);
 		width += 32;
