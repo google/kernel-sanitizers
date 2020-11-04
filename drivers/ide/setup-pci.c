@@ -648,35 +648,18 @@ void ide_pci_remove(struct pci_dev *dev)
 }
 EXPORT_SYMBOL_GPL(ide_pci_remove);
 
-#ifdef CONFIG_PM
-int ide_pci_suspend(struct pci_dev *dev, pm_message_t state)
-{
-	pci_save_state(dev);
-	pci_disable_device(dev);
-	pci_set_power_state(dev, pci_choose_state(dev, state));
+#define ide_pci_suspend NULL
 
-	return 0;
-}
-EXPORT_SYMBOL_GPL(ide_pci_suspend);
-
-int ide_pci_resume(struct pci_dev *dev)
+static int __maybe_unused ide_pci_resume(struct device *dev_d)
 {
+	struct pci_dev *dev = to_pci_dev(dev_d);
 	struct ide_host *host = pci_get_drvdata(dev);
-	int rc;
-
-	pci_set_power_state(dev, PCI_D0);
-
-	rc = pci_enable_device(dev);
-	if (rc)
-		return rc;
-
-	pci_restore_state(dev);
-	pci_set_master(dev);
 
 	if (host->init_chipset)
 		host->init_chipset(dev);
 
 	return 0;
 }
-EXPORT_SYMBOL_GPL(ide_pci_resume);
-#endif
+
+SIMPLE_DEV_PM_OPS(ide_pci_pm_ops, ide_pci_suspend, ide_pci_resume);
+EXPORT_SYMBOL_GPL(ide_pci_pm_ops);

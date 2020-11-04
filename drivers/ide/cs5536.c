@@ -279,8 +279,7 @@ static struct pci_driver cs5536_pci_driver = {
 	.id_table	= cs5536_pci_tbl,
 	.probe		= cs5536_init_one,
 	.remove		= ide_pci_remove,
-	.suspend	= ide_pci_suspend,
-	.resume		= ide_pci_resume,
+	.driver.pm	= &ide_pci_pm_ops,
 };
 
 module_pci_driver(cs5536_pci_driver);

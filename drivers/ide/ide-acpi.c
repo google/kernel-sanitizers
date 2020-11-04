@@ -320,10 +320,7 @@ static int do_drive_set_taskfiles(ide_drive_t *drive,
 		u8 *gtf = (u8 *)(gtf_address + ix * REGS_PER_GTF);
 		struct ide_cmd cmd;
 
-		DEBPRINT("(0x1f1-1f7): "
-			 "hex: %02x %02x %02x %02x %02x %02x %02x\n",
-			 gtf[0], gtf[1], gtf[2],
-			 gtf[3], gtf[4], gtf[5], gtf[6]);
+		DEBPRINT("(0x1f1-1f7): hex: %7ph\n", gtf);
 
 		if (!ide_acpigtf) {
 			DEBPRINT("_GTF execution disabled\n");

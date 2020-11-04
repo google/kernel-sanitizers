@@ -91,6 +91,13 @@ static const struct ide_port_info triflex_device = {
 
 static int triflex_init_one(struct pci_dev *dev, const struct pci_device_id *id)
 {
+	/*
+	 * We must not disable or powerdown the device.
+	 * APM bios refuses to suspend if IDE is not accessible.
+	 */
+	dev->pm_cap = 0;
+	dev_info(&dev->dev, "Disable triflex to be turned off by PCI CORE\n");
+
 	return ide_pci_init_one(dev, &triflex_device, NULL);
 }
 
@@ -100,27 +107,12 @@ static const struct pci_device_id triflex_pci_tbl[] = {
 };
 MODULE_DEVICE_TABLE(pci, triflex_pci_tbl);
 
-#ifdef CONFIG_PM
-static int triflex_ide_pci_suspend(struct pci_dev *dev, pm_message_t state)
-{
-	/*
-	 * We must not disable or powerdown the device.
-	 * APM bios refuses to suspend if IDE is not accessible.
-	 */
-	pci_save_state(dev);
-	return 0;
-}
-#else
-#define triflex_ide_pci_suspend NULL
-#endif
-
 static struct pci_driver triflex_pci_driver = {
 	.name		= "TRIFLEX_IDE",
 	.id_table	= triflex_pci_tbl,
 	.probe		= triflex_init_one,
 	.remove		= ide_pci_remove,
-	.suspend	= triflex_ide_pci_suspend,
-	.resume		= ide_pci_resume,
+	.driver.pm	= &ide_pci_pm_ops,
 };
 
 static int __init triflex_ide_init(void)

@@ -143,8 +143,7 @@ static struct pci_driver it8172_pci_driver = {
 	.id_table	= it8172_pci_tbl,
 	.probe		= it8172_init_one,
 	.remove		= ide_pci_remove,
-	.suspend	= ide_pci_suspend,
-	.resume		= ide_pci_resume,
+	.driver.pm	= &ide_pci_pm_ops,
 };
 
 static int __init it8172_ide_init(void)

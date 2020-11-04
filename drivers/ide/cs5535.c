@@ -194,8 +194,7 @@ static struct pci_driver cs5535_pci_driver = {
 	.id_table	= cs5535_pci_tbl,
 	.probe		= cs5535_init_one,
 	.remove		= ide_pci_remove,
-	.suspend	= ide_pci_suspend,
-	.resume		= ide_pci_resume,
+	.driver.pm	= &ide_pci_pm_ops,
 };
 
 static int __init cs5535_ide_init(void)

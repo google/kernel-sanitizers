@@ -1392,13 +1392,7 @@ int ide_pci_init_two(struct pci_dev *, struct pci_dev *,
 		     const struct ide_port_info *, void *);
 void ide_pci_remove(struct pci_dev *);
 
-#ifdef CONFIG_PM
-int ide_pci_suspend(struct pci_dev *, pm_message_t);
-int ide_pci_resume(struct pci_dev *);
-#else
-#define ide_pci_suspend NULL
-#define ide_pci_resume NULL
-#endif
+extern const struct dev_pm_ops ide_pci_pm_ops;
 
 void ide_map_sg(ide_drive_t *, struct ide_cmd *);
 void ide_init_sg_cmd(struct ide_cmd *, unsigned int);
