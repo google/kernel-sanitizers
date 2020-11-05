@@ -1027,6 +1027,8 @@ static long __get_user_pages(struct mm_struct *mm,
 	struct vm_area_struct *vma = NULL;
 	struct follow_page_context ctx = { NULL };
 
+	mmap_assert_locked(mm);
+
 	if (!nr_pages)
 		return 0;
 

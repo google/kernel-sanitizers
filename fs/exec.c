@@ -1000,6 +1000,14 @@ static int exec_mmap(struct mm_struct *mm)
 		}
 	}
 
+#if defined(CONFIG_LOCKDEP) || defined(CONFIG_DEBUG_VM)
+	/*
+	 * From here on, the mm may be accessed concurrently, and proper locking
+	 * is required for things like get_user_pages_remote().
+	 */
+	mm->mmap_lock_required = 1;
+#endif
+
 	task_lock(tsk);
 	membarrier_exec_mmap(mm);
 

@@ -77,14 +77,22 @@ static inline void mmap_read_unlock_non_owner(struct mm_struct *mm)
 
 static inline void mmap_assert_locked(struct mm_struct *mm)
 {
-	lockdep_assert_held(&mm->mmap_lock);
-	VM_BUG_ON_MM(!rwsem_is_locked(&mm->mmap_lock), mm);
+#if defined(CONFIG_LOCKDEP) || defined(CONFIG_DEBUG_VM)
+	if (mm->mmap_lock_required) {
+		lockdep_assert_held(&mm->mmap_lock);
+		VM_BUG_ON_MM(!rwsem_is_locked(&mm->mmap_lock), mm);
+	}
+#endif
 }
 
 static inline void mmap_assert_write_locked(struct mm_struct *mm)
 {
-	lockdep_assert_held_write(&mm->mmap_lock);
-	VM_BUG_ON_MM(!rwsem_is_locked(&mm->mmap_lock), mm);
+#if defined(CONFIG_LOCKDEP) || defined(CONFIG_DEBUG_VM)
+	if (mm->mmap_lock_required) {
+		lockdep_assert_held_write(&mm->mmap_lock);
+		VM_BUG_ON_MM(!rwsem_is_locked(&mm->mmap_lock), mm);
+	}
+#endif
 }
 
 static inline int mmap_lock_is_contended(struct mm_struct *mm)
