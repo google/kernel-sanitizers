@@ -147,6 +147,17 @@ static int ramfs_symlink(struct inode * dir, struct dentry *dentry, const char *
 	return error;
 }
 
+static int ramfs_tmpfile(struct inode *dir, struct dentry *dentry, umode_t mode)
+{
+	struct inode *inode;
+
+	inode = ramfs_get_inode(dir->i_sb, dir, mode, 0);
+	if (!inode)
+		return -ENOSPC;
+	d_tmpfile(dentry, inode);
+	return 0;
+}
+
 static const struct inode_operations ramfs_dir_inode_operations = {
 	.create		= ramfs_create,
 	.lookup		= simple_lookup,
@@ -157,6 +168,7 @@ static const struct inode_operations ramfs_dir_inode_operations = {
 	.rmdir		= simple_rmdir,
 	.mknod		= ramfs_mknod,
 	.rename		= simple_rename,
+	.tmpfile	= ramfs_tmpfile,
 };
 
 /*

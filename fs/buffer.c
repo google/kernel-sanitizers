@@ -657,7 +657,7 @@ int __set_page_dirty_buffers(struct page *page)
 		} while (bh != head);
 	}
 	/*
-	 * Lock out page->mem_cgroup migration to keep PageDirty
+	 * Lock out page's memcg migration to keep PageDirty
 	 * synchronized with per-memcg dirty page counters.
 	 */
 	lock_page_memcg(page);
@@ -981,10 +981,20 @@ grow_dev_page(struct block_device *bdev, sector_t block,
 			end_block = init_page_buffers(page, bdev,
 						(sector_t)index << sizebits,
 						size);
+#ifdef CONFIG_DEBUG_AID_FOR_SYZBOT
+			current->getblk_executed |= 0x01;
+#endif
 			goto done;
 		}
-		if (!try_to_free_buffers(page))
+		if (!try_to_free_buffers(page)) {
+#ifdef CONFIG_DEBUG_AID_FOR_SYZBOT
+			current->getblk_executed |= 0x02;
+#endif
 			goto failed;
+		}
+#ifdef CONFIG_DEBUG_AID_FOR_SYZBOT
+		current->getblk_executed |= 0x04;
+#endif
 	}
 
 	/*
@@ -1004,6 +1014,9 @@ grow_dev_page(struct block_device *bdev, sector_t block,
 	spin_unlock(&inode->i_mapping->private_lock);
 done:
 	ret = (block < end_block) ? 1 : -ENXIO;
+#ifdef CONFIG_DEBUG_AID_FOR_SYZBOT
+	current->getblk_executed |= 0x08;
+#endif
 failed:
 	unlock_page(page);
 	put_page(page);
@@ -1059,6 +1072,12 @@ __getblk_slow(struct block_device *bdev, sector_t block,
 		return NULL;
 	}
 
+#ifdef CONFIG_DEBUG_AID_FOR_SYZBOT
+	current->getblk_stamp = jiffies;
+	current->getblk_executed = 0;
+	current->getblk_bh_count = 0;
+	current->getblk_bh_state = 0;
+#endif
 	for (;;) {
 		struct buffer_head *bh;
 		int ret;
@@ -1070,6 +1089,24 @@ __getblk_slow(struct block_device *bdev, sector_t block,
 		ret = grow_buffers(bdev, block, size, gfp);
 		if (ret < 0)
 			return NULL;
+
+#ifdef CONFIG_DEBUG_AID_FOR_SYZBOT
+		if (!time_after(jiffies, current->getblk_stamp + 3 * HZ))
+			continue;
+		printk(KERN_ERR "%s(%u): getblk(): executed=%x bh_count=%d bh_state=%lx bdev_super_blocksize=%ld size=%u bdev_super_blocksize_bits=%d bdev_inode_blkbits=%d\n",
+		       current->comm, current->pid, current->getblk_executed,
+		       current->getblk_bh_count, current->getblk_bh_state,
+		       IS_ERR_OR_NULL(bdev->bd_super) ? -1L :
+		       bdev->bd_super->s_blocksize, size,
+		       IS_ERR_OR_NULL(bdev->bd_super) ? -1 :
+		       bdev->bd_super->s_blocksize_bits,
+		       IS_ERR_OR_NULL(bdev->bd_inode) ? -1 :
+		       bdev->bd_inode->i_blkbits);
+		current->getblk_executed = 0;
+		current->getblk_bh_count = 0;
+		current->getblk_bh_state = 0;
+		current->getblk_stamp = jiffies;
+#endif
 	}
 }
 
@@ -3191,6 +3228,11 @@ EXPORT_SYMBOL(sync_dirty_buffer);
  */
 static inline int buffer_busy(struct buffer_head *bh)
 {
+#ifdef CONFIG_DEBUG_AID_FOR_SYZBOT
+	current->getblk_executed |= 0x80;
+	current->getblk_bh_count = atomic_read(&bh->b_count);
+	current->getblk_bh_state = bh->b_state;
+#endif
 	return atomic_read(&bh->b_count) |
 		(bh->b_state & ((1 << BH_Dirty) | (1 << BH_Lock)));
 }
@@ -3229,11 +3271,18 @@ int try_to_free_buffers(struct page *page)
 	int ret = 0;
 
 	BUG_ON(!PageLocked(page));
-	if (PageWriteback(page))
+	if (PageWriteback(page)) {
+#ifdef CONFIG_DEBUG_AID_FOR_SYZBOT
+		current->getblk_executed |= 0x10;
+#endif
 		return 0;
+	}
 
 	if (mapping == NULL) {		/* can this still happen? */
 		ret = drop_buffers(page, &buffers_to_free);
+#ifdef CONFIG_DEBUG_AID_FOR_SYZBOT
+		current->getblk_executed |= 0x20;
+#endif
 		goto out;
 	}
 
@@ -3257,6 +3306,9 @@ int try_to_free_buffers(struct page *page)
 	if (ret)
 		cancel_dirty_page(page);
 	spin_unlock(&mapping->private_lock);
+#ifdef CONFIG_DEBUG_AID_FOR_SYZBOT
+	current->getblk_executed |= 0x40;
+#endif
 out:
 	if (buffers_to_free) {
 		struct buffer_head *bh = buffers_to_free;

@@ -824,8 +824,8 @@ e.g. cat /proc/sys/vm/stat_refresh /proc/meminfo
 
 As a side-effect, it also checks for negative totals (elsewhere reported
 as 0) and "fails" with EINVAL if any are found, with a warning in dmesg.
-(At time of writing, a few stats are known sometimes to be found negative,
-with no ill effects: errors and warnings on these stats are suppressed.)
+(On a SMP machine some stats can temporarily become negative, with no ill
+effects: errors and warnings on these stats are suppressed.)
 
 
 numa_stat

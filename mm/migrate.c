@@ -1694,7 +1694,7 @@ static int move_pages_and_store_status(struct mm_struct *mm, int node,
 		 * Positive err means the number of failed
 		 * pages to migrate.  Since we are going to
 		 * abort and return the number of non-migrated
-		 * pages, so need to incude the rest of the
+		 * pages, so need to include the rest of the
 		 * nr_pages that have not been attempted as
 		 * well.
 		 */
@@ -2999,11 +2999,10 @@ void migrate_vma_pages(struct migrate_vma *migrate)
 			if (!notified) {
 				notified = true;
 
-				mmu_notifier_range_init(&range,
-							MMU_NOTIFY_CLEAR, 0,
-							NULL,
-							migrate->vma->vm_mm,
-							addr, migrate->end);
+				mmu_notifier_range_init_migrate(&range, 0,
+					migrate->vma, migrate->vma->vm_mm,
+					addr, migrate->end,
+					migrate->pgmap_owner);
 				mmu_notifier_invalidate_range_start(&range);
 			}
 			migrate_vma_insert_page(migrate, addr, newpage,

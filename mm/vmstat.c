@@ -167,8 +167,14 @@ EXPORT_SYMBOL(vm_zone_stat);
 EXPORT_SYMBOL(vm_numa_stat);
 EXPORT_SYMBOL(vm_node_stat);
 
+/* Maximum sync threshold for per-cpu vmstat counters */
 #ifdef CONFIG_SMP
+#define MAX_THRESHOLD 125
+#else
+#define MAX_THRESHOLD 0
+#endif
 
+#ifdef CONFIG_SMP
 int calculate_pressure_threshold(struct zone *zone)
 {
 	int threshold;
@@ -186,11 +192,9 @@ int calculate_pressure_threshold(struct zone *zone)
 	threshold = max(1, (int)(watermark_distance / num_online_cpus()));
 
 	/*
-	 * Maximum threshold is 125
+	 * Threshold is capped by MAX_THRESHOLD
 	 */
-	threshold = min(125, threshold);
-
-	return threshold;
+	return min(MAX_THRESHOLD, threshold);
 }
 
 int calculate_normal_threshold(struct zone *zone)
@@ -610,6 +614,7 @@ void dec_node_page_state(struct page *page, enum node_stat_item item)
 }
 EXPORT_SYMBOL(dec_node_page_state);
 #else
+
 /*
  * Use interrupt disable to serialize counter updates
  */
@@ -1503,10 +1508,6 @@ static void pagetypeinfo_showblockcount_print(struct seq_file *m,
 		if (!page)
 			continue;
 
-		/* Watch for unexpected holes punched in the memmap */
-		if (!memmap_valid_within(pfn, page, zone))
-			continue;
-
 		if (page_zone(page) != zone)
 			continue;
 
@@ -1814,7 +1815,7 @@ static void refresh_vm_stats(struct work_struct *work)
 int vmstat_refresh(struct ctl_table *table, int write,
 		   void *buffer, size_t *lenp, loff_t *ppos)
 {
-	long val;
+	long val, max_drift;
 	int err;
 	int i;
 
@@ -1825,17 +1826,22 @@ int vmstat_refresh(struct ctl_table *table, int write,
 	 * pages, immediately after running a test.  /proc/sys/vm/stat_refresh,
 	 * which can equally be echo'ed to or cat'ted from (by root),
 	 * can be used to update the stats just before reading them.
-	 *
-	 * Oh, and since global_zone_page_state() etc. are so careful to hide
-	 * transiently negative values, report an error here if any of
-	 * the stats is negative, so we know to go looking for imbalance.
 	 */
 	err = schedule_on_each_cpu(refresh_vm_stats);
 	if (err)
 		return err;
+
+	/*
+	 * Since global_zone_page_state() etc. are so careful to hide
+	 * transiently negative values, report an error here if any of
+	 * the stats is negative and are less than the maximum drift value,
+	 * so we know to go looking for imbalance.
+	 */
+	max_drift = num_online_cpus() * MAX_THRESHOLD;
+
 	for (i = 0; i < NR_VM_ZONE_STAT_ITEMS; i++) {
 		val = atomic_long_read(&vm_zone_stat[i]);
-		if (val < 0) {
+		if (val < -max_drift) {
 			pr_warn("%s: %s %ld\n",
 				__func__, zone_stat_name(i), val);
 			err = -EINVAL;
@@ -1844,7 +1850,7 @@ int vmstat_refresh(struct ctl_table *table, int write,
 #ifdef CONFIG_NUMA
 	for (i = 0; i < NR_VM_NUMA_STAT_ITEMS; i++) {
 		val = atomic_long_read(&vm_numa_stat[i]);
-		if (val < 0) {
+		if (val < -max_drift) {
 			pr_warn("%s: %s %ld\n",
 				__func__, numa_stat_name(i), val);
 			err = -EINVAL;

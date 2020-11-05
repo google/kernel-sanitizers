@@ -154,6 +154,7 @@ static void watchdog_overflow_callback(struct perf_event *event,
 
 		if (hardlockup_panic)
 			nmi_panic(regs, "Hard LOCKUP");
+		atomic_inc(&hardlockup_detected);
 
 		__this_cpu_write(hard_watchdog_warn, true);
 		return;

@@ -878,6 +878,7 @@ config DEBUG_STACKOVERFLOW
 	  If in doubt, say "N".
 
 source "lib/Kconfig.kasan"
+source "lib/Kconfig.kfence"
 
 endmenu # "Memory Debugging"
 
@@ -1676,6 +1677,12 @@ config IO_STRICT_DEVMEM
 	  If in doubt, say Y.
 
 menu "$(SRCARCH) Debugging"
+
+config DEBUG_AID_FOR_SYZBOT
+       bool "Additional debug code for syzbot"
+       default n
+       help
+         This option is intended for testing by syzbot.
 
 source "arch/$(SRCARCH)/Kconfig.debug"
 

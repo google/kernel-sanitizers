@@ -545,7 +545,7 @@ do {										\
 ({										\
 	int __ret = 0;								\
 	might_sleep();								\
-	if (!(condition))							\
+	if (!(condition) && (timeout))						\
 		__ret = __wait_event_hrtimeout(wq_head, condition, timeout,	\
 					       TASK_UNINTERRUPTIBLE);		\
 	__ret;									\
@@ -571,7 +571,7 @@ do {										\
 ({										\
 	long __ret = 0;								\
 	might_sleep();								\
-	if (!(condition))							\
+	if (!(condition) && (timeout))						\
 		__ret = __wait_event_hrtimeout(wq, condition, timeout,		\
 					       TASK_INTERRUPTIBLE);		\
 	__ret;									\
