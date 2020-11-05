@@ -1570,6 +1570,8 @@ static int check_flash_errors(struct qcom_nand_host *host, int cw_cnt)
 	struct qcom_nand_controller *nandc = get_qcom_nand_controller(chip);
 	int i;
 
+	nandc_read_buffer_sync(nandc, true);
+
 	for (i = 0; i < cw_cnt; i++) {
 		u32 flash = le32_to_cpu(nandc->reg_read_buf[i]);
 
@@ -3062,6 +3064,10 @@ static const struct of_device_id qcom_nandc_of_match[] = {
 	{
 		.compatible = "qcom,ipq4019-nand",
 		.data = &ipq4019_nandc_props,
+	},
+	{
+		.compatible = "qcom,ipq6018-nand",
+		.data = &ipq8074_nandc_props,
 	},
 	{
 		.compatible = "qcom,ipq8074-nand",

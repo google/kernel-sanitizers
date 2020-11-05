@@ -19,7 +19,6 @@
 #include <linux/delay.h>
 #include <linux/mtd/mtd.h>
 #include <linux/mtd/rawnand.h>
-#include <linux/mtd/nand_ecc.h>
 #include <linux/mtd/partitions.h>
 #include <linux/iopoll.h>
 
@@ -291,7 +290,7 @@ static int __init cs553x_init_one(int cs, int mmio, unsigned long adr)
 	this->ecc.bytes = 3;
 	this->ecc.hwctl  = cs_enable_hwecc;
 	this->ecc.calculate = cs_calculate_ecc;
-	this->ecc.correct  = nand_correct_data;
+	this->ecc.correct  = rawnand_sw_hamming_correct;
 	this->ecc.strength = 1;
 
 	/* Enable the following for a flash based bad block table */
