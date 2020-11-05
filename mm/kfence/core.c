@@ -11,7 +11,6 @@
 #include <linux/lockdep.h>
 #include <linux/memblock.h>
 #include <linux/moduleparam.h>
-#include <linux/ptrace.h>
 #include <linux/random.h>
 #include <linux/rcupdate.h>
 #include <linux/seq_file.h>
