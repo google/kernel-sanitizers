@@ -54,7 +54,7 @@ __ret_fast_syscall:
 	cmp	r2, r1
 	blne	addr_limit_check_failed
 	ldr	r1, [tsk, #TI_FLAGS]		@ re-check for syscall tracing
-	tst	r1, #_TIF_SYSCALL_WORK | _TIF_WORK_MASK
+	movs	r1, r1, lsl #16
 	bne	fast_work_pending
 
 
@@ -92,7 +92,7 @@ __ret_fast_syscall:
 	cmp     r2, r1
 	blne	addr_limit_check_failed
 	ldr	r1, [tsk, #TI_FLAGS]		@ re-check for syscall tracing
-	tst	r1, #_TIF_SYSCALL_WORK | _TIF_WORK_MASK
+	movs	r1, r1, lsl #16
 	beq	no_work_pending
  UNWIND(.fnend		)
 ENDPROC(ret_fast_syscall)
@@ -134,7 +134,7 @@ ENTRY(ret_to_user_from_irq)
 	cmp	r2, r1
 	blne	addr_limit_check_failed
 	ldr	r1, [tsk, #TI_FLAGS]
-	tst	r1, #_TIF_WORK_MASK
+	movs	r1, r1, lsl #16
 	bne	slow_work_pending
 no_work_pending:
 	asm_trace_hardirqs_on save = 0
