@@ -94,7 +94,10 @@ struct msm_gpu {
 	struct msm_ringbuffer *rb[MSM_GPU_MAX_RINGS];
 	int nr_rings;
 
-	/* list of GEM active objects: */
+	/*
+	 * List of GEM active objects on this gpu.  Protected by
+	 * msm_drm_private::mm_lock
+	 */
 	struct list_head active_list;
 
 	/* does gpu need hw_init? */
@@ -102,9 +105,6 @@ struct msm_gpu {
 
 	/* number of GPU hangs (for all contexts) */
 	int global_faults;
-
-	/* worker for handling active-list retiring: */
-	struct work_struct retire_work;
 
 	void __iomem *mmio;
 	int irq;
@@ -134,7 +134,15 @@ struct msm_gpu {
 #define DRM_MSM_HANGCHECK_PERIOD 500 /* in ms */
 #define DRM_MSM_HANGCHECK_JIFFIES msecs_to_jiffies(DRM_MSM_HANGCHECK_PERIOD)
 	struct timer_list hangcheck_timer;
-	struct work_struct recover_work;
+
+	/* work for handling GPU recovery: */
+	struct kthread_work recover_work;
+
+	/* work for handling active-list retiring: */
+	struct kthread_work retire_work;
+
+	/* worker for retire/recover: */
+	struct kthread_worker *worker;
 
 	struct drm_gem_object *memptrs_bo;
 
