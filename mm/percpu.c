@@ -1315,8 +1315,8 @@ static struct pcpu_chunk * __init pcpu_alloc_first_chunk(unsigned long tmp_addr,
 	region_size = ALIGN(start_offset + map_size, lcm_align);
 
 	/* allocate chunk */
-	alloc_size = sizeof(struct pcpu_chunk) +
-		BITS_TO_LONGS(region_size >> PAGE_SHIFT) * sizeof(unsigned long);
+	alloc_size = struct_size(chunk, populated,
+				 BITS_TO_LONGS(region_size >> PAGE_SHIFT));
 	chunk = memblock_alloc(alloc_size, SMP_CACHE_BYTES);
 	if (!chunk)
 		panic("%s: Failed to allocate %zu bytes\n", __func__,
@@ -2521,8 +2521,8 @@ void __init pcpu_setup_first_chunk(const struct pcpu_alloc_info *ai,
 	pcpu_unit_pages = ai->unit_size >> PAGE_SHIFT;
 	pcpu_unit_size = pcpu_unit_pages << PAGE_SHIFT;
 	pcpu_atom_size = ai->atom_size;
-	pcpu_chunk_struct_size = sizeof(struct pcpu_chunk) +
-		BITS_TO_LONGS(pcpu_unit_pages) * sizeof(unsigned long);
+	pcpu_chunk_struct_size = struct_size(chunk, populated,
+					     BITS_TO_LONGS(pcpu_unit_pages));
 
 	pcpu_stats_save_ai(ai);
 
@@ -2669,6 +2669,7 @@ static struct pcpu_alloc_info * __init pcpu_build_alloc_info(
 {
 	static int group_map[NR_CPUS] __initdata;
 	static int group_cnt[NR_CPUS] __initdata;
+	static struct cpumask mask __initdata;
 	const size_t static_size = __per_cpu_end - __per_cpu_start;
 	int nr_groups = 1, nr_units = 0;
 	size_t size_sum, min_unit_size, alloc_size;
@@ -2702,24 +2703,27 @@ static struct pcpu_alloc_info * __init pcpu_build_alloc_info(
 		upa--;
 	max_upa = upa;
 
+	cpumask_copy(&mask, cpu_possible_mask);
+
 	/* group cpus according to their proximity */
-	for_each_possible_cpu(cpu) {
-		group = 0;
-	next_group:
-		for_each_possible_cpu(tcpu) {
-			if (cpu == tcpu)
-				break;
-			if (group_map[tcpu] == group && cpu_distance_fn &&
-			    (cpu_distance_fn(cpu, tcpu) > LOCAL_DISTANCE ||
-			     cpu_distance_fn(tcpu, cpu) > LOCAL_DISTANCE)) {
-				group++;
-				nr_groups = max(nr_groups, group + 1);
-				goto next_group;
-			}
-		}
+	for (group = 0; !cpumask_empty(&mask); group++) {
+		/* pop the group's first cpu */
+		cpu = cpumask_first(&mask);
 		group_map[cpu] = group;
 		group_cnt[group]++;
+		cpumask_clear_cpu(cpu, &mask);
+
+		for_each_cpu(tcpu, &mask) {
+			if (!cpu_distance_fn ||
+			    (cpu_distance_fn(cpu, tcpu) == LOCAL_DISTANCE &&
+			     cpu_distance_fn(tcpu, cpu) == LOCAL_DISTANCE)) {
+				group_map[tcpu] = group;
+				group_cnt[group]++;
+				cpumask_clear_cpu(tcpu, &mask);
+			}
+		}
 	}
+	nr_groups = group;
 
 	/*
 	 * Wasted space is caused by a ratio imbalance of upa to group_cnt.
