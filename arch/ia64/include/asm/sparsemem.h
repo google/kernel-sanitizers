@@ -18,10 +18,4 @@
 #endif
 
 #endif /* CONFIG_SPARSEMEM */
-
-#ifdef CONFIG_MEMORY_HOTPLUG
-int memory_add_physaddr_to_nid(u64 addr);
-#define memory_add_physaddr_to_nid memory_add_physaddr_to_nid
-#endif
-
 #endif /* _ASM_IA64_SPARSEMEM_H */
