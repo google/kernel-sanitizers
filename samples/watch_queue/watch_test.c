@@ -26,6 +26,9 @@
 #ifndef __NR_keyctl
 #define __NR_keyctl -1
 #endif
+#ifndef __NR_watch_mount
+#define __NR_watch_mount -1
+#endif
 
 #define BUF_SIZE 256
 
@@ -56,6 +59,29 @@ static void saw_key_change(struct watch_notification *n, size_t len)
 
 	printf("KEY %08x change=%u[%s] aux=%u\n",
 	       k->key_id, n->subtype, key_subtypes[n->subtype], k->aux);
+}
+
+static const char *mount_subtypes[256] = {
+	[NOTIFY_MOUNT_NEW_MOUNT]	= "new_mount",
+	[NOTIFY_MOUNT_UNMOUNT]		= "unmount",
+	[NOTIFY_MOUNT_EXPIRY]		= "expiry",
+	[NOTIFY_MOUNT_READONLY]		= "readonly",
+	[NOTIFY_MOUNT_SETATTR]		= "setattr",
+	[NOTIFY_MOUNT_MOVE_FROM]	= "move_from",
+	[NOTIFY_MOUNT_MOVE_TO]		= "move_to",
+};
+
+static void saw_mount_change(struct watch_notification *n, size_t len)
+{
+	struct mount_notification *m = (struct mount_notification *)n;
+
+	if (len != sizeof(struct mount_notification))
+		return;
+
+	printf("MOUNT %08llx change=%u[%s] aux=%llx\n",
+	       (unsigned long long)m->triggered_on,
+	       n->subtype, mount_subtypes[n->subtype],
+	       (unsigned long long)m->auxiliary_mount);
 }
 
 /*
@@ -134,6 +160,9 @@ static void consumer(int fd)
 			default:
 				printf("other type\n");
 				break;
+			case WATCH_TYPE_MOUNT_NOTIFY:
+				saw_mount_change(&n.n, len);
+				break;
 			}
 
 			p += len;
@@ -142,11 +171,16 @@ static void consumer(int fd)
 }
 
 static struct watch_notification_filter filter = {
-	.nr_filters	= 1,
+	.nr_filters	= 2,
 	.filters = {
 		[0]	= {
 			.type			= WATCH_TYPE_KEY_NOTIFY,
 			.subtype_filter[0]	= UINT_MAX,
+		},
+		[1] = {
+			.type			= WATCH_TYPE_MOUNT_NOTIFY,
+			// Reject move-from notifications
+			.subtype_filter[0]	= UINT_MAX & ~(1 << NOTIFY_MOUNT_MOVE_FROM),
 		},
 	},
 };
@@ -178,6 +212,11 @@ int main(int argc, char **argv)
 
 	if (keyctl_watch_key(KEY_SPEC_USER_KEYRING, fd, 0x02) == -1) {
 		perror("keyctl");
+		exit(1);
+	}
+
+	if (syscall(__NR_watch_mount, AT_FDCWD, "/", 0, fd, 0xde) == -1) {
+		perror("watch_mount");
 		exit(1);
 	}
 

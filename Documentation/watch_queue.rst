@@ -8,6 +8,7 @@ opened by userspace.  This can be used in conjunction with::
 
   * Key/keyring notifications
 
+  * Mount notifications.
 
 The notifications buffers can be enabled by:
 
@@ -237,6 +238,11 @@ Any particular buffer can be fed from multiple sources.  Sources include:
 
     See Documentation/security/keys/core.rst for more information.
 
+  * WATCH_TYPE_MOUNT_NOTIFY
+
+    Notifications of this type indicate changes to mount attributes and the
+    mount topology within the subtree at the indicated point.
+
 
 Event Filtering
 ===============
@@ -296,9 +302,10 @@ A buffer is created with something like the following::
 	pipe2(fds, O_TMPFILE);
 	ioctl(fds[1], IOC_WATCH_QUEUE_SET_SIZE, 256);
 
-It can then be set to receive keyring change notifications::
+It can then be set to receive notifications::
 
 	keyctl(KEYCTL_WATCH_KEY, KEY_SPEC_SESSION_KEYRING, fds[1], 0x01);
+	watch_mount(AT_FDCWD, "/", 0, fds[1], 0x02);
 
 The notifications can then be consumed by something like the following::
 
@@ -334,6 +341,9 @@ The notifications can then be consumed by something like the following::
 					got_meta(&n.n);
 				case WATCH_TYPE_KEY_NOTIFY:
 					saw_key_change(&n.n);
+					break;
+				case WATCH_TYPE_MOUNT_NOTIFY:
+					saw_mount_change(&n.n);
 					break;
 				}
 
