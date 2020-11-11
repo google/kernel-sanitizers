@@ -651,6 +651,16 @@ config STACKDEPOT
 	bool
 	select STACKTRACE
 
+choice
+	prompt "Sack cache implementation"
+
+config STACKCACHE_LRU
+	bool "Use the LRU implementation for the stack cache"
+	help
+	 Use a stack cache implementation that relies on ring buffers and LRU caches.
+
+endchoice
+
 config SBITMAP
 	bool
 
