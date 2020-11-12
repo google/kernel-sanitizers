@@ -91,6 +91,11 @@ struct kasan_global {
  * Structures to keep alloc and free tracks *
  */
 
+enum kasan_stackcache_types {
+	KASAN_STACKCACHE_ALLOC,
+	KASAN_STACKCACHE_FREE
+};
+
 #define KASAN_STACK_DEPTH 64
 
 struct kasan_track {
