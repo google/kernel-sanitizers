@@ -31,6 +31,7 @@ void stack_cache_insert(const volatile void *object, size_t size, unsigned trace
  * @object: Pointer to the start of the object.
  * @size: Size of the object (in bytes).
  * @trace_type: Type of the stack trace.
+ * @time_jiffies: How many jiffies ago the record was created.
  * @n_entries: The number of stack trace entries.
  * @entries: Stack trace entries.
  *
@@ -40,6 +41,7 @@ struct stack_cache_response {
 	void *object;
 	size_t size;
 	unsigned trace_type;
+	u32 time_jiffies;
 	size_t n_entries;
 	unsigned long entries[STACK_CACHE_MAX_DEPTH];
 };
