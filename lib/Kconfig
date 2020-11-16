@@ -659,6 +659,11 @@ config STACKCACHE_LRU
 	help
 	 Use a stack cache implementation that relies on ring buffers and LRU caches.
 
+config STACKCACHE_RB
+	bool "Use the simplest (ring buffer) implementation for the stack cache"
+	help
+	 Use a stack cache implementation that relies on ring buffers only.
+
 endchoice
 
 config SBITMAP

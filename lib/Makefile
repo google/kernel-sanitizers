@@ -273,6 +273,12 @@ obj-$(CONFIG_STACKCACHE_LRU) += stackcache_lru.o
 KASAN_SANITIZE_stackcache_lru.o := n
 KCOV_INSTRUMENT_stackcache_lru.o := n
 
+# Same for stackcache_rb.c
+CFLAGS_stackcache_rb.o += -fno-builtin
+obj-$(CONFIG_STACKCACHE_RB) += stackcache_rb.o
+KASAN_SANITIZE_stackcache_rb.o := n
+KCOV_INSTRUMENT_stackcache_rb.o := n
+
 libfdt_files = fdt.o fdt_ro.o fdt_wip.o fdt_rw.o fdt_sw.o fdt_strerror.o \
 	       fdt_empty_tree.o fdt_addresses.o
 $(foreach file, $(libfdt_files), \
