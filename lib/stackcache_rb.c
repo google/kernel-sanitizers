@@ -13,6 +13,7 @@
 #include <linux/hashtable.h>
 #include <linux/spinlock.h>
 #include <linux/list.h>
+#include <linux/mm.h>
 
 #define PER_CPU_RING_BUFFER_SIZE (1<<22)
 #define STACK_CACHE_HASH_SEED 0xDEADBEEF
@@ -154,7 +155,7 @@ static int __init stack_cache_init(void)
 	BUILD_BUG_ON(offsetof(struct buf_info_record, stack_trace) % sizeof(struct buf_record_hdr));
 
 	for_each_possible_cpu(cpu) {
-		void *buffer_ptr = kzalloc(PER_CPU_RING_BUFFER_SIZE, GFP_KERNEL);
+		void *buffer_ptr = kvzalloc(PER_CPU_RING_BUFFER_SIZE, GFP_KERNEL);
 		struct stackcache_cpu_ctx *ctx = &per_cpu(stackcache_ctx, cpu);
 		spin_lock_init(&ctx->lock);
 
@@ -265,4 +266,4 @@ size_t stack_cache_lookup(const volatile void *ptr, size_t size,
 	return ret_entries;
 }
 
-core_initcall(stack_cache_init);
+early_initcall(stack_cache_init);

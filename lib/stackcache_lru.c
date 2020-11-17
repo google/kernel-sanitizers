@@ -13,6 +13,7 @@
 #include <linux/hashtable.h>
 #include <linux/spinlock.h>
 #include <linux/list.h>
+#include <linux/mm.h>
 
 #define PER_CPU_HASH_TABLE_SIZE_BITS 13
 #define PER_CPU_HASH_TABLE_ENTRIES (1<<10)
@@ -293,10 +294,10 @@ static int __init stack_cache_init(void)
 	BUILD_BUG_ON(sizeof(struct buf_info_record) % sizeof(struct buf_record_hdr));
 
 	for_each_possible_cpu(cpu) {
-		void *buffer_ptr = kzalloc(PER_CPU_RING_BUFFER_SIZE, GFP_KERNEL);
+		void *buffer_ptr = kvzalloc(PER_CPU_RING_BUFFER_SIZE, GFP_KERNEL);
 		struct stackcache_cpu_ctx *ctx = &per_cpu(stackcache_ctx, cpu);
 		void *entries_ptr =
-			kmalloc(PER_CPU_HASH_TABLE_ENTRIES * sizeof(struct stackcache_lru_entry), GFP_KERNEL);
+			kvzalloc(PER_CPU_HASH_TABLE_ENTRIES * sizeof(struct stackcache_lru_entry), GFP_KERNEL);
 
 		WRITE_ONCE(ctx->lru_entries, entries_ptr);
 		hash_init(ctx->lru_table);
@@ -412,4 +413,4 @@ size_t stack_cache_lookup(const volatile void *ptr, size_t size,
 	return ret_entries;
 }
 
-core_initcall(stack_cache_init);
+early_initcall(stack_cache_init);
