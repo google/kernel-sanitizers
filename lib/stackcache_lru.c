@@ -16,20 +16,22 @@
 #include <linux/mm.h>
 
 #define PER_CPU_HASH_TABLE_SIZE_BITS 13
-#define PER_CPU_HASH_TABLE_ENTRIES (1<<10)
-#define PER_CPU_RING_BUFFER_SIZE (1<<21)
+#define PER_CPU_HASH_TABLE_ENTRIES (1 << 10)
+#define PER_CPU_RING_BUFFER_SIZE (1 << 21)
 #define STACK_CACHE_HASH_SEED 0xDEADBEEF
 
-#define RING_BUFFER_SUB_POS(pos, cnt) ((pos) + PER_CPU_RING_BUFFER_SIZE - (cnt)) \
-	& (PER_CPU_RING_BUFFER_SIZE - 1)
+#define RING_BUFFER_SUB_POS(pos, cnt)                                                              \
+	((pos) + PER_CPU_RING_BUFFER_SIZE - (cnt)) & (PER_CPU_RING_BUFFER_SIZE - 1)
 
-#define for_each_rb_entry(buffer, hdr, start_pos, space_offset)	\
-	for (used_space = 0, hdr = (typeof(hdr))&buffer[RING_BUFFER_SUB_POS(start_pos, space_offset + sizeof(*hdr))], \
-			 space_offset += hdr->length;							\
-		 space_offset <= PER_CPU_RING_BUFFER_SIZE && hdr->record_type != BUF_RECORD_EMPTY; \
-		 hdr = (typeof(hdr))&buffer[RING_BUFFER_SUB_POS(start_pos, space_offset + sizeof(*hdr))], \
-			 space_offset += hdr->length)
-
+#define for_each_rb_entry(buffer, hdr, start_pos, space_offset)                                    \
+	for (used_space = 0,                                                                       \
+	    hdr = (typeof(hdr)) &                                                                  \
+		  buffer[RING_BUFFER_SUB_POS(start_pos, space_offset + sizeof(*hdr))],             \
+	    space_offset += hdr->length;                                                           \
+	     space_offset <= PER_CPU_RING_BUFFER_SIZE && hdr->record_type != BUF_RECORD_EMPTY;     \
+	     hdr = (typeof(hdr)) &                                                                 \
+		   buffer[RING_BUFFER_SUB_POS(start_pos, space_offset + sizeof(*hdr))],            \
+	    space_offset += hdr->length)
 
 enum buf_record_type {
 	BUF_RECORD_EMPTY = 0, /* Not set yet */
@@ -39,8 +41,8 @@ enum buf_record_type {
 };
 
 struct buf_record_hdr {
-	u16 record_type:2;	/* See enum buf_record_type. */
-	u16 length:14;		/* Number of bytes in the record */
+	u16 record_type : 2; /* See enum buf_record_type. */
+	u16 length : 14; /* Number of bytes in the record */
 } __packed;
 
 /* A record that stores a memory operation (e.g. alloc/dealloc). */
@@ -90,7 +92,7 @@ static DEFINE_PER_CPU(struct stackcache_cpu_ctx, stackcache_ctx);
 static struct stackcache_lru_entry *find_lru_cache_entry(struct stackcache_cpu_ctx *ctx, u32 hash)
 {
 	struct stackcache_lru_entry *record;
-	hash_for_each_possible(ctx->lru_table, record, ht_node, hash) {
+	hash_for_each_possible (ctx->lru_table, record, ht_node, hash) {
 		if (record->trace_hash == hash)
 			return record;
 	}
@@ -105,7 +107,8 @@ static struct stackcache_lru_entry *find_lru_cache_entry(struct stackcache_cpu_c
  * added wraps the end of the buffer, a record of that type is inserted first. As a result, it
  * becomes possible to put the new record at the beginning of the buffer.
  */
-static inline void* add_new_record(struct stackcache_cpu_ctx *ctx, size_t len, u16 record_type) {
+static inline void *add_new_record(struct stackcache_cpu_ctx *ctx, size_t len, u16 record_type)
+{
 	u8 *buffer = READ_ONCE(ctx->buffer);
 	size_t prev_next = READ_ONCE(ctx->next_idx);
 	struct buf_record_hdr *hdr;
@@ -135,7 +138,7 @@ static inline void* add_new_record(struct stackcache_cpu_ctx *ctx, size_t len, u
  * 3. Return the hash of the entry
  */
 static inline u32 store_stack_trace(struct stackcache_cpu_ctx *ctx, size_t n_entries,
-									const unsigned long *entries)
+				    const unsigned long *entries)
 {
 	struct stackcache_lru_entry *entry;
 	const unsigned long *trace_begin;
@@ -151,7 +154,8 @@ static inline u32 store_stack_trace(struct stackcache_cpu_ctx *ctx, size_t n_ent
 	}
 
 	entries_total_size = n_entries * sizeof(unsigned long);
-	trace_hash = jhash2((u32 *)trace_begin, entries_total_size / sizeof(u32), STACK_CACHE_HASH_SEED);
+	trace_hash =
+		jhash2((u32 *)trace_begin, entries_total_size / sizeof(u32), STACK_CACHE_HASH_SEED);
 
 	entry = find_lru_cache_entry(ctx, trace_hash);
 	if (entry != NULL) {
@@ -159,21 +163,22 @@ static inline u32 store_stack_trace(struct stackcache_cpu_ctx *ctx, size_t n_ent
 		list_del(&entry->lru_node);
 	} else {
 		if (ctx->n_lru_entries == PER_CPU_HASH_TABLE_ENTRIES) {
-			__maybe_unused struct buf_stack_record * record;
+			__maybe_unused struct buf_stack_record *record;
 			size_t __maybe_unused total_size;
 
-			entry = list_first_entry(&ctx->lru_list, struct stackcache_lru_entry, lru_node);
+			entry = list_first_entry(&ctx->lru_list, struct stackcache_lru_entry,
+						 lru_node);
 			list_del(&entry->lru_node);
 			hash_del(&entry->ht_node);
 
 #ifndef STACKCACHE_LRU_NO_VICTIM_CACHE
 			total_size = offsetof(struct buf_stack_record, stack_trace) +
-				entry->trace_count * sizeof(unsigned long);
+				     entry->trace_count * sizeof(unsigned long);
 			record = add_new_record(ctx, total_size, BUF_RECORD_STACK);
 			record->trace_count = entry->trace_count;
 			record->trace_hash = entry->trace_hash;
 			memcpy(&record->stack_trace, entry->stack_trace,
-				   entry->trace_count * sizeof(unsigned long));
+			       entry->trace_count * sizeof(unsigned long));
 #endif
 		} else {
 			entry = &ctx->lru_entries[ctx->n_lru_entries++];
@@ -193,7 +198,7 @@ static inline u32 store_stack_trace(struct stackcache_cpu_ctx *ctx, size_t n_ent
  * Calculate the distance from [@ptr; @ptr+@size] to the object described by @entry.
  */
 static unsigned long distance_to(struct stack_cache_response *entry, const volatile void *ptr,
-								 size_t size)
+				 size_t size)
 {
 	unsigned long dist;
 
@@ -202,7 +207,7 @@ static unsigned long distance_to(struct stack_cache_response *entry, const volat
 		return (u8 *)entry->object - (u8 *)ptr;
 
 	/* [object]..XX, [objectX]X, or [objectXX] */
-	dist = ((u8*)ptr + size) - (u8*)entry->object;
+	dist = ((u8 *)ptr + size) - (u8 *)entry->object;
 	if (dist > entry->size)
 		return dist - entry->size;
 	return 0;
@@ -212,7 +217,7 @@ static unsigned long distance_to(struct stack_cache_response *entry, const volat
  * Check if left and right follow the ordering wanted by stack_cache_lookup().
  */
 static bool is_less(struct stack_cache_response *left, struct stack_cache_response *right,
-						   const volatile void *ptr, size_t size)
+		    const volatile void *ptr, size_t size)
 {
 	unsigned long distance_left = distance_to(left, ptr, size);
 	unsigned long distance_right = distance_to(right, ptr, size);
@@ -227,12 +232,12 @@ static bool is_less(struct stack_cache_response *left, struct stack_cache_respon
  * Insert an element into an array of struct stack_cache_response.
  */
 static void insert_element(struct stack_cache_response *entries, unsigned int nentries,
-						   size_t insert_at, struct stack_cache_response *new_entry)
+			   size_t insert_at, struct stack_cache_response *new_entry)
 {
 	WARN_ON(insert_at >= nentries);
 	if (insert_at + 1 < nentries) {
 		memmove(&entries[insert_at + 1], &entries[insert_at],
-				sizeof(*new_entry) * (nentries - insert_at - 1));
+			sizeof(*new_entry) * (nentries - insert_at - 1));
 	}
 	memcpy(&entries[insert_at], new_entry, sizeof(*new_entry));
 }
@@ -242,7 +247,8 @@ static void insert_element(struct stack_cache_response *entries, unsigned int ne
  */
 
 static void info_record_to_response(struct buf_info_record *info_record,
-									struct stack_cache_response *new_resp) {
+				    struct stack_cache_response *new_resp)
+{
 	new_resp->object = (void *)info_record->ptr;
 	new_resp->size = info_record->size;
 	new_resp->trace_type = info_record->trace_type;
@@ -253,7 +259,7 @@ static void info_record_to_response(struct buf_info_record *info_record,
 }
 
 static void set_traces_from_lru(struct stackcache_cpu_ctx *ctx,
-								struct stack_cache_response *entries, unsigned int nentries)
+				struct stack_cache_response *entries, unsigned int nentries)
 {
 	int i;
 	for (i = 0; i < nentries; i++) {
@@ -265,14 +271,15 @@ static void set_traces_from_lru(struct stackcache_cpu_ctx *ctx,
 		if (entry) {
 			entries[i].n_entries = entry->trace_count;
 			memcpy(&entries[i].entries, &entry->stack_trace,
-				   entry->trace_count * sizeof(unsigned long));
+			       entry->trace_count * sizeof(unsigned long));
 		}
 	}
 }
 
 #ifndef STACKCACHE_LRU_NO_VICTIM_CACHE
 static void set_traces_from_record(struct stack_cache_response *entries, unsigned int nentries,
-								   struct buf_stack_record *record) {
+				   struct buf_stack_record *record)
+{
 	int i;
 	for (i = 0; i < nentries; i++) {
 		if (entries[i].n_entries > 0 || entries[i].entries[0] != record->trace_hash)
@@ -280,7 +287,7 @@ static void set_traces_from_record(struct stack_cache_response *entries, unsigne
 
 		entries[i].n_entries = record->trace_count;
 		memcpy(&entries[i].entries, &record->stack_trace,
-			   record->trace_count * sizeof(unsigned long));
+		       record->trace_count * sizeof(unsigned long));
 	}
 }
 #endif
@@ -293,11 +300,12 @@ static int __init stack_cache_init(void)
 	BUILD_BUG_ON(PER_CPU_RING_BUFFER_SIZE % sizeof(struct buf_record_hdr));
 	BUILD_BUG_ON(sizeof(struct buf_info_record) % sizeof(struct buf_record_hdr));
 
-	for_each_possible_cpu(cpu) {
+	for_each_possible_cpu (cpu) {
 		void *buffer_ptr = kvzalloc(PER_CPU_RING_BUFFER_SIZE, GFP_KERNEL);
 		struct stackcache_cpu_ctx *ctx = &per_cpu(stackcache_ctx, cpu);
 		void *entries_ptr =
-			kvzalloc(PER_CPU_HASH_TABLE_ENTRIES * sizeof(struct stackcache_lru_entry), GFP_KERNEL);
+			kvzalloc(PER_CPU_HASH_TABLE_ENTRIES * sizeof(struct stackcache_lru_entry),
+				 GFP_KERNEL);
 
 		WRITE_ONCE(ctx->lru_entries, entries_ptr);
 		hash_init(ctx->lru_table);
@@ -315,7 +323,7 @@ static int __init stack_cache_init(void)
 /* ===== Public methods =================================================== */
 
 void stack_cache_insert(const volatile void *object, size_t size, unsigned trace_type,
-						size_t n_entries, const unsigned long *entries)
+			size_t n_entries, const unsigned long *entries)
 {
 	struct stackcache_cpu_ctx *ctx;
 	struct buf_info_record *record;
@@ -326,7 +334,7 @@ void stack_cache_insert(const volatile void *object, size_t size, unsigned trace
 
 	/* If it is not initialized yet. */
 	if (unlikely(READ_ONCE(ctx->buffer) == NULL))
-	    goto error;
+		goto error;
 
 	/* Just skip the insertion if the CPU is already doing it. */
 	if (spin_trylock_irqsave(&ctx->lock, flags) == 0)
@@ -346,7 +354,7 @@ error:
 }
 
 size_t stack_cache_lookup(const volatile void *ptr, size_t size,
-						  struct stack_cache_response *entries, unsigned int nentries)
+			  struct stack_cache_response *entries, unsigned int nentries)
 {
 	int cpu;
 	size_t ret_entries = 0;
@@ -354,7 +362,7 @@ size_t stack_cache_lookup(const volatile void *ptr, size_t size,
 	if (nentries <= 1)
 		return 0;
 
-	for_each_possible_cpu(cpu) {
+	for_each_possible_cpu (cpu) {
 		struct stackcache_cpu_ctx *ctx = &per_cpu(stackcache_ctx, cpu);
 		char *buffer = READ_ONCE(ctx->buffer);
 		struct buf_record_hdr *hdr;
@@ -369,7 +377,8 @@ size_t stack_cache_lookup(const volatile void *ptr, size_t size,
 		next_idx = READ_ONCE(ctx->next_idx);
 
 		/* Traverse info records. */
-		for_each_rb_entry(buffer, hdr, next_idx, used_space) {
+		for_each_rb_entry(buffer, hdr, next_idx, used_space)
+		{
 			struct stack_cache_response new_resp;
 			size_t start_pos;
 			size_t insert_at;
@@ -378,11 +387,13 @@ size_t stack_cache_lookup(const volatile void *ptr, size_t size,
 				continue;
 
 			start_pos = RING_BUFFER_SUB_POS(next_idx, used_space);
-			info_record_to_response((struct buf_info_record *)&buffer[start_pos], &new_resp);
+			info_record_to_response((struct buf_info_record *)&buffer[start_pos],
+						&new_resp);
 
 			/* Do insertion sort. */
 			insert_at = ret_entries;
-			while (insert_at > 0 && is_less(&new_resp, &entries[insert_at - 1], ptr, size))
+			while (insert_at > 0 &&
+			       is_less(&new_resp, &entries[insert_at - 1], ptr, size))
 				insert_at--;
 
 			if (insert_at < nentries) {
@@ -397,13 +408,14 @@ size_t stack_cache_lookup(const volatile void *ptr, size_t size,
 		/* Set traces from trace records. */
 #ifndef STACKCACHE_LRU_NO_VICTIM_CACHE
 		next_idx = READ_ONCE(ctx->next_idx);
-		for_each_rb_entry(buffer, hdr, next_idx, used_space) {
+		for_each_rb_entry(buffer, hdr, next_idx, used_space)
+		{
 			size_t pos;
 			if (hdr->record_type != BUF_RECORD_STACK)
 				continue;
 			pos = RING_BUFFER_SUB_POS(next_idx, used_space);
 			set_traces_from_record(entries, nentries,
-								   (struct buf_stack_record *)&buffer[pos]);
+					       (struct buf_stack_record *)&buffer[pos]);
 		}
 #endif
 

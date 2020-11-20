@@ -24,7 +24,7 @@
  * This function runs in O(1).
  */
 void stack_cache_insert(const volatile void *object, size_t size, unsigned trace_type,
-						size_t n_entries, const unsigned long *entries);
+			size_t n_entries, const unsigned long *entries);
 
 /**
  * struct stack_cache_response - a stack trace cache response entry.
@@ -64,6 +64,6 @@ struct stack_cache_response {
  */
 
 size_t stack_cache_lookup(const volatile void *ptr, size_t size,
-						  struct stack_cache_response *entries, unsigned int nentries);
+			  struct stack_cache_response *entries, unsigned int nentries);
 
 #endif /* _LINUX_STACKCACHE_H */
