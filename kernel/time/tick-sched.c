@@ -175,25 +175,40 @@ static void tick_sched_do_timer(struct tick_sched *ts, ktime_t now)
 
 #ifdef CONFIG_NO_HZ_COMMON
 	/*
-	 * Check if the do_timer duty was dropped. We don't care about
-	 * concurrency: This happens only when the CPU in charge went
-	 * into a long sleep. If two CPUs happen to assign themselves to
-	 * this duty, then the jiffies update is still serialized by
-	 * jiffies_lock.
-	 *
-	 * If nohz_full is enabled, this should not happen because the
-	 * tick_do_timer_cpu never relinquishes.
+	 * Check if the do_timer duty was dropped. This is an intentional
+	 * data race and we don't care about concurrency: This happens only
+	 * when the CPU in charge went into a long sleep. If two CPUs
+	 * happen to assign themselves to this duty it does not matter
+	 * which one ends up holding it. Both will try to update jiffies
+	 * but the jiffies update is still serialized by jiffies_lock.
 	 */
-	if (unlikely(tick_do_timer_cpu == TICK_DO_TIMER_NONE)) {
+	if (unlikely(data_race(tick_do_timer_cpu) == TICK_DO_TIMER_NONE)) {
 #ifdef CONFIG_NO_HZ_FULL
+		/*
+		 *
+		 * If nohz_full is enabled, this should not happen because
+		 * the tick_do_timer_cpu never relinquishes. Warn and try
+		 * to keep it alive.
+		 */
 		WARN_ON(tick_nohz_full_running);
 #endif
 		tick_do_timer_cpu = cpu;
 	}
 #endif
 
-	/* Check, if the jiffies need an update */
-	if (tick_do_timer_cpu == cpu)
+	/*
+	 * Check if jiffies need an update. Intentional data race on NOHZ:
+	 *
+	 * - There is some other CPU holding it
+	 * - This CPU took over above but raced with another CPU. So both
+	 *   invoke tick_do_update_jiffies64() and contend on jiffies lock
+	 *   eventually.
+	 * - The other CPU which holds it is about to give it up which does
+	 *   not cause harm because the current or some other CPU will
+	 *   observe that state either on the next interrupt or when trying
+	 *   to go back to idle and act upon it.
+	 */
+	if (data_race(tick_do_timer_cpu) == cpu)
 		tick_do_update_jiffies64(now);
 
 	if (ts->inidle)
@@ -481,6 +496,9 @@ static int tick_nohz_cpu_down(unsigned int cpu)
 	 * The tick_do_timer_cpu CPU handles housekeeping duty (unbound
 	 * timers, workqueues, timekeeping, ...) on behalf of full dynticks
 	 * CPUs. It must remain online when nohz full is enabled.
+	 *
+	 * There is no data race here. If nohz_full is enabled, this can
+	 * not change because the tick_do_timer_cpu never relinquishes.
 	 */
 	if (tick_nohz_full_running && tick_do_timer_cpu == cpu)
 		return -EBUSY;
@@ -735,6 +753,7 @@ static ktime_t tick_nohz_next_event(struct tick_sched *ts, int cpu)
 	u64 basemono, next_tick, next_tmr, next_rcu, delta, expires;
 	unsigned long basejiff;
 	unsigned int seq;
+	int duty;
 
 	/* Read jiffies and the time when jiffies were updated last */
 	do {
@@ -799,8 +818,15 @@ static ktime_t tick_nohz_next_event(struct tick_sched *ts, int cpu)
 	 * Otherwise we can sleep as long as we want.
 	 */
 	delta = timekeeping_max_deferment();
-	if (cpu != tick_do_timer_cpu &&
-	    (tick_do_timer_cpu != TICK_DO_TIMER_NONE || !ts->do_timer_last))
+	/*
+	 * Intentional data race: If the current CPU holds the do_timer()
+	 * duty then nothing can change it. It's always the holder which
+	 * gives it up.  If it's not held by any CPU then this CPU might be
+	 * the one which held it last. If that is true and another CPU
+	 * takes over in parallel then the only "damage" is a short sleep.
+	 */
+	duty = data_race(tick_do_timer_cpu);
+	if (cpu != duty && (duty != TICK_DO_TIMER_NONE || !ts->do_timer_last))
 		delta = KTIME_MAX;
 
 	/* Calculate the next expiry time */
@@ -821,6 +847,7 @@ static void tick_nohz_stop_tick(struct tick_sched *ts, int cpu)
 	u64 basemono = ts->timer_expires_base;
 	u64 expires = ts->timer_expires;
 	ktime_t tick = expires;
+	int duty;
 
 	/* Make sure we won't be trying to stop it twice in a row. */
 	ts->timer_expires_base = 0;
@@ -832,11 +859,19 @@ static void tick_nohz_stop_tick(struct tick_sched *ts, int cpu)
 	 * don't drop this here the jiffies might be stale and
 	 * do_timer() never invoked. Keep track of the fact that it
 	 * was the one which had the do_timer() duty last.
+	 *
+	 * Another intentional data race: If the current CPU holds the
+	 * do_timer() duty, then no other CPU can change it. If no CPU
+	 * holds it and on read another CPU is taking it on concurrently
+	 * then the only damage is that ts->do_timer_last might not be
+	 * cleared right now which just prevents the CPU from going into
+	 * sleep forever mode for another round.
 	 */
-	if (cpu == tick_do_timer_cpu) {
+	duty = data_race(tick_do_timer_cpu);
+	if (cpu == duty) {
 		tick_do_timer_cpu = TICK_DO_TIMER_NONE;
 		ts->do_timer_last = 1;
-	} else if (tick_do_timer_cpu != TICK_DO_TIMER_NONE) {
+	} else if (duty != TICK_DO_TIMER_NONE) {
 		ts->do_timer_last = 0;
 	}
 
@@ -954,7 +989,15 @@ static bool can_stop_idle_tick(int cpu, struct tick_sched *ts)
 	 * invoked.
 	 */
 	if (unlikely(!cpu_online(cpu))) {
-		if (cpu == tick_do_timer_cpu)
+		/*
+		 * If the current CPU holds it then the access is not racy
+		 * as no other CPU can change it. If it does not hold it
+		 * then it's irrelevant whether there is a concurrent
+		 * update which either sets it to TICK_DO_TIMER_NONE or
+		 * takes over from TICK_DO_TIMER_NONE, but no other CPU can
+		 * write the current CPU number into it.
+		 */
+		if (cpu == data_race(tick_do_timer_cpu))
 			tick_do_timer_cpu = TICK_DO_TIMER_NONE;
 		/*
 		 * Make sure the CPU doesn't get fooled by obsolete tick
@@ -983,15 +1026,25 @@ static bool can_stop_idle_tick(int cpu, struct tick_sched *ts)
 	}
 
 	if (tick_nohz_full_enabled()) {
+		int duty;
+
+		/*
+		 * Data race only possible during boot while a nohz_full
+		 * CPU holds the do_timer() duty. So this read might race
+		 * with an upcoming housekeeping CPU taking over. If the
+		 * current CPU holds it then this cannot race.
+		 */
+		duty = data_race(tick_do_timer_cpu);
+
 		/*
 		 * Keep the tick alive to guarantee timekeeping progression
 		 * if there are full dynticks CPUs around
 		 */
-		if (tick_do_timer_cpu == cpu)
+		if (duty == cpu)
 			return false;
 
 		/* Should not happen for nohz-full */
-		if (WARN_ON_ONCE(tick_do_timer_cpu == TICK_DO_TIMER_NONE))
+		if (WARN_ON_ONCE(duty == TICK_DO_TIMER_NONE))
 			return false;
 	}
 

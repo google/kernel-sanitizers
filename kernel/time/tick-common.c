@@ -46,6 +46,27 @@ ktime_t tick_next_period;
  *    TICK_DO_TIMER_NONE, i.e. a non existing CPU. So the next cpu which looks
  *    at it will take over and keep the time keeping alive.  The handover
  *    procedure also covers cpu hotplug.
+ *
+ * The variable is neither atomic nor accessed with locks. The handover and
+ * checks are intentionaly racy but safe. The basic rules for the update are:
+ *
+ * All reads and writes happen with interrupts disabled. The execution
+ * context is either task or hard interrupt.
+ *
+ * If tick_do_timer_cpu contains a CPU number then the only possible
+ * transition is that the holding CPU writes it to TICK_DO_TIMER_NONE. This
+ * only happens on NOHZ systems. If NOHZ is off then the duty stays with
+ * the CPU which picked it up, the boot CPU. The only exception is CPU hot
+ * unplug where the outgoing CPU transfers it, but that's safe because all
+ * other CPUs are stuck in stomp_machine().
+ *
+ * If tick_do_timer_cpu contains TICK_DO_TIMER_NONE then any CPU observing
+ * this can overwrite it with it's own CPU number and take on the tick
+ * duty. As this is lockless several CPUs can observe TICK_DO_TIMER_NONE
+ * concurrently and write their own CPU number to it, but at the end only
+ * one will win. Even if one of the writers assumes temporarily that it
+ * owns the duty there is no harm because the tick update is serialized
+ * with jiffies_lock. Other side effects are shorter sleeps for one round.
  */
 int tick_do_timer_cpu __read_mostly = TICK_DO_TIMER_BOOT;
 #ifdef CONFIG_NO_HZ_FULL
@@ -84,6 +105,13 @@ int tick_is_oneshot_available(void)
  */
 static void tick_periodic(int cpu)
 {
+	/*
+	 * Raceless access in periodic tick mode. The variable can only
+	 * change when the CPU holding tick_do_timer_cpu goes offline which
+	 * requires that all other CPUs are inside stomp_machine() with
+	 * interrupts disabled and cannot do this read here which is always
+	 * executed from the timer interrupt.
+	 */
 	if (tick_do_timer_cpu == cpu) {
 		raw_spin_lock(&jiffies_lock);
 		write_seqcount_begin(&jiffies_seq);
@@ -186,6 +214,11 @@ static void giveup_do_timer(void *info)
 
 	WARN_ON(tick_do_timer_cpu != smp_processor_id());
 
+	/*
+	 * Exception to the rule that the holding CPU only can
+	 * write TICK_DO_TIMER_NONE. The new CPU is waiting for
+	 * this function call to complete and asked for this.
+	 */
 	tick_do_timer_cpu = cpu;
 }
 
@@ -215,9 +248,14 @@ static void tick_setup_device(struct tick_device *td,
 	if (!td->evtdev) {
 		/*
 		 * If no cpu took the do_timer update, assign it to
-		 * this cpu:
+		 * this cpu.
+		 *
+		 * Intentional data race. The boot CPU takes it over which
+		 * is obviously not racy. CPUs coming up later cannot
+		 * observe TICK_DO_TIMER_BOOT even if there is a concurrent
+		 * hand over.
 		 */
-		if (tick_do_timer_cpu == TICK_DO_TIMER_BOOT) {
+		if (data_race(tick_do_timer_cpu) == TICK_DO_TIMER_BOOT) {
 			tick_do_timer_cpu = cpu;
 
 			tick_next_period = ktime_get();
@@ -404,6 +442,9 @@ EXPORT_SYMBOL_GPL(tick_broadcast_oneshot_control);
  *
  * Called with interrupts disabled. No locking required. If
  * tick_do_timer_cpu is owned by this cpu, nothing can change it.
+ *
+ * Not a data race because all other CPUs are hanging out in
+ * stomp_machine() and cannot change that assignment.
  */
 void tick_handover_do_timer(void)
 {
