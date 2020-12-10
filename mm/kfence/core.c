@@ -559,12 +559,53 @@ static const struct file_operations objects_fops = {
 	.llseek = seq_lseek,
 };
 
+#define CRASH_BUF_SIZE 16
+
+static ssize_t crash_write(struct file *file,
+			   const char __user *user_string_in,
+			   size_t len, loff_t *ppos)
+{
+	char buf[CRASH_BUF_SIZE];
+	ssize_t length;
+	long ind = 0;
+	volatile char *addr;
+	struct kfence_metadata *meta;
+	int rc;
+
+	if (len == 0)
+		return 0;
+	length = len > CRASH_BUF_SIZE ? CRASH_BUF_SIZE : len;
+	rc = copy_from_user(buf, user_string_in, length);
+	if (rc)
+		return -EFAULT;
+
+	if (buf[length - 1] == '\n')
+		buf[length - 1] = '\0';
+	else
+		buf[length] = '\0';
+
+	if (kstrtol(buf, 10, &ind))
+		return -EINVAL;
+	if ((ind < 0) || (ind >= CONFIG_KFENCE_NUM_OBJECTS))
+		return 0;
+	meta = &kfence_metadata[ind];
+	addr = (char *)(metadata_to_pageaddr(meta) + PAGE_SIZE);
+	pr_err("ind: %d, addr: %px\n", ind, addr);
+	addr[0] = 'A';
+	return length;
+}
+
+static const struct file_operations crash_fops = {
+	.write = crash_write,
+};
+
 static int __init kfence_debugfs_init(void)
 {
 	struct dentry *kfence_dir = debugfs_create_dir("kfence", NULL);
 
 	debugfs_create_file("stats", 0444, kfence_dir, NULL, &stats_fops);
 	debugfs_create_file("objects", 0400, kfence_dir, NULL, &objects_fops);
+	debugfs_create_file("crash", 0600, kfence_dir, NULL, &crash_fops);
 	return 0;
 }
 
