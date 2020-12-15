@@ -2,6 +2,7 @@
 
 #include <stdarg.h>
 
+#include <linux/errcap.h>
 #include <linux/kernel.h>
 #include <linux/lockdep.h>
 #include <linux/printk.h>
@@ -180,6 +181,7 @@ void kfence_report_error(unsigned long address, const struct kfence_metadata *me
 	 */
 	lockdep_off();
 
+	errcap_start_report();
 	pr_err("==================================================================\n");
 	/* Print report header. */
 	switch (type) {
@@ -227,6 +229,7 @@ void kfence_report_error(unsigned long address, const struct kfence_metadata *me
 	pr_err("\n");
 	dump_stack_print_info(KERN_ERR);
 	pr_err("==================================================================\n");
+	errcap_stop_report();
 	atomic_inc(&kfence_num_reports);
 	sysfs_notify(kfence_kobj, NULL, "kfence_reports");
 
