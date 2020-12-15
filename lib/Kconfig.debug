@@ -195,6 +195,12 @@ config DEBUG_BUGVERBOSE
 	  of the BUG call as well as the EIP and oops trace.  This aids
 	  debugging but costs about 70-100K of memory.
 
+config ERRCAP
+	bool "Capture error messages"
+	default n
+	help
+	  Capture error messages
+
 endmenu # "printk and dmesg options"
 
 menu "Compile-time checks and compiler options"
