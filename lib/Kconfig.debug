@@ -196,10 +196,19 @@ config DEBUG_BUGVERBOSE
 	  debugging but costs about 70-100K of memory.
 
 config ERROR_REPORT_NOTIFY
-	bool "Capture error messages"
+	bool "Expose memory error reports to the userspace"
+	depends on TRACING
 	default n
 	help
-	  Capture error messages
+	  When enabled, captures error reports from memory tools like KFENCE or
+	  KASAN using console tracing, and provides two files:
+	   - /sys/kernel/error_report/last_report
+	   - /sys/kernel/error_report/report_count
+	  , that contain the last report (trimmed to PAGE_SIZE) and the total
+	  report count, respectively.
+	  Userspace programs can call poll(POLLPRI) on those files to get
+	  notified about the new reports without having to watch dmesg in a
+	  loop.
 
 endmenu # "printk and dmesg options"
 

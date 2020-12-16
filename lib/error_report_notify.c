@@ -27,6 +27,11 @@ static void error_report_notify(struct work_struct *work)
 }
 static DECLARE_DELAYED_WORK(reporting_done, error_report_notify);
 
+/*
+ * Trace hook for the error_report_start event. If two reports overlap (the
+ * second one report is started before the first one is finished, the first
+ * report is discarded.
+ */
 static void probe_report_start(void *ignore, const char *tool_name,
 			       unsigned long id)
 {
@@ -44,6 +49,22 @@ static void probe_report_start(void *ignore, const char *tool_name,
 	spin_unlock_irqrestore(&current_lock, flags);
 }
 
+bool is_same_context(void)
+{
+	if (current) {
+		if (current_pid != current->pid)
+			return false;
+	} else {
+		if (current_cpu != smp_processor_id())
+			return false;
+	}
+	return true;
+}
+
+/*
+ * Trace hook for the error_report_end event. If a stale event from the
+ * mismatching error_report_start is received, it is ignored.
+ */
 static void probe_report_end(void *ignore, const char *tool_name,
 			     unsigned long id)
 {
@@ -52,6 +73,11 @@ static void probe_report_end(void *ignore, const char *tool_name,
 	WARN_ON(!READ_ONCE(capturing_enabled));
 	WRITE_ONCE(capturing_enabled, false);
 	spin_lock(&report_lock);
+	if (!is_same_context()) {
+		spin_unlock(&report_lock);
+		spin_unlock_irqrestore(&current_lock, flags);
+		return;
+	}
 	if (current_report_pos)
 		memcpy(last_report, current_report, current_report_pos);
 	last_report_size = current_report_pos;
@@ -83,6 +109,10 @@ ssize_t last_report_read(struct file *file, char __user *buf, size_t len,
 	return res;
 }
 
+/*
+ * Trace hook for the console event. If a line comes from a task/CPU that did
+ * not send the error_report_start event, that line is ignored.
+ */
 static void probe_console(void *ignore, const char *buf, size_t len)
 {
 	unsigned long flags;
@@ -90,13 +120,8 @@ static void probe_console(void *ignore, const char *buf, size_t len)
 
 	if (!READ_ONCE(capturing_enabled))
 		return;
-	if (current) {
-		if (current_pid != current->pid)
-			return;
-	} else {
-		if (current_cpu != smp_processor_id())
-			return;
-	}
+	if (!is_same_context())
+		return;
 
 	spin_lock_irqsave(&current_lock, flags);
 	to_copy = min(len, sizeof(current_report) - current_report_pos);
@@ -107,11 +132,8 @@ static void probe_console(void *ignore, const char *buf, size_t len)
 
 static void register_tracepoints(void)
 {
-	check_trace_callback_type_console(probe_console);
 	register_trace_console(probe_console, NULL);
-	check_trace_callback_type_error_report_start(probe_report_start);
 	register_trace_error_report_start(probe_report_start, NULL);
-	check_trace_callback_type_error_report_start(probe_report_end);
 	register_trace_error_report_end(probe_report_end, NULL);
 }
 
