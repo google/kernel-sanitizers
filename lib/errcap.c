@@ -3,11 +3,13 @@
 #include <linux/fs.h>
 #include <linux/string.h>
 #include <linux/tracepoint.h>
+#include <linux/workqueue.h>
 #include <trace/events/printk.h>
 
 #define ERRCAP_BUF_SIZE PAGE_SIZE
 
 struct kobject *errcap_kobj;
+atomic_t errcap_num_reports;
 
 DEFINE_SPINLOCK(errcap_lock);
 DEFINE_SPINLOCK(errcap_report_lock);
@@ -34,6 +36,8 @@ void errcap_start_report(void)
 	spin_unlock_irqrestore(&errcap_lock, flags);
 }
 
+static struct delayed_work errcap_done;
+
 void errcap_stop_report(void)
 {
 	unsigned long flags;
@@ -50,8 +54,16 @@ void errcap_stop_report(void)
 		errcap_report[errcap_report_size] = 0;
 	spin_unlock(&errcap_report_lock);
 	spin_unlock_irqrestore(&errcap_lock, flags);
-	///sysfs_notify(errcap_kobj, NULL, "errcap_report");
+	atomic_inc(&errcap_num_reports);
+	schedule_delayed_work(&errcap_done, 0);
 }
+
+void errcap_notify(struct work_struct *work)
+{
+	sysfs_notify(errcap_kobj, NULL, "last_report");
+	sysfs_notify(errcap_kobj, NULL, "report_count");
+}
+static DECLARE_DELAYED_WORK(errcap_done, errcap_notify);
 
 ssize_t errcap_report_read(struct file *file, char __user *buf, size_t len,
 			   loff_t *offset)
@@ -101,15 +113,24 @@ static void register_tracepoints(struct tracepoint *tp, void *ignore)
 						  NULL));
 }
 
-static ssize_t errcap_report_show(struct kobject *kobj,
-				  struct kobj_attribute *attr, char *buf)
+static ssize_t last_report_show(struct kobject *kobj,
+				struct kobj_attribute *attr, char *buf)
 {
 	return scnprintf(buf, PAGE_SIZE, errcap_report);
 }
 
-static struct kobj_attribute errcap_report_attr = __ATTR_RO(errcap_report);
+static ssize_t report_count_show(struct kobject *kobj,
+				 struct kobj_attribute *attr, char *buf)
+{
+	return scnprintf(buf, PAGE_SIZE, "%d\n",
+			 atomic_read(&errcap_num_reports));
+}
+
+static struct kobj_attribute last_report_attr = __ATTR_RO(last_report);
+static struct kobj_attribute report_count_attr = __ATTR_RO(report_count);
 static struct attribute *errcap_sysfs_attrs[] = {
-	&errcap_report_attr.attr,
+	&last_report_attr.attr,
+	&report_count_attr.attr,
 	NULL,
 };
 
