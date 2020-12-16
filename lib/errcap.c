@@ -4,23 +4,32 @@
 #include <linux/string.h>
 #include <linux/tracepoint.h>
 #include <linux/workqueue.h>
+#include <trace/events/errcap.h>
 #include <trace/events/printk.h>
 
 #define ERRCAP_BUF_SIZE PAGE_SIZE
 
-struct kobject *errcap_kobj;
-atomic_t errcap_num_reports;
+static struct kobject *errcap_kobj;
+static atomic_t errcap_num_reports;
 
-DEFINE_SPINLOCK(errcap_lock);
-DEFINE_SPINLOCK(errcap_report_lock);
+static DEFINE_SPINLOCK(errcap_lock);
+static DEFINE_SPINLOCK(errcap_report_lock);
 
 static char errcap_wip_report[ERRCAP_BUF_SIZE], errcap_report[ERRCAP_BUF_SIZE];
 static size_t errcap_wip_pos, errcap_report_size;
 static pid_t errcap_pid;
 static unsigned int errcap_cpu;
 static bool errcap_enabled;
+static struct delayed_work errcap_done;
 
-void errcap_start_report(void)
+static void errcap_notify(struct work_struct *work)
+{
+	sysfs_notify(errcap_kobj, NULL, "last_report");
+	sysfs_notify(errcap_kobj, NULL, "report_count");
+}
+static DECLARE_DELAYED_WORK(errcap_done, errcap_notify);
+
+static void errcap_probe_report_start(void *ignore, unsigned long opaque_id)
 {
 	unsigned long flags;
 
@@ -36,9 +45,7 @@ void errcap_start_report(void)
 	spin_unlock_irqrestore(&errcap_lock, flags);
 }
 
-static struct delayed_work errcap_done;
-
-void errcap_stop_report(void)
+static void errcap_probe_report_end(void *ignore, unsigned long opaque_id)
 {
 	unsigned long flags;
 	spin_lock_irqsave(&errcap_lock, flags);
@@ -57,13 +64,6 @@ void errcap_stop_report(void)
 	atomic_inc(&errcap_num_reports);
 	schedule_delayed_work(&errcap_done, 0);
 }
-
-void errcap_notify(struct work_struct *work)
-{
-	sysfs_notify(errcap_kobj, NULL, "last_report");
-	sysfs_notify(errcap_kobj, NULL, "report_count");
-}
-static DECLARE_DELAYED_WORK(errcap_done, errcap_notify);
 
 ssize_t errcap_report_read(struct file *file, char __user *buf, size_t len,
 			   loff_t *offset)
@@ -105,12 +105,14 @@ static void errcap_probe_console(void *ignore, const char *buf, size_t len)
 	spin_unlock_irqrestore(&errcap_lock, flags);
 }
 
-static void register_tracepoints(struct tracepoint *tp, void *ignore)
+static void register_tracepoints(void)
 {
 	check_trace_callback_type_console(errcap_probe_console);
-	if (!strcmp(tp->name, "console"))
-		WARN_ON(tracepoint_probe_register(tp, errcap_probe_console,
-						  NULL));
+	register_trace_console(errcap_probe_console, NULL);
+	check_trace_callback_type_error_report_start(errcap_probe_report_start);
+	register_trace_error_report_start(errcap_probe_report_start, NULL);
+	check_trace_callback_type_error_report_start(errcap_probe_report_end);
+	register_trace_error_report_end(errcap_probe_report_end, NULL);
 }
 
 static ssize_t last_report_show(struct kobject *kobj,
@@ -138,17 +140,21 @@ static const struct attribute_group errcap_sysfs_attr_group = {
 	.attrs = errcap_sysfs_attrs,
 };
 
-static int errcap_setup(void)
+static void errcap_setup(void)
 {
 	int err;
 
-	for_each_kernel_tracepoint(register_tracepoints, NULL);
+	register_tracepoints();
 	errcap_kobj = kobject_create_and_add("errcap", mm_kobj);
 	if (!errcap_kobj)
-		return -ENOMEM;
+		goto error;
 	err = sysfs_create_group(errcap_kobj, &errcap_sysfs_attr_group);
 	if (err)
-		return -ENOMEM;
-	return 0;
+		goto error;
+	return;
+
+error:
+	if (errcap_kobj)
+		kobject_del(errcap_kobj);
 }
 late_initcall(errcap_setup);
