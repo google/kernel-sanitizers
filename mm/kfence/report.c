@@ -2,13 +2,14 @@
 
 #include <stdarg.h>
 
-#include <linux/errcap.h>
 #include <linux/kernel.h>
 #include <linux/lockdep.h>
 #include <linux/printk.h>
 #include <linux/seq_file.h>
 #include <linux/stacktrace.h>
 #include <linux/string.h>
+#define CREATE_TRACE_POINTS
+#include <trace/events/errcap.h>
 
 #include <asm/kfence.h>
 
@@ -178,7 +179,7 @@ void kfence_report_error(unsigned long address, const struct kfence_metadata *me
 	 */
 	lockdep_off();
 
-	errcap_start_report();
+	trace_error_report_start(address);
 	pr_err("==================================================================\n");
 	/* Print report header. */
 	switch (type) {
@@ -226,7 +227,7 @@ void kfence_report_error(unsigned long address, const struct kfence_metadata *me
 	pr_err("\n");
 	dump_stack_print_info(KERN_ERR);
 	pr_err("==================================================================\n");
-	errcap_stop_report();
+	trace_error_report_end(address);
 
 	lockdep_on();
 
