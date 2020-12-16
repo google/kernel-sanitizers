@@ -9,7 +9,7 @@
 #include <linux/stacktrace.h>
 #include <linux/string.h>
 #define CREATE_TRACE_POINTS
-#include <trace/events/errcap.h>
+#include <trace/events/error_report.h>
 
 #include <asm/kfence.h>
 
@@ -179,7 +179,7 @@ void kfence_report_error(unsigned long address, const struct kfence_metadata *me
 	 */
 	lockdep_off();
 
-	trace_error_report_start(address);
+	trace_error_report_start("kfence", address);
 	pr_err("==================================================================\n");
 	/* Print report header. */
 	switch (type) {
@@ -227,7 +227,7 @@ void kfence_report_error(unsigned long address, const struct kfence_metadata *me
 	pr_err("\n");
 	dump_stack_print_info(KERN_ERR);
 	pr_err("==================================================================\n");
-	trace_error_report_end(address);
+	trace_error_report_end("kfence", address);
 
 	lockdep_on();
 
