@@ -14,9 +14,6 @@
 
 #include "kfence.h"
 
-atomic_t kfence_num_reports;
-struct kobject *kfence_kobj;
-
 /* Helper function to either print to a seq_file or to console. */
 __printf(2, 3)
 static void seq_con_printf(struct seq_file *seq, const char *fmt, ...)
@@ -230,8 +227,6 @@ void kfence_report_error(unsigned long address, const struct kfence_metadata *me
 	dump_stack_print_info(KERN_ERR);
 	pr_err("==================================================================\n");
 	errcap_stop_report();
-	atomic_inc(&kfence_num_reports);
-	sysfs_notify(kfence_kobj, NULL, "kfence_reports");
 
 	lockdep_on();
 
@@ -241,33 +236,3 @@ void kfence_report_error(unsigned long address, const struct kfence_metadata *me
 	/* We encountered a memory unsafety error, taint the kernel! */
 	add_taint(TAINT_BAD_PAGE, LOCKDEP_STILL_OK);
 }
-
-static ssize_t kfence_reports_show(struct kobject *kobj, struct kobj_attribute *attr, char *buf)
-{
-	return scnprintf(buf, PAGE_SIZE, "%d\n", atomic_read(&kfence_num_reports));
-}
-
-static struct kobj_attribute kfence_reports_attr =
-	__ATTR_RO(kfence_reports);
-static struct attribute *kfence_sysfs_attrs[] = {
-	&kfence_reports_attr.attr,
-	NULL,
-};
-
-static const struct attribute_group kfence_sysfs_attr_group = {
-	.attrs = kfence_sysfs_attrs,
-};
-
-int __init kfence_init_sysfs(void)
-{
-	int err;
-
-	kfence_kobj = kobject_create_and_add("kfence", mm_kobj);
-	if (!kfence_kobj)
-		return -ENOMEM;
-	err = sysfs_create_group(kfence_kobj, &kfence_sysfs_attr_group);
-	if (err)
-		return -ENOMEM;
-	return 0;
-}
-late_initcall(kfence_init_sysfs);
