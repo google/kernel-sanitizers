@@ -18,7 +18,7 @@ exercised by non-production test workloads. One way to quickly achieve a large
 enough total uptime is to deploy the tool across a large fleet of machines.
 Indeed, KASAN and KFENCE are complementary, with different target environments.
 For instance, KASAN is the better debugging-aid, where a simple reproducer
-exists: due to the lower change to detect the error, it would require more
+exists: due to the lower chance to detect the error, it would require more
 effort using KFENCE to debug. Deployments at scale, however, would benefit
 from using KFENCE to discover bugs due to code paths not exercised by test cases
 or fuzzers.
