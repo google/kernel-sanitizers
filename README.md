@@ -4,7 +4,7 @@
 
 KernelAddressSanitizer (KASAN) is a dynamic memory error detector for the Linux kernel that allows to find use-after-free and out-of-bounds bugs.
 
-KASAN is available in the mainline Linux kernel starting from version `4.0` and can be enabled with `CONFIG_KASAN=y`.
+KASAN is available in the mainline Linux kernel starting from version `4.0` and can be enabled with `CONFIG_KASAN=y`, for more details please read [this article](https://www.programmersought.com/article/7010851656/)
 
 See more details in [KASAN documentation](https://www.kernel.org/doc/html/latest/dev-tools/kasan.html).
 
