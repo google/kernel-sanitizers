@@ -1,19 +1,16 @@
 # KernelAddressSanitizer (KASAN)
 
-**Note**: this repo doesn't host any KASAN code anymore as it's now in the mainline kernel.
+**KASAN code is now maintained in the Linux kernel repository, this repository no longer hosts any KASAN code**.
 
-KernelAddressSanitizer (KASAN) is a dynamic memory error detector for the Linux kernel that allows to find use-after-free and out-of-bounds bugs.
+KASAN usage instructions can be found in the [documentation](https://www.kernel.org/doc/html/latest/dev-tools/kasan.html).
 
-KASAN is available in the mainline Linux kernel starting from version `4.0` and can be enabled with `CONFIG_KASAN=y`.
-
-See more details in [KASAN documentation](https://www.kernel.org/doc/html/latest/dev-tools/kasan.html).
-
-For questions use KASAN mailing list [kasan-dev@googlegroups.com](https://groups.google.com/forum/#!forum/kasan-dev).
+For questions about KASAN use the [kasan-dev@googlegroups.com](https://groups.google.com/forum/#!forum/kasan-dev) mailing list.
 You can subscribe to it either with a Google account or by sending an email to kasan-dev+subscribe@googlegroups.com.
 
-Issues in KASAN itself can be reported on [KASAN bug tracker](https://bugzilla.kernel.org/buglist.cgi?component=Sanitizers&product=Memory%20Management&resolution=---).
+Kernel bugs found with KASAN should be reported to kernel maintainers.
+Issues in KASAN itself can be reported on the [KASAN bug tracker](https://bugzilla.kernel.org/buglist.cgi?component=Sanitizers&product=Memory%20Management&resolution=---).
 
-To simplify reading KASAN reports you can use our [symbolizer script](https://github.com/google/sanitizers/blob/master/address-sanitizer/tools/kasan_symbolize.py):
+To simplify reading KASAN reports you can use the [symbolizer script](https://github.com/google/sanitizers/blob/master/address-sanitizer/tools/kasan_symbolize.py):
 
 ```
 $ cat report
