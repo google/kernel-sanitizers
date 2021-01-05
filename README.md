@@ -1,6 +1,6 @@
 # KernelAddressSanitizer (KASAN)
 
-**KASAN code is now maintained in the Linux kernel repository, this repository no longer hosts any KASAN code**.
+**KASAN is now maintained in the Linux kernel repository, this repository no longer hosts any KASAN code**.
 
 KASAN usage instructions can be found in the [documentation](https://www.kernel.org/doc/html/latest/dev-tools/kasan.html).
 
