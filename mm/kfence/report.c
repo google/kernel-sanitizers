@@ -8,6 +8,7 @@
 #include <linux/seq_file.h>
 #include <linux/stacktrace.h>
 #include <linux/string.h>
+#include <trace/events/error_report.h>
 
 #include <asm/kfence.h>
 
@@ -178,6 +179,7 @@ void kfence_report_error(unsigned long address, const struct kfence_metadata *me
 	lockdep_off();
 
 	pr_err("==================================================================\n");
+	trace_error_report_start("kfence", address);
 	/* Print report header. */
 	switch (type) {
 	case KFENCE_ERROR_OOB: {
@@ -223,6 +225,7 @@ void kfence_report_error(unsigned long address, const struct kfence_metadata *me
 	/* Print report footer. */
 	pr_err("\n");
 	dump_stack_print_info(KERN_ERR);
+	trace_error_report_end("kfence", address);
 	pr_err("==================================================================\n");
 
 	lockdep_on();

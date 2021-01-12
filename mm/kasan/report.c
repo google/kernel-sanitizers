@@ -30,6 +30,7 @@
 #include <linux/module.h>
 #include <linux/sched/task_stack.h>
 #include <linux/uaccess.h>
+#include <trace/events/error_report.h>
 
 #include <asm/sections.h>
 
@@ -80,7 +81,7 @@ static void print_error_description(struct kasan_access_info *info)
 
 static DEFINE_SPINLOCK(report_lock);
 
-static void start_report(unsigned long *flags)
+static void start_report(unsigned long *flags, unsigned long addr)
 {
 	/*
 	 * Make sure we don't end up in loop.
@@ -88,10 +89,12 @@ static void start_report(unsigned long *flags)
 	kasan_disable_current();
 	spin_lock_irqsave(&report_lock, *flags);
 	pr_err("==================================================================\n");
+	trace_error_report_start("kasan", addr);
 }
 
-static void end_report(unsigned long *flags)
+static void end_report(unsigned long *flags, unsigned long addr)
 {
+	trace_error_report_end("kasan", addr);
 	pr_err("==================================================================\n");
 	add_taint(TAINT_BAD_PAGE, LOCKDEP_NOW_UNRELIABLE);
 	spin_unlock_irqrestore(&report_lock, *flags);
@@ -497,14 +500,14 @@ void kasan_report_invalid_free(void *object, unsigned long ip)
 		kasan_update_kunit_status(current->kunit_test);
 #endif /* IS_ENABLED(CONFIG_KUNIT) */
 
-	start_report(&flags);
+	start_report(&flags, (unsigned long)object);
 	pr_err("BUG: KASAN: double-free or invalid-free in %pS\n", (void *)ip);
 	print_tags(tag, object);
 	pr_err("\n");
 	print_address_description(object, tag);
 	pr_err("\n");
 	print_shadow_for_address(object);
-	end_report(&flags);
+	end_report(&flags, (unsigned long)object);
 }
 
 static void __kasan_report(unsigned long addr, size_t size, bool is_write,
@@ -534,7 +537,7 @@ static void __kasan_report(unsigned long addr, size_t size, bool is_write,
 	info.is_write = is_write;
 	info.ip = ip;
 
-	start_report(&flags);
+	start_report(&flags, addr);
 
 	print_error_description(&info);
 	if (addr_has_shadow(untagged_addr))
@@ -549,7 +552,7 @@ static void __kasan_report(unsigned long addr, size_t size, bool is_write,
 		dump_stack();
 	}
 
-	end_report(&flags);
+	end_report(&flags, addr);
 }
 
 bool kasan_report(unsigned long addr, size_t size, bool is_write,

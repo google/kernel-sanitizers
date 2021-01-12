@@ -195,6 +195,20 @@ config DEBUG_BUGVERBOSE
 	  of the BUG call as well as the EIP and oops trace.  This aids
 	  debugging but costs about 70-100K of memory.
 
+config ERROR_REPORT_NOTIFY
+	bool "Expose memory error reports to the userspace"
+	depends on TRACING
+	help
+	  When enabled, captures error reports from debugging tools (such as
+	  KFENCE or KASAN) using console tracing, and exposes reports in
+	  /sys/kernel/error_report/: the file last_report contains the last
+	  report (with maximum report length of PAGE_SIZE), and report_count,
+	  the total report count.
+
+	  Userspace programs can call poll(POLLPRI) on those files to get
+	  notified about the new reports without having to watch dmesg in a
+	  loop.
+
 endmenu # "printk and dmesg options"
 
 menu "Compile-time checks and compiler options"
