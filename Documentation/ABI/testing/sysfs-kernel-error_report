@@ -1,0 +1,41 @@
+What:		/sys/kernel/error_report/
+Date:		January 2021
+Contact:	Alexander Potapenko <glider@google.com>,
+		Marco Elver <elver@google.com>
+Description:
+		/sys/kernel/error_report/ contains two files: "report_count"
+		and "last_report". These files are used to notify userspace
+		about error reports from the enrolled kernel subsystems (those
+		that use error_report_start/error_report_end tracepoints).
+
+		"report_count" contains the current number of reported errors.
+		This number is incremented every time the error_report_end
+		trace event occurs in the kernel.
+
+		"last_report" contains the most recent error report; concurrent
+		report generation results in collection of any one report
+		("last_report" may not be the last shown on the console).
+		A "report" is everything the task had printed to the console
+		between issuing the error_report_start and error_report_end
+		trace events.
+
+		Due to sysfs limitations, the report size is truncated at
+		PAGE_SIZE. To save space, the leading info in square brackets
+		printed by CONFIG_PRINTK_TIME and CONFIG_PRINTK_CALLER is
+		trimmed from the output lines.
+
+		Both files use sysfs_notify() to notify userspace about
+		changes. Userspace programs can use poll() to block until an
+		error is reported:
+
+			pfd.fd = fd;
+			pfd.events = POLLPRI;
+			while (1) {
+				lseek(pfd.fd, 0, SEEK_SET);
+				poll(&pfd, 1, -1);
+				read(pfd.fd, buffer, PAGE_SIZE);
+				/* Process the report in @buffer. */
+			}
+
+		Files in /sys/kernel/error_report/ are available when
+		CONFIG_ERROR_REPORT_NOTIFY is enabled.
