@@ -552,15 +552,16 @@ static int hctx_dispatched_show(void *data, struct seq_file *m)
 	struct blk_mq_hw_ctx *hctx = data;
 	int i;
 
-	seq_printf(m, "%8u\t%lu\n", 0U, hctx->dispatched[0]);
+	seq_printf(m, "%8u\t%lu\n", 0U, data_race(hctx->dispatched[0]));
 
 	for (i = 1; i < BLK_MQ_MAX_DISPATCH_ORDER - 1; i++) {
 		unsigned int d = 1U << (i - 1);
 
-		seq_printf(m, "%8u\t%lu\n", d, hctx->dispatched[i]);
+		seq_printf(m, "%8u\t%lu\n", d, data_race(hctx->dispatched[i]));
 	}
 
-	seq_printf(m, "%8u+\t%lu\n", 1U << (i - 1), hctx->dispatched[i]);
+	seq_printf(m, "%8u+\t%lu\n", 1U << (i - 1),
+		   data_race(hctx->dispatched[i]));
 	return 0;
 }
 
@@ -571,7 +572,7 @@ static ssize_t hctx_dispatched_write(void *data, const char __user *buf,
 	int i;
 
 	for (i = 0; i < BLK_MQ_MAX_DISPATCH_ORDER; i++)
-		hctx->dispatched[i] = 0;
+		data_race(hctx->dispatched[i] = 0);
 	return count;
 }
 
@@ -579,7 +580,7 @@ static int hctx_queued_show(void *data, struct seq_file *m)
 {
 	struct blk_mq_hw_ctx *hctx = data;
 
-	seq_printf(m, "%lu\n", hctx->queued);
+	seq_printf(m, "%lu\n", data_race(hctx->queued));
 	return 0;
 }
 
@@ -588,7 +589,7 @@ static ssize_t hctx_queued_write(void *data, const char __user *buf,
 {
 	struct blk_mq_hw_ctx *hctx = data;
 
-	hctx->queued = 0;
+	data_race(hctx->queued = 0);
 	return count;
 }
 
@@ -596,7 +597,7 @@ static int hctx_run_show(void *data, struct seq_file *m)
 {
 	struct blk_mq_hw_ctx *hctx = data;
 
-	seq_printf(m, "%lu\n", hctx->run);
+	seq_printf(m, "%lu\n", data_race(hctx->run));
 	return 0;
 }
 
@@ -605,7 +606,7 @@ static ssize_t hctx_run_write(void *data, const char __user *buf, size_t count,
 {
 	struct blk_mq_hw_ctx *hctx = data;
 
-	hctx->run = 0;
+	data_race(hctx->run = 0);
 	return count;
 }
 
@@ -700,7 +701,8 @@ static int ctx_completed_show(void *data, struct seq_file *m)
 {
 	struct blk_mq_ctx *ctx = data;
 
-	seq_printf(m, "%lu %lu\n", ctx->rq_completed[1], ctx->rq_completed[0]);
+	seq_printf(m, "%lu %lu\n", data_race(ctx->rq_completed[1]),
+		   data_race(ctx->rq_completed[0]));
 	return 0;
 }
 
@@ -709,7 +711,7 @@ static ssize_t ctx_completed_write(void *data, const char __user *buf,
 {
 	struct blk_mq_ctx *ctx = data;
 
-	ctx->rq_completed[0] = ctx->rq_completed[1] = 0;
+	data_race(ctx->rq_completed[0] = ctx->rq_completed[1] = 0);
 	return count;
 }
 

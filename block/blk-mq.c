@@ -341,7 +341,8 @@ static struct request *blk_mq_rq_ctx_init(struct blk_mq_alloc_data *data,
 		}
 	}
 
-	data->hctx->queued++;
+	/* data race ok: hctx->queued only for debugfs stats. */
+	data_race(data->hctx->queued++);
 	return rq;
 }
 
@@ -520,7 +521,8 @@ void blk_mq_free_request(struct request *rq)
 		}
 	}
 
-	ctx->rq_completed[rq_is_sync(rq)]++;
+	/* data race ok: ctx->rq_completed only for debugfs stats. */
+	data_race(ctx->rq_completed[rq_is_sync(rq)]++);
 	if (rq->rq_flags & RQF_MQ_INFLIGHT)
 		__blk_mq_dec_active_requests(hctx);
 
@@ -1402,7 +1404,8 @@ out:
 	if (!list_empty(&zone_list))
 		list_splice_tail_init(&zone_list, list);
 
-	hctx->dispatched[queued_to_index(queued)]++;
+	/* data race ok: hctx->dispatched only for debugfs stats. */
+	data_race(hctx->dispatched[queued_to_index(queued)]++);
 
 	/* If we didn't flush the entire list, we could have told the driver
 	 * there was more coming, but that turned out to be a lie.
