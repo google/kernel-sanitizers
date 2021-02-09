@@ -16,8 +16,7 @@
 
 #include "../slab.h" /* for struct kmem_cache */
 
-/* For non-debug builds, avoid leaking kernel pointers into dmesg. */
-#ifdef CONFIG_DEBUG_KERNEL
+#ifdef CONFIG_KFENCE_REPORT_SENSITIVE
 #define PTR_FMT "%px"
 #else
 #define PTR_FMT "%p"
