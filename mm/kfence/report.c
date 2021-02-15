@@ -148,9 +148,9 @@ static void print_diff_canary(unsigned long address, size_t bytes_to_show,
 	for (cur = (const u8 *)address; cur < end; cur++) {
 		if (*cur == KFENCE_CANARY_PATTERN(cur))
 			pr_cont(" .");
-		else if (IS_ENABLED(CONFIG_KFENCE_REPORT_SENSITIVE))
+		else if (IS_ENABLED(CONFIG_DEBUG_KERNEL))
 			pr_cont(" 0x%02x", *cur);
-		else /* Do not leak kernel memory. */
+		else /* Do not leak kernel memory in non-debug builds. */
 			pr_cont(" !");
 	}
 	pr_cont(" ]");
@@ -242,7 +242,7 @@ void kfence_report_error(unsigned long address, bool is_write, struct pt_regs *r
 
 	/* Print report footer. */
 	pr_err("\n");
-	if (IS_ENABLED(CONFIG_KFENCE_REPORT_SENSITIVE) && regs)
+	if (IS_ENABLED(CONFIG_DEBUG_KERNEL) && regs)
 		show_regs(regs);
 	else
 		dump_stack_print_info(KERN_ERR);
