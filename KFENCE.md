@@ -1,8 +1,8 @@
 # KFENCE: A low-overhead sampling-based memory safety error detector for the Linux kernel
 
-**Contacts:** Alexander Potapenko <@ramosian-glider>, Marco Elver <@melver>, Dmitry Vyukov <@dvyukov>  
-**Source:** [development branch](http://github.com/google/kasan/tree/kfence), [patches for mainline](https://github.com/google/kasan/commits/kfence-rebase-wip).  
-**Documentation:** [Documentation/dev-tools/kfence.rst](https://github.com/google/kasan/blob/kfence/Documentation/dev-tools/kfence.rst).  
+**Contacts:** Alexander Potapenko <@ramosian-glider>, Marco Elver <@melver>, Dmitry Vyukov <@dvyukov>
+**Status:** [Upstream; in mainline since 5.12](https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=245137cdf0cd92077dad37868fe4859c90dada36)
+**Documentation:** [Documentation/dev-tools/kfence.rst](https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/tree/Documentation/dev-tools/kfence.rst).
 
 *Kernel Electric-Fence (KFENCE)* is a low-overhead sampling-based detector for
 heap out-of-bounds accessess, use-after-free, and invalid-free errors.  It is
@@ -24,10 +24,6 @@ from using KFENCE to discover bugs due to code paths not exercised by test cases
 or fuzzers.
 
 The name "KFENCE" is a homage to the [Electric Fence Malloc Debugger](https://linux.die.net/man/3/efence).
-
-## Status
-
-The tool is under development (with plans to upstream it in 2020).
 
 ## Usage
 
