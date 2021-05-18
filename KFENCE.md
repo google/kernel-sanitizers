@@ -74,3 +74,11 @@ The branch is enabled periodically by a kernel delayed work, and after a success
 The frequency with which guarded allocations occur is controlled by the sample interval, which can be set by the boot parameter `kfence.sample_interval`.
 
 For more details, please see the included [documentation](https://github.com/google/kasan/blob/kfence/Documentation/dev-tools/kfence.rst).
+
+## Bugs found by KFENCE
+
+List of recent known upstream bugs found by KFENCE. Last updated: May 18, 2021.
+
+* [Double-kmem_cache_destroy in f2fs](https://lkml.kernel.org/r/0000000000003f654905c168b09d@google.com)
+* [Memory corruptions (use-after-free?) in i915 driver](https://gitlab.freedesktop.org/drm/intel/-/issues/3450)
+* [use-after-free in nouveau driver](https://lore.kernel.org/lkml/20210511163453.2343304-1-kherbst@redhat.com/)
