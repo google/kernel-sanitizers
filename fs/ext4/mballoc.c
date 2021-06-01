@@ -2428,7 +2428,7 @@ static bool ext4_mb_good_group(struct ext4_allocation_context *ac,
 	if (free == 0)
 		return false;
 
-	fragments = grp->bb_fragments;
+	fragments = READ_ONCE(grp->bb_fragments);
 	if (fragments == 0)
 		return false;
 
