@@ -1653,7 +1653,7 @@ static inline int jbd2_journal_get_max_txn_bufs(journal_t *journal)
 
 static inline int is_journal_aborted(journal_t *journal)
 {
-	return journal->j_flags & JBD2_ABORT;
+	return data_race(journal->j_flags & JBD2_ABORT);
 }
 
 static inline int is_handle_aborted(handle_t *handle)
