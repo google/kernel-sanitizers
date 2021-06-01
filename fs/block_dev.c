@@ -1563,7 +1563,7 @@ static void __blkdev_put(struct block_device *bdev, fmode_t mode, int for_part)
 	 * of the world and we want to avoid long (could be several minute)
 	 * syncs while holding the mutex.
 	 */
-	if (bdev->bd_openers == 1)
+	if (data_race(bdev->bd_openers == 1))
 		sync_blockdev(bdev);
 
 	mutex_lock_nested(&bdev->bd_mutex, for_part);
