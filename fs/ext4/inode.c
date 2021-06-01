@@ -2665,7 +2665,7 @@ static int ext4_writepages(struct address_space *mapping,
 	 * a transaction for special inodes like journal inode on last iput()
 	 * because that could violate lock ordering on umount
 	 */
-	if (!mapping->nrpages || !mapping_tagged(mapping, PAGECACHE_TAG_DIRTY))
+	if (!data_race(mapping->nrpages) || !mapping_tagged(mapping, PAGECACHE_TAG_DIRTY))
 		goto out_writepages;
 
 	if (ext4_should_journal_data(inode)) {
