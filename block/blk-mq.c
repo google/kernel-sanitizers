@@ -69,7 +69,7 @@ static int blk_mq_poll_stats_bkt(const struct request *rq)
  */
 static bool blk_mq_hctx_has_pending(struct blk_mq_hw_ctx *hctx)
 {
-	return !list_empty_careful(&hctx->dispatch) ||
+	return !data_race(list_empty_careful(&hctx->dispatch)) ||
 		sbitmap_any_bit_set(&hctx->ctx_map) ||
 			blk_mq_sched_has_work(hctx);
 }
