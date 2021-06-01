@@ -846,7 +846,7 @@ static inline loff_t i_size_read(const struct inode *inode)
 	preempt_enable();
 	return i_size;
 #else
-	return inode->i_size;
+	return READ_ONCE(inode->i_size);
 #endif
 }
 

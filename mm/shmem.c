@@ -2962,7 +2962,7 @@ static int shmem_unlink(struct inode *dir, struct dentry *dentry)
 	if (inode->i_nlink > 1 && !S_ISDIR(inode->i_mode))
 		shmem_free_inode(inode->i_sb);
 
-	dir->i_size -= BOGO_DIRENT_SIZE;
+	WRITE_ONCE(dir->i_size, dir->i_size - BOGO_DIRENT_SIZE);
 	inode->i_ctime = dir->i_ctime = dir->i_mtime = current_time(inode);
 	drop_nlink(inode);
 	dput(dentry);	/* Undo the count from "create" - this does all the work */
