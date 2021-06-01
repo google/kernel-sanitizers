@@ -474,8 +474,8 @@ static enum desc_state desc_read(struct prb_desc_ring *desc_ring,
 	 * state has been re-checked. A memcpy() for all of @desc
 	 * cannot be used because of the atomic_t @state_var field.
 	 */
-	memcpy(&desc_out->text_blk_lpos, &desc->text_blk_lpos,
-	       sizeof(desc_out->text_blk_lpos)); /* LMM(desc_read:C) */
+	data_race(memcpy(&desc_out->text_blk_lpos, &desc->text_blk_lpos,
+			 sizeof(desc_out->text_blk_lpos))); /* LMM(desc_read:C) */
 	if (seq_out)
 		*seq_out = READ_ONCE(info->seq); /* also part of desc_read:C */
 	if (caller_id_out)
