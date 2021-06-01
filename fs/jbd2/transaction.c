@@ -1877,7 +1877,7 @@ int jbd2_journal_stop(handle_t *handle)
 	}
 
 	if (handle->h_sync)
-		transaction->t_synchronous_commit = 1;
+		data_race(transaction->t_synchronous_commit = 1); /* bitfield access */
 
 	/*
 	 * If the handle is marked SYNC, we need to set another commit
