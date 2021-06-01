@@ -1398,7 +1398,7 @@ static bool __follow_mount_rcu(struct nameidata *nd, struct path *path,
 			       struct inode **inode, unsigned *seqp)
 {
 	struct dentry *dentry = path->dentry;
-	unsigned int flags = dentry->d_flags;
+	unsigned int flags = READ_ONCE(dentry->d_flags);
 
 	if (likely(!(flags & DCACHE_MANAGED_DENTRY)))
 		return true;
