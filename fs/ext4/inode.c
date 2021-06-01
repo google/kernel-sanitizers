@@ -4960,7 +4960,8 @@ static void __ext4_update_other_inode_time(struct super_block *sb,
 	if (!inode)
 		return;
 
-	if (!inode_is_dirtytime_only(inode))
+	/* Double-checked locking. */
+	if (!data_race(inode_is_dirtytime_only(inode)))
 		return;
 
 	spin_lock(&inode->i_lock);
