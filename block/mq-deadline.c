@@ -578,8 +578,8 @@ static bool dd_has_work(struct blk_mq_hw_ctx *hctx)
 	struct deadline_data *dd = hctx->queue->elevator->elevator_data;
 
 	return !list_empty_careful(&dd->dispatch) ||
-		!list_empty_careful(&dd->fifo_list[0]) ||
-		!list_empty_careful(&dd->fifo_list[1]);
+		data_race(!list_empty_careful(&dd->fifo_list[0]) ||
+			  !list_empty_careful(&dd->fifo_list[1]));
 }
 
 /*
