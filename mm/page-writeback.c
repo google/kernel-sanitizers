@@ -716,7 +716,7 @@ static unsigned long dirty_freerun_ceiling(unsigned long thresh,
 static unsigned long hard_dirty_limit(struct wb_domain *dom,
 				      unsigned long thresh)
 {
-	return max(thresh, dom->dirty_limit);
+	return max(thresh, READ_ONCE(dom->dirty_limit));
 }
 
 /*
@@ -1150,7 +1150,7 @@ static void update_dirty_limit(struct dirty_throttle_control *dtc)
 	}
 	return;
 update:
-	dom->dirty_limit = limit;
+	WRITE_ONCE(dom->dirty_limit, limit);
 }
 
 static void domain_update_bandwidth(struct dirty_throttle_control *dtc,
