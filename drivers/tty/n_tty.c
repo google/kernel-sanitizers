@@ -1718,7 +1718,7 @@ n_tty_receive_buf_common(struct tty_struct *tty, const unsigned char *cp,
 		 */
 		size_t tail = smp_load_acquire(&ldata->read_tail);
 
-		room = N_TTY_BUF_SIZE - (ldata->read_head - tail);
+		room = N_TTY_BUF_SIZE - (data_race(ldata->read_head) - tail);
 		if (I_PARMRK(tty))
 			room = (room + 2) / 3;
 		room--;
