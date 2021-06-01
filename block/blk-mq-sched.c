@@ -293,7 +293,7 @@ static int __blk_mq_sched_dispatch_requests(struct blk_mq_hw_ctx *hctx)
 	 * If we have previous entries on our dispatch list, grab them first for
 	 * more fair dispatch.
 	 */
-	if (!list_empty_careful(&hctx->dispatch)) {
+	if (!data_race(list_empty_careful(&hctx->dispatch))) {
 		spin_lock(&hctx->lock);
 		if (!list_empty(&hctx->dispatch))
 			list_splice_init(&hctx->dispatch, &rq_list);
