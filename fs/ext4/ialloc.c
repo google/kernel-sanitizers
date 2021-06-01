@@ -1036,7 +1036,7 @@ got_group:
 		/*
 		 * Check free inodes count before loading bitmap.
 		 */
-		if (ext4_free_inodes_count(sb, gdp) == 0)
+		if (data_race(ext4_free_inodes_count(sb, gdp) == 0))
 			goto next_group;
 
 		if (!(sbi->s_mount_state & EXT4_FC_REPLAY)) {
