@@ -313,7 +313,7 @@ static void n_tty_check_unthrottle(struct tty_struct *tty)
 static inline void put_tty_queue(unsigned char c, struct n_tty_data *ldata)
 {
 	*read_buf_addr(ldata, data_race(ldata->read_head)) = c;
-	ldata->read_head++;
+	data_race(ldata->read_head++);
 }
 
 /**
@@ -839,7 +839,7 @@ static inline void add_echo_byte(unsigned char c, struct n_tty_data *ldata)
 {
 	*echo_buf_addr(ldata, data_race(ldata->echo_head)) = c;
 	smp_wmb(); /* Matches smp_rmb() in echo_buf(). */
-	ldata->echo_head++;
+	data_race(ldata->echo_head++);
 }
 
 /**
