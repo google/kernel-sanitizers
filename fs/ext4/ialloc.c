@@ -589,7 +589,7 @@ static int find_group_other(struct super_block *sb, struct inode *parent,
 			last = ngroups;
 		for  (i = parent_group; i < last; i++) {
 			desc = ext4_get_group_desc(sb, i, NULL);
-			if (desc && ext4_free_inodes_count(sb, desc)) {
+			if (desc && data_race(ext4_free_inodes_count(sb, desc))) {
 				*group = i;
 				return 0;
 			}
