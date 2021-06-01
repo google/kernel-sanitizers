@@ -1795,7 +1795,7 @@ static void mb_free_blocks(struct inode *inode, struct ext4_buddy *e4b,
 	mb_free_blocks_double(inode, e4b, first, count);
 
 	this_cpu_inc(discard_pa_seq);
-	e4b->bd_info->bb_free += count;
+	WRITE_ONCE(e4b->bd_info->bb_free, e4b->bd_info->bb_free + count);
 	if (first < e4b->bd_info->bb_first_free)
 		e4b->bd_info->bb_first_free = first;
 
@@ -2488,7 +2488,7 @@ static int ext4_mb_good_group_nolock(struct ext4_allocation_context *ac,
 		atomic64_inc(&sbi->s_bal_cX_groups_considered[ac->ac_criteria]);
 	if (should_lock)
 		ext4_lock_group(sb, group);
-	free = grp->bb_free;
+	free = READ_ONCE(grp->bb_free);
 	if (free == 0)
 		goto out;
 	if (cr <= 2 && free < ac->ac_g_ex.fe_len)
