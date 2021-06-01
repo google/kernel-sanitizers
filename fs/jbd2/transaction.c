@@ -1850,11 +1850,11 @@ int jbd2_journal_stop(handle_t *handle)
 	 * Setting max_batch_time to 0 disables this completely.
 	 */
 	pid = current->pid;
-	if (handle->h_sync && journal->j_last_sync_writer != pid &&
+	if (handle->h_sync && READ_ONCE(journal->j_last_sync_writer) != pid &&
 	    journal->j_max_batch_time) {
 		u64 commit_time, trans_time;
 
-		journal->j_last_sync_writer = pid;
+		WRITE_ONCE(journal->j_last_sync_writer, pid);
 
 		read_lock(&journal->j_state_lock);
 		commit_time = journal->j_average_commit_time;
