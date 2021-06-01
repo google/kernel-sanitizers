@@ -477,7 +477,7 @@ static enum desc_state desc_read(struct prb_desc_ring *desc_ring,
 	memcpy(&desc_out->text_blk_lpos, &desc->text_blk_lpos,
 	       sizeof(desc_out->text_blk_lpos)); /* LMM(desc_read:C) */
 	if (seq_out)
-		*seq_out = info->seq; /* also part of desc_read:C */
+		*seq_out = READ_ONCE(info->seq); /* also part of desc_read:C */
 	if (caller_id_out)
 		*caller_id_out = info->caller_id; /* also part of desc_read:C */
 
@@ -1533,9 +1533,9 @@ bool prb_reserve(struct prb_reserved_entry *e, struct printk_ringbuffer *rb,
 	 * details about how the initializer bootstraps the descriptors.
 	 */
 	if (seq == 0 && DESC_INDEX(desc_ring, id) != 0)
-		info->seq = DESC_INDEX(desc_ring, id);
+		WRITE_ONCE(info->seq, DESC_INDEX(desc_ring, id));
 	else
-		info->seq = seq + DESCS_COUNT(desc_ring);
+		WRITE_ONCE(info->seq, seq + DESCS_COUNT(desc_ring));
 
 	/*
 	 * New data is about to be reserved. Once that happens, previous
