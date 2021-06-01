@@ -719,9 +719,9 @@ static int find_inode_bit(struct super_block *sb, ext4_group_t group,
 	unsigned long recently_deleted_ino = EXT4_INODES_PER_GROUP(sb);
 
 next:
-	*ino = ext4_find_next_zero_bit((unsigned long *)
-				       bitmap->b_data,
-				       EXT4_INODES_PER_GROUP(sb), *ino);
+	*ino = data_race(ext4_find_next_zero_bit((unsigned long *)
+						 bitmap->b_data,
+						 EXT4_INODES_PER_GROUP(sb), *ino));
 	if (*ino >= EXT4_INODES_PER_GROUP(sb))
 		goto not_found;
 
