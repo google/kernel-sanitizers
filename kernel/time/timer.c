@@ -1228,7 +1228,7 @@ int try_to_del_timer_sync(struct timer_list *timer)
 
 	base = lock_timer_base(timer, &flags);
 
-	if (base->running_timer != timer)
+	if (READ_ONCE(base->running_timer) != timer)
 		ret = detach_if_pending(timer, base, true);
 
 	raw_spin_unlock_irqrestore(&base->lock, flags);
@@ -1469,12 +1469,12 @@ static void expire_timers(struct timer_base *base, struct hlist_head *head)
 		if (timer->flags & TIMER_IRQSAFE) {
 			raw_spin_unlock(&base->lock);
 			call_timer_fn(timer, fn, baseclk);
-			base->running_timer = NULL;
+			WRITE_ONCE(base->running_timer, NULL);
 			raw_spin_lock(&base->lock);
 		} else {
 			raw_spin_unlock_irq(&base->lock);
 			call_timer_fn(timer, fn, baseclk);
-			base->running_timer = NULL;
+			WRITE_ONCE(base->running_timer, NULL);
 			timer_sync_wait_running(base);
 			raw_spin_lock_irq(&base->lock);
 		}
