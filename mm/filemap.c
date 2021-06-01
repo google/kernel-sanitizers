@@ -2575,7 +2575,7 @@ ssize_t filemap_read(struct kiocb *iocb, struct iov_iter *iter,
 		 * mark it as accessed the first time.
 		 */
 		if (iocb->ki_pos >> PAGE_SHIFT !=
-		    ra->prev_pos >> PAGE_SHIFT)
+		    READ_ONCE(ra->prev_pos) >> PAGE_SHIFT)
 			mark_page_accessed(pvec.pages[0]);
 
 		for (i = 0; i < pagevec_count(&pvec); i++) {
@@ -2606,7 +2606,7 @@ ssize_t filemap_read(struct kiocb *iocb, struct iov_iter *iter,
 
 			already_read += copied;
 			iocb->ki_pos += copied;
-			ra->prev_pos = iocb->ki_pos;
+			WRITE_ONCE(ra->prev_pos, iocb->ki_pos);
 
 			if (copied < bytes) {
 				error = -EFAULT;
