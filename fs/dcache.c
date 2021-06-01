@@ -746,6 +746,7 @@ static inline bool fast_dput(struct dentry *dentry)
 	 * If we have a d_op->d_delete() operation, we sould not
 	 * let the dentry count go to zero, so use "put_or_lock".
 	 */
+	ASSERT_EXCLUSIVE_BITS(dentry->d_flags, DCACHE_OP_DELETE);
 	if (unlikely(dentry->d_flags & DCACHE_OP_DELETE))
 		return lockref_put_or_lock(&dentry->d_lockref);
 
