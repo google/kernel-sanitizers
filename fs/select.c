@@ -443,7 +443,7 @@ static int max_select_fd(unsigned long n, fd_set_bits *fds)
 		set = BITS(fds, n);
 		if (!set)
 			continue;
-		if (set & ~*open_fds)
+		if (set & ~data_race(*open_fds))
 			return -EBADF;
 		if (max)
 			continue;
