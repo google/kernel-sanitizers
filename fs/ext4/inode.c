@@ -3127,7 +3127,7 @@ int ext4_alloc_da_blocks(struct inode *inode)
 {
 	trace_ext4_alloc_da_blocks(inode);
 
-	if (!EXT4_I(inode)->i_reserved_data_blocks)
+	if (!data_race(EXT4_I(inode)->i_reserved_data_blocks))
 		return 0;
 
 	/*
