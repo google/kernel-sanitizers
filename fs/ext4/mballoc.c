@@ -828,11 +828,13 @@ ext4_mb_avg_fragment_size_cmp(struct rb_node *rb1, struct rb_node *rb2)
 						struct ext4_group_info,
 						bb_avg_fragment_size_rb);
 	int num_frags_1, num_frags_2;
+	ext4_grpblk_t grp1_bb_fragments = READ_ONCE(grp1->bb_fragments);
+	ext4_grpblk_t grp2_bb_fragments = READ_ONCE(grp2->bb_fragments);
 
-	num_frags_1 = grp1->bb_fragments ?
-		grp1->bb_free / grp1->bb_fragments : 0;
-	num_frags_2 = grp2->bb_fragments ?
-		grp2->bb_free / grp2->bb_fragments : 0;
+	num_frags_1 = grp1_bb_fragments ?
+		grp1->bb_free / grp1_bb_fragments : 0;
+	num_frags_2 = grp2_bb_fragments ?
+		grp2->bb_free / grp2_bb_fragments : 0;
 
 	return (num_frags_2 - num_frags_1);
 }
