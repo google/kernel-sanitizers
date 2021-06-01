@@ -389,9 +389,11 @@ retry:
 		if (g->flags & PF_KTHREAD)
 			continue;
 		for_each_thread(g, c) {
-			if (data_race(c->mm == mm))
+			struct mm_struct *c_mm = READ_ONCE(c->mm);
+
+			if (c_mm == mm)
 				goto assign_new_owner;
-			if (c->mm)
+			if (c_mm)
 				break;
 		}
 	}
@@ -492,7 +494,7 @@ static void exit_mm(void)
 	 */
 	smp_mb__after_spinlock();
 	local_irq_disable();
-	current->mm = NULL;
+	WRITE_ONCE(current->mm, NULL);
 	membarrier_update_current_mm(NULL);
 	enter_lazy_tlb(mm, current);
 	local_irq_enable();
