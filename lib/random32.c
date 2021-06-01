@@ -369,7 +369,8 @@ static inline u32 siprand_u32(struct siprand_state *s)
 	PRND_SIPROUND(v0, v1, v2, v3);
 	PRND_SIPROUND(v0, v1, v2, v3);
 	v0 ^= n;
-	s->v0 = v0;  s->v1 = v1;  s->v2 = v2;  s->v3 = v3;
+	WRITE_ONCE(s->v0, v0);  WRITE_ONCE(s->v1, v1);
+	WRITE_ONCE(s->v2, v2);  WRITE_ONCE(s->v3, v3);
 	return v1 + v3;
 }
 
@@ -437,8 +438,8 @@ void prandom_seed(u32 entropy)
 
 	for_each_possible_cpu(i) {
 		struct siprand_state *state = per_cpu_ptr(&net_rand_state, i);
-		unsigned long v0 = state->v0, v1 = state->v1;
-		unsigned long v2 = state->v2, v3 = state->v3;
+		unsigned long v0 = READ_ONCE(state->v0), v1 = READ_ONCE(state->v1);
+		unsigned long v2 = READ_ONCE(state->v2), v3 = READ_ONCE(state->v3);
 
 		do {
 			v3 ^= entropy;
