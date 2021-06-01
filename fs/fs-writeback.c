@@ -1500,7 +1500,7 @@ __writeback_single_inode(struct inode *inode, struct writeback_control *wbc)
 	 */
 	spin_lock(&inode->i_lock);
 	dirty = inode->i_state & I_DIRTY;
-	inode->i_state &= ~dirty;
+	WRITE_ONCE(inode->i_state, inode->i_state & ~dirty);
 
 	/*
 	 * Paired with smp_mb() in __mark_inode_dirty().  This allows
@@ -2292,7 +2292,7 @@ void __mark_inode_dirty(struct inode *inode, int flags)
 	 */
 	smp_mb();
 
-	if (((inode->i_state & flags) == flags) ||
+	if (((READ_ONCE(inode->i_state) & flags) == flags) ||
 	    (dirtytime && (inode->i_state & I_DIRTY_INODE)))
 		return;
 
