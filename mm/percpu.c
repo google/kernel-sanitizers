@@ -555,8 +555,11 @@ static void pcpu_chunk_relocate(struct pcpu_chunk *chunk, int oslot)
 static inline void pcpu_update_empty_pages(struct pcpu_chunk *chunk, int nr)
 {
 	chunk->nr_empty_pop_pages += nr;
-	if (chunk != pcpu_reserved_chunk)
-		pcpu_nr_empty_pop_pages[pcpu_chunk_type(chunk)] += nr;
+	if (chunk != pcpu_reserved_chunk) {
+		enum pcpu_chunk_type t = pcpu_chunk_type(chunk);
+
+		WRITE_ONCE(pcpu_nr_empty_pop_pages[t], pcpu_nr_empty_pop_pages[t] + nr);
+	}
 }
 
 /*
@@ -1832,7 +1835,7 @@ area_found:
 		mutex_unlock(&pcpu_alloc_mutex);
 	}
 
-	if (pcpu_nr_empty_pop_pages[type] < PCPU_EMPTY_POP_PAGES_LOW)
+	if (READ_ONCE(pcpu_nr_empty_pop_pages[type]) < PCPU_EMPTY_POP_PAGES_LOW)
 		pcpu_schedule_balance_work();
 
 	/* clear the areas and return address relative to base address */
