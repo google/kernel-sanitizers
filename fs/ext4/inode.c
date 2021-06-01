@@ -5072,10 +5072,13 @@ static int ext4_do_update_inode(handle_t *handle,
 	}
 	raw_inode->i_links_count = cpu_to_le16(inode->i_nlink);
 
+	/* XXX: Why safe? */
+	kcsan_disable_current();
 	EXT4_INODE_SET_XTIME(i_ctime, inode, raw_inode);
 	EXT4_INODE_SET_XTIME(i_mtime, inode, raw_inode);
 	EXT4_INODE_SET_XTIME(i_atime, inode, raw_inode);
 	EXT4_EINODE_SET_XTIME(i_crtime, ei, raw_inode);
+	kcsan_enable_current();
 
 	raw_inode->i_dtime = cpu_to_le32(ei->i_dtime);
 	raw_inode->i_flags = cpu_to_le32(ei->i_flags & 0xFFFFFFFF);
