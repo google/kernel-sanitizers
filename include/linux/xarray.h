@@ -1659,7 +1659,7 @@ static inline unsigned int xas_find_chunk(struct xa_state *xas, bool advance,
 		offset++;
 	if (XA_CHUNK_SIZE == BITS_PER_LONG) {
 		if (offset < XA_CHUNK_SIZE) {
-			unsigned long data = *addr & (~0UL << offset);
+			unsigned long data = data_race(*addr) & (~0UL << offset);
 			if (data)
 				return __ffs(data);
 		}
