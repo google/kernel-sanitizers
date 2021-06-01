@@ -879,7 +879,7 @@ main_queue:
 		 *       do the multicast send and rotate records from the
 		 *       main queue to the retry/hold queues */
 		wait_event_freezable(kauditd_wait,
-				     (skb_queue_len(&audit_queue) ? 1 : 0));
+				     (skb_queue_len_lockless(&audit_queue) ? 1 : 0));
 	}
 
 	return 0;
