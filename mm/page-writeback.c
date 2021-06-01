@@ -1355,8 +1355,8 @@ static void __wb_update_bandwidth(struct dirty_throttle_control *gdtc,
 	if (elapsed < BANDWIDTH_INTERVAL)
 		return;
 
-	dirtied = percpu_counter_read(&wb->stat[WB_DIRTIED]);
-	written = percpu_counter_read(&wb->stat[WB_WRITTEN]);
+	dirtied = data_race(percpu_counter_read(&wb->stat[WB_DIRTIED]));
+	written = data_race(percpu_counter_read(&wb->stat[WB_WRITTEN]));
 
 	/*
 	 * Skip quiet periods when disk bandwidth is under-utilized.
