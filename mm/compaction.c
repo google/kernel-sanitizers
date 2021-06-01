@@ -430,11 +430,11 @@ static void update_cached_migrate(struct compact_control *cc, unsigned long pfn)
 	if (cc->no_set_skip_hint)
 		return;
 
-	if (pfn > zone->compact_cached_migrate_pfn[0])
-		zone->compact_cached_migrate_pfn[0] = pfn;
+	if (pfn > READ_ONCE(zone->compact_cached_migrate_pfn[0]))
+		WRITE_ONCE(zone->compact_cached_migrate_pfn[0], pfn);
 	if (cc->mode != MIGRATE_ASYNC &&
-	    pfn > zone->compact_cached_migrate_pfn[1])
-		zone->compact_cached_migrate_pfn[1] = pfn;
+	    pfn > READ_ONCE(zone->compact_cached_migrate_pfn[1]))
+		WRITE_ONCE(zone->compact_cached_migrate_pfn[1], pfn);
 }
 
 /*
