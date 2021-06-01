@@ -1939,7 +1939,7 @@ static int mb_mark_used(struct ext4_buddy *e4b, struct ext4_free_extent *ex)
 	mb_mark_used_double(e4b, start, len);
 
 	this_cpu_inc(discard_pa_seq);
-	e4b->bd_info->bb_free -= len;
+	WRITE_ONCE(e4b->bd_info->bb_free, e4b->bd_info->bb_free - len);
 	if (e4b->bd_info->bb_first_free == start)
 		e4b->bd_info->bb_first_free += len;
 
@@ -2424,7 +2424,7 @@ static bool ext4_mb_good_group(struct ext4_allocation_context *ac,
 	if (unlikely(EXT4_MB_GRP_BBITMAP_CORRUPT(grp)))
 		return false;
 
-	free = grp->bb_free;
+	free = READ_ONCE(grp->bb_free);
 	if (free == 0)
 		return false;
 
