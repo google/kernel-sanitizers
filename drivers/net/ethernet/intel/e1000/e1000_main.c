@@ -2943,7 +2943,7 @@ static int e1000_tx_map(struct e1000_adapter *adapter,
 	tx_ring->buffer_info[i].skb = skb;
 	tx_ring->buffer_info[i].segs = segs;
 	tx_ring->buffer_info[i].bytecount = bytecount;
-	tx_ring->buffer_info[first].next_to_watch = i;
+	WRITE_ONCE(tx_ring->buffer_info[first].next_to_watch, i);
 
 	return count;
 
@@ -3863,7 +3863,7 @@ static bool e1000_clean_tx_irq(struct e1000_adapter *adapter,
 				i = 0;
 		}
 
-		eop = tx_ring->buffer_info[i].next_to_watch;
+		eop = READ_ONCE(tx_ring->buffer_info[i].next_to_watch);
 		eop_desc = E1000_TX_DESC(*tx_ring, eop);
 	}
 
