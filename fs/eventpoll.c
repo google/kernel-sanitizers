@@ -371,7 +371,7 @@ static inline struct epitem *ep_item_from_wait(wait_queue_entry_t *p)
  */
 static inline int ep_events_available(struct eventpoll *ep)
 {
-	return !list_empty_careful(&ep->rdllist) ||
+	return !data_race(list_empty_careful(&ep->rdllist)) ||
 		READ_ONCE(ep->ovflist) != EP_UNACTIVE_PTR;
 }
 
