@@ -181,7 +181,7 @@ static void *fsnotify_detach_connector_from_object(
 
 	if (conn->type == FSNOTIFY_OBJ_TYPE_INODE) {
 		inode = fsnotify_conn_inode(conn);
-		inode->i_fsnotify_mask = 0;
+		WRITE_ONCE(inode->i_fsnotify_mask, 0);
 		atomic_long_inc(&inode->i_sb->s_fsnotify_inode_refs);
 	} else if (conn->type == FSNOTIFY_OBJ_TYPE_VFSMOUNT) {
 		fsnotify_conn_mount(conn)->mnt_fsnotify_mask = 0;

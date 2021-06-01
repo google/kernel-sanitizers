@@ -160,7 +160,7 @@ static bool fsnotify_event_needs_parent(struct inode *inode, struct mount *mnt,
 	BUILD_BUG_ON(FS_EVENTS_POSS_ON_CHILD & ~FS_EVENTS_POSS_TO_PARENT);
 
 	/* Did either inode/sb/mount subscribe for events with parent/name? */
-	marks_mask |= fsnotify_parent_needed_mask(inode->i_fsnotify_mask);
+	marks_mask |= fsnotify_parent_needed_mask(READ_ONCE(inode->i_fsnotify_mask));
 	marks_mask |= fsnotify_parent_needed_mask(inode->i_sb->s_fsnotify_mask);
 	if (mnt)
 		marks_mask |= fsnotify_parent_needed_mask(mnt->mnt_fsnotify_mask);
