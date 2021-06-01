@@ -456,7 +456,7 @@ static void update_pageblock_skip(struct compact_control *cc,
 
 	/* Update where async and sync compaction should restart */
 	if (pfn < zone->compact_cached_free_pfn)
-		zone->compact_cached_free_pfn = pfn;
+		WRITE_ONCE(zone->compact_cached_free_pfn, pfn);
 }
 #else
 static inline bool isolation_suitable(struct compact_control *cc,
@@ -2323,7 +2323,7 @@ compact_zone(struct compact_control *cc, struct capture_control *capc)
 		cc->free_pfn = pageblock_start_pfn(end_pfn - 1);
 	} else {
 		cc->migrate_pfn = cc->zone->compact_cached_migrate_pfn[sync];
-		cc->free_pfn = cc->zone->compact_cached_free_pfn;
+		cc->free_pfn = READ_ONCE(cc->zone->compact_cached_free_pfn);
 		if (cc->free_pfn < start_pfn || cc->free_pfn >= end_pfn) {
 			cc->free_pfn = pageblock_start_pfn(end_pfn - 1);
 			cc->zone->compact_cached_free_pfn = cc->free_pfn;
