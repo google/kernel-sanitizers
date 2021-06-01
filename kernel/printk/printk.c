@@ -2664,7 +2664,7 @@ skip:
 	 * there's a new owner and the console_unlock() from them will do the
 	 * flush, no worries.
 	 */
-	retry = prb_read_valid(prb, console_seq, NULL);
+	retry = prb_read_valid(prb, READ_ONCE(console_seq), NULL);
 	printk_safe_exit_irqrestore(flags);
 
 	if (retry && console_trylock())
