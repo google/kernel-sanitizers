@@ -1440,7 +1440,7 @@ n_tty_receive_char_fast(struct tty_struct *tty, unsigned char c)
 	if (L_ECHO(tty)) {
 		finish_erasing(ldata);
 		/* Record the column of first canon char. */
-		if (ldata->canon_head == ldata->read_head)
+		if (data_race(ldata->canon_head == ldata->read_head))
 			echo_set_canon_col(ldata);
 		echo_char(c, tty);
 		commit_echoes(tty);
