@@ -2504,7 +2504,7 @@ update_disksize:
 		if (disksize > i_size)
 			disksize = i_size;
 		if (disksize > EXT4_I(inode)->i_disksize)
-			EXT4_I(inode)->i_disksize = disksize;
+			WRITE_ONCE(EXT4_I(inode)->i_disksize, disksize);
 		up_write(&EXT4_I(inode)->i_data_sem);
 		err2 = ext4_mark_inode_dirty(handle, inode);
 		if (err2) {
@@ -3089,7 +3089,7 @@ static int ext4_da_write_end(struct file *file,
 	 * into that.
 	 */
 	new_i_size = pos + copied;
-	if (copied && new_i_size > EXT4_I(inode)->i_disksize) {
+	if (copied && new_i_size > READ_ONCE(EXT4_I(inode)->i_disksize)) {
 		if (ext4_has_inline_data(inode) ||
 		    ext4_da_should_update_i_disksize(page, end)) {
 			ext4_update_i_disksize(inode, new_i_size);
