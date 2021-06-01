@@ -2804,7 +2804,7 @@ static bool e1000_tx_csum(struct e1000_adapter *adapter,
 	context_desc->cmd_and_length = cpu_to_le32(cmd_len);
 
 	buffer_info->time_stamp = jiffies;
-	buffer_info->next_to_watch = i;
+	WRITE_ONCE(buffer_info->next_to_watch, i);
 
 	if (unlikely(++i == tx_ring->count))
 		i = 0;
@@ -3835,7 +3835,7 @@ static bool e1000_clean_tx_irq(struct e1000_adapter *adapter,
 	unsigned int bytes_compl = 0, pkts_compl = 0;
 
 	i = tx_ring->next_to_clean;
-	eop = tx_ring->buffer_info[i].next_to_watch;
+	eop = READ_ONCE(tx_ring->buffer_info[i].next_to_watch);
 	eop_desc = E1000_TX_DESC(*tx_ring, eop);
 
 	while ((eop_desc->upper.data & cpu_to_le32(E1000_TXD_STAT_DD)) &&
