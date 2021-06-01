@@ -837,7 +837,7 @@ static void flush_echoes(struct tty_struct *tty)
 
 static inline void add_echo_byte(unsigned char c, struct n_tty_data *ldata)
 {
-	*echo_buf_addr(ldata, ldata->echo_head) = c;
+	*echo_buf_addr(ldata, data_race(ldata->echo_head)) = c;
 	smp_wmb(); /* Matches smp_rmb() in echo_buf(). */
 	ldata->echo_head++;
 }
