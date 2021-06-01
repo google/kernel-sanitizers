@@ -415,7 +415,7 @@ static inline bool xa_empty(const struct xarray *xa)
  */
 static inline bool xa_marked(const struct xarray *xa, xa_mark_t mark)
 {
-	return xa->xa_flags & XA_FLAGS_MARK(mark);
+	return data_race(xa->xa_flags & XA_FLAGS_MARK(mark));
 }
 
 /**
