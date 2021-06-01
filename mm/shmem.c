@@ -222,8 +222,8 @@ static inline bool shmem_inode_acct_block(struct inode *inode, long pages)
 		return false;
 
 	if (sbinfo->max_blocks) {
-		if (percpu_counter_compare(&sbinfo->used_blocks,
-					   sbinfo->max_blocks - pages) > 0)
+		if (data_race(percpu_counter_compare(&sbinfo->used_blocks,
+						     sbinfo->max_blocks - pages) > 0))
 			goto unacct;
 		percpu_counter_add(&sbinfo->used_blocks, pages);
 	}
