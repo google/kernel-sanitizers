@@ -344,7 +344,7 @@ static void __change_pid(struct task_struct *task, enum pid_type type,
 	pid = *pid_ptr;
 
 	hlist_del_rcu(&task->pid_links[type]);
-	*pid_ptr = new;
+	WRITE_ONCE(*pid_ptr, new);
 
 	for (tmp = PIDTYPE_MAX; --tmp >= 0; )
 		if (pid_has_task(pid, tmp))
