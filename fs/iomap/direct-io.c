@@ -109,7 +109,7 @@ ssize_t iomap_dio_complete(struct iomap_dio *dio)
 	 * zeros from unwritten extents.
 	 */
 	if (!dio->error && dio->size &&
-	    (dio->flags & IOMAP_DIO_WRITE) && inode->i_mapping->nrpages) {
+	    (dio->flags & IOMAP_DIO_WRITE) && data_race(inode->i_mapping->nrpages)) {
 		int err;
 		err = invalidate_inode_pages2_range(inode->i_mapping,
 				offset >> PAGE_SHIFT,
