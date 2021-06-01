@@ -43,7 +43,7 @@ static int ps2_do_sendbyte(struct ps2dev *ps2dev, u8 byte,
 				"failed to write %#02x: %d\n", byte, error);
 		else
 			wait_event_timeout(ps2dev->wait,
-					   !(ps2dev->flags & PS2_FLAG_ACK),
+					   !(READ_ONCE(ps2dev->flags) & PS2_FLAG_ACK),
 					   msecs_to_jiffies(timeout));
 
 		serio_pause_rx(ps2dev->serio);
@@ -441,7 +441,7 @@ bool ps2_handle_ack(struct ps2dev *ps2dev, u8 data)
 			ps2dev->flags |= PS2_FLAG_CMD | PS2_FLAG_CMD1;
 	}
 
-	ps2dev->flags &= ~PS2_FLAG_ACK;
+	WRITE_ONCE(ps2dev->flags, ps2dev->flags & ~PS2_FLAG_ACK);
 	wake_up(&ps2dev->wait);
 
 	if (data != PS2_RET_ACK)
