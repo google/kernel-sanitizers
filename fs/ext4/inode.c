@@ -5106,7 +5106,7 @@ static int ext4_do_update_inode(handle_t *handle,
 		}
 	} else if (!ext4_has_inline_data(inode)) {
 		for (block = 0; block < EXT4_N_BLOCKS; block++)
-			raw_inode->i_block[block] = ei->i_data[block];
+			raw_inode->i_block[block] = data_race(ei->i_data[block]);
 	}
 
 	if (likely(!test_opt2(inode->i_sb, HURD_COMPAT))) {
