@@ -1460,7 +1460,7 @@ __writeback_single_inode(struct inode *inode, struct writeback_control *wbc)
 	unsigned dirty;
 	int ret;
 
-	WARN_ON(!(inode->i_state & I_SYNC));
+	WARN_ON(!data_race(inode->i_state & I_SYNC));
 
 	trace_writeback_single_inode_start(inode, wbc, nr_to_write);
 
