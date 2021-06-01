@@ -391,7 +391,7 @@ repeat:
 	if (!handle->h_reserved && journal->j_barrier_count) {
 		read_unlock(&journal->j_state_lock);
 		wait_event(journal->j_wait_transaction_locked,
-				journal->j_barrier_count == 0);
+				data_race(journal->j_barrier_count == 0));
 		goto repeat;
 	}
 
