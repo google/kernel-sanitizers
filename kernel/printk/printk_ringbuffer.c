@@ -584,7 +584,7 @@ static bool data_make_reusable(struct printk_ringbuffer *rb,
 		 * sure it points back to this data block. If the check fails,
 		 * the data area has been recycled by another writer.
 		 */
-		id = blk->id; /* LMM(data_make_reusable:A) */
+		id = READ_ONCE(blk->id); /* LMM(data_make_reusable:A) */
 
 		d_state = desc_read(desc_ring, id, &desc,
 				    NULL, NULL); /* LMM(data_make_reusable:B) */
@@ -1068,7 +1068,7 @@ static char *data_alloc(struct printk_ringbuffer *rb, unsigned int size,
 					  next_lpos)); /* LMM(data_alloc:A) */
 
 	blk = to_block(data_ring, begin_lpos);
-	blk->id = id; /* LMM(data_alloc:B) */
+	WRITE_ONCE(blk->id, id); /* LMM(data_alloc:B) */
 
 	if (DATA_WRAPS(data_ring, begin_lpos) != DATA_WRAPS(data_ring, next_lpos)) {
 		/* Wrapping data blocks store their data at the beginning. */
@@ -1078,7 +1078,7 @@ static char *data_alloc(struct printk_ringbuffer *rb, unsigned int size,
 		 * Store the ID on the wrapped block for consistency.
 		 * The printk_ringbuffer does not actually use it.
 		 */
-		blk->id = id;
+		WRITE_ONCE(blk->id, id);
 	}
 
 	blk_lpos->begin = begin_lpos;
