@@ -389,7 +389,7 @@ retry:
 		if (g->flags & PF_KTHREAD)
 			continue;
 		for_each_thread(g, c) {
-			if (c->mm == mm)
+			if (data_race(c->mm == mm))
 				goto assign_new_owner;
 			if (c->mm)
 				break;
