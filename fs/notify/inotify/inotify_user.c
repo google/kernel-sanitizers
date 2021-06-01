@@ -480,7 +480,7 @@ static void inotify_remove_from_idr(struct fsnotify_group *group,
 	/* Removed from the idr, drop that ref. */
 	fsnotify_put_mark(&i_mark->fsn_mark);
 out:
-	i_mark->wd = -1;
+	WRITE_ONCE(i_mark->wd, -1);
 	spin_unlock(idr_lock);
 	/* match the ref taken by inotify_idr_find_locked() */
 	if (found_i_mark)

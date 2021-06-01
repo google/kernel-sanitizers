@@ -110,7 +110,7 @@ int inotify_handle_inode_event(struct fsnotify_mark *inode_mark, u32 mask,
 	fsn_event = &event->fse;
 	fsnotify_init_event(fsn_event);
 	event->mask = mask;
-	event->wd = i_mark->wd;
+	event->wd = READ_ONCE(i_mark->wd);
 	event->sync_cookie = cookie;
 	event->name_len = len;
 	if (len)
