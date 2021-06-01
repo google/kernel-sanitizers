@@ -499,7 +499,7 @@ static int find_group_orlov(struct super_block *sb, struct inode *parent,
 			if (grp+i >= real_ngroups)
 				break;
 			desc = ext4_get_group_desc(sb, grp+i, NULL);
-			if (desc && ext4_free_inodes_count(sb, desc)) {
+			if (desc && data_race(ext4_free_inodes_count(sb, desc))) {
 				*group = grp+i;
 				return 0;
 			}
