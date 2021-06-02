@@ -703,7 +703,7 @@ struct address_space *page_mapping(struct page *page)
 		return swap_address_space(entry);
 	}
 
-	mapping = page->mapping;
+	mapping = READ_ONCE(page->mapping);
 	if ((unsigned long)mapping & PAGE_MAPPING_ANON)
 		return NULL;
 
