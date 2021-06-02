@@ -1484,7 +1484,7 @@ __writeback_single_inode(struct inode *inode, struct writeback_control *wbc)
 	 * mark_inode_dirty_sync() to notify the filesystem about it and to
 	 * change I_DIRTY_TIME into I_DIRTY_SYNC.
 	 */
-	if ((inode->i_state & I_DIRTY_TIME) &&
+	if (data_race(inode->i_state & I_DIRTY_TIME) &&
 	    (wbc->sync_mode == WB_SYNC_ALL ||
 	     time_after(jiffies, inode->dirtied_time_when +
 			dirtytime_expire_interval * HZ))) {
