@@ -1372,7 +1372,7 @@ n_tty_receive_char_special(struct tty_struct *tty, unsigned char c)
 handle_newline:
 			set_bit(ldata->read_head & (N_TTY_BUF_SIZE - 1), ldata->read_flags);
 			put_tty_queue(c, ldata);
-			smp_store_release(&ldata->canon_head, ldata->read_head);
+			smp_store_release(&ldata->canon_head, data_race(ldata->read_head));
 			kill_fasync(&tty->fasync, SIGIO, POLL_IN);
 			wake_up_interruptible_poll(&tty->read_wait, EPOLLIN);
 			return 0;
