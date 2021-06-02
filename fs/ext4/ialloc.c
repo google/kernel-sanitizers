@@ -544,7 +544,7 @@ fallback_retry:
 		grp = (parent_group + i) % ngroups;
 		desc = ext4_get_group_desc(sb, grp, NULL);
 		if (desc) {
-			grp_free = ext4_free_inodes_count(sb, desc);
+			grp_free = data_race(ext4_free_inodes_count(sb, desc));
 			if (grp_free && grp_free >= avefreei) {
 				*group = grp;
 				return 0;
