@@ -1360,7 +1360,7 @@ static inline bool io_sqring_full(struct io_ring_ctx *ctx)
 
 static inline unsigned int __io_cqring_events(struct io_ring_ctx *ctx)
 {
-	return ctx->cached_cq_tail - READ_ONCE(ctx->rings->cq.head);
+	return READ_ONCE(ctx->cached_cq_tail) - READ_ONCE(ctx->rings->cq.head);
 }
 
 static inline struct io_uring_cqe *io_get_cqring(struct io_ring_ctx *ctx)
