@@ -424,7 +424,7 @@ static int __inet6_bind(struct sock *sk, struct sockaddr *uaddr, int addr_len,
 		sk->sk_userlocks |= SOCK_BINDADDR_LOCK;
 	if (snum)
 		sk->sk_userlocks |= SOCK_BINDPORT_LOCK;
-	inet->inet_sport = htons(inet->inet_num);
+	WRITE_ONCE(inet->inet_sport, htons(inet->inet_num));
 	inet->inet_dport = 0;
 	inet->inet_daddr = 0;
 out:
@@ -538,7 +538,7 @@ int inet6_getname(struct socket *sock, struct sockaddr *uaddr,
 			sin->sin6_addr = np->saddr;
 		else
 			sin->sin6_addr = sk->sk_v6_rcv_saddr;
-		sin->sin6_port = inet->inet_sport;
+		sin->sin6_port = READ_ONCE(inet->inet_sport);
 		BPF_CGROUP_RUN_SA_PROG_LOCK(sk, (struct sockaddr *)sin,
 					    BPF_CGROUP_INET6_GETSOCKNAME,
 					    NULL);
