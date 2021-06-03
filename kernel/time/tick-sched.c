@@ -617,7 +617,7 @@ update_ts_time_stats(int cpu, struct tick_sched *ts, ktime_t now, u64 *last_upda
 			ts->iowait_sleeptime = ktime_add(ts->iowait_sleeptime, delta);
 		else
 			ts->idle_sleeptime = ktime_add(ts->idle_sleeptime, delta);
-		ts->idle_entrytime = now;
+		WRITE_ONCE(ts->idle_entrytime, now);
 	}
 
 	if (last_update_time)
@@ -668,7 +668,7 @@ u64 get_cpu_idle_time_us(int cpu, u64 *last_update_time)
 		idle = ts->idle_sleeptime;
 	} else {
 		if (ts->idle_active && !nr_iowait_cpu(cpu)) {
-			ktime_t delta = ktime_sub(now, ts->idle_entrytime);
+			ktime_t delta = ktime_sub(now, READ_ONCE(ts->idle_entrytime));
 
 			idle = ktime_add(ts->idle_sleeptime, delta);
 		} else {
