@@ -4972,9 +4972,12 @@ static void __ext4_update_other_inode_time(struct super_block *sb,
 		spin_unlock(&inode->i_lock);
 
 		spin_lock(&ei->i_raw_lock);
+		/* XXX: Why safe? */
+		kcsan_disable_current();
 		EXT4_INODE_SET_XTIME(i_ctime, inode, raw_inode);
 		EXT4_INODE_SET_XTIME(i_mtime, inode, raw_inode);
 		EXT4_INODE_SET_XTIME(i_atime, inode, raw_inode);
+		kcsan_enable_current();
 		ext4_inode_csum_set(inode, raw_inode, ei);
 		spin_unlock(&ei->i_raw_lock);
 		trace_ext4_other_inode_update_time(inode, orig_ino);
