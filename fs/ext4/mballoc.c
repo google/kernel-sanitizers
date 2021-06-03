@@ -1074,6 +1074,7 @@ static void
 mb_set_largest_free_order(struct super_block *sb, struct ext4_group_info *grp)
 {
 	struct ext4_sb_info *sbi = EXT4_SB(sb);
+	ext4_grpblk_t bb_largest_free_order;
 	int i;
 
 	if (test_opt2(sb, MB_OPTIMIZE_SCAN) && grp->bb_largest_free_order >= 0) {
@@ -1083,14 +1084,16 @@ mb_set_largest_free_order(struct super_block *sb, struct ext4_group_info *grp)
 		write_unlock(&sbi->s_mb_largest_free_orders_locks[
 					      grp->bb_largest_free_order]);
 	}
-	grp->bb_largest_free_order = -1; /* uninit */
+	bb_largest_free_order = -1; /* uninit */
 
 	for (i = MB_NUM_ORDERS(sb) - 1; i >= 0; i--) {
 		if (grp->bb_counters[i] > 0) {
-			grp->bb_largest_free_order = i;
+			bb_largest_free_order = i;
 			break;
 		}
 	}
+	WRITE_ONCE(grp->bb_largest_free_order, bb_largest_free_order);
+
 	if (test_opt2(sb, MB_OPTIMIZE_SCAN) &&
 	    grp->bb_largest_free_order >= 0 && grp->bb_free) {
 		write_lock(&sbi->s_mb_largest_free_orders_locks[
@@ -2450,7 +2453,7 @@ static bool ext4_mb_good_group(struct ext4_allocation_context *ac,
 		if (ac->ac_2order >= MB_NUM_ORDERS(ac->ac_sb))
 			return true;
 
-		if (grp->bb_largest_free_order < ac->ac_2order)
+		if (READ_ONCE(grp->bb_largest_free_order) < ac->ac_2order)
 			return false;
 
 		return true;
