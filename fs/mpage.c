@@ -157,7 +157,7 @@ static struct bio *do_mpage_readpage(struct mpage_readpage_args *args)
 {
 	struct page *page = args->page;
 	struct inode *inode = page->mapping->host;
-	const unsigned blkbits = inode->i_blkbits;
+	const unsigned blkbits = READ_ONCE(inode->i_blkbits);
 	const unsigned blocks_per_page = PAGE_SIZE >> blkbits;
 	const unsigned blocksize = 1 << blkbits;
 	struct buffer_head *map_bh = &args->map_bh;

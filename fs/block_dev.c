@@ -162,7 +162,7 @@ int set_blocksize(struct block_device *bdev, int size)
 	/* Don't change the size if it is same as current */
 	if (bdev->bd_inode->i_blkbits != blksize_bits(size)) {
 		sync_blockdev(bdev);
-		bdev->bd_inode->i_blkbits = blksize_bits(size);
+		WRITE_ONCE(bdev->bd_inode->i_blkbits, blksize_bits(size));
 		kill_bdev(bdev);
 	}
 	return 0;
