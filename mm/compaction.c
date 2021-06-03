@@ -2349,7 +2349,8 @@ compact_zone(struct compact_control *cc, struct capture_control *capc)
 	 * cached PFNs in sync to avoid revisiting the same blocks.
 	 */
 	update_cached = !sync &&
-		cc->zone->compact_cached_migrate_pfn[0] == cc->zone->compact_cached_migrate_pfn[1];
+		READ_ONCE(cc->zone->compact_cached_migrate_pfn[0]) ==
+			READ_ONCE(cc->zone->compact_cached_migrate_pfn[1]);
 
 	trace_mm_compaction_begin(start_pfn, cc->migrate_pfn,
 				cc->free_pfn, end_pfn, sync);
