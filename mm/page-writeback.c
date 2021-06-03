@@ -1714,7 +1714,7 @@ free_running:
 		}
 
 		if (dirty_exceeded && !wb->dirty_exceeded)
-			wb->dirty_exceeded = 1;
+			WRITE_ONCE(wb->dirty_exceeded, 1);
 
 		if (time_is_before_jiffies(wb->bw_time_stamp +
 					   BANDWIDTH_INTERVAL)) {
@@ -1891,7 +1891,7 @@ void balance_dirty_pages_ratelimited(struct address_space *mapping)
 		wb = &bdi->wb;
 
 	ratelimit = current->nr_dirtied_pause;
-	if (wb->dirty_exceeded)
+	if (READ_ONCE(wb->dirty_exceeded))
 		ratelimit = min(ratelimit, 32 >> (PAGE_SHIFT - 10));
 
 	preempt_disable();
