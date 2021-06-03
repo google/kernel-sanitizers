@@ -1296,7 +1296,8 @@ void shrink_dcache_sb(struct super_block *sb)
 		list_lru_walk(&sb->s_dentry_lru,
 			dentry_lru_isolate_shrink, &dispose, 1024);
 		shrink_dentry_list(&dispose);
-	} while (list_lru_count(&sb->s_dentry_lru) > 0);
+	} while (data_race(list_lru_count(&sb->s_dentry_lru) > 0));
+	/* XXX: Is postcondition that sb->s_dentry_lru==0? If so, the data race is a bug! */
 }
 EXPORT_SYMBOL(shrink_dcache_sb);
 
