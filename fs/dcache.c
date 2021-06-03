@@ -544,6 +544,7 @@ static inline void dentry_unlist(struct dentry *dentry, struct dentry *parent)
 	 */
 	while (dentry->d_child.next != &parent->d_subdirs) {
 		next = list_entry(dentry->d_child.next, struct dentry, d_child);
+		ASSERT_EXCLUSIVE_BITS(next->d_flags, DCACHE_DENTRY_CURSOR);
 		if (likely(!(next->d_flags & DCACHE_DENTRY_CURSOR)))
 			break;
 		dentry->d_child.next = next->d_child.next;
