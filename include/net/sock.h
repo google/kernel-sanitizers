@@ -2264,7 +2264,7 @@ struct sk_buff *sock_dequeue_err_skb(struct sock *sk);
 static inline int sock_error(struct sock *sk)
 {
 	int err;
-	if (likely(!sk->sk_err))
+	if (likely(!data_race(sk->sk_err)))
 		return 0;
 	err = xchg(&sk->sk_err, 0);
 	return -err;
