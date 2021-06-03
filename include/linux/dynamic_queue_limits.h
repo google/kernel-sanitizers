@@ -76,15 +76,11 @@ static inline void dql_queued(struct dql *dql, unsigned int count)
 {
 	BUG_ON(count > DQL_MAX_OBJECT);
 
-	dql->last_obj_cnt = count;
-
 	/* We want to force a write first, so that cpu do not attempt
 	 * to get cache line containing last_obj_cnt, num_queued, adj_limit
-	 * in Shared state, but directly does a Request For Ownership
-	 * It is only a hint, we use barrier() only.
+	 * in Shared state, but directly does a Request For Ownership.
 	 */
-	barrier();
-
+	WRITE_ONCE(dql->last_obj_cnt, count);
 	dql->num_queued += count;
 }
 
