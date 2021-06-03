@@ -827,7 +827,7 @@ inline void __lru_add_drain_all(bool force_all_cpus)
 		if (force_all_cpus ||
 		    data_race(pagevec_count(&per_cpu(lru_pvecs.lru_add, cpu))) ||
 		    data_race(pagevec_count(&per_cpu(lru_rotate.pvec, cpu))) ||
-		    pagevec_count(&per_cpu(lru_pvecs.lru_deactivate_file, cpu)) ||
+		    data_race(pagevec_count(&per_cpu(lru_pvecs.lru_deactivate_file, cpu))) ||
 		    pagevec_count(&per_cpu(lru_pvecs.lru_deactivate, cpu)) ||
 		    pagevec_count(&per_cpu(lru_pvecs.lru_lazyfree, cpu)) ||
 		    need_activate_page_drain(cpu) ||
