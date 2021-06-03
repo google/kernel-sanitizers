@@ -7,6 +7,7 @@
 
 #include <trace/events/ext4.h>
 
+__no_kcsan /* XXX: Data races with remount ok? */
 int ext4_inode_journal_mode(struct inode *inode)
 {
 	if (EXT4_JOURNAL(inode) == NULL)
