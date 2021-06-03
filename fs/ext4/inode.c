@@ -5017,6 +5017,10 @@ static void ext4_update_other_inodes_time(struct super_block *sb,
  *
  * The caller must have write access to iloc->bh.
  */
+/* FIXME: This function has lots of data races. Consider __no_kcsan and an
+   explanation? Although the better choice seems to not change for now and
+   leave it in the moderation queue until maintainers want to discuss them. */
+__no_kcsan
 static int ext4_do_update_inode(handle_t *handle,
 				struct inode *inode,
 				struct ext4_iloc *iloc)
@@ -5048,7 +5052,7 @@ static int ext4_do_update_inode(handle_t *handle,
 	i_uid = i_uid_read(inode);
 	i_gid = i_gid_read(inode);
 	i_projid = from_kprojid(&init_user_ns, ei->i_projid);
-	if (!(test_opt(inode->i_sb, NO_UID32))) {
+	if (!(data_race(test_opt(inode->i_sb, NO_UID32)))) {
 		raw_inode->i_uid_low = cpu_to_le16(low_16_bits(i_uid));
 		raw_inode->i_gid_low = cpu_to_le16(low_16_bits(i_gid));
 /*
