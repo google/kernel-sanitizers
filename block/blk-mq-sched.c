@@ -137,7 +137,7 @@ static int __blk_mq_do_dispatch_sched(struct blk_mq_hw_ctx *hctx)
 		if (e->type->ops.has_work && !e->type->ops.has_work(hctx))
 			break;
 
-		if (!list_empty_careful(&hctx->dispatch)) {
+		if (!data_race(list_empty_careful(&hctx->dispatch))) {
 			busy = true;
 			break;
 		}
