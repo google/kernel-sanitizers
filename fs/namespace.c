@@ -626,7 +626,7 @@ struct mount *__lookup_mnt(struct vfsmount *mnt, struct dentry *dentry)
 	struct mount *p;
 
 	hlist_for_each_entry_rcu(p, head, mnt_hash)
-		if (&p->mnt_parent->mnt == mnt && p->mnt_mountpoint == dentry)
+		if (&READ_ONCE(p->mnt_parent)->mnt == mnt && READ_ONCE(p->mnt_mountpoint) == dentry)
 			return p;
 	return NULL;
 }
@@ -835,8 +835,8 @@ static void __touch_mnt_namespace(struct mnt_namespace *ns)
 static struct mountpoint *unhash_mnt(struct mount *mnt)
 {
 	struct mountpoint *mp;
-	mnt->mnt_parent = mnt;
-	mnt->mnt_mountpoint = mnt->mnt.mnt_root;
+	WRITE_ONCE(mnt->mnt_parent, mnt);
+	WRITE_ONCE(mnt->mnt_mountpoint, mnt->mnt.mnt_root);
 	list_del_init(&mnt->mnt_child);
 	hlist_del_init_rcu(&mnt->mnt_hash);
 	hlist_del_init(&mnt->mnt_mp_list);
