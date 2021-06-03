@@ -2425,7 +2425,7 @@ struct dentry *__d_lookup(const struct dentry *parent, const struct qstr *name)
 	
 	hlist_bl_for_each_entry_rcu(dentry, node, b, d_hash) {
 
-		if (dentry->d_name.hash != hash)
+		if (data_race(dentry->d_name.hash != hash))
 			continue;
 
 		spin_lock(&dentry->d_lock);
