@@ -229,8 +229,8 @@ static inline bool isolation_suitable(struct compact_control *cc,
 
 static void reset_cached_positions(struct zone *zone)
 {
-	zone->compact_cached_migrate_pfn[0] = zone->zone_start_pfn;
-	zone->compact_cached_migrate_pfn[1] = zone->zone_start_pfn;
+	WRITE_ONCE(zone->compact_cached_migrate_pfn[0], zone->zone_start_pfn);
+	WRITE_ONCE(zone->compact_cached_migrate_pfn[1], zone->zone_start_pfn);
 	zone->compact_cached_free_pfn =
 				pageblock_start_pfn(zone_end_pfn(zone) - 1);
 }
@@ -2383,8 +2383,8 @@ compact_zone(struct compact_control *cc, struct capture_control *capc)
 			goto out;
 		case ISOLATE_NONE:
 			if (update_cached) {
-				cc->zone->compact_cached_migrate_pfn[1] =
-					cc->zone->compact_cached_migrate_pfn[0];
+				WRITE_ONCE(cc->zone->compact_cached_migrate_pfn[1],
+					   READ_ONCE(cc->zone->compact_cached_migrate_pfn[0]));
 			}
 
 			/*
