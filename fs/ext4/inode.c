@@ -5080,7 +5080,7 @@ static int ext4_do_update_inode(handle_t *handle,
 	EXT4_EINODE_SET_XTIME(i_crtime, ei, raw_inode);
 	kcsan_enable_current();
 
-	raw_inode->i_dtime = cpu_to_le32(ei->i_dtime);
+	raw_inode->i_dtime = data_race(cpu_to_le32(ei->i_dtime));
 	raw_inode->i_flags = cpu_to_le32(ei->i_flags & 0xFFFFFFFF);
 	if (likely(!test_opt2(inode->i_sb, HURD_COMPAT)))
 		raw_inode->i_file_acl_high =
