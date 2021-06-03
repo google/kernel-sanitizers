@@ -455,7 +455,7 @@ static void update_pageblock_skip(struct compact_control *cc,
 	set_pageblock_skip(page);
 
 	/* Update where async and sync compaction should restart */
-	if (pfn < zone->compact_cached_free_pfn)
+	if (pfn < READ_ONCE(zone->compact_cached_free_pfn))
 		WRITE_ONCE(zone->compact_cached_free_pfn, pfn);
 }
 #else
