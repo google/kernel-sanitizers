@@ -1718,9 +1718,11 @@ EXPORT_SYMBOL(bmap);
  * With relative atime, only update atime if the previous atime is
  * earlier than either the ctime or mtime or if at least a day has
  * passed since the last atime update.
+ *
+ * XXX: Imprecise, all data races can be tolerated??
  */
 static int relatime_need_update(struct vfsmount *mnt, struct inode *inode,
-			     struct timespec64 now)
+			     struct timespec64 now) __no_kcsan
 {
 
 	if (!(mnt->mnt_flags & MNT_RELATIME))
