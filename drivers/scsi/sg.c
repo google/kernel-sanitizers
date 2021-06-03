@@ -252,7 +252,7 @@ open_wait(Sg_device *sdp, int flags)
 			mutex_unlock(&sdp->open_rel_lock);
 			retval = wait_event_interruptible(sdp->open_wait,
 					(atomic_read(&sdp->detaching) ||
-					 !sdp->open_cnt));
+					 !READ_ONCE(sdp->open_cnt)));
 			mutex_lock(&sdp->open_rel_lock);
 
 			if (retval) /* -ERESTARTSYS */
