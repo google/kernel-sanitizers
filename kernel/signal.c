@@ -2104,10 +2104,10 @@ static void do_notify_parent_cldstop(struct task_struct *tsk,
  		info.si_status = SIGCONT;
  		break;
  	case CLD_STOPPED:
- 		info.si_status = tsk->signal->group_exit_code & 0x7f;
+ 		info.si_status = READ_ONCE(tsk->signal->group_exit_code) & 0x7f;
  		break;
  	case CLD_TRAPPED:
- 		info.si_status = tsk->exit_code & 0x7f;
+ 		info.si_status = READ_ONCE(tsk->exit_code) & 0x7f;
  		break;
  	default:
  		BUG();

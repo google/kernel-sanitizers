@@ -1185,7 +1185,7 @@ static int wait_task_stopped(struct wait_opts *wo,
 		goto unlock_sig;
 
 	if (!unlikely(wo->wo_flags & WNOWAIT))
-		*p_code = 0;
+		WRITE_ONCE(*p_code, 0);
 
 	uid = from_kuid_munged(current_user_ns(), task_uid(p));
 unlock_sig:
