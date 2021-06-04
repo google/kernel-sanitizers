@@ -3003,7 +3003,7 @@ static void e1000_tx_queue(struct e1000_adapter *adapter,
 		tx_desc->buffer_addr = cpu_to_le64(buffer_info->dma);
 		tx_desc->lower.data =
 			cpu_to_le32(txd_lower | buffer_info->length);
-		tx_desc->upper.data = cpu_to_le32(txd_upper);
+		WRITE_ONCE(tx_desc->upper.data, cpu_to_le32(txd_upper));
 		if (unlikely(++i == tx_ring->count))
 			i = 0;
 	}
@@ -3838,7 +3838,7 @@ static bool e1000_clean_tx_irq(struct e1000_adapter *adapter,
 	eop = READ_ONCE(tx_ring->buffer_info[i].next_to_watch);
 	eop_desc = E1000_TX_DESC(*tx_ring, eop);
 
-	while ((eop_desc->upper.data & cpu_to_le32(E1000_TXD_STAT_DD)) &&
+	while ((READ_ONCE(eop_desc->upper.data) & cpu_to_le32(E1000_TXD_STAT_DD)) &&
 	       (count < tx_ring->count)) {
 		bool cleaned = false;
 		dma_rmb();	/* read buffer_info after eop_desc */
