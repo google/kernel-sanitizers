@@ -490,7 +490,7 @@ int snd_seq_pool_delete(struct snd_seq_pool **ppool)
 
 /* exported to seq_clientmgr.c */
 void snd_seq_info_pool(struct snd_info_buffer *buffer,
-		       struct snd_seq_pool *pool, char *space)
+		       struct snd_seq_pool *pool, char *space) __no_kcsan
 {
 	if (pool == NULL)
 		return;
