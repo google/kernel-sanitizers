@@ -272,8 +272,8 @@ int jbd2_journal_finish_inode_data_buffers(struct jbd2_inode *jinode)
 	struct address_space *mapping = jinode->i_vfs_inode->i_mapping;
 
 	return filemap_fdatawait_range_keep_errors(mapping,
-						   jinode->i_dirty_start,
-						   jinode->i_dirty_end);
+						   READ_ONCE(jinode->i_dirty_start),
+						   READ_ONCE(jinode->i_dirty_end));
 }
 
 /*

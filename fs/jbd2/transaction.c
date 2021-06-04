@@ -2661,11 +2661,11 @@ static int jbd2_journal_file_inode(handle_t *handle, struct jbd2_inode *jinode,
 	jinode->i_flags |= flags;
 
 	if (jinode->i_dirty_end) {
-		jinode->i_dirty_start = min(jinode->i_dirty_start, start_byte);
-		jinode->i_dirty_end = max(jinode->i_dirty_end, end_byte);
+		WRITE_ONCE(jinode->i_dirty_start, min(jinode->i_dirty_start, start_byte));
+		WRITE_ONCE(jinode->i_dirty_end, max(jinode->i_dirty_end, end_byte));
 	} else {
-		jinode->i_dirty_start = start_byte;
-		jinode->i_dirty_end = end_byte;
+		WRITE_ONCE(jinode->i_dirty_start, start_byte);
+		WRITE_ONCE(jinode->i_dirty_end, end_byte);
 	}
 
 	/* Is inode already attached where we need it? */
