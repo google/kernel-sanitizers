@@ -1971,9 +1971,9 @@ static int netlink_recvmsg(struct socket *sock, struct msghdr *msg, size_t len,
 #endif
 
 	/* Record the max length of recvmsg() calls for future allocations */
-	nlk->max_recvmsg_len = max(nlk->max_recvmsg_len, len);
-	nlk->max_recvmsg_len = min_t(size_t, nlk->max_recvmsg_len,
-				     SKB_WITH_OVERHEAD(32768));
+	WRITE_ONCE(nlk->max_recvmsg_len, // FIXME: is heuristic?
+		   min_t(size_t, max(READ_ONCE(nlk->max_recvmsg_len), len),
+			 SKB_WITH_OVERHEAD(32768)));
 
 	copied = data_skb->len;
 	if (len < copied) {
