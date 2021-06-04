@@ -305,7 +305,7 @@ scan_primary_hash:
 			goto fail_unlock;
 	}
 found:
-	inet_sk(sk)->inet_num = snum;
+	WRITE_ONCE(inet_sk(sk)->inet_num, snum);
 	udp_sk(sk)->udp_port_hash = snum;
 	udp_sk(sk)->udp_portaddr_hash ^= snum;
 	if (sk_unhashed(sk)) {
