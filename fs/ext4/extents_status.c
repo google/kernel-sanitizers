@@ -934,8 +934,8 @@ int ext4_es_lookup_extent(struct inode *inode, ext4_lblk_t lblk,
 
 	/* find extent in cache firstly */
 	es->es_lblk = es->es_len = es->es_pblk = 0;
-	if (tree->cache_es) {
-		es1 = tree->cache_es;
+	es1 = READ_ONCE(tree->cache_es);
+	if (es1) {
 		if (in_range(lblk, es1->es_lblk, es1->es_len)) {
 			es_debug("%u cached by [%u/%u)\n",
 				 lblk, es1->es_lblk, es1->es_len);
