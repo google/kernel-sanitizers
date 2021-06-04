@@ -179,7 +179,7 @@ static bool compaction_deferred(struct zone *zone, int order)
 		return false;
 
 	/* Avoid possible overflow */
-	if (++zone->compact_considered >= defer_limit) {
+	if (data_race(++zone->compact_considered) >= defer_limit) { // FIXME: increments lost
 		zone->compact_considered = defer_limit;
 		return false;
 	}
