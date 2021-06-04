@@ -1279,7 +1279,7 @@ static int wait_for_vfork_done(struct task_struct *child,
 
 	if (killed) {
 		task_lock(child);
-		child->vfork_done = NULL;
+		WRITE_ONCE(child->vfork_done, NULL);
 		task_unlock(child);
 	}
 
@@ -1330,7 +1330,7 @@ static void mm_release(struct task_struct *tsk, struct mm_struct *mm)
 	 * All done, finally we can wake up parent and return this mm to him.
 	 * Also kthread_stop() uses this completion for synchronization.
 	 */
-	if (tsk->vfork_done)
+	if (READ_ONCE(tsk->vfork_done))
 		complete_vfork_done(tsk);
 }
 
