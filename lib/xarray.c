@@ -608,7 +608,7 @@ static int xas_expand(struct xa_state *xas, void *head)
 		 * it to the tree
 		 */
 		if (xa_is_node(head)) {
-			xa_to_node(head)->offset = 0;
+			WRITE_ONCE(xa_to_node(head)->offset, 0);
 			rcu_assign_pointer(xa_to_node(head)->parent, node);
 		}
 		head = xa_mk_node(node);
@@ -1196,7 +1196,7 @@ void *__xas_next(struct xa_state *xas)
 		xas->xa_offset++;
 
 	while (xas->xa_offset == XA_CHUNK_SIZE) {
-		xas->xa_offset = xas->xa_node->offset + 1;
+		xas->xa_offset = READ_ONCE(xas->xa_node->offset) + 1;
 		xas->xa_node = xa_parent(xas->xa, xas->xa_node);
 		if (!xas->xa_node)
 			return set_bounds(xas);
