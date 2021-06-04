@@ -1482,7 +1482,7 @@ int jbd2_journal_dirty_metadata(handle_t *handle, struct buffer_head *bh)
 	if (data_race(jh->b_transaction != transaction &&
 	    jh->b_next_transaction != transaction)) {
 		spin_lock(&jh->b_state_lock);
-		J_ASSERT_JH(jh, jh->b_transaction == transaction ||
+		J_ASSERT_JH(jh, jh->b_transaction == transaction || // XXX: Investigate
 				jh->b_next_transaction == transaction);
 		spin_unlock(&jh->b_state_lock);
 	}
