@@ -153,7 +153,7 @@ static void percpu_ref_call_confirm_rcu(struct rcu_head *rcu)
 	struct percpu_ref *ref = data->ref;
 
 	data->confirm_switch(ref);
-	data->confirm_switch = NULL;
+	WRITE_ONCE(data->confirm_switch, NULL);
 	wake_up_all(&percpu_ref_switch_waitq);
 
 	if (!data->allow_reinit)
@@ -272,7 +272,8 @@ static void __percpu_ref_switch_mode(struct percpu_ref *ref,
 	 * its completion.  If the caller ensures that ATOMIC switching
 	 * isn't in progress, this function can be called from any context.
 	 */
-	wait_event_lock_irq(percpu_ref_switch_waitq, !data->confirm_switch,
+	wait_event_lock_irq(percpu_ref_switch_waitq,
+			    !READ_ONCE(data->confirm_switch),
 			    percpu_ref_switch_lock);
 
 	if (data->force_atomic || (ref->percpu_count_ptr & __PERCPU_REF_DEAD))
