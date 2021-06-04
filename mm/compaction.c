@@ -2849,9 +2849,9 @@ static void kcompactd_do_work(pg_data_t *pgdat)
 	 * than our current ones
 	 */
 	if (pgdat->kcompactd_max_order <= cc.order)
-		pgdat->kcompactd_max_order = 0;
+		WRITE_ONCE(pgdat->kcompactd_max_order, 0);
 	if (pgdat->kcompactd_highest_zoneidx >= cc.highest_zoneidx)
-		pgdat->kcompactd_highest_zoneidx = pgdat->nr_zones - 1;
+		WRITE_ONCE(pgdat->kcompactd_highest_zoneidx, pgdat->nr_zones - 1);
 }
 
 void wakeup_kcompactd(pg_data_t *pgdat, int order, int highest_zoneidx)
@@ -2859,10 +2859,10 @@ void wakeup_kcompactd(pg_data_t *pgdat, int order, int highest_zoneidx)
 	if (!order)
 		return;
 
-	if (pgdat->kcompactd_max_order < order)
+	if (READ_ONCE(pgdat->kcompactd_max_order) < order)
 		pgdat->kcompactd_max_order = order;
 
-	if (pgdat->kcompactd_highest_zoneidx > highest_zoneidx)
+	if (READ_ONCE(pgdat->kcompactd_highest_zoneidx) > highest_zoneidx)
 		pgdat->kcompactd_highest_zoneidx = highest_zoneidx;
 
 	/*
