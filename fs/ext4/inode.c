@@ -4142,7 +4142,7 @@ int ext4_inode_attach_jinode(struct inode *inode)
 	struct ext4_inode_info *ei = EXT4_I(inode);
 	struct jbd2_inode *jinode;
 
-	if (ei->jinode || !EXT4_SB(inode->i_sb)->s_journal)
+	if (data_race(ei->jinode) || !EXT4_SB(inode->i_sb)->s_journal)
 		return 0;
 
 	jinode = jbd2_alloc_inode(GFP_KERNEL);
