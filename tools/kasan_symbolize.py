@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/env python
 
 # Tool for symbolizing stack traces in BUG reports, mainly those produced
 # by KASAN.
@@ -34,7 +34,8 @@ FRAME_BODY_RE = (
         '0x(?P<offset>' + HEXNUM_RE + ')' +
         '/' +
         '0x(?P<size>' + HEXNUM_RE + ')' +
-    ')'
+    ')' +
+    '( \[(?P<module>.+)\])?'
 )
 
 # Matches a single stacktrace frame (without time or thread/cpu number prefix).
@@ -44,7 +45,6 @@ FRAME_RE = re.compile(
     FRAME_ADDR_RE + '?' +
     '((?P<precise>\?) )?' +
     FRAME_BODY_RE +
-    '( \[(?P<module>.+)\])?' +
     '$'
 )
 
@@ -92,18 +92,18 @@ class Symbolizer(object):
         self.close()
 
     def process(self, addr):
-        self.proc.stdin.write(addr + '\n')
-        self.proc.stdin.write('ffffffffffffffff\n')
+        self.proc.stdin.write((addr + '\n').encode('ascii'))
+        self.proc.stdin.write(('ffffffffffffffff\n').encode('ascii'))
         self.proc.stdin.flush()
 
         result = []
         while True:
-            func = self.proc.stdout.readline().rstrip()
-            fileline = self.proc.stdout.readline().rstrip()
+            func = self.proc.stdout.readline().decode('ascii').rstrip()
+            fileline = self.proc.stdout.readline().decode('ascii').rstrip()
             if func == '??':
                 if len(result) == 0:
-                    self.proc.stdout.readline()
-                    self.proc.stdout.readline()
+                    self.proc.stdout.readline().decode('ascii')
+                    self.proc.stdout.readline().decode('ascii')
                 return result
             result.append((func, fileline))
 
@@ -112,12 +112,20 @@ class Symbolizer(object):
         self.proc.wait()
 
 
-def find_file(path, name):
+def find_file(path, name, prefix=False):
     path = os.path.expanduser(path)
+    best_match = None
+
     for root, dirs, files in os.walk(path):
-        if name in files:
-            return os.path.join(root, name)
-    return None
+        for f in files:
+            if f == name:
+                return os.path.join(root, f)
+            if prefix and f.startswith(name):
+                f_path = os.path.join(root, f)
+                if best_match == None or len(f_path) < len(best_match):
+                    best_match = f_path
+
+    return best_match
 
 
 class SymbolOffsetTable(object):
@@ -131,7 +139,7 @@ class SymbolOffsetTable(object):
     this symbol's offset.
     """
     def __init__(self, binary_path):
-        output = subprocess.check_output(['nm', '-Sn', binary_path])
+        output = subprocess.check_output(['nm', '-Sn', binary_path]).decode('ascii')
         self.offsets = defaultdict(dict)
         prev_symbol = None
         prev_offset, prev_size = 0, 0
@@ -159,9 +167,9 @@ class SymbolOffsetTable(object):
 
 
 class ReportProcessor(object):
-    def __init__(self, linux_path, strip_path):
-        self.strip_path = strip_path
-        self.linux_path = linux_path
+    def __init__(self, linux_paths, strip_paths):
+        self.strip_paths = strip_paths
+        self.linux_paths = linux_paths
         self.module_symbolizers = {}
         self.module_offset_tables = {}
         self.loaded_files = {}
@@ -173,11 +181,11 @@ class ReportProcessor(object):
             self.process_line(line, context_size, questionable)
 
     def strip_time(self, line):
-	# Strip time prefix if present.
+        # Strip time prefix if present.
         match = BRACKET_PREFIX_RE.match(line)
         if match != None:
             line = match.group('body')
-	# Try to strip thread/cpu number prefix if present.
+        # Try to strip thread/cpu number prefix if present.
         match = BRACKET_PREFIX_RE.match(line)
         if match != None:
             line = match.group('body')
@@ -195,8 +203,8 @@ class ReportProcessor(object):
             return
 
         prefix = match.group('prefix')
-	try:
-	    addr = match.group('addr')
+        try:
+            addr = match.group('addr')
         except IndexError:
             addr = None
         body = match.group('body')
@@ -213,7 +221,7 @@ class ReportProcessor(object):
         function = match.group('function')
         offset = match.group('offset')
         size = match.group('size')
-	try:
+        try:
             module = match.group('module')
         except IndexError:
             module = None
@@ -223,7 +231,7 @@ class ReportProcessor(object):
         else:
             module += '.ko'
 
-        if not self.load_module(module):
+        if not self.load_module(module, module == 'vmlinux'):
             print(line)
             return
 
@@ -252,11 +260,15 @@ class ReportProcessor(object):
                              body)
             self.print_lines(fileline, context_size)
 
-    def load_module(self, module):
+    def load_module(self, module, prefix=False):
         if module in self.module_symbolizers.keys():
             return True
 
-        module_path = find_file(self.linux_path, module)
+        for path in self.linux_paths:
+            module_path = find_file(path, module, prefix)
+            if module_path != None:
+                break
+
         if module_path == None:
             return False
 
@@ -275,10 +287,11 @@ class ReportProcessor(object):
             return None
 
     def print_frame(self, inlined, precise, prefix, addr, func, fileline, body):
-        if self.strip_path != None:
-            fileline_parts = fileline.split(self.strip_path, 1)
-            if len(fileline_parts) >= 2:
-                fileline = fileline_parts[1].lstrip('/')
+        if self.strip_paths != None:
+            for path in self.strip_paths:
+                fileline_parts = fileline.split(path, 1)
+                if len(fileline_parts) >= 2:
+                    fileline = fileline_parts[1].lstrip('/')
         if inlined:
             if addr != None:
                 addr = '     inline     ';
@@ -321,8 +334,7 @@ class ReportProcessor(object):
 def print_usage():
     print('Usage: {0} --linux=<linux path>'.format(sys.argv[0]), end=' ')
     print('[--strip=<strip path>]', end=' ')
-    print('[--before=<lines before>]', end=' ')
-    print('[--after=<lines after>]', end=' ')
+    print('[--context=<lines before/after>]', end=' ')
     print('[--questionable]', end=' ')
     print()
 
@@ -335,20 +347,25 @@ def main():
         print_usage()
         sys.exit(1)
 
-    linux_path = os.getcwd()
-    strip_path = os.getcwd()
+    linux_paths = []
+    strip_paths = []
     context_size = 0
     questionable = False
 
     for opt, arg in opts:
         if opt in ('-l', '--linux'):
-            linux_path = arg
+            linux_paths.append(arg)
         elif opt in ('-s', '--strip'):
-            strip_path = arg
+            strip_paths.append(arg)
         elif opt in ('-c', '--context'):
             context_size = arg
         elif opt in ('-q', '--questionable'):
             questionable = True
+
+    if len(linux_paths) == 0:
+        linux_paths = [os.getcwd()]
+    if len(strip_paths) == 0:
+        strip_paths = [os.getcwd()]
 
     try:
         if isinstance(context_size, str):
@@ -357,7 +374,7 @@ def main():
         print_usage()
         sys.exit(1)
 
-    processor = ReportProcessor(linux_path, strip_path)
+    processor = ReportProcessor(linux_paths, strip_paths)
     processor.process_input(context_size, questionable)
     processor.finalize()
 
