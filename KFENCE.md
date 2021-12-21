@@ -1,4 +1,5 @@
-# KFENCE: A low-overhead sampling-based memory safety error detector for the Linux kernel
+KFENCE: A low-overhead sampling-based memory safety error detector for the Linux kernel
+=======================================================================================
 
 **Contacts:** Alexander Potapenko <[@ramosian-glider](https://github.com/ramosian-glider)>, Marco Elver <[@melver](https://github.com/melver)>, Dmitry Vyukov <[@dvyukov](https://github.com/dvyukov)>
 
@@ -73,7 +74,7 @@ static __always_inline void *kfence_alloc(struct kmem_cache *s, size_t size, gfp
 The branch is enabled periodically by a kernel delayed work, and after a successful guarded allocation disabled again.
 The frequency with which guarded allocations occur is controlled by the sample interval, which can be set by the boot parameter `kfence.sample_interval`.
 
-For more details, please see the included [documentation](https://github.com/google/kasan/blob/kfence/Documentation/dev-tools/kfence.rst).
+For more details, please see the [documentation](https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/tree/Documentation/dev-tools/kfence.rst).
 
 ## Bugs found by KFENCE
 

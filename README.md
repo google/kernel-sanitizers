@@ -1,16 +1,20 @@
-# KernelAddressSanitizer (KASAN)
+Linux Kernel Sanitizers
+=======================
 
-**KASAN is now maintained in the Linux kernel repository, this repository no longer hosts any KASAN code**.
+**Note: Most Sanitizers are maintained in the Linux kernel repository and are not hosted here**.
 
-KASAN usage instructions can be found in the [documentation](https://www.kernel.org/doc/html/latest/dev-tools/kasan.html).
+This repository contains out-of-tree information and prototypes for [KASAN](/KASAN.md), [KCSAN](/KCSAN.md), [KFENCE](/KFENCE.md), and [KTSAN](/KTSAN.md).
+KMSAN is hosted [separately](https://github.com/google/kmsan).
 
-For questions about KASAN use the [kasan-dev@googlegroups.com](https://groups.google.com/forum/#!forum/kasan-dev) mailing list.
+Questions about KASAN and other Sanitizers can be asked on the [kasan-dev@googlegroups.com](https://groups.google.com/forum/#!forum/kasan-dev) mailing list.
 You can subscribe to it either with a Google account or by sending an email to kasan-dev+subscribe@googlegroups.com.
 
-Kernel bugs found with KASAN should be reported to kernel maintainers.
-Issues in KASAN itself can be reported on the [KASAN bug tracker](https://bugzilla.kernel.org/buglist.cgi?component=Sanitizers&product=Memory%20Management&resolution=---).
+Kernel bugs found with Sanitizers should be reported to kernel maintainers.
+Issues in Sanitizers themselves can be reported on the [Sanitizers Bugzilla](https://bugzilla.kernel.org/buglist.cgi?component=Sanitizers&product=Memory%20Management&resolution=---).
 
-To simplify reading KASAN reports you can use the [symbolizer script](tools/symbolizer.py):
+## Symbolizer
+
+To simplify reading kernel reports you can use the [symbolizer script](/tools/symbolizer.py):
 
 ```
 $ cat report
@@ -23,6 +27,7 @@ $ cat report
 [  107.333108]  [<ffffffff8173bd7f>] net_rx_queue_update_kobjects+0xaf/0x150
 ...
 ```
+
 ```
 $ cat report | ./symbolizer.py --linux=path/to/kernel/ --strip=path/to/kernel/
 ...
