@@ -10,7 +10,7 @@ You can subscribe to it either with a Google account or by sending an email to k
 Kernel bugs found with KASAN should be reported to kernel maintainers.
 Issues in KASAN itself can be reported on the [KASAN bug tracker](https://bugzilla.kernel.org/buglist.cgi?component=Sanitizers&product=Memory%20Management&resolution=---).
 
-To simplify reading KASAN reports you can use the [symbolizer script](tools/kasan_symbolize.py):
+To simplify reading KASAN reports you can use the [symbolizer script](tools/symbolizer.py):
 
 ```
 $ cat report
@@ -24,7 +24,7 @@ $ cat report
 ...
 ```
 ```
-$ cat report | ./kasan_symbolize.py --linux=path/to/kernel/ --strip=path/to/kernel/
+$ cat report | ./symbolizer.py --linux=path/to/kernel/ --strip=path/to/kernel/
 ...
  [<ffffffff8110424c>] call_usermodehelper_freeinfo+0x2c/0x30 kernel/kmod.c:265
  [<ffffffff811049d5>] call_usermodehelper_exec+0xa5/0x1c0 kernel/kmod.c:612
