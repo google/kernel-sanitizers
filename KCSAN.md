@@ -12,7 +12,7 @@ The LWN article series "Concurrency bugs should fear the big bad data-race detec
 
 Talks:
 
-* [Linux Plumbers Conference 2020](/kcsan/LPC2020-KCSAN.pdf)
+* [Linux Plumbers Conference 2020](/KCSAN/LPC2020-KCSAN.pdf)
 
 Continuous Testing & Fuzzing
 ----------------------------
