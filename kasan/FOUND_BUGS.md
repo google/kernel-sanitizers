@@ -1,5 +1,5 @@
-Found Bugs
-==========
+KASAN: Found Bugs
+=================
 
 Over the years KASAN has found thousands of issues in the Linux kernel so maintaining a full list is pointless.
 This page contains links to some old bugs found with KASAN back in the days when it was being developed.

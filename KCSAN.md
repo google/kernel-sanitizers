@@ -1,11 +1,13 @@
 Kernel Concurrency Sanitizer (KCSAN)
 ====================================
 
-The Kernel Concurrency Sanitizer (KCSAN) is a watchpoint based dynamic race detector for the Linux kernel. More details can be found in [Documentation/dev-tools/kcsan.rst](https://www.kernel.org/doc/html/latest/dev-tools/kcsan.html).
+**Status:** [Upstream](https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/log/kernel/kcsan); in mainline [since 5.5](https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=dfd402a4c4baae42398ce9180ff424d589b8bffc)
 
-The latest stable version of KCSAN is in [mainline](https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/log/kernel/kcsan).
+**Documentation:** [Documentation/dev-tools/kcsan.rst](https://www.kernel.org/doc/html/latest/dev-tools/kcsan.html)
 
-The LWN article series "Concurrency bugs should fear the big bad data-race detector" discuss KCSAN in more detail:
+*Kernel Concurrency Sanitizer (KCSAN)* is a watchpoint-based dynamic race-detector for the Linux kernel.
+
+The LWN article series "Concurrency bugs should fear the big bad data-race detector" discuss KCSAN in details:
 
 * https://lwn.net/Articles/816850/
 * https://lwn.net/Articles/816854/
@@ -14,13 +16,11 @@ Talks:
 
 * [Linux Plumbers Conference 2020](/kcsan/LPC2020-KCSAN.pdf)
 
-Continuous Testing & Fuzzing
-----------------------------
+## Continuous Testing & Fuzzing
 
 We have a [public syzbot instance](https://syzkaller.appspot.com/upstream?manager=ci2-upstream-kcsan-gce). Reports will appear on the dashboard after internal review, to keep the volume of bugs manageable (which gives us a chance to carefully react to KCSAN reports while best practices are still evolving).
 
-Upstream Fixes of Data Races found by KCSAN
--------------------------------------------
+## Upstream Fixes of Data Races found by KCSAN
 
 This is a non-exhaustive list of some fixes for data races found by KCSAN.
 Last updated: Aug 23, 2021.

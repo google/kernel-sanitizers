@@ -1,7 +1,11 @@
 Kernel Thread Sanitizer (KTSAN)
 ===============================
 
-This page is about the KTSAN happens-before Linux kernel data-race detector. The project is currently on-hold.
+**Status:** [Prototype](https://github.com/google/kasan/tree/ktsan) on-hold
+
+**Documentation:** [Documentation/ktsan.txt](https://github.com/google/kernel-sanitizers/blob/ktsan/Documentation/ktsan.txt) (somewhat outdated)
+
+*Kernel Thread Sanitizer (KTSAN)* is a happens-before dynamic data-race detector for the Linux kernel. The project is currently on-hold.
 
 For an alternative approach using watchpoints, see [Kernel Concurrency Sanitizer (KCSAN)](/KCSAN.md).
 
@@ -9,15 +13,13 @@ For an alternative approach using watchpoints, see [Kernel Concurrency Sanitizer
 
 KTSAN is a a dynamic data-race error detector for the Linux kernel. It is related in its approach to user-space [Thread Sanitizer (TSAN)](https://clang.llvm.org/docs/ThreadSanitizer.html). The latest version (which tracks upstream stable releases) can be found in the [ktsan](https://github.com/google/kasan/tree/ktsan) branch.
 
-More extensive documentation can be found in [Documentation](https://github.com/google/kasan/blob/ktsan/Documentation/ktsan.txt) (currently somewhat outdated).
-
 The original prototype, which was written for Linux kernel version 4.2 can be found under the tag [ktsan_v4.2-with-fixes](https://github.com/google/kasan/releases/tag/ktsan_v4.2-with-fixes) (includes various fixes for found data-races).
 
 A list of some of the found bugs is available [here](/ktsan/FOUND_BUGS.md).
 
 To symbolize reports, use [syz-symbolize](https://github.com/google/syzkaller/blob/master/tools/syz-symbolize/symbolize.go) (part of [syzkaller](https://github.com/google/syzkaller)) or [symbolizer.py](/tools/symbolizer.py).
 
-## Building And Running
+## Building and running
 
 Build kernel with ktsan:
 ``` bash
@@ -96,7 +98,7 @@ KTSAN adapts the data-race detection algorithm of user-space [ThreadSanitizer](h
 
 Some details can be found [here](https://docs.google.com/presentation/d/1OsihHNut6E26ACTnT-GplQrdJuByRPNqUmN0HkqurIM/edit?usp=sharing) or (in Russian) [here](http://w27001.vdi.mipt.ru/wp/wp-content/uploads/2017/03/%D0%9A%D0%9E%D0%9D%D0%9E%D0%92%D0%90%D0%9B%D0%9E%D0%92-%D0%90%D0%9D%D0%94%D0%A0%D0%95%D0%99.-%D0%90%D0%92%D0%A2%D0%9E%D0%9C%D0%90%D0%A2%D0%98%D0%A7%D0%95%D0%A1%D0%9A%D0%98%D0%99-%D0%9F%D0%9E%D0%98%D0%A1%D0%9A-%D0%A1%D0%9E%D0%A1%D0%A2%D0%9E%D0%AF%D0%9D%D0%98%D0%99-%D0%93%D0%9E%D0%9D%D0%9E%D0%9A-%D0%92-%D0%AF%D0%94%D0%A0%D0%95-%D0%9E%D0%A1-LINUX.pdf).
 
-## Future Implementation Ideas
+## Future implementation ideas
 
 * Make some internal structures per CPU instead of per thread (VC cache, what else?). VCs themselves stay per thread.
 

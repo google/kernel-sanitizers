@@ -1,6 +1,8 @@
 Kernel Address Sanitizer (KASAN)
 ================================
 
-KASAN is a fast memory error detector for the Linux kernel.
+**Status:** [Upstream](https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/log/mm/kasan); in mainline [since 4.0](https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=0b24becc810dc3be6e3f94103a866f214c282394)
 
-Details and usage instructions can be found in the [documentation](https://www.kernel.org/doc/html/latest/dev-tools/kasan.html).
+**Documentation:** [Documentation/dev-tools/kasan.rst](https://www.kernel.org/doc/html/latest/dev-tools/kasan.html)
+
+*Kernel Address Sanitizer (KASAN)* is a fast memory safety error detector for the Linux kernel.
