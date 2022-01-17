@@ -13,7 +13,7 @@ More extensive documentation can be found in [Documentation](https://github.com/
 
 The original prototype, which was written for Linux kernel version 4.2 can be found under the tag [ktsan_v4.2-with-fixes](https://github.com/google/kasan/releases/tag/ktsan_v4.2-with-fixes) (includes various fixes for found data-races).
 
-A list of some of the found bugs is available [here](/KTSAN/FOUND_BUGS.md).
+A list of some of the found bugs is available [here](/ktsan/FOUND_BUGS.md).
 
 To symbolize reports, use [syz-symbolize](https://github.com/google/syzkaller/blob/master/tools/syz-symbolize/symbolize.go) (part of [syzkaller](https://github.com/google/syzkaller)) or [symbolizer.py](/tools/symbolizer.py).
 
