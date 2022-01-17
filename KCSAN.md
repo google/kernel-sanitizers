@@ -7,14 +7,16 @@ Kernel Concurrency Sanitizer (KCSAN)
 
 *Kernel Concurrency Sanitizer (KCSAN)* is a watchpoint-based dynamic race-detector for the Linux kernel.
 
-The LWN article series "Concurrency bugs should fear the big bad data-race detector" discuss KCSAN in details:
+For details, see the LWN articles:
 
-* https://lwn.net/Articles/816850/
-* https://lwn.net/Articles/816854/
+* [Concurrency bugs should fear the big bad data-race detector (part 1)](https://lwn.net/Articles/816850/)
+* [Concurrency bugs should fear the big bad data-race detector (part 2)](https://lwn.net/Articles/816854/)
 
-Talks:
+And a talk:
 
-* [Linux Plumbers Conference 2020](/kcsan/LPC2020-KCSAN.pdf)
+* [Data-race detection in the Linux kernel at Linux Plumbers Conference 2020](/kcsan/LPC2020-KCSAN.pdf)
+
+For an alternative yet approach based on a happens-before algorithm, see [Kernel Thread Sanitizer (KCSAN)](/KTSAN.md).
 
 ## Continuous Testing & Fuzzing
 
