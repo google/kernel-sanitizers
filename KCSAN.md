@@ -22,7 +22,7 @@ And a talk:
 
 * [Data-race detection in the Linux kernel at Linux Plumbers Conference 2020](/kcsan/LPC2020-KCSAN.pdf)
 
-For an alternative approach based on a happens-before algorithm, see [Kernel Thread Sanitizer (KCSAN)](/KTSAN.md).
+For an alternative approach based on a happens-before algorithm, see [Kernel Thread Sanitizer (KTSAN)](/KTSAN.md).
 
 ## Continuous testing & fuzzing
 
