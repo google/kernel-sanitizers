@@ -40,7 +40,7 @@ The tool's behavior can be tweaked via config flags:
     default); or the boot-time `kfence.sample_interval` parameter.
   * Number of available objects: `CONFIG_KFENCE_NUM_OBJECTS` (255 by default).
 
-## How does it work?
+## How it works
 
 KFENCE allocates a small (255 by default) pool of object pages (typically 4 KiB) separated by
 guard (inaccessible) pages, and provides an API to allocate and deallocate
