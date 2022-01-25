@@ -9,4 +9,6 @@ Kernel Memory Sanitizer (KMSAN)
 
 **Contact:** Alexander Potapenko <[@ramosian-glider](https://github.com/ramosian-glider)>
 
+## Overview
+
 *Kernel Memory Sanitizer (KMSAN)* is a detector of uninitialized memory use for the Linux kernel. It is currently in development and is hosted in a [separate repository](https://github.com/google/kmsan).

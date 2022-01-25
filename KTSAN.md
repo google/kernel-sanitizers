@@ -9,15 +9,16 @@ Kernel Thread Sanitizer (KTSAN)
 
 **Contacts:** Dmitry Vyukov <[@dvyukov](https://github.com/dvyukov)>, Andrey Konovalov <[@xairy](https://github.com/xairy)>
 
+## Overview
+
 *Kernel Thread Sanitizer (KTSAN)* is a happens-before dynamic data-race detector for the Linux kernel. The project is currently on-hold.
 
 For an alternative approach using watchpoints, see [Kernel Concurrency Sanitizer (KCSAN)](/KCSAN.md).
 
-## Overview
+KTSAN is related in its approach to user-space [Thread Sanitizer (TSAN)](https://clang.llvm.org/docs/ThreadSanitizer.html).
 
-KTSAN is a a dynamic data-race error detector for the Linux kernel. It is related in its approach to user-space [Thread Sanitizer (TSAN)](https://clang.llvm.org/docs/ThreadSanitizer.html). The latest version (which tracks upstream stable releases) can be found in the [ktsan](https://github.com/google/kasan/tree/ktsan) branch.
-
-The original prototype, which was written for Linux kernel version 4.2 can be found under the tag [ktsan_v4.2-with-fixes](https://github.com/google/kasan/releases/tag/ktsan_v4.2-with-fixes) (includes various fixes for found data-races).
+The latest KTSAN version based on 5.3 can be found in the [ktsan](https://github.com/google/kasan/tree/ktsan) branch.
+The original prototype based on 4.2 can be found under the tag [ktsan_v4.2-with-fixes](https://github.com/google/kasan/releases/tag/ktsan_v4.2-with-fixes) (also includes fixes for found data-races).
 
 ## Building and running
 

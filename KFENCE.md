@@ -9,6 +9,8 @@ Kernel Electric-Fence (KFENCE)
 
 **Contacts:** Alexander Potapenko <[@ramosian-glider](https://github.com/ramosian-glider)>, Marco Elver <[@melver](https://github.com/melver)>, Dmitry Vyukov <[@dvyukov](https://github.com/dvyukov)>
 
+## Overview
+
 *Kernel Electric-Fence (KFENCE)* is a low-overhead sampling-based memory safety
 error detector for the Linux kernel.  It detects heap out-of-bounds accessess,
 use-after-free, and invalid-free errors.  It is designed to have negligible cost

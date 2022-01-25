@@ -9,6 +9,8 @@ Kernel Concurrency Sanitizer (KCSAN)
 
 **Contacts:** Marco Elver <[@melver](https://github.com/melver)>, Dmitry Vyukov <[@dvyukov](https://github.com/dvyukov)>
 
+## Overview
+
 *Kernel Concurrency Sanitizer (KCSAN)* is a watchpoint-based dynamic race-detector for the Linux kernel.
 
 For details, see the LWN articles:
