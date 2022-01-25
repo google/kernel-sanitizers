@@ -1,4 +1,4 @@
-KTSAN: Found Bugs
+KTSAN: Found bugs
 =================
 
 * [data-race in ipc_obtain_object_check](https://groups.google.com/forum/#!topic/ktsan/xJQC-7sJqbk) | 4.2 | [Fixed](https://git.kernel.org/cgit/linux/kernel/git/torvalds/linux.git/commit/?id=b9a532277938798b53178d5a66af6e2915cb27cf), [CVE](https://security-tracker.debian.org/tracker/CVE-2015-7613)

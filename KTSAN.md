@@ -5,6 +5,10 @@ Kernel Thread Sanitizer (KTSAN)
 
 **Documentation:** [Documentation/ktsan.txt](https://github.com/google/kernel-sanitizers/blob/ktsan/Documentation/ktsan.txt) (somewhat outdated)
 
+**Found bugs:** [here](/ktsan/FOUND_BUGS.md)
+
+**Contacts:** Dmitry Vyukov <[@dvyukov](https://github.com/dvyukov)>, Andrey Konovalov <[@xairy](https://github.com/xairy)>
+
 *Kernel Thread Sanitizer (KTSAN)* is a happens-before dynamic data-race detector for the Linux kernel. The project is currently on-hold.
 
 For an alternative approach using watchpoints, see [Kernel Concurrency Sanitizer (KCSAN)](/KCSAN.md).
@@ -14,10 +18,6 @@ For an alternative approach using watchpoints, see [Kernel Concurrency Sanitizer
 KTSAN is a a dynamic data-race error detector for the Linux kernel. It is related in its approach to user-space [Thread Sanitizer (TSAN)](https://clang.llvm.org/docs/ThreadSanitizer.html). The latest version (which tracks upstream stable releases) can be found in the [ktsan](https://github.com/google/kasan/tree/ktsan) branch.
 
 The original prototype, which was written for Linux kernel version 4.2 can be found under the tag [ktsan_v4.2-with-fixes](https://github.com/google/kasan/releases/tag/ktsan_v4.2-with-fixes) (includes various fixes for found data-races).
-
-A list of some of the found bugs is available [here](/ktsan/FOUND_BUGS.md).
-
-To symbolize reports, use [syz-symbolize](https://github.com/google/syzkaller/blob/master/tools/syz-symbolize/symbolize.go) (part of [syzkaller](https://github.com/google/syzkaller)) or [symbolizer.py](/tools/symbolizer.py).
 
 ## Building and running
 

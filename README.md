@@ -14,7 +14,7 @@ Issues in Sanitizers themselves can be reported on the [Sanitizers Bugzilla](htt
 
 ## Symbolizer
 
-To simplify reading kernel reports you can use the [symbolizer script](/tools/symbolizer.py):
+To simplify reading kernel reports, use the [symbolizer script](/tools/symbolizer.py):
 
 ```
 $ cat report
@@ -40,3 +40,5 @@ $ cat report | ./symbolizer.py --linux=path/to/kernel/ --strip=path/to/kernel/
  [<ffffffff8173bd7f>] net_rx_queue_update_kobjects+0xaf/0x150 net/core/net-sysfs.c:786
 ...
 ```
+
+As an alternative, use [syz-symbolize](https://github.com/google/syzkaller/blob/master/tools/syz-symbolize/symbolize.go) (part of [syzkaller](https://github.com/google/syzkaller))).
