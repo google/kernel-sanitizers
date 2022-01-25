@@ -34,47 +34,37 @@ The name "KFENCE" is a homage to the [Electric Fence Malloc Debugger](https://li
 
 ## Usage
 
-To start using KFENCE, build your kernel with `CONFIG_KFENCE=y`.
-
-The tool's behavior can be tweaked via config flags:
-
-  * Sample interval: `CONFIG_KFENCE_SAMPLE_INTERVAL` (in milliseconds, 100 by
-    default); or the boot-time `kfence.sample_interval` parameter.
-  * Number of available objects: `CONFIG_KFENCE_NUM_OBJECTS` (255 by default).
+To start using KFENCE, build your kernel with `CONFIG_KFENCE=y`. For more
+information, please see the kernel's [documentation](https://www.kernel.org/doc/html/latest/dev-tools/kfence.html).
 
 ## How it works
 
-KFENCE allocates a small (255 by default) pool of object pages (typically 4 KiB) separated by
-guard (inaccessible) pages, and provides an API to allocate and deallocate
-objects from that pool.  Each page contains at most one object, which is placed
-randomly at either end of that page. As a result, there is always a guard page
-next to a KFENCE-allocated object, so either a buffer-overflow or
-buffer-underflow on that object will result in a page fault.
-Such faults are then reported as out-of-bounds errors and printed to the kernel log.
+KFENCE allocates a small pool of object pages (typically 4 KiB each) separated
+by guard (protected) pages. Each page contains at most one object, which is
+placed randomly at either end of that page. As a result, there is always a
+guard page next to a KFENCE-allocated object, so either a buffer-overflow or
+buffer-underflow on that object will result in a page fault. Such faults are
+then reported as out-of-bounds errors and printed to the kernel log.
+
+Setting up whole pages for heap objects typically smaller than a whole page is
+costly, both in terms of memory but also performance overheads. Therefore,
+integration into the main heap allocators (SLAB or SLUB) is amortized by
+redirecting heap allocations to be allocated via KFENCE with a relatively low
+frequency (by default max. 2 allocations per second).
+
+Upon redirecting a heap allocation to KFENCE, a page from the KFENCE pool
+freelist is obtained to prepare space for the requested object. Objects smaller
+than a full page are randomly placed at either end of the page. The object page
+is unprotected, and the unused portion of the page is set to a canary pattern
+to detect out-of-bounds writes within the object page itself. Various other
+metadata is stored to generate useful bug reports, such as the allocation stack
+trace. Finally, the address of the object is returned to the main allocator.
 
 When an object is deallocated, KFENCE marks the corresponding page
-inaccessible, so that further accesses to that object will also result in a page
-fault, which will be reported as a use-after-free error.
-KFENCE also reports on invalid frees, as it can afford to accurately track the object's state.
-The least recently freed objects will be reused for new allocations.
+inaccessible, so that further accesses to that object will also result in a
+page fault, which will be reported as a use-after-free error. KFENCE also
+reports on invalid frees. The least recently freed objects will be reused for
+new allocations.
 
-Allocating an object from the KFENCE pool is costly, which is
-amortized by making such allocations less frequent, while ensuring that skipped allocations
-have zero cost through the main allocator's fast-path.
-
-To achieve this, KFENCE introduces a static branch (using static keys) into the fast path of
-SLAB and SLUB. This branch is disabled by default and thus has zero cost.
-When enabled, it routes the allocation to KFENCE allocator:
-
-```
-static __always_inline void *kfence_alloc(struct kmem_cache *s, size_t size, gfp_t flags)
-{
-        return static_branch_unlikely(&kfence_allocation_key) ?
-                __kfence_alloc(s, size, flags) : NULL;
-}
-```
-
-The branch is enabled periodically by a kernel delayed work, and after a successful guarded allocation disabled again.
-The frequency with which guarded allocations occur is controlled by the sample interval, which can be set by the boot parameter `kfence.sample_interval`.
-
-For more details, please see the [documentation](https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/tree/Documentation/dev-tools/kfence.rst).
+For more details, please see the
+[documentation](https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/tree/Documentation/dev-tools/kfence.rst).
