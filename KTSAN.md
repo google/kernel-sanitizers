@@ -11,95 +11,26 @@ Kernel Thread Sanitizer (KTSAN)
 
 ## Overview
 
-*Kernel Thread Sanitizer (KTSAN)* is a happens-before dynamic data-race detector for the Linux kernel. The project is currently on-hold.
+*Kernel Thread Sanitizer (KTSAN)* is a happens-before dynamic data-race detector for the Linux kernel.
 
-For an alternative approach using watchpoints, see [Kernel Concurrency Sanitizer (KCSAN)](/KCSAN.md).
+KTSAN adapts the data-race detection algorithm of the userspace [ThreadSanitizer](https://github.com/google/sanitizers/wiki/ThreadSanitizerAlgorithm) (version 2; don't confuse with [version 1](https://static.googleusercontent.com/media/research.google.com/en//pubs/archive/35604.pdf)) to the Linux kernel.
 
-KTSAN is related in its approach to user-space [Thread Sanitizer (TSAN)](https://clang.llvm.org/docs/ThreadSanitizer.html).
+Due to a significant complexity of the bug-detection algorithm when adapted to the Linux kernel and large CPU and RAM overheads, the project was put on-hold.
+
+See [Kernel Concurrency Sanitizer (KCSAN)](/KCSAN.md) for an alternative approach that uses watchpoints.
 
 The latest KTSAN version based on 5.3 can be found in the [ktsan](https://github.com/google/kasan/tree/ktsan) branch.
 The original prototype based on 4.2 can be found under the tag [ktsan_v4.2-with-fixes](https://github.com/google/kasan/releases/tag/ktsan_v4.2-with-fixes) (also includes fixes for found data-races).
 
-## Building and running
+For more details about KTSAN, see:
 
-Build kernel with ktsan:
-``` bash
-git clone https://github.com/google/kasan.git ktsan
-cd ktsan/
-make defconfig
-make kvmconfig
-scripts/config -e KTSAN -e SLAB -d SLUB -e DEBUG_INFO
-yes '' | make oldconfig
-make -j64 LOCALVERSION=-tsan
-```
+* [KernelThreadSanitizer (KTSAN): a data race detector for the Linux kernel](https://docs.google.com/presentation/d/1OsihHNut6E26ACTnT-GplQrdJuByRPNqUmN0HkqurIM/edit?usp=sharing)
 
-Install QEMU:
-``` bash
-sudo apt-get install kvm qemu-kvm
-```
+* [Автоматический поиск состояний гонок в ядре ОС Linux](http://w27001.vdi.mipt.ru/wp/wp-content/uploads/2017/03/%D0%9A%D0%9E%D0%9D%D0%9E%D0%92%D0%90%D0%9B%D0%9E%D0%92-%D0%90%D0%9D%D0%94%D0%A0%D0%95%D0%99.-%D0%90%D0%92%D0%A2%D0%9E%D0%9C%D0%90%D0%A2%D0%98%D0%A7%D0%95%D0%A1%D0%9A%D0%98%D0%99-%D0%9F%D0%9E%D0%98%D0%A1%D0%9A-%D0%A1%D0%9E%D0%A1%D0%A2%D0%9E%D0%AF%D0%9D%D0%98%D0%99-%D0%93%D0%9E%D0%9D%D0%9E%D0%9A-%D0%92-%D0%AF%D0%94%D0%A0%D0%95-%D0%9E%D0%A1-LINUX.pdf) [in Russian]
 
-Create a minimal Debian-wheezy image:
-``` bash
-# Enable promptless ssh to the machine for root with RSA keys
-mkdir debian-stable
-sudo debootstrap --include=openssh-server stable debian-stable
-sudo sed -i '/^root/ { s/:x:/::/ }' debian-stable/etc/passwd
-sudo mkdir debian-stable/root/.ssh/
-mkdir ssh
-ssh-keygen -f ssh/id_rsa -t rsa -N ''
-cat ssh/id_rsa.pub | sudo tee debian-stable/root/.ssh/authorized_keys
+## Bugs, notes, and potential improvements
 
-# Download and install trinity
-sudo chroot debian-stable /bin/bash -c "apt-get update; apt-get -y install curl tar gcc make sysbench time"
-sudo chroot debian-stable /bin/bash -c "mkdir -p ~; cd ~/; wget https://github.com/kernelslacker/trinity/archive/v1.9.tar.gz -O trinity-1.9.tar.gz; tar -xf trinity-1.9.tar.gz"
-sudo chroot debian-stable /bin/bash -c "cd ~/trinity-1.9 ; ./configure ; make -j16 ; make install"
-
-# Build and install perf
-cp -r $KTSAN debian-stable/tmp/
-sudo chroot debian-stable /bin/bash -c "apt-get install -y flex bison python-dev libelf-dev libunwind7-dev libaudit-dev libslang2-dev libperl-dev binutils-dev liblzma-dev libnuma-dev"
-sudo chroot debian-stable /bin/bash -c "cd /tmp/ktsan/tools/perf/; make"
-sudo chroot debian-stable /bin/bash -c "cp /tmp/ktsan/tools/perf/perf /usr/bin/"
-rm -r debian-stable/tmp/ktsan
-
-# Install other packages you might need
-sudo chroot debian-stable /bin/bash -c "apt-get install -y git vim screen usbutils"
-
-# Build a disk image 
-sudo virt-make-fs --format=qcow2 --size=+200M debian-stable rootfs.img
-```
-
-Make a copy of the original image (the image file will be modified by QEMU):
-``` bash
-cp rootfs.img rootfs-dirty.img
-```
-
-Run QEMU:
-``` bash
-qemu-system-x86_64 \
-  -drive file=rootfs-dirty.img,index=0 \
-  -m 20G -smp 4 \
-  -net user,hostfwd=tcp::10022-:22 -net nic \
-  -nographic \
-  -kernel arch/x86/boot/bzImage -append "console=ttyS0 root=/dev/sda rw debug earlyprintk=serial slub_debug=QUZ"\
-  -enable-kvm -cpu host
-
-# Note: on CentOS: -net nic,vlan=0,model=e1000
-```
-
-To stop QEMU press Ctrl+A then X
-
-To run Trinity:
-``` bash
-ssh -i ssh/id_rsa -p 10022 -o "StrictHostKeyChecking no" root@localhost "trinity --dangerous -q -m -C 16"
-```
-
-## Implementation
-
-KTSAN adapts the data-race detection algorithm of user-space [ThreadSanitizer](https://github.com/google/sanitizers/wiki/ThreadSanitizerAlgorithm) (version 2, don't confuse with [version 1](https://static.googleusercontent.com/media/research.google.com/en//pubs/archive/35604.pdf)) to the Linux kernel.
-
-Some details can be found [here](https://docs.google.com/presentation/d/1OsihHNut6E26ACTnT-GplQrdJuByRPNqUmN0HkqurIM/edit?usp=sharing) or (in Russian) [here](http://w27001.vdi.mipt.ru/wp/wp-content/uploads/2017/03/%D0%9A%D0%9E%D0%9D%D0%9E%D0%92%D0%90%D0%9B%D0%9E%D0%92-%D0%90%D0%9D%D0%94%D0%A0%D0%95%D0%99.-%D0%90%D0%92%D0%A2%D0%9E%D0%9C%D0%90%D0%A2%D0%98%D0%A7%D0%95%D0%A1%D0%9A%D0%98%D0%99-%D0%9F%D0%9E%D0%98%D0%A1%D0%9A-%D0%A1%D0%9E%D0%A1%D0%A2%D0%9E%D0%AF%D0%9D%D0%98%D0%99-%D0%93%D0%9E%D0%9D%D0%9E%D0%9A-%D0%92-%D0%AF%D0%94%D0%A0%D0%95-%D0%9E%D0%A1-LINUX.pdf).
-
-## Future implementation ideas
+* See [this](https://github.com/google/kernel-sanitizers/issues?q=is%3Aissue+is%3Aopen+label%3AKTSAN) for unresolved issues in KTSAN.
 
 * Make some internal structures per CPU instead of per thread (VC cache, what else?). VCs themselves stay per thread.
 
