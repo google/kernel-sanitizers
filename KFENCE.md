@@ -1,7 +1,7 @@
 Kernel Electric-Fence (KFENCE)
 ==============================
 
-**Status:** [Upstream](https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/log/mm/kfence); in mainline [since 5.12](https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=245137cdf0cd92077dad37868fe4859c90dada36)
+**Status:** [Upstream](https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/tree/mm/kfence); in mainline [since 5.12](https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=245137cdf0cd92077dad37868fe4859c90dada36)
 
 **Documentation:** [Documentation/dev-tools/kfence.rst](https://www.kernel.org/doc/html/latest/dev-tools/kfence.html)
 

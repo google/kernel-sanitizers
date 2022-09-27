@@ -1,7 +1,7 @@
 Kernel Concurrency Sanitizer (KCSAN)
 ====================================
 
-**Status:** [Upstream](https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/log/kernel/kcsan); in mainline [since 5.8](https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=b791d1bdf9212d944d749a5c7ff6febdba241771)
+**Status:** [Upstream](https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/tree/kernel/kcsan); in mainline [since 5.8](https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=b791d1bdf9212d944d749a5c7ff6febdba241771)
 
 **Documentation:** [Documentation/dev-tools/kcsan.rst](https://www.kernel.org/doc/html/latest/dev-tools/kcsan.html)
 
