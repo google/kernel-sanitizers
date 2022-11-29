@@ -16,6 +16,9 @@ BRACKET_PREFIX_RE = re.compile(
     '^(?P<time>\[ *[TC0-9\.]+\]) ?(?P<body>.*)$'
 )
 
+# A decimal number.
+DECNUM_RE = '[0-9]+'
+
 # A hexadecimal number without the leading 0x.
 HEXNUM_RE = '[0-9A-Fa-f]+'
 
@@ -72,12 +75,18 @@ KSAN_RE = re.compile(
     '$'
 )
 
-# Matches a single line of `nm -S` output.
-NM_RE = re.compile(
-    '^(?P<offset>' + HEXNUM_RE + ')( (?P<size>' + HEXNUM_RE + '))?' +
-    ' [a-zA-Z] (?P<symbol>[^ ]+)$'
+# Matches a single relevant line of `readelf -Ws` output.
+READELF_RE = re.compile(
+    '^[ ]*' +
+    '(?P<num>' + DECNUM_RE + '):[ ]+' +
+    '(?P<offset>' + HEXNUM_RE + ')[ ]+' +
+    '(?P<size>' + DECNUM_RE + ')[ ]+' +
+    '(?P<type>(OBJECT|FUNC|NOTYPE))[ ]+' +
+    '(?P<bind>(LOCAL|GLOBAL))[ ]+' +
+    '(?P<vis>DEFAULT)[ ]+' +
+    '(?P<section>' + DECNUM_RE + ')[ ]+' +
+    '(?P<symbol>[^ ]+)$'
 )
-
 
 class Symbolizer(object):
     def __init__(self, binary_path):
@@ -139,23 +148,37 @@ class SymbolOffsetTable(object):
     this symbol's offset.
     """
     def __init__(self, binary_path):
-        output = subprocess.check_output(['nm', '-Sn', binary_path]).decode('ascii')
-        self.offsets = defaultdict(dict)
-        prev_symbol = None
-        prev_offset, prev_size = 0, 0
+        output = subprocess.check_output(['readelf', '-Ws', binary_path]).decode('ascii')
+
+        # Extract symbols for each section.
+        sections = defaultdict(dict)
         for line in output.split('\n'):
-            match = NM_RE.match(line)
-            if match != None:
-                offset = int(match.group('offset'), 16)
-                size = 0 if not match.group('size') else int(match.group('size'), 16)
+            match = READELF_RE.match(line)
+            if match == None:
+                continue
+            symbol = match.group('symbol')
+            # Ignore init_module and cleanup_module, as those are aliases.
+            if symbol == 'init_module' or symbol == 'cleanup_module':
+                continue
+            offset = int(match.group('offset'), 16)
+            size = match.group('size')
+            section = match.group('section')
+            sections[section][offset] = (symbol, size)
+
+        # Calculate and store sizes for each symbol.
+        self.offsets = defaultdict(dict)
+        for section in sections.values():
+            prev_symbol = None
+            prev_offset = None
+            prev_size = None
+            for offset in sorted(section.keys()):
                 if prev_symbol:
-                    ksyms_size = offset - prev_offset
-                    if ksyms_size >= prev_size:
-                        prev_size = ksyms_size
+                    prev_size = offset - prev_offset
                     self.offsets[prev_symbol][prev_size] = prev_offset
-                prev_symbol = match.group('symbol')
-                prev_offset, prev_size = offset, size
-        self.offsets[prev_symbol][0] = prev_offset
+                (symbol, _) = section[offset]
+                prev_symbol, prev_offset = symbol, offset
+            (_, size) = section[prev_offset]
+            self.offsets[prev_symbol][size] = prev_offset
 
     def lookup_offset(self, symbol, size):
         offsets = self.offsets.get(symbol)
