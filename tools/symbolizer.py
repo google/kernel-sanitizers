@@ -161,24 +161,30 @@ class SymbolOffsetTable(object):
             if symbol == 'init_module' or symbol == 'cleanup_module':
                 continue
             offset = int(match.group('offset'), 16)
-            size = match.group('size')
+            size = int(match.group('size'))
             section = match.group('section')
-            sections[section][offset] = (symbol, size)
+            if not(offset in sections[section]):
+                sections[section][offset] = []
+            sections[section][offset].append((symbol, size))
 
-        # Calculate and store sizes for each symbol.
+        # Store symbol sizes based on readelf-provided size (arm64).
         self.offsets = defaultdict(dict)
         for section in sections.values():
-            prev_symbol = None
+            for offset in section.keys():
+                for (symbol, size) in section[offset]:
+                    self.offsets[symbol][size] = offset
+
+        # Calculate and store symbol sizes based on offset difference (x86-64).
+        for section in sections.values():
             prev_offset = None
-            prev_size = None
             for offset in sorted(section.keys()):
-                if prev_symbol:
-                    prev_size = offset - prev_offset
-                    self.offsets[prev_symbol][prev_size] = prev_offset
-                (symbol, _) = section[offset]
-                prev_symbol, prev_offset = symbol, offset
-            (_, size) = section[prev_offset]
-            self.offsets[prev_symbol][size] = prev_offset
+                if not(prev_offset):
+                    prev_offset = offset
+                    continue
+                for (symbol, _) in section[prev_offset]:
+                    self.offsets[symbol][offset - prev_offset] = prev_offset
+                prev_offset = offset
+            # Skip the last symbol, as we cannot calculate its size.
 
     def lookup_offset(self, symbol, size):
         offsets = self.offsets.get(symbol)
