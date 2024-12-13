@@ -1,0 +1,7 @@
+# SPDX-License-Identifier: GPL-2.0
+
+capability-analysis-cflags := -DWARN_CAPABILITY_ANALYSIS	\
+	-fexperimental-late-parse-attributes -Wthread-safety	\
+	$(call cc-option,-Wthread-safety-pointer)
+
+export CFLAGS_CAPABILITY_ANALYSIS := $(capability-analysis-cflags)
