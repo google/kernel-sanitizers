@@ -231,30 +231,8 @@
 	extern const struct __capability_##cap *name
 
 /*
- * Common keywords for static capability analysis. Both Clang's capability
- * analysis and Sparse's context tracking are currently supported.
+ * Common keywords for static capability analysis.
  */
-#ifdef __CHECKER__
-
-/* Sparse context/lock checking support. */
-# define __must_hold(x)		__attribute__((context(x,1,1)))
-# define __must_not_hold(x)
-# define __acquires(x)		__attribute__((context(x,0,1)))
-# define __cond_acquires(ret, x) __attribute__((context(x,0,-1)))
-# define __releases(x)		__attribute__((context(x,1,0)))
-# define __acquire(x)		__context__(x,1)
-# define __release(x)		__context__(x,-1)
-# define __cond_lock(x, c)	((c) ? ({ __acquire(x); 1; }) : 0)
-/* For Sparse, there's no distinction between exclusive and shared locks. */
-# define __must_hold_shared	__must_hold
-# define __acquires_shared	__acquires
-# define __cond_acquires_shared __cond_acquires
-# define __releases_shared	__releases
-# define __acquire_shared	__acquire
-# define __release_shared	__release
-# define __cond_lock_shared	__cond_acquire
-
-#else /* !__CHECKER__ */
 
 /**
  * __must_hold() - function attribute, caller must hold exclusive capability
@@ -263,7 +241,7 @@
  * Function attribute declaring that the caller must hold the given capability
  * instance @x exclusively.
  */
-# define __must_hold(x)		__requires_cap(x)
+#define __must_hold(x)		__requires_cap(x)
 
 /**
  * __must_not_hold() - function attribute, caller must not hold capability
@@ -272,7 +250,7 @@
  * Function attribute declaring that the caller must not hold the given
  * capability instance @x.
  */
-# define __must_not_hold(x)	__excludes_cap(x)
+#define __must_not_hold(x)	__excludes_cap(x)
 
 /**
  * __acquires() - function attribute, function acquires capability exclusively
@@ -281,7 +259,7 @@
  * Function attribute declaring that the function acquires the the given
  * capability instance @x exclusively, but does not release it.
  */
-# define __acquires(x)		__acquires_cap(x)
+#define __acquires(x)		__acquires_cap(x)
 
 /**
  * __cond_acquires() - function attribute, function conditionally
@@ -293,7 +271,7 @@
  * given capability instance @x exclusively, but does not release it. The
  * function return value @ret denotes when the capability is acquired.
  */
-# define __cond_acquires(ret, x) __try_acquires_cap(ret, x)
+#define __cond_acquires(ret, x) __try_acquires_cap(ret, x)
 
 /**
  * __releases() - function attribute, function releases a capability exclusively
@@ -302,7 +280,7 @@
  * Function attribute declaring that the function releases the given capability
  * instance @x exclusively. The capability must be held on entry.
  */
-# define __releases(x)		__releases_cap(x)
+#define __releases(x)		__releases_cap(x)
 
 /**
  * __acquire() - function to acquire capability exclusively
@@ -310,7 +288,7 @@
  *
  * No-op function that acquires the given capability instance @x exclusively.
  */
-# define __acquire(x)		__acquire_cap(x)
+#define __acquire(x)		__acquire_cap(x)
 
 /**
  * __release() - function to release capability exclusively
@@ -318,7 +296,7 @@
  *
  * No-op function that releases the given capability instance @x.
  */
-# define __release(x)		__release_cap(x)
+#define __release(x)		__release_cap(x)
 
 /**
  * __cond_lock() - function that conditionally acquires a capability
@@ -337,7 +315,7 @@
  *
  *	#define spin_trylock(l) __cond_lock(&lock, _spin_trylock(&lock))
  */
-# define __cond_lock(x, c)	__try_acquire_cap(x, c)
+#define __cond_lock(x, c)	__try_acquire_cap(x, c)
 
 /**
  * __must_hold_shared() - function attribute, caller must hold shared capability
@@ -346,7 +324,7 @@
  * Function attribute declaring that the caller must hold the given capability
  * instance @x with shared access.
  */
-# define __must_hold_shared(x)	__requires_shared_cap(x)
+#define __must_hold_shared(x)	__requires_shared_cap(x)
 
 /**
  * __acquires_shared() - function attribute, function acquires capability shared
@@ -355,7 +333,7 @@
  * Function attribute declaring that the function acquires the the given
  * capability instance @x with shared access, but does not release it.
  */
-# define __acquires_shared(x)	__acquires_shared_cap(x)
+#define __acquires_shared(x)	__acquires_shared_cap(x)
 
 /**
  * __cond_acquires_shared() - function attribute, function conditionally
@@ -367,7 +345,7 @@
  * given capability instance @x with shared access, but does not release it. The
  * function return value @ret denotes when the capability is acquired.
  */
-# define __cond_acquires_shared(ret, x) __try_acquires_shared_cap(ret, x)
+#define __cond_acquires_shared(ret, x) __try_acquires_shared_cap(ret, x)
 
 /**
  * __releases_shared() - function attribute, function releases a
@@ -377,7 +355,7 @@
  * Function attribute declaring that the function releases the given capability
  * instance @x with shared access. The capability must be held on entry.
  */
-# define __releases_shared(x)	__releases_shared_cap(x)
+#define __releases_shared(x)	__releases_shared_cap(x)
 
 /**
  * __acquire_shared() - function to acquire capability shared
@@ -386,7 +364,7 @@
  * No-op function that acquires the given capability instance @x with shared
  * access.
  */
-# define __acquire_shared(x)	__acquire_shared_cap(x)
+#define __acquire_shared(x)	__acquire_shared_cap(x)
 
 /**
  * __release_shared() - function to release capability shared
@@ -395,7 +373,7 @@
  * No-op function that releases the given capability instance @x with shared
  * access.
  */
-# define __release_shared(x)	__release_shared_cap(x)
+#define __release_shared(x)	__release_shared_cap(x)
 
 /**
  * __cond_lock_shared() - function that conditionally acquires a capability
@@ -409,8 +387,6 @@
  * access, if the boolean expression @c is true. The result of @c is the return
  * value, to be able to create a capability-enabled interface.
  */
-# define __cond_lock_shared(x, c) __try_acquire_shared_cap(x, c)
-
-#endif /* __CHECKER__ */
+#define __cond_lock_shared(x, c) __try_acquire_shared_cap(x, c)
 
 #endif /* _LINUX_COMPILER_CAPABILITY_ANALYSIS_H */
