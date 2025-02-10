@@ -93,12 +93,6 @@
 		__attribute__((overloadable)) __no_capability_analysis __acquires_cap(var) { }		\
 	static __always_inline void __acquire_shared_cap(const struct name *var)			\
 		__attribute__((overloadable)) __no_capability_analysis __acquires_shared_cap(var) { }	\
-	static __always_inline bool __try_acquire_cap(const struct name *var, bool ret)			\
-		__attribute__((overloadable)) __no_capability_analysis __try_acquires_cap(1, var)	\
-	{ return ret; }											\
-	static __always_inline bool __try_acquire_shared_cap(const struct name *var, bool ret)		\
-		__attribute__((overloadable)) __no_capability_analysis __try_acquires_shared_cap(1, var) \
-	{ return ret; }											\
 	static __always_inline void __release_cap(const struct name *var)				\
 		__attribute__((overloadable)) __no_capability_analysis __releases_cap(var) { }		\
 	static __always_inline void __release_shared_cap(const struct name *var)			\
@@ -156,8 +150,6 @@
 # define __requires_shared_cap(var)
 # define __acquire_cap(var)			do { } while (0)
 # define __acquire_shared_cap(var)		do { } while (0)
-# define __try_acquire_cap(var, ret)		(ret)
-# define __try_acquire_shared_cap(var, ret)	(ret)
 # define __release_cap(var)			do { } while (0)
 # define __release_shared_cap(var)		do { } while (0)
 # define __assert_cap(var)			do { (void)(var); } while (0)
@@ -299,25 +291,6 @@
 #define __release(x)		__release_cap(x)
 
 /**
- * __cond_lock() - function that conditionally acquires a capability
- *                 exclusively
- * @x: capability instance pinter
- * @c: boolean expression
- *
- * Return: result of @c
- *
- * No-op function that conditionally acquires capability instance @x
- * exclusively, if the boolean expression @c is true. The result of @c is the
- * return value, to be able to create a capability-enabled interface; for
- * example:
- *
- * .. code-block:: c
- *
- *	#define spin_trylock(l) __cond_lock(&lock, _spin_trylock(&lock))
- */
-#define __cond_lock(x, c)	__try_acquire_cap(x, c)
-
-/**
  * __must_hold_shared() - function attribute, caller must hold shared capability
  * @x: capability instance pointer
  *
@@ -374,19 +347,5 @@
  * access.
  */
 #define __release_shared(x)	__release_shared_cap(x)
-
-/**
- * __cond_lock_shared() - function that conditionally acquires a capability
- *                        shared
- * @x: capability instance pinter
- * @c: boolean expression
- *
- * Return: result of @c
- *
- * No-op function that conditionally acquires capability instance @x with shared
- * access, if the boolean expression @c is true. The result of @c is the return
- * value, to be able to create a capability-enabled interface.
- */
-#define __cond_lock_shared(x, c) __try_acquire_shared_cap(x, c)
 
 #endif /* _LINUX_COMPILER_CAPABILITY_ANALYSIS_H */
