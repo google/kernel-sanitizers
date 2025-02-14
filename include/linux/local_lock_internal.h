@@ -4,6 +4,7 @@
 #endif
 
 #include <linux/percpu-defs.h>
+#include <linux/irqflags.h>
 #include <linux/lockdep.h>
 
 #ifndef CONFIG_PREEMPT_RT
