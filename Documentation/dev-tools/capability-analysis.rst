@@ -17,6 +17,8 @@ features. To enable for Clang, configure the kernel with::
 
     CONFIG_WARN_CAPABILITY_ANALYSIS=y
 
+The feature requires Clang 20 or later.
+
 The analysis is *opt-in by default*, and requires declaring which modules and
 subsystems should be analyzed in the respective `Makefile`::
 
