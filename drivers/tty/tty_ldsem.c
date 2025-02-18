@@ -390,6 +390,7 @@ void ldsem_up_read(struct ld_semaphore *sem)
 {
 	long count;
 
+	__release_shared(sem);
 	rwsem_release(&sem->dep_map, _RET_IP_);
 
 	count = atomic_long_add_return(-LDSEM_READ_BIAS, &sem->count);
@@ -404,6 +405,7 @@ void ldsem_up_write(struct ld_semaphore *sem)
 {
 	long count;
 
+	__release(sem);
 	rwsem_release(&sem->dep_map, _RET_IP_);
 
 	count = atomic_long_add_return(-LDSEM_WRITE_BIAS, &sem->count);

@@ -1088,6 +1088,7 @@ static void __isig(int sig, struct tty_struct *tty)
  * Locking: %ctrl.lock
  */
 static void isig(int sig, struct tty_struct *tty)
+	__must_hold_shared(&tty->termios_rwsem)
 {
 	struct n_tty_data *ldata = tty->disc_data;
 
@@ -1135,6 +1136,7 @@ static void isig(int sig, struct tty_struct *tty)
  * Note: may get exclusive %termios_rwsem if flushing input buffer
  */
 static void n_tty_receive_break(struct tty_struct *tty)
+	__must_hold_shared(&tty->termios_rwsem)
 {
 	struct n_tty_data *ldata = tty->disc_data;
 
@@ -1204,6 +1206,7 @@ static void n_tty_receive_parity_error(const struct tty_struct *tty,
 
 static void
 n_tty_receive_signal_char(struct tty_struct *tty, int signal, u8 c)
+	__must_hold_shared(&tty->termios_rwsem)
 {
 	isig(signal, tty);
 	if (I_IXON(tty))
@@ -1353,6 +1356,7 @@ static bool n_tty_receive_char_canon(struct tty_struct *tty, u8 c)
 
 static void n_tty_receive_char_special(struct tty_struct *tty, u8 c,
 				       bool lookahead_done)
+	__must_hold_shared(&tty->termios_rwsem)
 {
 	struct n_tty_data *ldata = tty->disc_data;
 
@@ -1463,6 +1467,7 @@ static void n_tty_receive_char_closing(struct tty_struct *tty, u8 c,
 
 static void
 n_tty_receive_char_flagged(struct tty_struct *tty, u8 c, u8 flag)
+	__must_hold_shared(&tty->termios_rwsem)
 {
 	switch (flag) {
 	case TTY_BREAK:
@@ -1483,6 +1488,7 @@ n_tty_receive_char_flagged(struct tty_struct *tty, u8 c, u8 flag)
 
 static void
 n_tty_receive_char_lnext(struct tty_struct *tty, u8 c, u8 flag)
+	__must_hold_shared(&tty->termios_rwsem)
 {
 	struct n_tty_data *ldata = tty->disc_data;
 
@@ -1540,6 +1546,7 @@ n_tty_receive_buf_real_raw(const struct tty_struct *tty, const u8 *cp,
 static void
 n_tty_receive_buf_raw(struct tty_struct *tty, const u8 *cp, const u8 *fp,
 		      size_t count)
+	__must_hold_shared(&tty->termios_rwsem)
 {
 	struct n_tty_data *ldata = tty->disc_data;
 	u8 flag = TTY_NORMAL;
@@ -1571,6 +1578,7 @@ n_tty_receive_buf_closing(struct tty_struct *tty, const u8 *cp, const u8 *fp,
 static void n_tty_receive_buf_standard(struct tty_struct *tty, const u8 *cp,
 				       const u8 *fp, size_t count,
 				       bool lookahead_done)
+	__must_hold_shared(&tty->termios_rwsem)
 {
 	struct n_tty_data *ldata = tty->disc_data;
 	u8 flag = TTY_NORMAL;
@@ -1609,6 +1617,7 @@ static void n_tty_receive_buf_standard(struct tty_struct *tty, const u8 *cp,
 
 static void __receive_buf(struct tty_struct *tty, const u8 *cp, const u8 *fp,
 			  size_t count)
+	__must_hold_shared(&tty->termios_rwsem)
 {
 	struct n_tty_data *ldata = tty->disc_data;
 	bool preops = I_ISTRIP(tty) || (I_IUCLC(tty) && L_IEXTEN(tty));
@@ -2188,6 +2197,10 @@ static ssize_t n_tty_read(struct tty_struct *tty, struct file *file, u8 *kbuf,
 				return kb - kbuf;
 		}
 
+		/* Adopted locks from prior call. */
+		__acquire(&ldata->atomic_read_lock);
+		__acquire_shared(&tty->termios_rwsem);
+
 		/* No more data - release locks and stop retries */
 		n_tty_kick_worker(tty);
 		n_tty_check_unthrottle(tty);
@@ -2305,6 +2318,9 @@ static ssize_t n_tty_read(struct tty_struct *tty, struct file *file, u8 *kbuf,
 more_to_be_read:
 				remove_wait_queue(&tty->read_wait, &wait);
 				*cookie = cookie;
+				/* Hand-off locks to retry with cookie set. */
+				__release_shared(&tty->termios_rwsem);
+				__release(&ldata->atomic_read_lock);
 				return kb - kbuf;
 			}
 		}

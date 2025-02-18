@@ -509,6 +509,7 @@ EXPORT_SYMBOL(tty_port_lower_dtr_rts);
  */
 int tty_port_block_til_ready(struct tty_port *port,
 				struct tty_struct *tty, struct file *filp)
+	__must_hold(&tty->legacy_mutex)
 {
 	int do_clocal = 0, retval;
 	unsigned long flags;
@@ -764,6 +765,7 @@ EXPORT_SYMBOL_GPL(tty_port_install);
  */
 int tty_port_open(struct tty_port *port, struct tty_struct *tty,
 							struct file *filp)
+	__must_hold(&tty->legacy_mutex)
 {
 	spin_lock_irq(&port->lock);
 	++port->count;

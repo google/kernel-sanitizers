@@ -41,12 +41,16 @@ void tty_lock_slave(struct tty_struct *tty)
 {
 	if (tty && tty != tty->link)
 		tty_lock(tty);
+	else
+		__acquire(&tty->legacy_mutex);
 }
 
 void tty_unlock_slave(struct tty_struct *tty)
 {
 	if (tty && tty != tty->link)
 		tty_unlock(tty);
+	else
+		__release(&tty->legacy_mutex);
 }
 
 void tty_set_lock_subclass(struct tty_struct *tty)

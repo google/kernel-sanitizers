@@ -489,7 +489,7 @@ retry_write_wait:
 		if (retval < 0)
 			return retval;
 
-		if (tty_write_lock(tty, false) < 0)
+		if (tty_write_lock(tty, false))
 			goto retry_write_wait;
 
 		/* Racing writer? */

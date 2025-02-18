@@ -824,6 +824,7 @@ static int ptmx_open(struct inode *inode, struct file *filp)
 	tty = tty_init_dev(ptm_driver, index);
 	/* The tty returned here is locked so we can safely
 	   drop the mutex */
+	lockdep_assert_held(&tty->legacy_mutex);
 	mutex_unlock(&tty_mutex);
 
 	retval = PTR_ERR(tty);

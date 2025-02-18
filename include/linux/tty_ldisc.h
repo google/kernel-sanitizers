@@ -14,7 +14,7 @@ struct tty_struct;
 /*
  * the semaphore definition
  */
-struct ld_semaphore {
+struct_with_capability(ld_semaphore) {
 	atomic_long_t		count;
 	raw_spinlock_t		wait_lock;
 	unsigned int		wait_readers;
@@ -33,21 +33,22 @@ do {								\
 	static struct lock_class_key __key;			\
 								\
 	__init_ldsem((sem), #sem, &__key);			\
+	__assert_cap(sem);					\
 } while (0)
 
 
-int ldsem_down_read(struct ld_semaphore *sem, long timeout);
-int ldsem_down_read_trylock(struct ld_semaphore *sem);
-int ldsem_down_write(struct ld_semaphore *sem, long timeout);
-int ldsem_down_write_trylock(struct ld_semaphore *sem);
-void ldsem_up_read(struct ld_semaphore *sem);
-void ldsem_up_write(struct ld_semaphore *sem);
+int ldsem_down_read(struct ld_semaphore *sem, long timeout) __cond_acquires_shared(true, sem);
+int ldsem_down_read_trylock(struct ld_semaphore *sem) __cond_acquires_shared(true, sem);
+int ldsem_down_write(struct ld_semaphore *sem, long timeout) __cond_acquires(true, sem);
+int ldsem_down_write_trylock(struct ld_semaphore *sem) __cond_acquires(true, sem);
+void ldsem_up_read(struct ld_semaphore *sem) __releases_shared(sem);
+void ldsem_up_write(struct ld_semaphore *sem) __releases(sem);
 
 #ifdef CONFIG_DEBUG_LOCK_ALLOC
 int ldsem_down_read_nested(struct ld_semaphore *sem, int subclass,
-		long timeout);
+		long timeout) __cond_acquires_shared(true, sem);
 int ldsem_down_write_nested(struct ld_semaphore *sem, int subclass,
-		long timeout);
+		long timeout) __cond_acquires(true, sem);
 #else
 # define ldsem_down_read_nested(sem, subclass, timeout)		\
 		ldsem_down_read(sem, timeout)
