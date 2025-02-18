@@ -86,7 +86,7 @@ static inline size_t tty_insert_flip_string(struct tty_port *port,
 size_t tty_ldisc_receive_buf(struct tty_ldisc *ld, const u8 *p, const u8 *f,
 			     size_t count);
 
-void tty_buffer_lock_exclusive(struct tty_port *port);
-void tty_buffer_unlock_exclusive(struct tty_port *port);
+void tty_buffer_lock_exclusive(struct tty_port *port) __acquires(&port->buf.lock);
+void tty_buffer_unlock_exclusive(struct tty_port *port) __releases(&port->buf.lock);
 
 #endif /* _LINUX_TTY_FLIP_H */

@@ -237,6 +237,7 @@ const struct seq_operations tty_ldiscs_seq_ops = {
  * to wait for any ldisc lifetime events to finish.
  */
 struct tty_ldisc *tty_ldisc_ref_wait(struct tty_struct *tty)
+	__cond_acquires_shared(1, &tty->ldisc_sem)
 {
 	struct tty_ldisc *ld;
 
@@ -257,6 +258,7 @@ EXPORT_SYMBOL_GPL(tty_ldisc_ref_wait);
  * and timer functions.
  */
 struct tty_ldisc *tty_ldisc_ref(struct tty_struct *tty)
+	__cond_acquires_shared(1, &tty->ldisc_sem)
 {
 	struct tty_ldisc *ld = NULL;
 
@@ -277,26 +279,43 @@ EXPORT_SYMBOL_GPL(tty_ldisc_ref);
  * in IRQ context.
  */
 void tty_ldisc_deref(struct tty_ldisc *ld)
+	__releases_shared(&ld->tty->ldisc_sem)
 {
 	ldsem_up_read(&ld->tty->ldisc_sem);
 }
 EXPORT_SYMBOL_GPL(tty_ldisc_deref);
 
+/*
+ * Note: Capability analysis does not like asymmetric interfaces (above types
+ * for ref and deref are tty_struct and tty_ldisc respectively -- which are
+ * dependent, but the compiler cannot figure that out); in this case, work
+ * around that with this helper which takes an unused @tty argument but tells
+ * the analysis which lock is released.
+ */
+static inline void __tty_ldisc_deref(struct tty_struct *tty, struct tty_ldisc *ld)
+	__releases_shared(&tty->ldisc_sem)
+	__capability_unsafe(/* matches released with tty_ldisc_ref() */)
+{
+	tty_ldisc_deref(ld);
+}
 
 static inline int
 __tty_ldisc_lock(struct tty_struct *tty, unsigned long timeout)
+	__cond_acquires(1, &tty->ldisc_sem)
 {
 	return ldsem_down_write(&tty->ldisc_sem, timeout);
 }
 
 static inline int
 __tty_ldisc_lock_nested(struct tty_struct *tty, unsigned long timeout)
+	__cond_acquires(1, &tty->ldisc_sem)
 {
 	return ldsem_down_write_nested(&tty->ldisc_sem,
 				       LDISC_SEM_OTHER, timeout);
 }
 
 static inline void __tty_ldisc_unlock(struct tty_struct *tty)
+	__releases(&tty->ldisc_sem)
 {
 	ldsem_up_write(&tty->ldisc_sem);
 }
@@ -328,6 +347,8 @@ void tty_ldisc_unlock(struct tty_struct *tty)
 static int
 tty_ldisc_lock_pair_timeout(struct tty_struct *tty, struct tty_struct *tty2,
 			    unsigned long timeout)
+	__cond_acquires(0, &tty->ldisc_sem)
+	__cond_acquires(0, &tty2->ldisc_sem)
 {
 	int ret;
 
@@ -362,16 +383,23 @@ tty_ldisc_lock_pair_timeout(struct tty_struct *tty, struct tty_struct *tty2,
 }
 
 static void tty_ldisc_lock_pair(struct tty_struct *tty, struct tty_struct *tty2)
+	__acquires(&tty->ldisc_sem)
+	__acquires(&tty2->ldisc_sem)
+	__capability_unsafe(/* MAX_SCHEDULE_TIMEOUT ensures acquisition */)
 {
 	tty_ldisc_lock_pair_timeout(tty, tty2, MAX_SCHEDULE_TIMEOUT);
 }
 
 static void tty_ldisc_unlock_pair(struct tty_struct *tty,
 				  struct tty_struct *tty2)
+	__releases(&tty->ldisc_sem)
+	__releases(&tty2->ldisc_sem)
 {
 	__tty_ldisc_unlock(tty);
 	if (tty2)
 		__tty_ldisc_unlock(tty2);
+	else
+		__release(&tty2->ldisc_sem);
 }
 
 /**
@@ -387,7 +415,7 @@ void tty_ldisc_flush(struct tty_struct *tty)
 
 	tty_buffer_flush(tty, ld);
 	if (ld)
-		tty_ldisc_deref(ld);
+		__tty_ldisc_deref(tty, ld);
 }
 EXPORT_SYMBOL_GPL(tty_ldisc_flush);
 
@@ -694,7 +722,7 @@ void tty_ldisc_hangup(struct tty_struct *tty, bool reinit)
 	tty_ldisc_debug(tty, "%p: hangup\n", tty->ldisc);
 
 	ld = tty_ldisc_ref(tty);
-	if (ld != NULL) {
+	if (ld) {
 		if (ld->ops->flush_buffer)
 			ld->ops->flush_buffer(tty);
 		tty_driver_flush_buffer(tty);
@@ -703,7 +731,7 @@ void tty_ldisc_hangup(struct tty_struct *tty, bool reinit)
 			ld->ops->write_wakeup(tty);
 		if (ld->ops->hangup)
 			ld->ops->hangup(tty);
-		tty_ldisc_deref(ld);
+		__tty_ldisc_deref(tty, ld);
 	}
 
 	wake_up_interruptible_poll(&tty->write_wait, EPOLLOUT);
@@ -716,6 +744,7 @@ void tty_ldisc_hangup(struct tty_struct *tty, bool reinit)
 	 * Avoid racing set_ldisc or tty_ldisc_release
 	 */
 	tty_ldisc_lock(tty, MAX_SCHEDULE_TIMEOUT);
+	lockdep_assert_held_write(&tty->ldisc_sem);
 
 	if (tty->driver->flags & TTY_DRIVER_RESET_TERMIOS)
 		tty_reset_termios(tty);

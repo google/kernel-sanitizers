@@ -167,6 +167,7 @@ static void release_tty(struct tty_struct *tty, int idx);
  * Locking: none. Must be called after tty is definitely unused
  */
 static void free_tty_struct(struct tty_struct *tty)
+	__capability_unsafe(/* destructor */)
 {
 	tty_ldisc_deinit(tty);
 	put_device(tty->dev);
@@ -965,7 +966,7 @@ static ssize_t iterate_tty_write(struct tty_ldisc *ld, struct tty_struct *tty,
 	ssize_t ret, written = 0;
 
 	ret = tty_write_lock(tty, file->f_flags & O_NDELAY);
-	if (ret < 0)
+	if (ret)
 		return ret;
 
 	/*
@@ -1154,7 +1155,7 @@ int tty_send_xchar(struct tty_struct *tty, u8 ch)
 		return 0;
 	}
 
-	if (tty_write_lock(tty, false) < 0)
+	if (tty_write_lock(tty, false))
 		return -ERESTARTSYS;
 
 	down_read(&tty->termios_rwsem);
@@ -1391,6 +1392,7 @@ static int tty_reopen(struct tty_struct *tty)
  * Return: new tty structure
  */
 struct tty_struct *tty_init_dev(struct tty_driver *driver, int idx)
+	__capability_unsafe(/* returns with locked tty */)
 {
 	struct tty_struct *tty;
 	int retval;
@@ -1874,6 +1876,7 @@ int tty_release(struct inode *inode, struct file *filp)
  * will not work then. It expects inodes to be from devpts FS.
  */
 static struct tty_struct *tty_open_current_tty(dev_t device, struct file *filp)
+	__capability_unsafe(/* returns with locked tty */)
 {
 	struct tty_struct *tty;
 	int retval;
@@ -2037,6 +2040,7 @@ EXPORT_SYMBOL_GPL(tty_kopen_shared);
  */
 static struct tty_struct *tty_open_by_driver(dev_t device,
 					     struct file *filp)
+	__capability_unsafe(/* returns with locked tty */)
 {
 	struct tty_struct *tty;
 	struct tty_driver *driver = NULL;
@@ -2136,6 +2140,8 @@ retry_open:
 		schedule();
 		goto retry_open;
 	}
+
+	lockdep_assert_held(&tty->legacy_mutex);
 
 	tty_add_file(tty, filp);
 
@@ -2486,7 +2492,7 @@ static int send_break(struct tty_struct *tty, unsigned int duration)
 		return tty->ops->break_ctl(tty, duration);
 
 	/* Do the work ourselves */
-	if (tty_write_lock(tty, false) < 0)
+	if (tty_write_lock(tty, false))
 		return -EINTR;
 
 	retval = tty->ops->break_ctl(tty, -1);

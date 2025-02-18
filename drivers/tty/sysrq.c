@@ -149,6 +149,7 @@ static const struct sysrq_key_op sysrq_unraw_op = {
 static void sysrq_handle_crash(u8 key)
 {
 	/* release the RCU read lock before crashing */
+	lockdep_assert_in_rcu_read_lock();
 	rcu_read_unlock();
 
 	panic("sysrq triggered crash\n");

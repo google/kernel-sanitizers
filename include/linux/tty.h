@@ -234,8 +234,8 @@ struct tty_struct {
 	void *disc_data;
 	void *driver_data;
 	spinlock_t files_lock;
-	int write_cnt;
-	u8 *write_buf;
+	int write_cnt __guarded_by(&atomic_write_lock);
+	u8 *write_buf __guarded_by(&atomic_write_lock);
 
 	struct list_head tty_files;
 
@@ -500,11 +500,11 @@ long vt_compat_ioctl(struct tty_struct *tty, unsigned int cmd,
 
 /* tty_mutex.c */
 /* functions for preparation of BKL removal */
-void tty_lock(struct tty_struct *tty);
-int  tty_lock_interruptible(struct tty_struct *tty);
-void tty_unlock(struct tty_struct *tty);
-void tty_lock_slave(struct tty_struct *tty);
-void tty_unlock_slave(struct tty_struct *tty);
+void tty_lock(struct tty_struct *tty) __acquires(&tty->legacy_mutex);
+int  tty_lock_interruptible(struct tty_struct *tty) __cond_acquires(0, &tty->legacy_mutex);
+void tty_unlock(struct tty_struct *tty) __releases(&tty->legacy_mutex);
+void tty_lock_slave(struct tty_struct *tty) __acquires(&tty->legacy_mutex);
+void tty_unlock_slave(struct tty_struct *tty) __releases(&tty->legacy_mutex);
 void tty_set_lock_subclass(struct tty_struct *tty);
 
 #endif
